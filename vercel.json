@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "source": "/scan-guide.jpg",
+      "destination": "https://raw.githubusercontent.com/kpcjtkim-design/hint-knewdeal-portal/main/scan-guide.jpg",
+      "permanent": false
+    }
+  ]
+}
