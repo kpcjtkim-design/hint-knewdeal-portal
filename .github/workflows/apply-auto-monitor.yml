@@ -1,0 +1,29 @@
+name: Apply auto monitor portal patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-auto-monitor.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply verified portal payload
+        run: python tools/apply-auto-monitor-payload.py
+      - name: Commit patched portal
+        run: |
+          if git diff --quiet -- index.html admin.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html admin.html
+          git commit -m "Apply Drive auto-monitor portal patch"
+          git push
