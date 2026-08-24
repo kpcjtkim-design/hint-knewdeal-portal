@@ -31,7 +31,7 @@ const classMeta=id=>CLASSES.find(c=>c.id===String(id))||{id:String(id),region:''
 const button=(u,label='열기')=>`<button class="btn btn-primary" data-open="${esc(good(u))}" ${good(u)?'':'disabled'}>${good(u)?esc(label):'관리자 등록 필요'}</button>`;
 const taskButtons=(num,u,label)=>String(num)==='2'?`<div class="task-actions">${button(u,label)}<button type="button" class="btn btn-soft guideBtn">스캔하는 법</button></div>`:button(u,label);
 const localDateKey=()=>{const d=new Date(),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
-const driveFolderId=u=>{const m=String(u||'').match(/\/folders\/([A-Za-z0-9_-]+)/);return m?m[1]:''};
+const driveFolderId=u=>{const s=String(u||'');const m=s.match(/\/folders\/([A-Za-z0-9_-]+)/);if(m)return m[1];try{const x=new URL(s);return x.searchParams.get('id')||''}catch{return''}};
 const monitoredTask=n=>['2','3','4','5'].includes(String(n));
 const uploadBadge=(num,url)=>{if(!monitoredTask(num))return '';const id=driveFolderId(url);return `<span class="upload-status pending" data-folder-id="${esc(id)}">● ${id?'확인 중':'폴더 미설정'}</span>`};
 async function checkDriveUpload(folderId,date=localDateKey()){if(!folderId)return {ok:false,missing:true};const q=new URLSearchParams({folderId,date});const r=await fetch(`/api/drive-monitor?${q.toString()}`,{cache:'no-store'});if(!r.ok)throw new Error(`monitor ${r.status}`);return await r.json()}
