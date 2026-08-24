@@ -1,0 +1,1 @@
+Admin upgrade work prepared on 2026-08-24. Main remains source of truth.
