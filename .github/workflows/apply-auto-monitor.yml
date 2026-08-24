@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/apply-auto-monitor.yml'
       - 'tools/fix-drive-folder-url.py'
+      - 'tools/disable-monitoring-upload-status.py'
 
 permissions:
   contents: write
@@ -19,6 +20,8 @@ jobs:
         run: python tools/apply-auto-monitor-payload.py
       - name: Fix Google Drive folder URL compatibility
         run: python tools/fix-drive-folder-url.py
+      - name: Exclude monitoring from upload status
+        run: python tools/disable-monitoring-upload-status.py
       - name: Commit patched portal
         run: |
           if git diff --quiet -- index.html admin.html; then
@@ -28,5 +31,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html admin.html
-          git commit -m "Fix Drive folder URL compatibility"
+          git commit -m "Remove monitoring upload status checks"
           git push
