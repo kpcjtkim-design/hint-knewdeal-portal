@@ -11,6 +11,7 @@ on:
       - 'tools/improve-missing-date-loading.py'
       - 'tools/rename-monitoring-button.py'
       - 'tools/add-urgent-requests.py'
+      - 'tools/add-urgent-delete.py'
 
 permissions:
   contents: write
@@ -34,6 +35,8 @@ jobs:
         run: python tools/rename-monitoring-button.py
       - name: Add urgent request banners and admin controls
         run: python tools/add-urgent-requests.py
+      - name: Add urgent request delete controls
+        run: python tools/add-urgent-delete.py
       - name: Commit patched portal
         run: |
           if git diff --quiet -- index.html admin.html; then
@@ -43,5 +46,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html admin.html
-          git commit -m "Add urgent requests for teachers"
+          git commit -m "Add delete controls for urgent requests"
           git push
