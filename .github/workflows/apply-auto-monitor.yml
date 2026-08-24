@@ -9,6 +9,7 @@ on:
       - 'tools/disable-monitoring-upload-status.py'
       - 'tools/add-missing-dates-button.py'
       - 'tools/improve-missing-date-loading.py'
+      - 'tools/rename-monitoring-button.py'
 
 permissions:
   contents: write
@@ -28,6 +29,8 @@ jobs:
         run: python tools/add-missing-dates-button.py
       - name: Improve missing-date loading UX
         run: python tools/improve-missing-date-loading.py
+      - name: Rename monitoring button to survey shortcut
+        run: python tools/rename-monitoring-button.py
       - name: Commit patched portal
         run: |
           if git diff --quiet -- index.html admin.html; then
@@ -37,5 +40,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html admin.html
-          git commit -m "Show progress while checking missing dates"
+          git commit -m "Rename monitoring button to survey shortcut"
           git push
