@@ -53,8 +53,23 @@ function cleanReason(raw,status=''){
   return v.length>70?v.slice(0,70).trim()+'…':v;
 }
 function allNamePositions(text){const out=[];for(const s of students){if(!s.name)continue;let at=0;while((at=text.indexOf(s.name,at))!==-1){out.push({name:s.name,start:at,end:at+s.name.length});at+=s.name.length}}return out.sort((a,b)=>a.start-b.start)}
+function sharedReasonFor(name,text,status=''){
+  const src=normalizeReasonText(text);if(!src)return'';
+  const names=students.map(x=>x.name).filter(Boolean);
+  for(const lineRaw of src.split(/\n+/)){
+    const line=lineRaw.trim();if(!line||!line.includes(name))continue;
+    const us=line.lastIndexOf('_');if(us<0)continue;
+    const left=line.slice(0,us).replace(/^(?:결석|지각|조퇴|외출|인정출석|인정결석|출석)\s*\d*\s*[-:：]?\s*/,'').trim();
+    const reason=cleanReason(line.slice(us+1),status);if(!reason)continue;
+    const group=left.split(/[，,]/).map(x=>x.trim().replace(/^[-_:]+|[-_:]+$/g,'')).filter(Boolean);
+    const matched=group.filter(g=>names.includes(g));
+    if(matched.length>=2&&matched.includes(name))return reason;
+  }
+  return'';
+}
 function parseReasonFor(name,text,status=''){
   const src=normalizeReasonText(text);if(!src)return{reason:'',confidence:'none',method:'none'};
+  const shared=sharedReasonFor(name,src,status);if(shared)return{reason:shared,confidence:'high',method:'공동 사유'};
   const positions=allNamePositions(src),mine=positions.filter(x=>x.name===name);
   const candidates=[];
   for(const hit of mine){
