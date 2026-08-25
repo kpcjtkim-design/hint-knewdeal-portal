@@ -1,0 +1,1 @@
+Retry deployment for latest GOLD_CALIBRATED_V4 attendance parser.
