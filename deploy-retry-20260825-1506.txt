@@ -1,0 +1,1 @@
+Retry Vercel deployment for the finalized live attendance review build. No application code changes.
