@@ -1,0 +1,41 @@
+name: Apply attendance today and history
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/add-attendance-today-history.py'
+      - '.github/workflows/apply-attendance-today-history.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply attendance UX patch
+        run: python tools/add-attendance-today-history.py
+      - name: Syntax check module script
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('attendance-test.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*?)</script>',s,re.S)
+          assert m, 'module script not found'
+          Path('/tmp/attendance-module.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/attendance-module.mjs
+      - name: Commit patched attendance page
+        run: |
+          if git diff --quiet -- attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html
+          git commit -m "Add today default and student attendance history"
+          git push
