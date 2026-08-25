@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'tools/add-shared-reason-group.py'
+      - '.github/workflows/apply-attendance-parser-shared-reason.yml'
 
 permissions:
   contents: write
