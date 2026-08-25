@@ -1,0 +1,29 @@
+name: Apply attendance shared reason parser
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/add-shared-reason-group.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch attendance parser
+        run: python tools/add-shared-reason-group.py
+      - name: Commit attendance test page
+        run: |
+          if git diff --quiet -- attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html
+          git commit -m "Handle shared attendance reasons"
+          git push
