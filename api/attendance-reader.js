@@ -1,6 +1,7 @@
 const FIREBASE_KEY='AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE';
 const PROJECT='knewdeal-portal';
 const ADMIN=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
+const BRIDGE='https://script.google.com/macros/s/AKfycbzNcSYQf3JORsZRb0QOwlMOnG4sRlUUwW-1s2xF3ypvlbLfrwYQisF1brFUV2f8XGaf/exec';
 
 async function verify(idToken){
   const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{
@@ -20,10 +21,7 @@ async function profile(idToken,email){
   return{role:f.role?.stringValue,active:f.active?.booleanValue===true};
 }
 async function bridge(classId){
-  const url=process.env.ATTENDANCE_READER_URL;
-  const secret=process.env.ATTENDANCE_READER_SECRET;
-  if(!url||!secret)throw new Error('READER_NOT_CONFIGURED');
-  const r=await fetch(url,{method:'POST',headers:{'content-type':'text/plain;charset=utf-8'},body:JSON.stringify({secret,classId}),redirect:'follow'});
+  const r=await fetch(`${BRIDGE}?classId=${encodeURIComponent(classId)}`,{redirect:'follow'});
   const t=await r.text();let d;
   try{d=JSON.parse(t)}catch{throw new Error('READER_BAD_RESPONSE')}
   if(!r.ok||!d.ok)throw new Error(d?.error||'READER_ERROR');
