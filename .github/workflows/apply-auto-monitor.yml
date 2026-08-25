@@ -14,6 +14,7 @@ on:
       - 'tools/add-urgent-delete.py'
       - 'tools/add-manual-missing-inline.py'
       - 'tools/add-admin-upload-detail.py'
+      - 'tools/add-multi-class-teacher.py'
 
 permissions:
   contents: write
@@ -43,6 +44,8 @@ jobs:
         run: python tools/add-manual-missing-inline.py
       - name: Add admin per-class upload detail
         run: python tools/add-admin-upload-detail.py
+      - name: Add multi-class teacher access
+        run: python tools/add-multi-class-teacher.py
       - name: Commit patched portal
         run: |
           if git diff --quiet -- index.html admin.html; then
@@ -52,5 +55,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html admin.html
-          git commit -m "Add admin per-class upload detail"
+          git commit -m "Add multi-class teacher access"
           git push
