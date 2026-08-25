@@ -1,0 +1,29 @@
+name: Apply Firebase attendance review editor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/add-firebase-attendance-review.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch attendance test page
+        run: python tools/add-firebase-attendance-review.py
+      - name: Commit attendance page
+        run: |
+          if git diff --quiet -- attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html
+          git commit -m "Save admin attendance reviews to Firebase"
+          git push
