@@ -1,0 +1,30 @@
+name: Apply attendance validation engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/add-attendance-validation-engine.py'
+      - '.github/workflows/apply-attendance-validation-engine.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch validation engine
+        run: python tools/add-attendance-validation-engine.py
+      - name: Commit attendance validation engine
+        run: |
+          if git diff --quiet -- attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html
+          git commit -m "Add attendance cross-check engine"
+          git push
