@@ -1,0 +1,30 @@
+name: Apply live attendance reader
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/switch-attendance-to-live-reader.py'
+      - '.github/workflows/apply-live-attendance-reader.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch attendance page
+        run: python tools/switch-attendance-to-live-reader.py
+      - name: Commit attendance page
+        run: |
+          if git diff --quiet -- attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html
+          git commit -m "Use live read-only attendance reader"
+          git push
