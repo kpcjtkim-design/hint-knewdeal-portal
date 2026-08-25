@@ -1,0 +1,1 @@
+Retry current final portal deployment after temporary-teacher patch. No application code changes.
