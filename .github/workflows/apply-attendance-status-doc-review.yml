@@ -1,0 +1,41 @@
+name: Apply attendance status and document review
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-attendance-status-doc-review.yml'
+      - 'tools/fix-attendance-status-and-doc-review.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch attendance status and document review
+        run: python tools/fix-attendance-status-and-doc-review.py
+      - name: Validate attendance JavaScript
+        run: |
+          python - <<'PY'
+          import re,pathlib
+          s=pathlib.Path('attendance-test.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('attendance module not found')
+          pathlib.Path('/tmp/attendance.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/attendance.mjs
+      - name: Commit attendance changes
+        run: |
+          if git diff --quiet -- attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html
+          git commit -m "Refine attendance status and document review"
+          git pull --rebase origin main
+          git push
