@@ -142,7 +142,7 @@ async function adminView(user,p,tab='classes',selected='1'){try{shell(user,`${he
 async function attendanceAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출결 자동검증</h3><p>운영총괄 원본은 읽기 전용이며, 검수값과 인정출석 서류 확인 상태만 Firebase에 저장됩니다. 관리자 로그인 세션을 그대로 사용합니다.</p></div><div id="attendanceNativeMount" class="attendance-native-mount"><div class="empty">출결 검증 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-native.js?v=20260826-native1`);await mod.mountAttendanceAdminNative(document.getElementById('attendanceNativeMount'),{auth,db,user})}catch(e){const mount=document.getElementById('attendanceNativeMount');if(mount)mount.innerHTML=`<div class="fatal">출결 자동검증을 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-native.js?v=20260826-native2`);await mod.mountAttendanceAdminNative(document.getElementById('attendanceNativeMount'),{auth,db,user})}catch(e){const mount=document.getElementById('attendanceNativeMount');if(mount)mount.innerHTML=`<div class="fatal">출결 자동검증을 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;
