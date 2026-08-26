@@ -9,6 +9,7 @@ on:
       - 'tools/add-admin-attendance-session.py'
       - 'tools/add-admin-attendance-link.py'
       - 'tools/enhance-attendance-review.py'
+      - 'tools/add-attendance-class-overview.py'
       - 'api/drive-monitor.js'
 
 permissions:
@@ -27,6 +28,8 @@ jobs:
         run: python tools/add-admin-attendance-session.py
       - name: Add document verification and folder shortcuts
         run: python tools/enhance-attendance-review.py
+      - name: Add class-wide attendance overview
+        run: python tools/add-attendance-class-overview.py
       - name: Validate JavaScript
         run: |
           python - <<'PY'
@@ -48,6 +51,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html attendance-test.html
-          git commit -m "Embed attendance review and verification tools"
+          git commit -m "Embed attendance review and class overview"
           git pull --rebase origin main
           git push
