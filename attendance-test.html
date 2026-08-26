@@ -28,6 +28,7 @@ const firebaseConfig={apiKey:'AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE',authDomai
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();
 provider.setCustomParameters({prompt:'select_account'});
 setPersistence(auth,browserLocalPersistence).catch(()=>{});
+setPersistence(auth,browserLocalPersistence).catch(()=>{});
 const READER_API='/api/attendance-reader';
 const ADMINS=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
 const CLASSES=[
