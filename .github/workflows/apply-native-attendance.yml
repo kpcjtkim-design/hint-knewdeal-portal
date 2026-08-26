@@ -1,0 +1,43 @@
+name: Build native admin attendance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-native-attendance.yml'
+      - 'tools/build-native-attendance.py'
+      - 'attendance-test.html'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native attendance module
+        run: python tools/build-native-attendance.py
+      - name: Validate generated JavaScript
+        run: |
+          node --check attendance-native.js
+          python - <<'PY'
+          import re,pathlib
+          s=pathlib.Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('index module not found')
+          pathlib.Path('/tmp/index.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+      - name: Commit native attendance build
+        run: |
+          if git diff --quiet -- index.html attendance-native.js; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html attendance-native.js
+          git commit -m "Move attendance review into native admin UI"
+          git pull --rebase origin main
+          git push
