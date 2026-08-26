@@ -1,0 +1,47 @@
+name: Apply recognition upload UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-recognition-upload-ui.yml'
+      - 'tools/add-recognition-upload-ui.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch teacher and admin upload UI
+        run: python tools/add-recognition-upload-ui.py
+      - name: Build native attendance module
+        run: python tools/build-native-attendance.py
+      - name: Validate JavaScript
+        run: |
+          node --check attendance-native.js
+          node --check api/recognition-upload.js
+          python - <<'PY'
+          import re,pathlib
+          for src,out in [('attendance-test.html','/tmp/attendance.mjs'),('index.html','/tmp/index.mjs')]:
+            s=pathlib.Path(src).read_text(encoding='utf-8')
+            m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+            if not m: raise SystemExit(f'module not found: {src}')
+            pathlib.Path(out).write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/attendance.mjs
+          node --check /tmp/index.mjs
+      - name: Commit generated UI
+        run: |
+          if git diff --quiet -- index.html attendance-test.html attendance-native.js; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html attendance-test.html attendance-native.js
+          git commit -m "Add recognition document upload UI"
+          git pull --rebase origin main
+          git push
