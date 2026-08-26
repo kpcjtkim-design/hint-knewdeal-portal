@@ -16,7 +16,6 @@ app_start=body.find('<section id="app"')
 history_start=body.find('<div id="historyBack"')
 if app_start<0 or history_start<0:
     raise SystemExit('attendance app markup not found')
-# the original wrapper closes immediately before historyBack; trim that wrapper close.
 app_html=body[app_start:history_start]
 if app_html.endswith('</div>'):
     app_html=app_html[:-6]
@@ -30,7 +29,6 @@ markup=(
 )
 
 js=script.group(1)
-# Keep only runtime code from the shared attendance engine; Firebase app/auth is supplied by the portal.
 pos=js.find("const READER_API=")
 if pos<0:
     raise SystemExit('READER_API anchor not found')
@@ -43,7 +41,6 @@ js=js.replace("$('#loginBtn').onclick=()=>login().catch(showError);",'')
 js=re.sub(r"onAuthStateChanged\(auth,user=>\{if\(user\)activateAdmin\(user\)\.catch\(showError\)\}\);",'',js,count=1)
 js=re.sub(r"if\(EMBED_MODE\)\{const sendHeight=.*?setTimeout\(sendHeight,1200\)\}",'',js,count=1,flags=re.S)
 js=js.replace("await auth.signOut();throw new Error('관리자 권한이 있는 계정만 사용할 수 있습니다.')","throw new Error('관리자 권한이 있는 계정만 사용할 수 있습니다.')")
-# Native mount owns the current portal session.
 
 module=(
 "import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';\n"
@@ -66,14 +63,14 @@ new_css='.attendance-native-shell{padding:0;overflow:hidden}.attendance-native-h
 if old_css in p:
     p=p.replace(old_css,new_css,1)
 
-pat=r"function attendanceAdmin\(user,p\)\{.*?\}\nasync function urgentAdmin"
+pat=r"(?:async\s+)?function attendanceAdmin\(user,p\)\{.*?\}\nasync function urgentAdmin"
 m=re.search(pat,p,re.S)
 if not m:
     raise SystemExit('attendanceAdmin function not found')
 new_func="""async function attendanceAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class=\"card attendance-native-shell\"><div class=\"attendance-native-head\"><h3>출결 자동검증</h3><p>운영총괄 원본은 읽기 전용이며, 검수값과 인정출석 서류 확인 상태만 Firebase에 저장됩니다. 관리자 로그인 세션을 그대로 사용합니다.</p></div><div id=\"attendanceNativeMount\" class=\"attendance-native-mount\"><div class=\"empty\">출결 검증 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-native.js?v=20260826-native1`);await mod.mountAttendanceAdminNative(document.getElementById('attendanceNativeMount'),{auth,db,user})}catch(e){const mount=document.getElementById('attendanceNativeMount');if(mount)mount.innerHTML=`<div class=\"fatal\">출결 자동검증을 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-native.js?v=20260826-native2`);await mod.mountAttendanceAdminNative(document.getElementById('attendanceNativeMount'),{auth,db,user})}catch(e){const mount=document.getElementById('attendanceNativeMount');if(mount)mount.innerHTML=`<div class=\"fatal\">출결 자동검증을 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin"""
 p=p[:m.start()]+new_func+p[m.end():]
