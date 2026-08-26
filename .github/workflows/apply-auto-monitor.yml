@@ -17,6 +17,7 @@ on:
       - 'tools/add-multi-class-teacher.py'
       - 'tools/add-temporary-teacher-access.py'
       - 'tools/increase-urgent-notice-font.py'
+      - 'tools/add-admin-attendance-link.py'
 
 permissions:
   contents: write
@@ -52,6 +53,8 @@ jobs:
         run: python tools/add-temporary-teacher-access.py
       - name: Increase urgent notice font
         run: python tools/increase-urgent-notice-font.py
+      - name: Add admin attendance entry
+        run: python tools/add-admin-attendance-link.py
       - name: Commit patched portal
         run: |
           if git diff --quiet -- index.html admin.html; then
@@ -61,5 +64,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html admin.html
-          git commit -m "Increase urgent notice font"
+          git commit -m "Add admin attendance entry"
           git push
