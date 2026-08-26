@@ -7,6 +7,9 @@ on:
       - '.github/workflows/apply-admin-attendance-integration.yml'
       - 'tools/add-admin-attendance-entry.py'
       - 'tools/add-admin-attendance-session.py'
+      - 'tools/add-admin-attendance-link.py'
+      - 'tools/enhance-attendance-review.py'
+      - 'api/drive-monitor.js'
 
 permissions:
   contents: write
@@ -16,10 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Add admin attendance entry
+      - name: Keep attendance inside admin layout
         run: python tools/add-admin-attendance-entry.py
+      - name: Embed attendance review in admin tab
+        run: python tools/add-admin-attendance-link.py
       - name: Reuse portal admin session in attendance page
         run: python tools/add-admin-attendance-session.py
+      - name: Add document verification and folder shortcuts
+        run: python tools/enhance-attendance-review.py
       - name: Validate JavaScript
         run: |
           python - <<'PY'
@@ -41,5 +48,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html attendance-test.html
-          git commit -m "Integrate attendance into admin portal"
+          git commit -m "Embed attendance review and verification tools"
+          git pull --rebase origin main
           git push
