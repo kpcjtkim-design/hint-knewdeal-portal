@@ -41,3 +41,4 @@ jobs:
           git commit -m "Move attendance review into native admin UI"
           git pull --rebase origin main
           git push
+# rebuild after status/doc-review update
