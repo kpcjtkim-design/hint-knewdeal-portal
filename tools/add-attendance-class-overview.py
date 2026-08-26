@@ -54,8 +54,8 @@ if old not in s:
     raise SystemExit('document save anchor not found')
 s=s.replace(old,new,1)
 
-old_load="await renderDate(preferred);await logView(preferred)}"
-new_load="await renderDate(preferred);await logView(preferred);renderClassOverview().catch(showError)}"
+old_load="$('#dateSelect').value=preferred;await renderDate(preferred);await refreshFolderLinks();await logView(preferred)}"
+new_load="$('#dateSelect').value=preferred;await renderDate(preferred);await refreshFolderLinks();await logView(preferred);renderClassOverview().catch(showError)}"
 if old_load not in s:
     raise SystemExit('loadClass anchor not found')
 s=s.replace(old_load,new_load,1)
