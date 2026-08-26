@@ -30,6 +30,9 @@ export default async function handler(req, res) {
     }
 
     const data = await upstream.json();
+    const dateFolder = data.dateFolder || null;
+    const dateFolderId = data.dateFolderId || (dateFolder && typeof dateFolder === 'object' ? dateFolder.id || dateFolder.folderId || null : null);
+    const dateFolderUrl = data.dateFolderUrl || (dateFolder && typeof dateFolder === 'object' ? dateFolder.url || dateFolder.webViewLink || null : null);
 
     return res.status(200).json({
       ok: data.ok === true,
@@ -38,7 +41,11 @@ export default async function handler(req, res) {
       fileCount: Number.isFinite(Number(data.fileCount)) ? Number(data.fileCount) : 0,
       reason: data.reason || null,
       week: data.week || null,
-      dateFolder: data.dateFolder || null
+      weekFolderId: data.weekFolderId || null,
+      weekFolderUrl: data.weekFolderUrl || null,
+      dateFolder,
+      dateFolderId,
+      dateFolderUrl
     });
   } catch (error) {
     return res.status(502).json({ ok: false, error: 'MONITOR_REQUEST_FAILED' });
