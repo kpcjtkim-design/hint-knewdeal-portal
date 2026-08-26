@@ -22,11 +22,12 @@
 </section></div><div id="historyBack" class="history-back"><div class="history-modal"><div class="history-head"><div><h3 id="historyTitle">학생 누적 출결</h3><div id="historyMeta" class="save-meta"></div></div><button id="historyClose" class="btn soft">닫기</button></div><div id="historyList" class="history-list"></div></div></div>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import {getAuth,GoogleAuthProvider,signInWithPopup} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {getFirestore,doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 const firebaseConfig={apiKey:'AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE',authDomain:'knewdeal-portal.firebaseapp.com',projectId:'knewdeal-portal',storageBucket:'knewdeal-portal.firebasestorage.app',messagingSenderId:'1054904032053',appId:'1:1054904032053:web:de18246d426776b54bca7c'};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();
 provider.setCustomParameters({prompt:'select_account'});
+setPersistence(auth,browserLocalPersistence).catch(()=>{});
 const READER_API='/api/attendance-reader';
 const ADMINS=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
 const CLASSES=[
@@ -170,7 +171,8 @@ async function saveReview(){if(!currentLabel)return;const overrides=editRows.fil
 async function resetReview(){if(!currentLabel||!confirm('이 날짜의 Firebase 관리자 수정값을 모두 비우고 시트 기준으로 되돌릴까요?'))return;await setDoc(doc(db,'settings',reviewDocId(currentLabel)),{type:'ATTENDANCE_REVIEW_LIVE',source:'운영총괄_ORIGINAL_READ_ONLY',classId:selectedClass,date:currentLabel,overrides:[],reviewer:email,updatedAt:serverTimestamp()},{merge:false});currentReview={overrides:[],reviewer:email};await renderDate(currentLabel)}
 function normalizeDate(v){return String(v||'').trim()}
 function todayLabel(){try{return new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric'}).format(new Date())}catch{return''}}
-async function login(){showError('');const res=await signInWithPopup(auth,provider);if(!(await isAdmin(res.user))){await auth.signOut();throw new Error('관리자 권한이 있는 계정만 사용할 수 있습니다.')}token=await res.user.getIdToken();email=(res.user.email||'').toLowerCase();$('#accountText').textContent=`${email} · 관리자 확인 완료 · 운영총괄 Viewer 읽기전용`;$('#app').style.display='block';$('#loginBtn').textContent='관리자 계정 다시 연결';await loadClass('1')}
+async function activateAdmin(user){if(!(await isAdmin(user))){await auth.signOut();throw new Error('관리자 권한이 있는 계정만 사용할 수 있습니다.')}const mail=(user.email||'').toLowerCase();if(email===mail&&token&&$('#app').style.display==='block')return;token=await user.getIdToken();email=mail;$('#accountText').textContent=`${email} · 관리자 확인 완료 · 운영총괄 Viewer 읽기전용`;$('#app').style.display='block';$('#loginBtn').textContent='관리자 계정 다시 연결';await loadClass('1')}
+async function login(){showError('');const res=await signInWithPopup(auth,provider);await activateAdmin(res.user)}
 async function loadClass(classId){showError('');selectedClass=String(classId);const c=CLASSES.find(x=>x.id===selectedClass);if(!c)return;$('#rows').innerHTML='<div class="loading">운영총괄에서 출결을 읽는 중…</div>';$('#heroTitle').textContent=`${c.id}반 · 출결 검수`;const out=await reader(selectedClass);const v=out.attendance||[],header=v[0]||[];dates=header.slice(4).map((x,i)=>({label:normalizeDate(x),idx:i})).filter(x=>x.label);students=v.slice(1).map(r=>({name:String(r[0]||'').trim(),all:r.slice(4)})).filter(x=>x.name);const g3=out.reasons||[],rh=(g3[0]||[]).slice(4),rr=(g3[1]||[]).slice(4);reasonCells={};rh.forEach((d,i)=>reasonCells[normalizeDate(d)]=rr[i]||'');$('#dateSelect').innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');const today=todayLabel(),preferred=dates.find(x=>x.label===today)?.label||dates.at(-1)?.label||dates[0]?.label||'';$('#dateSelect').value=preferred;await renderDate(preferred);await logView(preferred)}
 async function logView(dateLabel){try{await setDoc(doc(db,'classes',selectedClass),{attendanceTestLastView:{viewer:email,date:dateLabel,viewedAt:serverTimestamp(),source:'운영총괄_ORIGINAL_READ_ONLY',mode:'READ_ONLY_VIEWER',parser:'VALIDATION_ENGINE_V3'}},{merge:true})}catch(e){console.warn('audit log failed',e)}}
 async function renderDate(label){
@@ -189,6 +191,7 @@ async function renderDate(label){
 
 
 $('#loginBtn').onclick=()=>login().catch(showError);
+onAuthStateChanged(auth,user=>{if(user)activateAdmin(user).catch(showError)});
 $('#historyClose').onclick=closeStudentHistory;$('#historyBack').onclick=e=>{if(e.target.id==='historyBack')closeStudentHistory()};
 $('#classSelect').innerHTML=CLASSES.map(c=>`<option value="${c.id}">${c.id}반 · ${esc(c.sheet.replace(/^\d+\.\s*/,''))}</option>`).join('');
 $('#classSelect').onchange=e=>loadClass(e.target.value).catch(showError);
