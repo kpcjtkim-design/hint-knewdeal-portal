@@ -1,0 +1,45 @@
+name: Apply admin attendance integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-admin-attendance-integration.yml'
+      - 'tools/add-admin-attendance-entry.py'
+      - 'tools/add-admin-attendance-session.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add admin attendance entry
+        run: python tools/add-admin-attendance-entry.py
+      - name: Reuse portal admin session in attendance page
+        run: python tools/add-admin-attendance-session.py
+      - name: Validate JavaScript
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          for src,dst in [('index.html','/tmp/index.mjs'),('attendance-test.html','/tmp/attendance.mjs')]:
+              s=pathlib.Path(src).read_text(encoding='utf-8')
+              m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+              if not m: raise SystemExit(f'module script not found: {src}')
+              pathlib.Path(dst).write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+          node --check /tmp/attendance.mjs
+      - name: Commit integration
+        run: |
+          if git diff --quiet -- index.html attendance-test.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html attendance-test.html
+          git commit -m "Integrate attendance into admin portal"
+          git push
