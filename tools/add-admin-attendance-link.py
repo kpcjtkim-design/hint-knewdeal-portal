@@ -15,3 +15,4 @@ elif 'attendanceBtn.onclick' not in s:
     raise SystemExit('admin tab binding anchor not found')
 p.write_text(s,encoding='utf-8')
 print('patched admin attendance entry')
+# retry marker
