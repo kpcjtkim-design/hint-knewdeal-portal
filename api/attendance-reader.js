@@ -1,7 +1,7 @@
 const FIREBASE_KEY='AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE';
 const PROJECT='knewdeal-portal';
 const ADMIN=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
-const BRIDGE='https://script.google.com/macros/s/AKfycbzNcSYQf3JORsZRb0QOwlMOnG4sRlUUwW-1s2xF3ypvlbLfrwYQisF1brFUV2f8XGaf/exec';
+const BRIDGE='https://script.google.com/macros/s/AKfycbzQF_ikT0z-dRzvtX0XybbYlbnNgZau7-L-SPGcD2EtO6oR9Dhh45ye1oz8suSfHXkf/exec';
 
 async function verify(idToken){
   const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{
