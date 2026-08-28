@@ -44,6 +44,7 @@ js=js.replace("await auth.signOut();throw new Error('관리자 권한이 있는 
 
 module=(
 "import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';\n"
++ "import {mountAdminReviewTools} from '/admin-review-tools.js';\n"
 + 'const ATTENDANCE_CSS='+json.dumps(css,ensure_ascii=False)+';\n'
 + 'const ATTENDANCE_MARKUP='+json.dumps(markup,ensure_ascii=False)+';\n'
 + "export async function mountAttendanceAdminNative(host,ctx){\n"
