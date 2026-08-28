@@ -1,0 +1,44 @@
+name: Apply admin review tools
+on:
+  push:
+    paths:
+      - 'tools/apply-admin-review-tools.py'
+      - 'admin-review-tools.js'
+      - 'api/admin-drive-review.js'
+      - 'apps-script/admin-drive-review.gs'
+      - '.github/workflows/apply-admin-review-tools.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply review UI patch
+        run: python tools/apply-admin-review-tools.py
+      - name: Build native attendance
+        run: python tools/build-native-attendance.py
+      - name: Validate JavaScript
+        run: |
+          node --check admin-review-tools.js
+          node --check api/admin-drive-review.js
+          node --check attendance-native.js
+          python - <<'PY'
+          import re,pathlib
+          for f in ['index.html','attendance-test.html']:
+              s=pathlib.Path(f).read_text(encoding='utf-8')
+              m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+              if not m: raise SystemExit(f'{f}: module not found')
+              pathlib.Path('/tmp/'+f.replace('.html','.mjs')).write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+          node --check /tmp/attendance-test.mjs
+      - name: Commit generated changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html attendance-test.html attendance-native.js tools/build-native-attendance.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Add admin attendance review workflows'
+          git pull --rebase origin main
+          git push origin main
