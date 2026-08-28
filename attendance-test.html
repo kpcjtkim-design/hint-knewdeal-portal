@@ -84,29 +84,48 @@ function sharedReasonFor(name,text,status=''){
 function parseReasonFor(name,text,status=''){
   const src=normalizeReasonText(text);if(!src)return{reason:'',confidence:'none',method:'none'};
   const shared=sharedReasonFor(name,src,status);if(shared)return{reason:standardizeReason(shared),rawReason:shared,confidence:'high',method:'공동 사유'};
-  const positions=allNamePositions(src),mine=positions.filter(x=>x.name===name);
-  const candidates=[];
+  const roster=students.map(x=>x.name).filter(Boolean),positions=allNamePositions(src),mine=positions.filter(x=>x.name===name),candidates=[];
+  const push=(raw,score,method)=>{const reason=cleanReason(raw,status);if(reason&&reason!==name)candidates.push({reason,score,method})};
   for(const hit of mine){
+    const lineStart=Math.max(0,src.lastIndexOf('\n',hit.start-1)+1),lineEnd0=src.indexOf('\n',hit.end),lineEnd=lineEnd0<0?src.length:lineEnd0,line=src.slice(lineStart,lineEnd);
+    const local=hit.start-lineStart,after=line.slice(local+name.length);
+    const others=roster.filter(n=>n!==name).map(n=>({n,i:after.indexOf(n)})).filter(x=>x.i>=0).sort((a,b)=>a.i-b.i);
+    let direct=others.length?after.slice(0,others[0].i):after;
+    direct=direct.replace(/^\s*(?:님)?\s*[-_:：=→>\/|,，]+\s*/,'').replace(/^\s*(?:사유|이유)\s*[-_:：=]?\s*/,'');
+    push(direct, /^\s*(?:님)?\s*[-_:：=→>\/|]/.test(after)?6:5, '이름 뒤 직접 추출');
+
+    const lineNames=positions.filter(x=>x.start>=lineStart&&x.start<lineEnd);
+    if(lineNames.length>=2&&lineNames.some(x=>x.name===name)){
+      const last=lineNames[lineNames.length-1];
+      const suffix=src.slice(last.end,lineEnd).replace(/^\s*[-_:：=→>\/|,，]+\s*/,'');
+      push(suffix,5,'동일 줄 공동 사유');
+    }
+
+    const before=line.slice(0,local).replace(/^(?:결석|지각|조퇴|외출|인정출석|인정결석|출석|중복)\s*\d*\s*[-:：]?\s*/,'');
+    const prevName=[...lineNames].filter(x=>x.end<=hit.start).at(-1);
+    const safeBefore=prevName?src.slice(prevName.end,hit.start):before;
+    push(safeBefore,2,'이름 앞 문맥');
+
     const next=positions.find(x=>x.start>=hit.end&&x.name!==name);
-    let end=next?next.start:Math.min(src.length,hit.end+120);
-    let tail=src.slice(hit.end,end);
-    const section=tail.search(/\n\s*(?:결석|지각|조퇴|외출|인정출석|인정결석|출석)\s*\d*\s*[-:：]?/);
-    if(section>=0)tail=tail.slice(0,section);
-    const cleaned=cleanReason(tail,status);
-    if(cleaned)candidates.push({reason:cleaned,score:3,method:'이름 뒤 문맥'});
-    if(!cleaned){
-      const lineStart=Math.max(src.lastIndexOf('\n',hit.start-1)+1,0),before=src.slice(lineStart,hit.start).trim();
-      let b=before.replace(/^(?:결석|지각|조퇴|외출|인정출석|인정결석|출석)\s*\d*\s*[-:：]?\s*/,'').trim();
-      b=cleanReason(b,status);if(b)candidates.push({reason:b,score:1,method:'이름 앞 문맥'});
+    if(next){
+      let between=src.slice(hit.end,next.start).replace(/^\s*[-_:：=→>\/|,，]+\s*/,'');
+      push(between,4,'다음 이름 전 추출');
     }
   }
-  if(!candidates.length){
-    const safe=escapeRe(name),lineRx=new RegExp(`(?:^|\\n)[^\\n]{0,45}${safe}[^\\n]{0,70}`,'g');let m;
-    while((m=lineRx.exec(src))){const chunk=m[0],after=chunk.slice(chunk.indexOf(name)+name.length),cleaned=cleanReason(after,status);if(cleaned)candidates.push({reason:cleaned,score:2,method:'줄 단위 추출'})}
-  }
+
+  try{
+    const safe=escapeRe(name),rx=new RegExp(`${safe}\\s*(?:님)?\\s*[-_:：=→>\\/|]\\s*([^\\n]{1,90})`,'g');let m;
+    while((m=rx.exec(src))){let raw=m[1];for(const n of roster){if(n===name)continue;const i=raw.indexOf(n);if(i>=0)raw=raw.slice(0,i)}push(raw,7,'명시 구분자 추출')}
+  }catch{}
+
   if(!candidates.length)return{reason:'',confidence:'none',method:'미매칭'};
-  candidates.sort((a,b)=>b.score-a.score||a.reason.length-b.reason.length);
-  const best=candidates[0],confidence=best.score>=3?'high':'medium';return{reason:standardizeReason(best.reason),rawReason:best.reason,confidence,method:best.method};
+  const bad=/^(?:명|명\s*[-:：]|사유|이유|인정|출석|결석|지각|조퇴|외출|중복)$/;
+  const filtered=candidates.filter(x=>!bad.test(x.reason));
+  if(!filtered.length)return{reason:'',confidence:'none',method:'미매칭'};
+  filtered.sort((a,b)=>b.score-a.score||a.reason.length-b.reason.length);
+  const best=filtered[0],second=filtered[1];
+  const confidence=best.score>=5&&(!second||best.score>second.score||best.reason===second.reason)?'high':'medium';
+  return{reason:standardizeReason(best.reason),rawReason:best.reason,confidence,method:best.method};
 }
 const REASON_RULES=[
   [/병원\s*(?:내원|진료|방문)|병원|의원|진료|통원|치료|병가/g,'병원진료'],
@@ -162,17 +181,27 @@ function documentReviewMap(review){const m=new Map();for(const [name,state] of O
 function documentState(review,name){return documentReviewMap(review).get(String(name))||'미제출'}
 
 function verifiedSet(review){return new Set([...documentReviewMap(review)].filter(([,v])=>v==='확인').map(([k])=>k))}
-async function saveDocumentReview(i,state,el){const x=editRows[i];if(!x||!currentLabel)return;const next=documentReviewMap(currentReview);const value=['확인','인정불가','미제출'].includes(state)?state:'미제출';if(value==='미제출')next.delete(x.name);else next.set(x.name,value);const stateEl=document.querySelector(`[data-doc-state=\"${i}\"]`);if(el)el.disabled=true;if(stateEl)stateEl.textContent='저장 중…';try{const documentReview=Object.fromEntries([...next].sort((a,b)=>a[0].localeCompare(b[0],'ko')));const documentVerified=Object.entries(documentReview).filter(([,v])=>v==='확인').map(([k])=>k);await setDoc(doc(db,'settings',reviewDocId(currentLabel)),{type:'ATTENDANCE_REVIEW_LIVE',source:'운영총괄_ORIGINAL_READ_ONLY',classId:selectedClass,date:currentLabel,documentReview,documentVerified,documentVerifier:email,documentVerifiedAt:serverTimestamp()},{merge:true});currentReview={...(currentReview||{}),documentReview,documentVerified};if(stateEl)stateEl.textContent=value==='확인'?'확인 저장됨':value==='인정불가'?'인정불가 저장됨':'미제출 저장됨';syncOverviewDocumentState(x.name,currentLabel,value);setDirty(dirty)}catch(e){if(stateEl)stateEl.textContent='저장 실패';throw e}finally{if(el)el.disabled=false}}
-function syncOverviewDocumentState(name,date,state){document.querySelectorAll('.ov-doc-state').forEach(el=>{if(el.dataset.ovName===String(name)&&el.dataset.ovDate===String(date)){el.classList.toggle('done',state==='확인');el.classList.toggle('rejected',state==='인정불가');el.classList.toggle('pending',state==='미제출');el.textContent=state==='확인'?'✓ 확인':state==='인정불가'?'인정불가':'미제출'}})}
-async function mountReviewTools(){const host=$('#adminReviewToolsHost'),user=auth.currentUser;if(!host||!user)return;await mountAdminReviewTools(host,{auth,db,user,getState:()=>({selectedClass,currentLabel,dates,students,reasonCells,attendanceBackgrounds}),parseReasonFor,standardizeReason,normalizeAttendanceStatus})}
+async function saveDocumentReview(i,state,el){const x=editRows[i];if(!x||!currentLabel)return;const next=documentReviewMap(currentReview);const value=['확인','보완필요','미제출'].includes(state)?state:'미제출';if(value==='미제출')next.delete(x.name);else next.set(x.name,value);const stateEl=document.querySelector(`[data-doc-state=\"${i}\"]`);if(el)el.disabled=true;if(stateEl)stateEl.textContent='저장 중…';try{const documentReview=Object.fromEntries([...next].sort((a,b)=>a[0].localeCompare(b[0],'ko')));const documentVerified=Object.entries(documentReview).filter(([,v])=>v==='확인').map(([k])=>k);await setDoc(doc(db,'settings',reviewDocId(currentLabel)),{type:'ATTENDANCE_REVIEW_LIVE',source:'운영총괄_ORIGINAL_READ_ONLY',classId:selectedClass,date:currentLabel,documentReview,documentVerified,documentVerifier:email,documentVerifiedAt:serverTimestamp()},{merge:true});currentReview={...(currentReview||{}),documentReview,documentVerified};if(stateEl)stateEl.textContent=value==='확인'?'확인 저장됨':value==='보완필요'?'보완필요 저장됨':'미제출 저장됨';syncOverviewDocumentState(x.name,currentLabel,value);setDirty(dirty)}catch(e){if(stateEl)stateEl.textContent='저장 실패';throw e}finally{if(el)el.disabled=false}}
+function syncOverviewDocumentState(name,date,state){document.querySelectorAll('.ov-doc-state').forEach(el=>{if(el.dataset.ovName===String(name)&&el.dataset.ovDate===String(date)){el.classList.toggle('done',state==='확인');el.classList.toggle('rejected',state==='보완필요');el.classList.toggle('pending',state==='미제출');el.textContent=state==='확인'?'✓ 확인':state==='보완필요'?'보완필요':'미제출'}})}
+async function loadAttendanceColors(){
+  const user=auth.currentUser;if(!user||!selectedClass)return[];
+  try{
+    const idToken=await user.getIdToken();
+    const r=await fetch('/api/attendance-colors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken,classId:String(selectedClass)})});
+    const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{}
+    if(r.ok&&d.ok&&Array.isArray(d.attendanceBackgrounds))return d.attendanceBackgrounds;
+  }catch(e){console.warn('attendance colors failed',e)}
+  return[];
+}
+async function mountReviewTools(){const host=$('#adminReviewToolsHost'),user=auth.currentUser;if(!host||!user)return;if(!attendanceBackgrounds.length)attendanceBackgrounds=await loadAttendanceColors();await mountAdminReviewTools(host,{auth,db,user,getState:()=>({selectedClass,currentLabel,dates,students,reasonCells,attendanceBackgrounds}),parseReasonFor,standardizeReason,normalizeAttendanceStatus})}
 async function loadOverviewReviews(){
   const out=new Map();
   for(let i=0;i<dates.length;i+=8){const batch=dates.slice(i,i+8);const rows=await Promise.all(batch.map(async d=>{try{return [d.label,await loadReview(d.label)]}catch{return [d.label,null]}}));for(const [k,v] of rows)out.set(k,v)}
   return out
 }
 function overviewItemHtml(x,type){
-  const ds=x.docState==='확인'?'done':x.docState==='인정불가'?'rejected':'pending';
-  const doc=type==='recognized'?`<span class="ov-doc-state ${ds}" data-ov-name="${esc(x.name)}" data-ov-date="${esc(x.date)}">${x.docState==='확인'?'✓ 확인':x.docState==='인정불가'?'인정불가':'미제출'}</span>`:'';
+  const ds=x.docState==='확인'?'done':x.docState==='보완필요'?'rejected':'pending';
+  const doc=type==='recognized'?`<span class="ov-doc-state ${ds}" data-ov-name="${esc(x.name)}" data-ov-date="${esc(x.date)}">${x.docState==='확인'?'✓ 확인':x.docState==='보완필요'?'보완필요':'미제출'}</span>`:'';
   return `<div class="overview-item"><div class="overview-item-top"><span class="overview-item-date">${esc(x.date)}</span><span class="overview-item-name">${esc(x.name)}</span><span class="overview-item-status">${esc(x.status)}</span></div><div class="overview-item-reason">${esc(x.reason||'사유 미기재')}</div>${doc}</div>`
 }
 async function renderClassOverview(){
@@ -185,7 +214,7 @@ async function renderClassOverview(){
     a.innerHTML=recognized.length?recognized.map(x=>overviewItemHtml(x,'recognized')).join(''):empty;
     b.innerHTML=movement.length?movement.map(x=>overviewItemHtml(x,'movement')).join(''):empty;
     c.innerHTML=duplicate.length?duplicate.map(x=>overviewItemHtml(x,'duplicate')).join(''):empty;
-    const verifiedCount=recognized.filter(x=>x.docState==='확인').length,rejectedCount=recognized.filter(x=>x.docState==='인정불가').length,pendingCount=recognized.filter(x=>x.docState==='미제출').length;
+    const verifiedCount=recognized.filter(x=>x.docState==='확인').length,rejectedCount=recognized.filter(x=>x.docState==='보완필요').length,pendingCount=recognized.filter(x=>x.docState==='미제출').length;
     sum.innerHTML=`<span class="flag green">인정출석 ${recognized.length}</span><span class="flag green">확인 ${verifiedCount}</span><span class="flag red">인정불가 ${rejectedCount}</span><span class="flag yellow">미제출 ${pendingCount}</span><span class="flag yellow">지·조·외 ${movement.length}</span><span class="flag orange">중복 ${duplicate.length}</span>`;
   }catch(e){sum.innerHTML=`<span class="flag red">누적현황 오류 · ${esc(e.message||e)}</span>`;a.innerHTML=b.innerHTML=c.innerHTML='<div class="overview-empty">누적현황을 불러오지 못했습니다.</div>'}
 }
@@ -230,7 +259,7 @@ async function renderDate(label){
     const flagHtml=flags.length?`<div class="row-flags">${flags.map(f=>`<span class="flag ${f.c}">${esc(f.t)}</span>`).join('')}</div>`:'';
     const docState=docReview.get(s.name)||'미제출';
     const docReviewState=docReview.get(s.name)||'미제출';
-    const docHtml=`<div class="doc-verify ${status==='인정출석'?'':'hidden'}" data-doc-wrap="${i}"><label>인정출석 증빙서류 <select class="doc-review-select" data-i="${i}"><option value="미제출" ${docReviewState==='미제출'?'selected':''}>미제출</option><option value="확인" ${docReviewState==='확인'?'selected':''}>확인</option><option value="인정불가" ${docReviewState==='인정불가'?'selected':''}>인정불가</option></select></label><span class="doc-save-state" data-doc-state="${i}">${docReviewState==='미제출'?'선택 시 자동저장':docReviewState+' 저장됨'}</span></div>`;
+    const docHtml=`<div class="doc-verify ${status==='인정출석'?'':'hidden'}" data-doc-wrap="${i}"><label>인정출석 증빙서류 <select class="doc-review-select" data-i="${i}"><option value="미제출" ${docReviewState==='미제출'?'selected':''}>미제출</option><option value="확인" ${docReviewState==='확인'?'selected':''}>확인</option><option value="인정불가" ${docReviewState==='보완필요'?'selected':''}>보완필요</option></select></label><span class="doc-save-state" data-doc-state="${i}">${docReviewState==='미제출'?'선택 시 자동저장':docReviewState+' 저장됨'}</span></div>`;
     return `<div class="student ${flags.length?'has-flags':''}"><div class="name"><button type="button" class="student-name-btn" data-history-i="${i}">${esc(s.name)}</button>${ov?'<span class="firebase-mark">Firebase 수정</span>':''}</div><div><select class="edit-status" data-i="${i}">${options.map(([v,l])=>`<option value="${esc(v)}" ${status===v?'selected':''}>${esc(l)}</option>`).join('')}</select></div><div><input class="edit-reason" data-i="${i}" value="${esc(reason)}" placeholder="사유 없음 / 직접 수정 가능"><div class="save-meta">시트 기준: ${esc(baseStatus)}${baseReason?' · '+esc(baseReason):''}${parsed.method&&parsed.method!=='none'?' · '+esc(parsed.method):''}</div>${docHtml}${flagHtml}</div></div>`
   }).join('')||'<div class="empty">교육생을 찾지 못했습니다.</div>';
   $('#rawReason').textContent=reasonText||'가-3 사유 없음';renderValidation(audit,validationRows);bindEditors();dirty=false;setDirty(false);recalcSummary();
