@@ -1,0 +1,44 @@
+name: Apply attendance review upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-attendance-review-upgrade.yml'
+      - 'tools/upgrade-attendance-review.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch attendance source
+        run: python tools/upgrade-attendance-review.py
+      - name: Build native attendance
+        run: python tools/build-native-attendance.py
+      - name: Validate generated JavaScript
+        run: |
+          node --check attendance-native.js
+          python - <<'PY'
+          import re,pathlib
+          s=pathlib.Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('index module not found')
+          pathlib.Path('/tmp/index.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+      - name: Commit patched source and native build
+        run: |
+          if git diff --quiet -- attendance-test.html attendance-native.js index.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-test.html attendance-native.js index.html
+          git commit -m "Upgrade attendance reason parsing and evidence review"
+          git pull --rebase origin main
+          git push
