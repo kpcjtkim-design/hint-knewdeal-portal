@@ -23,6 +23,18 @@ function arJson_(obj){
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
+function arLastAttendanceColumn_(sh){
+  const startCol=13; // M
+  const maxScan=180; // M부터 충분히 여유 있게 약 180열만 확인
+  const header=sh.getRange(18,startCol,1,maxScan).getDisplayValues()[0];
+  let last=-1;
+  for(let i=0;i<header.length;i++){
+    if(String(header[i]||'').trim()) last=i;
+  }
+  if(last<4) throw new Error('ATTENDANCE_HEADER_NOT_FOUND');
+  return startCol+last;
+}
+
 function doGet(e){
   try{
     const classId=String((e&&e.parameter&&e.parameter.classId)||'').trim();
@@ -30,14 +42,24 @@ function doGet(e){
     const ss=SpreadsheetApp.openById(AR_SHEET_ID);
     const sh=ss.getSheetByName(AR_CLASSES[classId]);
     if(!sh) throw new Error('CLASS_SHEET_NOT_FOUND');
-    const attendanceRange=sh.getRange('M18:ZZ48');
-    const reasonsRange=sh.getRange('M50:ZZ51');
+
+    const startCol=13; // M
+    const lastCol=arLastAttendanceColumn_(sh);
+    const width=lastCol-startCol+1;
+    const attendanceRange=sh.getRange(18,startCol,31,width);
+    const reasonsRange=sh.getRange(50,startCol,2,width);
+
+    const attendance=attendanceRange.getDisplayValues();
+    const attendanceBackgrounds=attendanceRange.getBackgrounds();
+    const reasons=reasonsRange.getDisplayValues();
+
     return arJson_({
       ok:true,
       classId:classId,
-      attendance:attendanceRange.getDisplayValues(),
-      attendanceBackgrounds:attendanceRange.getBackgrounds(),
-      reasons:reasonsRange.getDisplayValues(),
+      attendance:attendance,
+      attendanceBackgrounds:attendanceBackgrounds,
+      reasons:reasons,
+      range:{start:'M18',columns:width},
       readOnly:true
     });
   }catch(err){
