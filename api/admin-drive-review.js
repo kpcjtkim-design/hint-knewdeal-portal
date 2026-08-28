@@ -22,14 +22,30 @@ async function classFields(idToken,classId){
 function coreLink(fields,key){return fields?.coreLinks?.mapValue?.fields?.[key]?.stringValue||''}
 function folderId(url){const m=String(url||'').match(/\/folders\/([A-Za-z0-9_-]+)/);return m?m[1]:''}
 async function monitor(root,date){
-  const id=folderId(root);if(!id)throw new Error('FOLDER_NOT_SET');
-  const u=new URL(MONITOR);u.searchParams.set('folderId',id);u.searchParams.set('date',date);
-  const r=await fetch(u,{method:'GET',redirect:'follow',headers:{'User-Agent':'HINT-Admin-ReadOnly-Review/1.0'}});if(!r.ok)throw new Error('DRIVE_MONITOR_UPSTREAM_ERROR');
-  const d=await r.json();if(d.ok!==true)throw new Error(d.error||d.reason||'DRIVE_MONITOR_ERROR');
-  const df=d.dateFolder||null;
-  const dateFolderId=d.dateFolderId||(df&&typeof df==='object'&&(df.id||df.folderId))||(typeof df==='string'&&/^[A-Za-z0-9_-]{10,}$/.test(df)?df:'');
-  const dateFolderUrl=d.dateFolderUrl||(df&&typeof df==='object'&&(df.url||df.webViewLink))||(dateFolderId?`https://drive.google.com/drive/folders/${dateFolderId}`:'');
-  return{fileCount:Number.isFinite(Number(d.fileCount))?Number(d.fileCount):0,dateFolderId:dateFolderId||'',dateFolderUrl:dateFolderUrl||root,week:d.week||null,status:d.status||'',completed:d.completed===true};
+  const rootId=folderId(root);if(!rootId)throw new Error('FOLDER_NOT_SET');
+  const u=new URL(MONITOR);u.searchParams.set('folderId',rootId);u.searchParams.set('date',date);
+  let d={};
+  try{
+    const r=await fetch(u,{method:'GET',redirect:'follow',headers:{'User-Agent':'HINT-Admin-ReadOnly-Review/1.0'}});
+    if(r.ok)d=await r.json();
+  }catch{}
+  const df=d?.dateFolder||null;
+  const exactId=d?.dateFolderId||(df&&typeof df==='object'&&(df.id||df.folderId))||(typeof df==='string'&&/^[A-Za-z0-9_-]{10,}$/.test(df)?df:'');
+  const exactUrl=d?.dateFolderUrl||(df&&typeof df==='object'&&(df.url||df.webViewLink))||(exactId?`https://drive.google.com/drive/folders/${exactId}`:'');
+  const useId=exactId||rootId;
+  const useUrl=exactUrl||root;
+  return{
+    fileCount:Number.isFinite(Number(d?.fileCount))?Number(d.fileCount):0,
+    dateFolderId:exactId||'',
+    dateFolderUrl:exactUrl||'',
+    folderId:useId,
+    folderUrl:useUrl,
+    exactDateFolder:Boolean(exactId),
+    week:d?.week||null,
+    status:d?.status||'',
+    completed:d?.completed===true,
+    monitorOk:d?.ok===true
+  };
 }
 export default async function handler(req,res){
   res.setHeader('cache-control','no-store');
@@ -42,7 +58,8 @@ export default async function handler(req,res){
     const cid=String(classId||'');if(!/^([1-9]|1[0-7])$/.test(cid))throw new Error('BAD_CLASS');
     if(!/^2026-\d{2}-\d{2}$/.test(String(date||'')))throw new Error('BAD_DATE');
     const key=String(folderKey||'');if(!['manualAttendance','recognition'].includes(key))throw new Error('BAD_FOLDER_KEY');
-    const fields=await classFields(idToken,cid),root=coreLink(fields,key),out=await monitor(root,String(date));
-    return res.status(200).json({ok:true,readOnly:true,classId:cid,date:String(date),folderKey:key,...out,embeddedFolderUrl:out.dateFolderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(out.dateFolderId)}#list`:'',actorEmail:email});
+    const fields=await classFields(idToken,cid),root=coreLink(fields,key);if(!root)throw new Error('FOLDER_NOT_SET');
+    const out=await monitor(root,String(date));
+    return res.status(200).json({ok:true,readOnly:true,classId:cid,date:String(date),folderKey:key,...out,embeddedFolderUrl:out.folderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(out.folderId)}#list`:'',actorEmail:email});
   }catch(e){return res.status(400).json({ok:false,error:String(e.message||e)})}
 }
