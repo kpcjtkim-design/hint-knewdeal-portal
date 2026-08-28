@@ -1,0 +1,44 @@
+name: Apply sheet color review
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-sheet-color-review.yml'
+      - 'tools/apply-sheet-color-review.py'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Patch attendance source
+        run: python tools/apply-sheet-color-review.py
+      - name: Rebuild native attendance module
+        run: python tools/build-native-attendance.py
+      - name: Check generated JS
+        run: node --check attendance-native.js
+      - name: Check main module JS
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*?)</script>',s,re.S)
+          if not m: raise SystemExit('main module not found')
+          Path('/tmp/main.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/main.mjs
+      - name: Commit generated files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add attendance-test.html attendance-native.js index.html
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Read attendance verification from Sheet colors'
+          git pull --rebase origin main
+          git push origin HEAD:main
