@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     const upstream = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
-      headers: { 'User-Agent': 'HINT-Drive-Monitor/1.0' }
+      headers: { 'User-Agent': 'HINT-Drive-Monitor/1.1' }
     });
 
     if (!upstream.ok) {
@@ -33,12 +33,28 @@ export default async function handler(req, res) {
     const dateFolder = data.dateFolder || null;
     const dateFolderId = data.dateFolderId || (dateFolder && typeof dateFolder === 'object' ? dateFolder.id || dateFolder.folderId || null : null);
     const dateFolderUrl = data.dateFolderUrl || (dateFolder && typeof dateFolder === 'object' ? dateFolder.url || dateFolder.webViewLink || null : null);
+    const files=(Array.isArray(data.files)?data.files:[]).map(f=>{
+      const id=String(f?.fileId||f?.id||'');
+      if(!id||!/^[A-Za-z0-9_-]{10,}$/.test(id))return null;
+      return{
+        fileId:id,
+        name:String(f?.name||'파일'),
+        mimeType:String(f?.mimeType||'application/octet-stream'),
+        createdAt:String(f?.createdAt||''),
+        updatedAt:String(f?.updatedAt||''),
+        size:Number.isFinite(Number(f?.size))?Number(f.size):null,
+        fileUrl:`https://drive.google.com/file/d/${id}/view`,
+        previewUrl:`https://drive.google.com/file/d/${id}/preview`,
+        imageUrl:`https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`
+      };
+    }).filter(Boolean);
 
     return res.status(200).json({
       ok: data.ok === true,
       completed: data.completed === true,
       status: data.status || (data.completed ? 'COMPLETE' : 'INCOMPLETE'),
-      fileCount: Number.isFinite(Number(data.fileCount)) ? Number(data.fileCount) : 0,
+      fileCount: files.length || (Number.isFinite(Number(data.fileCount)) ? Number(data.fileCount) : 0),
+      files,
       reason: data.reason || null,
       week: data.week || null,
       weekFolderId: data.weekFolderId || null,
