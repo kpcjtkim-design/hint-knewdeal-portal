@@ -38,7 +38,6 @@ replacement=r'''function parseReasonFor(name,text,status=''){
     direct=direct.replace(/^\s*(?:님)?\s*[-_:：=→>\/|,，]+\s*/,'').replace(/^\s*(?:사유|이유)\s*[-_:：=]?\s*/,'');
     push(direct, /^\s*(?:님)?\s*[-_:：=→>\/|]/.test(after)?6:5, '이름 뒤 직접 추출');
 
-    // 같은 줄에 여러 이름을 먼저 적고 마지막에 공동 사유를 붙인 형식
     const lineNames=positions.filter(x=>x.start>=lineStart&&x.start<lineEnd);
     if(lineNames.length>=2&&lineNames.some(x=>x.name===name)){
       const last=lineNames[lineNames.length-1];
@@ -46,13 +45,11 @@ replacement=r'''function parseReasonFor(name,text,status=''){
       push(suffix,5,'동일 줄 공동 사유');
     }
 
-    // 이름 앞에 상태/사유가 붙는 예외 형식
     const before=line.slice(0,local).replace(/^(?:결석|지각|조퇴|외출|인정출석|인정결석|출석|중복)\s*\d*\s*[-:：]?\s*/,'');
     const prevName=[...lineNames].filter(x=>x.end<=hit.start).at(-1);
     const safeBefore=prevName?src.slice(prevName.end,hit.start):before;
     push(safeBefore,2,'이름 앞 문맥');
 
-    // 줄바꿈 없이 다음 이름까지 이어진 셀
     const next=positions.find(x=>x.start>=hit.end&&x.name!==name);
     if(next){
       let between=src.slice(hit.end,next.start).replace(/^\s*[-_:：=→>\/|,，]+\s*/,'');
@@ -60,7 +57,6 @@ replacement=r'''function parseReasonFor(name,text,status=''){
     }
   }
 
-  // 이름:사유 / 이름-사유 / 이름_사유 명시형을 한 번 더 우선 탐색
   try{
     const safe=escapeRe(name),rx=new RegExp(`${safe}\\s*(?:님)?\\s*[-_:：=→>\\/|]\\s*([^\\n]{1,90})`,'g');let m;
     while((m=rx.exec(src))){let raw=m[1];for(const n of roster){if(n===name)continue;const i=raw.indexOf(n);if(i>=0)raw=raw.slice(0,i)}push(raw,7,'명시 구분자 추출')}
@@ -76,7 +72,7 @@ replacement=r'''function parseReasonFor(name,text,status=''){
   return{reason:standardizeReason(best.reason),rawReason:best.reason,confidence,method:best.method};
 }
 const REASON_RULES='''
-s2,n=pat.subn(replacement,s,count=1)
+s2,n=pat.subn(lambda m: replacement,s,count=1)
 if n!=1: raise SystemExit(f'parseReasonFor replace failed: {n}')
 s=s2
 p.write_text(s,encoding='utf-8')
