@@ -1,0 +1,43 @@
+name: Fix attendance overview color and Drive preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/fix-attendance-overview-color-drive.py'
+      - '.github/workflows/fix-attendance-overview-color-drive.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply overview fixes
+        run: python tools/fix-attendance-overview-color-drive.py
+      - name: Validate JavaScript
+        run: |
+          node --check attendance-overview.js
+          node --check api/admin-drive-review.js
+          python - <<'PY'
+          import re,pathlib
+          s=pathlib.Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('index module not found')
+          pathlib.Path('/tmp/index.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+      - name: Commit patched files
+        run: |
+          if git diff --quiet -- attendance-overview.js api/admin-drive-review.js index.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add attendance-overview.js api/admin-drive-review.js index.html
+          git commit -m "Fix overview evidence colors and exact Drive preview"
+          git pull --rebase origin main
+          git push
