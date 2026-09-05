@@ -22,12 +22,13 @@ if 'async function attendanceOverviewAdmin(user,p)' not in s:
     fn="""async function attendanceOverviewAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class=\"card attendance-native-shell\"><div class=\"attendance-native-head\"><h3>출석부 한눈에 보기</h3><p>수기출석부 Drive 미리보기 · 운영총괄 출결/가-3 사유 · 학생별 관리자 메모를 한 화면에서 확인합니다. Sheet와 Drive는 읽기 전용입니다.</p></div><div id=\"attendanceOverviewMount\" class=\"attendance-native-mount\"><div class=\"empty\">한눈에 보기 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-overview.js?v=20260906-1`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class=\"fatal\">출석부 한눈에 보기를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-overview.js?v=20260906-2`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class=\"fatal\">출석부 한눈에 보기를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 """
     if anchor not in s:
         raise SystemExit('urgent admin anchor not found')
     s=s.replace(anchor,fn+anchor,1)
 
+s=s.replace('/attendance-overview.js?v=20260906-1','/attendance-overview.js?v=20260906-2')
 p.write_text(s,encoding='utf-8')
 print('attendance overview UI patched')
