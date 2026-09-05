@@ -26,6 +26,7 @@ function safeFile(f){
   if(!id||!/^[A-Za-z0-9_-]{10,}$/.test(id))return null;
   const name=String(f?.name||'파일');
   const mimeType=String(f?.mimeType||'application/octet-stream');
+  if(mimeType==='application/vnd.google-apps.folder')return null;
   return{
     fileId:id,
     name,
@@ -50,7 +51,11 @@ async function monitor(root,date){
   const exactId=d?.dateFolderId||(df&&typeof df==='object'&&(df.id||df.folderId))||(typeof df==='string'&&/^[A-Za-z0-9_-]{10,}$/.test(df)?df:'');
   const exactUrl=d?.dateFolderUrl||(df&&typeof df==='object'&&(df.url||df.webViewLink))||(exactId?`https://drive.google.com/drive/folders/${exactId}`:'');
   const useId=exactId||rootId,useUrl=exactUrl||root;
-  const files=(Array.isArray(d?.files)?d.files:[]).map(safeFile).filter(Boolean);
+  const rawFiles=Array.isArray(d?.files)?d.files:
+    (df&&typeof df==='object'&&Array.isArray(df.files)?df.files:
+    (Array.isArray(d?.dateFiles)?d.dateFiles:
+    (Array.isArray(d?.folderFiles)?d.folderFiles:[])));
+  const files=rawFiles.map(safeFile).filter(Boolean);
   return{
     fileCount:files.length||(Number.isFinite(Number(d?.fileCount))?Number(d.fileCount):0),
     files,
@@ -78,6 +83,6 @@ export default async function handler(req,res){
     const key=String(folderKey||'');if(!['manualAttendance','recognition'].includes(key))throw new Error('BAD_FOLDER_KEY');
     const fields=await classFields(idToken,cid),root=coreLink(fields,key);if(!root)throw new Error('FOLDER_NOT_SET');
     const out=await monitor(root,String(date));
-    return res.status(200).json({ok:true,readOnly:true,classId:cid,date:String(date),folderKey:key,...out,embeddedFolderUrl:out.folderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(out.folderId)}#list`:'',actorEmail:email});
+    return res.status(200).json({ok:true,readOnly:true,classId:cid,date:String(date),folderKey:key,...out,embeddedFolderUrl:out.exactDateFolder&&out.dateFolderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(out.dateFolderId)}#list`:'',actorEmail:email});
   }catch(e){return res.status(400).json({ok:false,error:String(e.message||e)})}
 }

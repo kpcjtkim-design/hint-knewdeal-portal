@@ -53,7 +53,8 @@ function colorState(bg){
   return'missing';
 }
 function evidenceFor(student,dateObj,status,backgrounds){
-  const x=String(status||'').trim();
+  const raw=String(status||'').trim();
+  const x=raw==='인정결석'?'중복':raw;
   const relevant=x==='인정출석'||['결석','지각','조퇴','외출','중복'].includes(x);
   if(!relevant)return{label:'-',cls:'none'};
   if(!Array.isArray(backgrounds)||!backgrounds.length)return{label:'확인 중…',cls:'loading'};
@@ -81,7 +82,25 @@ export async function mountAttendanceOverview(host,ctx){
   const colorCache=new Map(),colorPromises=new Map();
   const showErr=e=>{err.innerHTML=e?`<div class="error">${esc(e.message||e)}</div>`:''};
   async function getReader(cid){const idToken=await user.getIdToken();return post('/api/attendance-reader',{idToken,classId:String(cid)})}
-  async function getColors(cid){const idToken=await user.getIdToken();const d=await post('/api/attendance-colors',{idToken,classId:String(cid)});return Array.isArray(d.attendanceBackgrounds)?d.attendanceBackgrounds:[]}
+  async function getColorsOnce(cid){
+  const idToken=await user.getIdToken();
+  const d=await post('/api/attendance-colors',{idToken,classId:String(cid)});
+  if(Array.isArray(d.attendanceBackgrounds))return d.attendanceBackgrounds;
+  if(Array.isArray(d.backgrounds))return d.backgrounds;
+  return [];
+}
+async function getColors(cid){
+  let lastError=null;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      const bg=await getColorsOnce(cid);
+      if(Array.isArray(bg)&&bg.length)return bg;
+      lastError=new Error('색상 데이터가 비어 있습니다.');
+    }catch(e){lastError=e}
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+  }
+  throw lastError||new Error('색상 데이터를 불러오지 못했습니다.');
+}
   async function getColorsCached(cid,force=false){
     const id=String(cid),storageKey=`attendanceOverviewColors_${id}`,ttl=180000;
     if(!force&&colorCache.has(id))return colorCache.get(id);
@@ -109,23 +128,42 @@ export async function mountAttendanceOverview(host,ctx){
   }
   function renderFile(index=0){const f=driveFiles[index];fileCount.textContent=`${driveFiles.length}개`;if(!f){viewer.innerHTML='<div class="viewer-empty">해당 날짜의 수기출석부 파일을 찾지 못했습니다.<br>날짜 폴더가 있다면 Drive에서 파일 업로드 여부를 확인해 주세요.</div>';openFile.disabled=true;return}openFile.disabled=false;openFile.dataset.url=f.fileUrl||'';const src=f.previewUrl||f.fileUrl||'';viewer.innerHTML=src?`<iframe src="${esc(src)}" allow="fullscreen" referrerpolicy="no-referrer"></iframe>`:'<div class="viewer-empty">미리보기 주소가 없습니다.</div>'}
   async function loadDrive(){
-    driveFiles=[];fileSel.innerHTML='';folderTarget.classList.remove('warn');folderTarget.textContent=`${currentIso} 날짜 폴더 찾는 중…`;viewer.innerHTML='<div class="viewer-empty">선택한 교육일자의 수기출석부 폴더를 찾는 중…</div>';
+    driveFiles=[];fileSel.innerHTML='';openFile.dataset.url='';openFile.disabled=true;
+    if(typeof folderTarget!=='undefined'&&folderTarget){folderTarget.classList.remove('warn');folderTarget.textContent=`${currentIso} 날짜 폴더 찾는 중…`}
+    viewer.innerHTML='<div class="viewer-empty">선택한 교육일자의 정확한 수기출석부 날짜 폴더를 찾는 중…</div>';
     try{
-      const d=await getDrive(currentClass,currentIso),exact=d.exactDateFolder===true;
+      const d=await getDrive(currentClass,currentIso);
+      const exact=Boolean(d.exactDateFolder&&d.dateFolderId);
       const folderUrl=d.dateFolderUrl||d.folderUrl||'';
-      if(exact){folderTarget.innerHTML=`<strong>${esc(currentIso)} 날짜 폴더 확인됨</strong>${folderUrl?`<a href="${esc(folderUrl)}" target="_blank" rel="noopener noreferrer">날짜 폴더 새 창</a>`:''}`}
-      else{folderTarget.classList.add('warn');folderTarget.innerHTML=`<strong>${esc(currentIso)} 날짜 폴더를 정확히 찾지 못했습니다.</strong>${folderUrl?`<a href="${esc(folderUrl)}" target="_blank" rel="noopener noreferrer">수기출석 최상위 폴더</a>`:''}`}
+      if(!exact){
+        fileCount.textContent='날짜폴더 없음';
+        fileSel.innerHTML='<option value="">정확한 날짜 폴더 없음</option>';
+        if(typeof folderTarget!=='undefined'&&folderTarget){folderTarget.classList.add('warn');folderTarget.textContent=`${currentIso} 날짜 폴더를 찾지 못함`}
+        viewer.innerHTML='<div class="viewer-empty">선택한 교육일자와 정확히 일치하는 수기출석부 날짜 폴더를 찾지 못했습니다.<br>반·날짜 및 Drive 날짜 폴더명을 확인해 주세요.</div>';
+        return;
+      }
+      if(typeof folderTarget!=='undefined'&&folderTarget){folderTarget.innerHTML=`<strong>${esc(currentIso)} 날짜 폴더 확인됨</strong>${folderUrl?`<a href="${esc(folderUrl)}" target="_blank" rel="noopener noreferrer">날짜 폴더 새 창</a>`:''}`}
       driveFiles=Array.isArray(d.files)?d.files:[];
-      fileCount.textContent=`${driveFiles.length||Number(d.fileCount||0)}개`;
-      fileSel.innerHTML=driveFiles.length?driveFiles.map((f,i)=>`<option value="${i}">${esc(f.name||`파일 ${i+1}`)}</option>`).join(''):'<option value="">개별 파일 목록 없음</option>';
-      if(driveFiles.length){renderFile(0);return}
-      openFile.disabled=!folderUrl;openFile.dataset.url=folderUrl||'';
-      if(exact&&d.embeddedFolderUrl){
-        viewer.innerHTML=`<iframe src="${esc(d.embeddedFolderUrl)}" referrerpolicy="no-referrer" allow="fullscreen"></iframe>`;
-        if(Number(d.fileCount||0)>0)folderTarget.innerHTML+=`<span>· 파일 ${Number(d.fileCount)}개 감지 · 개별 파일 메타데이터 대기</span>`;
-      }else if(exact){viewer.innerHTML='<div class="viewer-empty">날짜 폴더는 찾았지만 개별 PDF/이미지 파일 정보를 받지 못했습니다.<br>날짜 폴더 새 창에서 업로드 파일을 확인해 주세요.</div>'}
-      else{viewer.innerHTML='<div class="viewer-empty">선택한 교육일자와 일치하는 날짜 폴더를 찾지 못했습니다.<br>다른 날짜를 선택하거나 Drive 폴더명을 확인해 주세요.</div>'}
-    }catch(e){folderTarget.classList.add('warn');folderTarget.textContent='날짜 폴더 확인 실패';viewer.innerHTML=`<div class="viewer-empty">수기출석부를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`;fileCount.textContent='오류';openFile.disabled=true}
+      const embedded=d.embeddedFolderUrl||'';
+      const reported=Number.isFinite(Number(d.fileCount))?Number(d.fileCount):driveFiles.length;
+      fileCount.textContent=`${reported}개 · 날짜폴더`;
+      if(driveFiles.length){
+        fileSel.innerHTML=driveFiles.map((f,i)=>`<option value="${i}">${esc(f.name||`파일 ${i+1}`)}</option>`).join('');
+        renderFile(0);
+        return;
+      }
+      fileSel.innerHTML='<option value="">개별 파일 목록 없음</option>';
+      openFile.disabled=!folderUrl;openFile.dataset.url=folderUrl;
+      if(embedded){
+        viewer.innerHTML=`<iframe src="${esc(embedded)}" referrerpolicy="no-referrer"></iframe>`;
+      }else{
+        viewer.innerHTML='<div class="viewer-empty">정확한 날짜 폴더는 찾았지만 PDF/이미지 파일 목록을 받지 못했습니다.<br>날짜 폴더의 파일 목록 연동을 확인해 주세요.</div>';
+      }
+    }catch(e){
+      if(typeof folderTarget!=='undefined'&&folderTarget){folderTarget.classList.add('warn');folderTarget.textContent='날짜 폴더 확인 실패'}
+      viewer.innerHTML=`<div class="viewer-empty">수기출석부를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`;
+      fileCount.textContent='오류';openFile.disabled=true;
+    }
   }
   async function loadSelectedDate(){showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await loadMemos(currentClass,currentIso);renderRows(label);loadDrive();topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`}
   async function loadClass(cid,keepDate='',forceColors=false){
