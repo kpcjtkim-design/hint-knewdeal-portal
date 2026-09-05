@@ -50,38 +50,69 @@ function uploadedAt(f){
   const updated=Date.parse(String(f?.updatedAt||''));
   return Number.isFinite(updated)?updated:0;
 }
-async function monitor(root,date){
-  const rootId=folderId(root);if(!rootId)throw new Error('FOLDER_NOT_SET');
-  const u=new URL(MONITOR);u.searchParams.set('folderId',rootId);u.searchParams.set('date',date);
-  let d={};
+function compactDate(date){return String(date||'').replace(/\D/g,'').slice(-4)}
+function weekNoFor(date){
+  const d=new Date(`${date}T00:00:00Z`),start=new Date('2026-07-27T00:00:00Z');
+  if(Number.isNaN(d.getTime()))return null;
+  return Math.floor((d-start)/604800000)+1;
+}
+async function monitorRequest(folderId,dateValue){
+  if(!folderId)return{};
+  const u=new URL(MONITOR);u.searchParams.set('folderId',folderId);u.searchParams.set('date',dateValue);
   try{
-    const r=await fetch(u,{method:'GET',redirect:'follow',headers:{'User-Agent':'HINT-Admin-ReadOnly-Review/1.0'}});
-    if(r.ok)d=await r.json();
+    const r=await fetch(u,{method:'GET',redirect:'follow',headers:{'User-Agent':'HINT-Admin-ReadOnly-Review/1.1'}});
+    if(r.ok)return await r.json();
   }catch{}
+  return{};
+}
+function resolvedFolder(d){
   const df=d?.dateFolder||null;
-  const exactId=d?.dateFolderId||(df&&typeof df==='object'&&(df.id||df.folderId))||(typeof df==='string'&&/^[A-Za-z0-9_-]{10,}$/.test(df)?df:'');
-  const exactUrl=d?.dateFolderUrl||(df&&typeof df==='object'&&(df.url||df.webViewLink))||(exactId?`https://drive.google.com/drive/folders/${exactId}`:'');
-  const useId=exactId||rootId,useUrl=exactUrl||root;
-  const rawFiles=Array.isArray(d?.files)?d.files:
+  const id=d?.dateFolderId||(df&&typeof df==='object'&&(df.id||df.folderId))||'';
+  const url=d?.dateFolderUrl||(df&&typeof df==='object'&&(df.url||df.webViewLink))||(id?`https://drive.google.com/drive/folders/${id}`:'');
+  return{id:String(id||''),url:String(url||''),df};
+}
+function filesFrom(d,df){
+  return Array.isArray(d?.files)?d.files:
     (df&&typeof df==='object'&&Array.isArray(df.files)?df.files:
     (Array.isArray(d?.dateFiles)?d.dateFiles:
     (Array.isArray(d?.folderFiles)?d.folderFiles:[])));
+}
+async function monitor(root,date){
+  const rootId=folderId(root);if(!rootId)throw new Error('FOLDER_NOT_SET');
+  const mmdd=compactDate(date),week=weekNoFor(date);
+  const primary=await monitorRequest(rootId,date);
+  const candidates=[primary];
+  if(mmdd)candidates.push(await monitorRequest(rootId,mmdd));
+  const primaryWeekId=String(primary?.weekFolderId||folderId(primary?.weekFolderUrl||'')||'');
+  if(primaryWeekId){
+    if(mmdd)candidates.push(await monitorRequest(primaryWeekId,mmdd));
+    candidates.push(await monitorRequest(primaryWeekId,date));
+  }
+  let chosen=primary,folder=resolvedFolder(primary);
+  for(const c of candidates){const f=resolvedFolder(c);if(f.id){chosen=c;folder=f;break}}
+  const weekFolderId=String(chosen?.weekFolderId||primary?.weekFolderId||primaryWeekId||'');
+  const weekFolderUrl=String(chosen?.weekFolderUrl||primary?.weekFolderUrl||(weekFolderId?`https://drive.google.com/drive/folders/${weekFolderId}`:''));
+  const rawFiles=filesFrom(chosen,folder.df);
   const allFiles=rawFiles.map(safeFile).filter(Boolean);
   const files=allFiles.filter(isPreviewable).sort((a,b)=>uploadedAt(b)-uploadedAt(a));
   return{
     fileCount:files.length,
-    sourceFileCount:allFiles.length||(Number.isFinite(Number(d?.fileCount))?Number(d.fileCount):0),
+    sourceFileCount:allFiles.length||(Number.isFinite(Number(chosen?.fileCount))?Number(chosen.fileCount):0),
     files,
     latestPreviewFile:files[0]||null,
-    dateFolderId:exactId||'',
-    dateFolderUrl:exactUrl||'',
-    folderId:useId,
-    folderUrl:useUrl,
-    exactDateFolder:Boolean(exactId),
-    week:d?.week||null,
-    status:d?.status||'',
-    completed:d?.completed===true,
-    monitorOk:d?.ok===true
+    dateFolderId:folder.id,
+    dateFolderUrl:folder.url,
+    folderId:folder.id||weekFolderId||rootId,
+    folderUrl:folder.url||weekFolderUrl||root,
+    exactDateFolder:Boolean(folder.id),
+    week:chosen?.week||primary?.week||week||null,
+    expectedWeek:week,
+    expectedDateFolder:mmdd,
+    weekFolderId,
+    weekFolderUrl,
+    status:chosen?.status||primary?.status||'',
+    completed:chosen?.completed===true||primary?.completed===true,
+    monitorOk:chosen?.ok===true||primary?.ok===true
   };
 }
 export default async function handler(req,res){

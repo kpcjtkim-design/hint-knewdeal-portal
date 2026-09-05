@@ -42,30 +42,33 @@ function reasonFor(name,text,roster,status=''){
 function statusClass(s){const x=String(s||'');if(x==='출석')return'present';if(x==='결석')return'absent';if(['지각','조퇴','외출','인정출석','중복'].includes(x))return'special';return''}
 function memoId(classId,iso){return`attendanceOverviewMemo_${classId}_${iso}`}
 function normalizeMemoBundle(v){if(v&&typeof v==='object'&&!Array.isArray(v))return{checkhere:String(v.checkhere||''),documents:String(v.documents||''),manual:String(v.manual||'')};if(typeof v==='string'&&v)return{checkhere:v,documents:'',manual:''};return{checkhere:'',documents:'',manual:''}}
-function colorState(bg){
+function overviewColorState(bg){
   let x=String(bg||'').trim().toLowerCase();
   if(/^#[0-9a-f]{3}$/.test(x))x='#'+x.slice(1).split('').map(c=>c+c).join('');
-  if(!/^#[0-9a-f]{6}$/.test(x))return'missing';
+  if(!/^#[0-9a-f]{6}$/.test(x))return'미제출';
   const r=parseInt(x.slice(1,3),16),g=parseInt(x.slice(3,5),16),b=parseInt(x.slice(5,7),16);
-  if(r>=242&&g>=242&&b>=242)return'missing';
-  if(r>=180&&g>=135&&b<=190&&Math.abs(r-g)<=110&&g>b+20)return'confirmed';
-  if(r>=175&&g<=185&&b<=185&&r>g+25&&r>b+25)return'red';
-  return'missing';
+  if(r>=242&&g>=242&&b>=242)return'미제출';
+  if(r>=180&&g>=135&&b<=190&&Math.abs(r-g)<=110&&g>b+20)return'확인';
+  if(r>=175&&g<=185&&b<=185&&r>g+25&&r>b+25)return'보완필요';
+  return'미제출';
+}
+function sheetEvidenceState(student,dateObj,backgrounds,fallback='미제출'){
+  if(!student||!dateObj||!Array.isArray(backgrounds)||!backgrounds.length)return fallback;
+  const bg=String(backgrounds?.[Number(student.rowIndex)+1]?.[Number(dateObj.idx)+4]||'');
+  return overviewColorState(bg);
 }
 function evidenceFor(student,dateObj,status,backgrounds){
   const raw=String(status||'').trim();
   const x=raw==='인정결석'?'중복':raw;
   const relevant=x==='인정출석'||['결석','지각','조퇴','외출','중복'].includes(x);
   if(!relevant)return{label:'-',cls:'none'};
-  if(!Array.isArray(backgrounds)||!backgrounds.length)return{label:'확인 중…',cls:'loading'};
-  const bg=String(backgrounds?.[Number(student.rowIndex)+1]?.[Number(dateObj.idx)+4]||'');
-  const c=colorState(bg);
+  const state=sheetEvidenceState(student,dateObj,backgrounds,'미제출');
   if(x==='인정출석'){
-    if(c==='confirmed')return{label:'확인',cls:'confirmed'};
-    if(c==='red')return{label:'보완필요',cls:'rejected'};
+    if(state==='확인')return{label:'확인',cls:'confirmed'};
+    if(state==='보완필요')return{label:'보완필요',cls:'rejected'};
     return{label:'미제출',cls:'missing'};
   }
-  if(c==='red')return{label:'제출 필요',cls:'required'};
+  if(state==='보완필요')return{label:'제출 필요',cls:'required'};
   return{label:'-',cls:'none'};
 }
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),cache:'no-store'});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{}if(!r.ok||d.ok===false)throw new Error(d.error||`${url} ${r.status}`);return d}
@@ -111,7 +114,11 @@ async function getColors(cid){
   }
   async function getDrive(cid,iso){const idToken=await user.getIdToken();return post('/api/admin-drive-review',{idToken,action:'list',classId:String(cid),date:iso,folderKey:'manualAttendance'})}
   function parseReader(out){
-    const a=out.attendance||[],h=a[0]||[];dates=h.slice(4).map((x,i)=>({label:normDate(x),idx:i,iso:dateIso(x)})).filter(x=>x.label&&x.iso);students=a.slice(1).map((r,rowIndex)=>({rowIndex,name:String(r[0]||'').trim(),all:r.slice(4)})).filter(x=>x.name);const g=out.reasons||[],rh=(g[0]||[]).slice(4),rr=(g[1]||[]).slice(4);reasonCells={};rh.forEach((d,i)=>reasonCells[normDate(d)]=rr[i]||'');
+    const a=out.attendance||[],h=a[0]||[];
+    attendanceBackgrounds=Array.isArray(out.attendanceBackgrounds)?out.attendanceBackgrounds:(Array.isArray(out.backgrounds)?out.backgrounds:[]);
+    dates=h.slice(4).map((x,i)=>({label:normDate(x),idx:i,iso:dateIso(x)})).filter(x=>x.label&&x.iso);
+    students=a.slice(1).map((r,rowIndex)=>({rowIndex,name:String(r[0]||'').trim(),all:r.slice(4)})).filter(x=>x.name);
+    const g=out.reasons||[],rh=(g[0]||[]).slice(4),rr=(g[1]||[]).slice(4);reasonCells={};rh.forEach((d,i)=>reasonCells[normDate(d)]=rr[i]||'');
   }
   async function loadMemos(cid,iso){memos={};manualIssue='';try{const snap=await getDoc(doc(db,'settings',memoId(cid,iso)));if(snap.exists()){const data=snap.data()||{};memos=data.memos||{};manualIssue=String(data.manualIssue||'')}}catch(e){console.warn('memo load failed',e)}manualIssueMemo.value=manualIssue;manualIssueState.textContent=manualIssue?'저장됨':''}
   function keyFor(s){return`${s.rowIndex}_${s.name}`}
@@ -168,10 +175,20 @@ async function getColors(cid){
   async function loadSelectedDate(){showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await loadMemos(currentClass,currentIso);renderRows(label);loadDrive();topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`}
   async function loadClass(cid,keepDate='',forceColors=false){
     showErr('');currentClass=String(cid);attendanceBackgrounds=[];topState.textContent=`${currentClass}반 시트 읽는 중…`;rows.innerHTML='<div class="empty">Google Sheet를 읽는 중…</div>';
-    const colorClass=currentClass,colorPromise=getColorsCached(colorClass,forceColors);
+    const colorClass=currentClass;
     try{
-      const out=await getReader(currentClass);parseReader(out);dateSel.innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');const preferred=dates.find(x=>x.label===keepDate)?.label||dates.at(-1)?.label||dates[0]?.label||'';dateSel.value=preferred;await loadSelectedDate();
-      colorPromise.then(bg=>{if(currentClass!==colorClass)return;attendanceBackgrounds=bg;renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 서류색상 반영`}).catch(e=>{console.warn('attendance colors failed',e);if(currentClass===colorClass)topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 색상 확인 실패`})
+      const out=await getReader(currentClass);parseReader(out);
+      dateSel.innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');
+      const preferred=dates.find(x=>x.label===keepDate)?.label||dates.at(-1)?.label||dates[0]?.label||'';dateSel.value=preferred;
+      await loadSelectedDate();
+      if(Array.isArray(attendanceBackgrounds)&&attendanceBackgrounds.length){
+        colorCache.set(colorClass,attendanceBackgrounds);
+        try{sessionStorage.setItem(`attendanceOverviewColors_${colorClass}`,JSON.stringify({at:Date.now(),data:attendanceBackgrounds}))}catch{}
+        renderRows(dateSel.value);
+        topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 출결자동 색상 반영`;
+      }else{
+        getColorsCached(colorClass,forceColors).then(bg=>{if(currentClass!==colorClass)return;attendanceBackgrounds=bg;renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 출결자동 색상 반영`}).catch(e=>{console.warn('attendance colors failed',e);if(currentClass===colorClass){renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 색상 조회 실패(미제출 기준)`}})
+      }
     }catch(e){showErr(e);rows.innerHTML='<div class="empty">출결 데이터를 불러오지 못했습니다.</div>';topState.textContent='오류'}
   }
   classSel.onchange=()=>loadClass(classSel.value);
