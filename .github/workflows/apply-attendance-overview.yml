@@ -1,0 +1,44 @@
+name: Apply attendance overview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'attendance-overview.js'
+      - 'tools/add-attendance-overview.py'
+      - '.github/workflows/apply-attendance-overview.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate overview module
+        run: node --check attendance-overview.js
+      - name: Patch main portal
+        run: python tools/add-attendance-overview.py
+      - name: Validate portal module
+        run: |
+          python - <<'PY'
+          import re,pathlib
+          s=pathlib.Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('index module not found')
+          pathlib.Path('/tmp/index.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+      - name: Commit portal patch
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add attendance overview tab"
+          git pull --rebase origin main
+          git push
