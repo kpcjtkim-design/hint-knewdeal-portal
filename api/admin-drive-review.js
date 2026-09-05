@@ -39,6 +39,17 @@ function safeFile(f){
     imageUrl:`https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`
   };
 }
+function isPreviewable(f){
+  const mime=String(f?.mimeType||'').toLowerCase();
+  const name=String(f?.name||'').toLowerCase();
+  return mime==='application/pdf'||mime.startsWith('image/')||/\.(pdf|png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(name);
+}
+function uploadedAt(f){
+  const created=Date.parse(String(f?.createdAt||''));
+  if(Number.isFinite(created))return created;
+  const updated=Date.parse(String(f?.updatedAt||''));
+  return Number.isFinite(updated)?updated:0;
+}
 async function monitor(root,date){
   const rootId=folderId(root);if(!rootId)throw new Error('FOLDER_NOT_SET');
   const u=new URL(MONITOR);u.searchParams.set('folderId',rootId);u.searchParams.set('date',date);
@@ -55,10 +66,13 @@ async function monitor(root,date){
     (df&&typeof df==='object'&&Array.isArray(df.files)?df.files:
     (Array.isArray(d?.dateFiles)?d.dateFiles:
     (Array.isArray(d?.folderFiles)?d.folderFiles:[])));
-  const files=rawFiles.map(safeFile).filter(Boolean);
+  const allFiles=rawFiles.map(safeFile).filter(Boolean);
+  const files=allFiles.filter(isPreviewable).sort((a,b)=>uploadedAt(b)-uploadedAt(a));
   return{
-    fileCount:files.length||(Number.isFinite(Number(d?.fileCount))?Number(d.fileCount):0),
+    fileCount:files.length,
+    sourceFileCount:allFiles.length||(Number.isFinite(Number(d?.fileCount))?Number(d.fileCount):0),
     files,
+    latestPreviewFile:files[0]||null,
     dateFolderId:exactId||'',
     dateFolderUrl:exactUrl||'',
     folderId:useId,
