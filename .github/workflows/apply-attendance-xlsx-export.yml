@@ -1,0 +1,59 @@
+name: Apply attendance XLSX export
+
+on:
+  push:
+    branches: [patch-attendance-xlsx-20260906]
+    paths:
+      - '.github/workflows/apply-attendance-xlsx-export.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: patch-attendance-xlsx-20260906
+          fetch-depth: 0
+      - name: Apply XLSX export patch
+        run: python tools/apply_attendance_xlsx_export.py
+      - name: Validate JavaScript and export fields
+        shell: bash
+        run: |
+          node --check attendance-overview.js
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('module script missing')
+          Path('/tmp/index.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+          grep -q 'id="excelExport"' attendance-overview.js
+          grep -q '엑셀 다운로드' attendance-overview.js
+          grep -q 'xlsx-0.20.3/package/dist/xlsx.full.min.js' attendance-overview.js
+          grep -q 'XLSX.writeFile' attendance-overview.js
+          grep -q "'가-3 원문'" attendance-overview.js
+          grep -q "'수기출석 관리자메모'" attendance-overview.js
+          grep -q "'이름','출석현황','사유','서류제출','체크히어 관련 메모','서류제출 관련 메모','수기출석 관련 메모'" attendance-overview.js
+          grep -q 'memoValueNow' attendance-overview.js
+          grep -q 'overviewColorState(bg)' attendance-overview.js
+          grep -q '/api/attendance-colors' attendance-overview.js
+          grep -q 'attendance-overview.js?v=20260906-11' index.html
+          ! grep -q 'manualFolderBtn' attendance-overview.js
+          ! grep -q 'ensureDriveAccessToken(false)' attendance-overview.js
+      - name: Commit to main
+        shell: bash
+        run: |
+          rm -f tools/apply_attendance_xlsx_export.py
+          rm -f .github/workflows/apply-attendance-xlsx-export.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add XLSX export to attendance compare"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
