@@ -1,0 +1,25 @@
+name: Diagnose Drive monitor response
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-drive-monitor.yml'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query 1반 WEEK1 dates
+        shell: bash
+        run: |
+          set -e
+          BASE='https://script.google.com/macros/s/AKfycbxE4sXaG3r6CZArdGgFnelj8tai-urVpXJ_gjPHFapmBUhrDk-BK3-xd2oi-Tb-QLt9/exec'
+          ROOT='1k3p4VL3so0QjDMHeBA7UeKdkFCRgH46w'
+          for D in 2026-07-27 2026-07-31; do
+            echo "===== $D ====="
+            curl -L --fail-with-body --silent --show-error --get "$BASE" \
+              --data-urlencode "folderId=$ROOT" \
+              --data-urlencode "date=$D"
+            echo
+          done
