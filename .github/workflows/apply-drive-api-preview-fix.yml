@@ -1,0 +1,48 @@
+name: Apply Drive API preview fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-drive-api-preview-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply focused patch
+        run: python tools/apply_drive_api_preview.py
+      - name: Validate JavaScript
+        shell: bash
+        run: |
+          node --check api/admin-drive-review.js
+          node --check attendance-overview.js
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script type="module">(.*)</script>',s,re.S)
+          if not m: raise SystemExit('module script missing')
+          Path('/tmp/index.mjs').write_text(m.group(1),encoding='utf-8')
+          PY
+          node --check /tmp/index.mjs
+          grep -q "reauthenticateWithPopup" index.html
+          grep -q "drive.metadata.readonly" index.html
+          grep -q "v=20260906-8" index.html
+          grep -q "directDriveLookup" attendance-overview.js
+          grep -q "rootFolderId:rootId" api/admin-drive-review.js
+      - name: Commit repaired files
+        shell: bash
+        run: |
+          rm -f tools/apply_drive_api_preview.py
+          rm -f .github/workflows/apply-drive-api-preview-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Use direct read-only Drive API for attendance preview"
+          git pull --rebase origin main
+          git push origin main
