@@ -1,6 +1,7 @@
 const FIREBASE_KEY='AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE';
 const PROJECT='knewdeal-portal';
 const ADMIN=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
+const BRIDGE=process.env.ADMIN_DRIVE_REVIEW_BRIDGE||'';
 const MONITOR='https://script.google.com/macros/s/AKfycbxE4sXaG3r6CZArdGgFnelj8tai-urVpXJ_gjPHFapmBUhrDk-BK3-xd2oi-Tb-QLt9/exec';
 
 async function verify(idToken){
@@ -13,6 +14,15 @@ async function profile(idToken,email){
   const url=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/users/${encodeURIComponent(email)}`;
   const r=await fetch(url,{headers:{authorization:`Bearer ${idToken}`}});if(!r.ok)throw new Error('PROFILE_NOT_FOUND');
   const f=(await r.json()).fields||{};return{role:f.role?.stringValue||'',active:f.active?.booleanValue===true};
+}
+async function callBridge(payload){
+  if(!BRIDGE)return null;
+  try{
+    const r=await fetch(BRIDGE,{method:'POST',headers:{'content-type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),redirect:'follow'});
+    const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{return null}
+    if(r.ok&&d&&d.ok===true)return d;
+  }catch{}
+  return null;
 }
 async function classFields(idToken,classId){
   const url=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/classes/${encodeURIComponent(classId)}`;
@@ -95,9 +105,10 @@ async function monitor(root,date){
   const rawFiles=filesFrom(chosen,folder.df);
   const allFiles=rawFiles.map(safeFile).filter(Boolean);
   const files=allFiles.filter(isPreviewable).sort((a,b)=>uploadedAt(b)-uploadedAt(a));
+  const upstreamCount=Number.isFinite(Number(chosen?.fileCount))?Number(chosen.fileCount):(Number.isFinite(Number(primary?.fileCount))?Number(primary.fileCount):0);
   return{
-    fileCount:files.length,
-    sourceFileCount:allFiles.length||(Number.isFinite(Number(chosen?.fileCount))?Number(chosen.fileCount):0),
+    fileCount:files.length||upstreamCount,
+    sourceFileCount:allFiles.length||upstreamCount,
     files,
     latestPreviewFile:files[0]||null,
     dateFolderId:folder.id,
@@ -126,8 +137,19 @@ export default async function handler(req,res){
     const cid=String(classId||'');if(!/^([1-9]|1[0-7])$/.test(cid))throw new Error('BAD_CLASS');
     if(!/^2026-\d{2}-\d{2}$/.test(String(date||'')))throw new Error('BAD_DATE');
     const key=String(folderKey||'');if(!['manualAttendance','recognition'].includes(key))throw new Error('BAD_FOLDER_KEY');
+    const requestedDate=String(date);
+    const bridged=await callBridge({action:'list',idToken,classId:cid,date:requestedDate,folderKey:key});
+    if(bridged){
+      const dateFolderId=String(bridged.folderId||bridged.dateFolderId||'');
+      const dateFolderUrl=String(bridged.folderUrl||bridged.dateFolderUrl||(dateFolderId?`https://drive.google.com/drive/folders/${dateFolderId}`:''));
+      const allFiles=(Array.isArray(bridged.files)?bridged.files:[]).map(safeFile).filter(Boolean);
+      const files=allFiles.filter(isPreviewable).sort((a,b)=>uploadedAt(b)-uploadedAt(a));
+      const sourceCount=Number.isFinite(Number(bridged.fileCount))?Number(bridged.fileCount):allFiles.length;
+      return res.status(200).json({ok:true,readOnly:true,classId:cid,date:requestedDate,folderKey:key,fileCount:files.length||sourceCount,sourceFileCount:allFiles.length||sourceCount,files,latestPreviewFile:files[0]||null,dateFolderId,dateFolderUrl,folderId:dateFolderId,folderUrl:dateFolderUrl,exactDateFolder:Boolean(dateFolderId),dateFolderFound:Boolean(dateFolderId),week:weekNoFor(requestedDate),expectedWeek:weekNoFor(requestedDate),expectedDateFolder:compactDate(requestedDate),status:files.length||sourceCount?'COMPLETE':'INCOMPLETE',completed:Boolean(files.length||sourceCount),monitorOk:true,bridgeUsed:true,embeddedFolderUrl:dateFolderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(dateFolderId)}#list`:'',actorEmail:email});
+    }
     const fields=await classFields(idToken,cid),root=coreLink(fields,key);if(!root)throw new Error('FOLDER_NOT_SET');
-    const out=await monitor(root,String(date));
-    return res.status(200).json({ok:true,readOnly:true,classId:cid,date:String(date),folderKey:key,...out,embeddedFolderUrl:out.exactDateFolder&&out.dateFolderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(out.dateFolderId)}#list`:'',actorEmail:email});
+    const out=await monitor(root,requestedDate);
+    const dateFolderFound=Boolean(out.dateFolderId)||out.monitorOk===true;
+    return res.status(200).json({ok:true,readOnly:true,classId:cid,date:requestedDate,folderKey:key,...out,dateFolderFound,bridgeUsed:false,embeddedFolderUrl:out.exactDateFolder&&out.dateFolderId?`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(out.dateFolderId)}#list`:'',actorEmail:email});
   }catch(e){return res.status(400).json({ok:false,error:String(e.message||e)})}
 }
