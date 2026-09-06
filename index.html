@@ -168,9 +168,9 @@ async function attendanceAdmin(user,p){
 }
 async function attendanceOverviewAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
-  host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출석부 한눈에 보기</h3><p>수기출석부 Drive 미리보기 · 운영총괄 출결/가-3 사유 · 학생별 관리자 메모를 한 화면에서 확인합니다. Sheet와 Drive는 읽기 전용입니다.</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">한눈에 보기 모듈을 불러오는 중…</div></div></section>`;
+  host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출석부 한눈에 보기</h3><p>가-3 원문 · 선택 날짜 Drive 폴더 바로가기 · 운영총괄 출결현황 · 학생별 관리자 메모를 한 화면에서 확인합니다. Sheet와 Drive는 읽기 전용입니다.</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">한눈에 보기 모듈을 불러오는 중…</div></div></section>`;
   let driveAccessToken='';try{driveAccessToken=await ensureDriveAccessToken(false)}catch(e){console.warn('Google Drive read-only authorization was not granted',e)}
-  try{const mod=await import(`/attendance-overview.js?v=20260906-8`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES,driveAccessToken,getDriveAccessToken:ensureDriveAccessToken})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출석부 한눈에 보기를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-overview.js?v=20260906-9`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES,driveAccessToken,getDriveAccessToken:ensureDriveAccessToken})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출석부 한눈에 보기를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;
