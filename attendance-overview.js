@@ -79,8 +79,8 @@ export async function mountAttendanceOverview(host,ctx){
   const outer=host.closest?.('.attendance-native-shell')||host.parentElement;
   if(outer){outer.style.overflow='visible';outer.style.width='min(1760px, calc(100vw - 32px))';outer.style.maxWidth='none';outer.style.marginLeft='50%';outer.style.transform='translateX(-50%)'}
   const root=host.shadowRoot||host.attachShadow({mode:'open'});
-  root.innerHTML=`<style>${STYLE}</style><div class="wrap"><div id="err"></div><section class="card toolbar"><div class="field"><label>반</label><select id="classSel">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('')}</select></div><div class="field"><label>교육일자</label><select id="dateSel"><option>불러오는 중…</option></select></div><button id="reload" class="btn soft">↻ 다시 읽기</button><span class="autosave-notice">※ 모든 메모는 저장버튼 없이 자동저장됩니다.</span><div class="spacer"></div><span id="topState" class="state">준비 중…</span></section><div class="hint">원본 Google Sheet는 읽기만 합니다. 좌측 가-3는 선택 날짜의 원문 셀 내용을 가공 없이 표시합니다.</div><section class="workspace"><aside class="left-stack"><article class="card raw-card"><div class="section-head"><div><h3>가-3 원문</h3><p>선택한 교육일의 Google Sheet 원문 내용입니다. · 가공하지 않은 원문 텍스트</p></div></div><pre id="rawReason" class="raw-text">Google Sheet를 불러오는 중…</pre></article><article class="card manual-card"><div class="section-head"><div><h3>수기출석 관련 관리자 메모</h3><p>해당 반·날짜 수기출석 전체에 대한 관리자 메모입니다.</p></div></div><div class="manual-body"><div class="manual-issue"><div class="manual-issue-head"><strong>관리자 메모</strong><span id="manualIssueState" class="manual-issue-state"></span></div><textarea id="manualIssueMemo" placeholder="전반적인 출결 특이사항, 전달사항 등을 입력하세요."></textarea></div></div></article></aside><article class="card data-panel"><div class="data-title"><strong>Google Sheet · 출결현황 + 학생별 관리자 메모</strong><span>이름 / 출석현황 / 사유 / 서류제출 / 체크히어 / 서류제출 / 수기출석</span></div><div class="table-scroll"><div class="table-head"><div>이름</div><div>출석현황</div><div>사유</div><div>서류제출</div><div>체크히어 관련</div><div>서류제출 관련</div><div>수기출석 관련</div></div><div id="rows" class="rows"><div class="empty">불러오는 중…</div></div></div></article></section></div>`;
-  const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),rawReason=$('#rawReason'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState');
+  root.innerHTML=`<style>${STYLE}</style><div class="wrap"><div id="err"></div><section class="card toolbar"><div class="field"><label>반</label><select id="classSel">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('')}</select></div><div class="field"><label>교육일자</label><select id="dateSel"><option>불러오는 중…</option></select></div><button id="reload" class="btn soft">↻ 다시 읽기</button><button id="excelExport" class="btn dark">⇩ 엑셀 다운로드</button><span class="autosave-notice">※ 모든 메모는 저장버튼 없이 자동저장됩니다.</span><div class="spacer"></div><span id="topState" class="state">준비 중…</span></section><div class="hint">원본 Google Sheet는 읽기만 합니다. 좌측 가-3는 선택 날짜의 원문 셀 내용을 가공 없이 표시합니다.</div><section class="workspace"><aside class="left-stack"><article class="card raw-card"><div class="section-head"><div><h3>가-3 원문</h3><p>선택한 교육일의 Google Sheet 원문 내용입니다. · 가공하지 않은 원문 텍스트</p></div></div><pre id="rawReason" class="raw-text">Google Sheet를 불러오는 중…</pre></article><article class="card manual-card"><div class="section-head"><div><h3>수기출석 관련 관리자 메모</h3><p>해당 반·날짜 수기출석 전체에 대한 관리자 메모입니다.</p></div></div><div class="manual-body"><div class="manual-issue"><div class="manual-issue-head"><strong>관리자 메모</strong><span id="manualIssueState" class="manual-issue-state"></span></div><textarea id="manualIssueMemo" placeholder="전반적인 출결 특이사항, 전달사항 등을 입력하세요."></textarea></div></div></article></aside><article class="card data-panel"><div class="data-title"><strong>Google Sheet · 출결현황 + 학생별 관리자 메모</strong><span>이름 / 출석현황 / 사유 / 서류제출 / 체크히어 / 서류제출 / 수기출석</span></div><div class="table-scroll"><div class="table-head"><div>이름</div><div>출석현황</div><div>사유</div><div>서류제출</div><div>체크히어 관련</div><div>서류제출 관련</div><div>수기출석 관련</div></div><div id="rows" class="rows"><div class="empty">불러오는 중…</div></div></div></article></section></div>`;
+  const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),excelExport=$('#excelExport'),rawReason=$('#rawReason'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState');
   let dates=[],students=[],reasonCells={},memos={},manualIssue='',attendanceBackgrounds=[],currentIso='',currentClass='1',saveTimers=new Map();
   const colorCache=new Map(),colorPromises=new Map();
   const showErr=e=>{err.innerHTML=e?`<div class="error">${esc(e.message||e)}</div>`:''};
@@ -137,6 +137,74 @@ async function getColors(cid){
     rows.innerHTML=students.map((s,i)=>{const status=String(s.all[d.idx]||'').trim()||'미입력',reason=reasonFor(s.name,reasonText,roster,status),e=evidenceFor(s,d,status,attendanceBackgrounds),key=keyFor(s),bundle=normalizeMemoBundle(memos[key]);return`<div class="student-row"><div class="cell"><div class="name">${esc(s.name)}</div></div><div class="cell center"><span class="status ${statusClass(status)}">${esc(status)}</span></div><div class="cell reason ${reason?'':'none'}">${esc(reason||'-')}</div><div class="cell center"><span class="evidence ${e.cls}">${esc(e.label)}</span></div><div class="cell memo-cell"><textarea class="memo" data-key="${esc(key)}" data-category="checkhere" data-state-key="${i}-checkhere" placeholder="체크히어 관련 메모">${esc(bundle.checkhere)}</textarea><span class="memo-state" data-state="${i}-checkhere">${bundle.checkhere?'저장됨':''}</span></div><div class="cell memo-cell"><textarea class="memo" data-key="${esc(key)}" data-category="documents" data-state-key="${i}-documents" placeholder="서류제출 관련 메모">${esc(bundle.documents)}</textarea><span class="memo-state" data-state="${i}-documents">${bundle.documents?'저장됨':''}</span></div><div class="cell memo-cell"><textarea class="memo" data-key="${esc(key)}" data-category="manual" data-state-key="${i}-manual" placeholder="수기출석 관련 메모">${esc(bundle.manual)}</textarea><span class="memo-state" data-state="${i}-manual">${bundle.manual?'저장됨':''}</span></div></div>`}).join('')||'<div class="empty">교육생이 없습니다.</div>';
     root.querySelectorAll('.memo').forEach(ta=>{ta.oninput=()=>{const key=ta.dataset.key,category=ta.dataset.category,stateKey=ta.dataset.stateKey,state=root.querySelector(`[data-state="${CSS.escape(stateKey)}"]`),cid=currentClass,iso=currentIso,timerKey=`${cid}_${iso}_${key}_${category}`;if(state)state.textContent='입력 중';clearTimeout(saveTimers.get(timerKey));saveTimers.set(timerKey,setTimeout(()=>saveStudentMemo(key,category,ta.value,state,cid,iso).catch(e=>showErr(e)),650))}})
   }
+  async function ensureXlsxLib(){
+    if(window.XLSX)return window.XLSX;
+    await new Promise((resolve,reject)=>{
+      const found=document.querySelector('script[data-hint-xlsx="1"]');
+      if(found){
+        if(window.XLSX){resolve();return}
+        const timer=setTimeout(()=>reject(new Error('엑셀 모듈을 불러오지 못했습니다.')),12000);
+        found.addEventListener('load',()=>{clearTimeout(timer);resolve()},{once:true});
+        found.addEventListener('error',()=>{clearTimeout(timer);reject(new Error('엑셀 모듈을 불러오지 못했습니다.'))},{once:true});
+        return;
+      }
+      const script=document.createElement('script');
+      script.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+      script.async=true;script.dataset.hintXlsx='1';
+      const timer=setTimeout(()=>reject(new Error('엑셀 모듈 로딩 시간이 초과되었습니다.')),12000);
+      script.onload=()=>{clearTimeout(timer);resolve()};
+      script.onerror=()=>{clearTimeout(timer);reject(new Error('엑셀 모듈을 불러오지 못했습니다.'))};
+      document.head.appendChild(script);
+    });
+    if(!window.XLSX)throw new Error('엑셀 모듈 초기화에 실패했습니다.');
+    return window.XLSX;
+  }
+  function memoValueNow(key,category){
+    const el=root.querySelector(`.memo[data-key="${CSS.escape(key)}"][data-category="${CSS.escape(category)}"]`);
+    if(el)return String(el.value||'');
+    return String(normalizeMemoBundle(memos[key])?.[category]||'');
+  }
+  function exportedAt(){
+    try{return new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())}
+    catch{return new Date().toISOString()}
+  }
+  async function exportCurrentExcel(){
+    const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)throw new Error('선택한 교육일자를 찾지 못했습니다.');
+    const before=excelExport.textContent;excelExport.disabled=true;excelExport.textContent='엑셀 생성 중…';
+    try{
+      const XLSX=await ensureXlsxLib(),course=String(classes.find(c=>String(c.id)===String(currentClass))?.course||''),reasonText=String(reasonCells[label]??''),roster=students.map(x=>x.name);
+      const aoa=[
+        ['출결대조'],
+        ['반',`${currentClass}반`,'과정',course],
+        ['교육일자',currentIso||label,'내보낸 시각',exportedAt()],
+        [],
+        ['가-3 원문'],
+        [reasonText],
+        [],
+        ['수기출석 관리자메모'],
+        [String(manualIssueMemo.value||'')],
+        [],
+        ['이름','출석현황','사유','서류제출','체크히어 관련 메모','서류제출 관련 메모','수기출석 관련 메모']
+      ];
+      for(const st of students){
+        const status=String(st.all[d.idx]||'').trim()||'미입력',reason=reasonFor(st.name,reasonText,roster,status),e=evidenceFor(st,d,status,attendanceBackgrounds),key=keyFor(st);
+        aoa.push([st.name,status,reason||'-',e.label,memoValueNow(key,'checkhere'),memoValueNow(key,'documents'),memoValueNow(key,'manual')]);
+      }
+      const ws=XLSX.utils.aoa_to_sheet(aoa),wb=XLSX.utils.book_new();
+      ws['!cols']=[{wch:16},{wch:14},{wch:28},{wch:15},{wch:34},{wch:34},{wch:34}];
+      ws['!merges']=[
+        {s:{r:0,c:0},e:{r:0,c:6}},
+        {s:{r:4,c:0},e:{r:4,c:6}},
+        {s:{r:5,c:0},e:{r:5,c:6}},
+        {s:{r:7,c:0},e:{r:7,c:6}},
+        {s:{r:8,c:0},e:{r:8,c:6}}
+      ];
+      ws['!rows']=[];ws['!rows'][0]={hpt:24};ws['!rows'][5]={hpt:90};ws['!rows'][8]={hpt:72};
+      XLSX.utils.book_append_sheet(wb,ws,'출결대조');
+      const safeDate=String(currentIso||label).replace(/[^0-9A-Za-z가-힣_-]+/g,'-');
+      XLSX.writeFile(wb,`${currentClass}반_${safeDate}_출결대조.xlsx`,{compression:true});
+    }finally{excelExport.disabled=false;excelExport.textContent=before}
+  }
   async function loadSelectedDate(){showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await loadMemos(currentClass,currentIso);renderRawReason(label);renderRows(label);topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`}
   async function loadClass(cid,keepDate='',forceColors=false){
     showErr('');currentClass=String(cid);attendanceBackgrounds=[];topState.textContent=`${currentClass}반 시트 읽는 중…`;rows.innerHTML='<div class="empty">Google Sheet를 읽는 중…</div>';rawReason.textContent='Google Sheet를 읽는 중…';
@@ -159,6 +227,7 @@ async function getColors(cid){
   classSel.onchange=()=>loadClass(classSel.value);
   dateSel.onchange=()=>loadSelectedDate();
   $('#reload').onclick=()=>loadClass(currentClass,dateSel.value,true);
+  excelExport.onclick=()=>exportCurrentExcel().catch(e=>showErr(e));
   manualIssueMemo.oninput=()=>{manualIssueState.textContent='입력 중';const cid=currentClass,iso=currentIso,value=manualIssueMemo.value,key=`manualIssue_${cid}_${iso}`;clearTimeout(saveTimers.get(key));saveTimers.set(key,setTimeout(()=>saveManualIssue(value,manualIssueState,cid,iso).catch(e=>showErr(e)),650))};
   await loadClass(classSel.value||'1');
 }

@@ -169,7 +169,7 @@ async function attendanceAdmin(user,p){
 async function attendanceOverviewAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출결대조</h3><p>운영총괄 출결·가-3 원문과 학생별 관리자 메모를 한 화면에서 대조합니다. Google Sheet 원본은 읽기 전용입니다.</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">출결대조 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-overview.js?v=20260906-10`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-overview.js?v=20260906-11`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;
