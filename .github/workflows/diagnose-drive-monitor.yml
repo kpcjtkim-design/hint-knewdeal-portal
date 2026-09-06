@@ -10,16 +10,33 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Query 1반 WEEK1 dates
+      - name: Query monitor and anonymous Drive pages
         shell: bash
         run: |
           set -e
           BASE='https://script.google.com/macros/s/AKfycbxE4sXaG3r6CZArdGgFnelj8tai-urVpXJ_gjPHFapmBUhrDk-BK3-xd2oi-Tb-QLt9/exec'
           ROOT='1k3p4VL3so0QjDMHeBA7UeKdkFCRgH46w'
+          WEEK='1j62QStbHFk9aZlaVWwteYjStdiG28Sjc'
+          DATEF='19JjMY1mkLVqbvzwDVqSirG72k3WKZPDR'
           for D in 2026-07-27 2026-07-31; do
-            echo "===== $D ====="
+            echo "===== MONITOR $D ====="
             curl -L --fail-with-body --silent --show-error --get "$BASE" \
               --data-urlencode "folderId=$ROOT" \
               --data-urlencode "date=$D"
             echo
           done
+          echo '===== ROOT HTML MATCHES ====='
+          curl -L --silent --show-error "https://drive.google.com/drive/folders/$ROOT" -o /tmp/root.html
+          printf 'root-bytes='; wc -c </tmp/root.html
+          grep -o -E '.{0,100}WEEK 1.{0,180}' /tmp/root.html | head -5 || true
+          grep -o "$WEEK" /tmp/root.html | head -5 || true
+          echo '===== WEEK HTML MATCHES ====='
+          curl -L --silent --show-error "https://drive.google.com/drive/folders/$WEEK" -o /tmp/week.html
+          printf 'week-bytes='; wc -c </tmp/week.html
+          grep -o -E '.{0,100}0731.{0,180}' /tmp/week.html | head -5 || true
+          grep -o "$DATEF" /tmp/week.html | head -5 || true
+          echo '===== DATE HTML MATCHES ====='
+          curl -L --silent --show-error "https://drive.google.com/drive/folders/$DATEF" -o /tmp/date.html
+          printf 'date-bytes='; wc -c </tmp/date.html
+          grep -o -E '.{0,100}20260731.{0,220}' /tmp/date.html | head -5 || true
+          grep -o '1VYdJDFEjgmFVkPEIU9YyvxKgd72POuZz' /tmp/date.html | head -5 || true
