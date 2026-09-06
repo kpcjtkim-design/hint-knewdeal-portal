@@ -107,6 +107,8 @@ async function monitor(root,date){
   const files=allFiles.filter(isPreviewable).sort((a,b)=>uploadedAt(b)-uploadedAt(a));
   const upstreamCount=Number.isFinite(Number(chosen?.fileCount))?Number(chosen.fileCount):(Number.isFinite(Number(primary?.fileCount))?Number(primary.fileCount):0);
   return{
+    rootFolderId:rootId,
+    rootFolderUrl:root,
     fileCount:files.length||upstreamCount,
     sourceFileCount:allFiles.length||upstreamCount,
     files,

@@ -11,12 +11,33 @@
 <body><div id="app"></div><div id="toast" class="toast"></div>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 const firebaseConfig={apiKey:'AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE',authDomain:'knewdeal-portal.firebaseapp.com',projectId:'knewdeal-portal',storageBucket:'knewdeal-portal.firebasestorage.app',messagingSenderId:'1054904032053',appId:'1:1054904032053:web:de18246d426776b54bca7c'};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
 const ADMINS=['hint.kpc@gmail.com','kpc.jtkim@gmail.com'];
+const DRIVE_READ_SCOPE='https://www.googleapis.com/auth/drive.metadata.readonly';
+const DRIVE_TOKEN_KEY='hintAdminDriveMetadataToken';
+const DRIVE_TOKEN_EXP_KEY='hintAdminDriveMetadataTokenExp';
+function cachedDriveAccessToken(){
+  try{const token=sessionStorage.getItem(DRIVE_TOKEN_KEY)||'',exp=Number(sessionStorage.getItem(DRIVE_TOKEN_EXP_KEY)||0);if(token&&exp>Date.now()+60000)return token}catch{}
+  return'';
+}
+function clearDriveAccessToken(){try{sessionStorage.removeItem(DRIVE_TOKEN_KEY);sessionStorage.removeItem(DRIVE_TOKEN_EXP_KEY)}catch{}}
+async function ensureDriveAccessToken(force=false){
+  if(force)clearDriveAccessToken();
+  const cached=cachedDriveAccessToken();if(cached)return cached;
+  const current=auth.currentUser;if(!current)throw new Error('관리자 로그인이 필요합니다.');
+  const driveProvider=new GoogleAuthProvider();
+  driveProvider.addScope(DRIVE_READ_SCOPE);
+  driveProvider.setCustomParameters({prompt:'consent',login_hint:current.email||'',include_granted_scopes:'true'});
+  const result=await reauthenticateWithPopup(current,driveProvider);
+  const credential=GoogleAuthProvider.credentialFromResult(result),token=credential&&credential.accessToken||'';
+  if(!token)throw new Error('Google Drive 읽기 권한 토큰을 받지 못했습니다.');
+  try{sessionStorage.setItem(DRIVE_TOKEN_KEY,token);sessionStorage.setItem(DRIVE_TOKEN_EXP_KEY,String(Date.now()+50*60*1000))}catch{}
+  return token;
+}
 const CLASSES=[
 ['1','수도권','임베디드 AI(HW)','서울대학교'],['2','수도권','제조지능화','한양대학교'],['3','충청','임베디드 AI(SW)','후인원'],['4','충청','제조지능화(1)','후인원'],['5','충청','제조지능화(2)','충북 G-테크벤처'],['6','대경','임베디드 AI(HW)','마이크로웨이브'],['7','대경','임베디드 AI(SW)','KPC 대구지부'],['8','대경','제조지능화(1)','대구상공회의소'],['9','대경','제조지능화(2)','경북대'],['10','동남','임베디드 AI(HW)','아르피나'],['11','동남','임베디드 AI(SW)','부산대 미래시민'],['12','동남','제조지능화(1)','아르피나'],['13','동남','제조지능화(2)','부산경영자총협회'],['14','동남','제조지능화(3)','울산기술교육원'],['15','전라','임베디드 AI(SW)','전남대'],['16','전라','제조지능화(1)','광주교육센터(A)'],['17','전라','제조지능화(2)','광주교육센터(B)']
 ].map(([id,region,course,venue])=>({id,region,course,venue}));
@@ -148,7 +169,8 @@ async function attendanceAdmin(user,p){
 async function attendanceOverviewAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출석부 한눈에 보기</h3><p>수기출석부 Drive 미리보기 · 운영총괄 출결/가-3 사유 · 학생별 관리자 메모를 한 화면에서 확인합니다. Sheet와 Drive는 읽기 전용입니다.</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">한눈에 보기 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-overview.js?v=20260906-7`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출석부 한눈에 보기를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  let driveAccessToken='';try{driveAccessToken=await ensureDriveAccessToken(false)}catch(e){console.warn('Google Drive read-only authorization was not granted',e)}
+  try{const mod=await import(`/attendance-overview.js?v=20260906-8`);await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES,driveAccessToken,getDriveAccessToken:ensureDriveAccessToken})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출석부 한눈에 보기를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;

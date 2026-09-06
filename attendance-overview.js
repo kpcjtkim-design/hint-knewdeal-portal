@@ -75,13 +75,14 @@ async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'c
 
 export async function mountAttendanceOverview(host,ctx){
   if(!host)throw new Error('출석부 한눈에 보기 영역을 찾지 못했습니다.');
-  const {auth,db,user,classes=[]}=ctx||{};if(!auth||!db||!user)throw new Error('관리자 로그인 세션이 없습니다.');
+  const {auth,db,user,classes=[],driveAccessToken='',getDriveAccessToken=null}=ctx||{};if(!auth||!db||!user)throw new Error('관리자 로그인 세션이 없습니다.');
   const outer=host.closest?.('.attendance-native-shell')||host.parentElement;
   if(outer){outer.style.overflow='visible';outer.style.width='min(1760px, calc(100vw - 32px))';outer.style.maxWidth='none';outer.style.marginLeft='50%';outer.style.transform='translateX(-50%)'}
   const root=host.shadowRoot||host.attachShadow({mode:'open'});
-  root.innerHTML=`<style>${STYLE}</style><div class="wrap"><div id="err"></div><section class="card toolbar"><div class="field"><label>반</label><select id="classSel">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('')}</select></div><div class="field"><label>교육일자</label><select id="dateSel"><option>불러오는 중…</option></select></div><button id="reload" class="btn soft">↻ 다시 읽기</button><span class="autosave-notice">※ 모든 메모는 저장버튼 없이 자동저장됩니다.</span><div class="spacer"></div><span id="topState" class="state">준비 중…</span></section><div class="hint">원본 Google Sheet와 Google Drive는 읽기만 합니다. 서류제출 상태는 출결 자동검증과 동일한 시트 색상 기준으로 표시합니다.</div><section class="workspace"><article id="previewPanel" class="card preview-panel"><div class="panel-head"><div><h3>수기출석부 미리보기</h3><span id="fileCount" class="count">0개</span></div><div class="panel-actions"><select id="fileSel" class="file-select"></select><button id="openFile" class="btn ghost" disabled>새 창</button><button id="full" class="btn dark">크게 보기</button><span class="size-row">높이 <input id="height" type="range" min="480" max="950" step="10" value="700"></span></div></div><div id="folderTarget" class="folder-target">날짜 폴더 확인 중…</div><div id="viewer" class="viewer-wrap"><div class="viewer-empty">반과 날짜를 불러오는 중입니다.</div></div><div class="manual-issue"><div class="manual-issue-head"><strong>수기출석부 이슈 메모</strong><span id="manualIssueState" class="manual-issue-state"></span></div><textarea id="manualIssueMemo" placeholder="시스템오류 누락, 관리자 서명 누락 등 기재"></textarea></div></article><article class="card data-panel"><div class="data-head"><div>Google Sheet · 이름 / 출석현황 / 가-3 사유 / 서류제출</div><div>학생별 관리자 메모 · 체크히어 / 서류제출 / 수기출석</div></div><div id="rows" class="rows"><div class="empty">불러오는 중…</div></div></article></section></div>`;
+  root.innerHTML=`<style>${STYLE}</style><div class="wrap"><div id="err"></div><section class="card toolbar"><div class="field"><label>반</label><select id="classSel">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('')}</select></div><div class="field"><label>교육일자</label><select id="dateSel"><option>불러오는 중…</option></select></div><button id="reload" class="btn soft">↻ 다시 읽기</button><span class="autosave-notice">※ 모든 메모는 저장버튼 없이 자동저장됩니다.</span><div class="spacer"></div><span id="topState" class="state">준비 중…</span></section><div class="hint">원본 Google Sheet와 Google Drive는 읽기만 합니다. 수기출석 미리보기는 관리자 Google Drive 읽기 권한으로 WEEK·날짜·파일을 자동 탐색합니다. 서류제출 상태는 출결 자동검증과 동일한 시트 색상 기준으로 표시합니다.</div><section class="workspace"><article id="previewPanel" class="card preview-panel"><div class="panel-head"><div><h3>수기출석부 미리보기</h3><span id="fileCount" class="count">0개</span></div><div class="panel-actions"><select id="fileSel" class="file-select"></select><button id="openFile" class="btn ghost" disabled>새 창</button><button id="full" class="btn dark">크게 보기</button><span class="size-row">높이 <input id="height" type="range" min="480" max="950" step="10" value="700"></span></div></div><div id="folderTarget" class="folder-target">날짜 폴더 확인 중…</div><div id="viewer" class="viewer-wrap"><div class="viewer-empty">반과 날짜를 불러오는 중입니다.</div></div><div class="manual-issue"><div class="manual-issue-head"><strong>수기출석부 이슈 메모</strong><span id="manualIssueState" class="manual-issue-state"></span></div><textarea id="manualIssueMemo" placeholder="시스템오류 누락, 관리자 서명 누락 등 기재"></textarea></div></article><article class="card data-panel"><div class="data-head"><div>Google Sheet · 이름 / 출석현황 / 가-3 사유 / 서류제출</div><div>학생별 관리자 메모 · 체크히어 / 서류제출 / 수기출석</div></div><div id="rows" class="rows"><div class="empty">불러오는 중…</div></div></article></section></div>`;
   const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),viewer=$('#viewer'),fileSel=$('#fileSel'),openFile=$('#openFile'),fileCount=$('#fileCount'),previewPanel=$('#previewPanel'),folderTarget=$('#folderTarget'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState');
   let dates=[],students=[],reasonCells={},driveFiles=[],memos={},manualIssue='',attendanceBackgrounds=[],currentIso='',currentClass='1',saveTimers=new Map();
+  let driveToken=String(driveAccessToken||'');
   const colorCache=new Map(),colorPromises=new Map();
   const showErr=e=>{err.innerHTML=e?`<div class="error">${esc(e.message||e)}</div>`:''};
   async function getReader(cid){const idToken=await user.getIdToken();return post('/api/attendance-reader',{idToken,classId:String(cid)})}
@@ -112,7 +113,58 @@ async function getColors(cid){
     const promise=getColors(id).then(bg=>{const data=Array.isArray(bg)?bg:[];colorCache.set(id,data);try{sessionStorage.setItem(storageKey,JSON.stringify({at:Date.now(),data}))}catch{}return data}).finally(()=>colorPromises.delete(id));
     colorPromises.set(id,promise);return promise;
   }
-  async function getDrive(cid,iso){const idToken=await user.getIdToken();return post('/api/admin-drive-review',{idToken,action:'list',classId:String(cid),date:iso,folderKey:'manualAttendance'})}
+  function overviewWeekNo(iso){
+    const d=new Date(`${iso}T00:00:00Z`),start=new Date('2026-07-27T00:00:00Z');
+    if(Number.isNaN(d.getTime()))return null;
+    return Math.floor((d-start)/604800000)+1;
+  }
+  function dateFolderPatterns(iso){
+    const mm=iso.slice(5,7),dd=iso.slice(8,10),m=String(Number(mm)),d=String(Number(dd));
+    return [mm+dd,m+d,m+'월'+d+'일',m+'.'+d,m+'-'+d,m+'_'+d].map(x=>String(x).replace(/\s+/g,'').toLowerCase());
+  }
+  function matchesDateFolder(name,iso){
+    const n=String(name||'').replace(/\s+/g,'').toLowerCase(),patterns=dateFolderPatterns(iso);
+    return patterns.some(p=>n===p||n.startsWith(p+'('));
+  }
+  async function driveChildren(parentId,token){
+    if(!parentId||!token)return[];
+    const params=new URLSearchParams();
+    params.set('q',`'${parentId}' in parents and trashed = false`);
+    params.set('pageSize','1000');
+    params.set('supportsAllDrives','true');
+    params.set('includeItemsFromAllDrives','true');
+    params.set('fields','files(id,name,mimeType,createdTime,modifiedTime,size,webViewLink)');
+    const r=await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});
+    if(r.status===401||r.status===403)throw new Error('GOOGLE_DRIVE_PERMISSION_REQUIRED');
+    if(!r.ok)throw new Error(`GOOGLE_DRIVE_API_${r.status}`);
+    const d=await r.json();return Array.isArray(d.files)?d.files:[];
+  }
+  function previewFileMeta(f){
+    const id=String(f?.id||''),name=String(f?.name||'파일'),mimeType=String(f?.mimeType||'application/octet-stream').toLowerCase();
+    if(!id||mimeType==='application/vnd.google-apps.folder')return null;
+    if(!(mimeType==='application/pdf'||mimeType.startsWith('image/')||/\.(pdf|png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(name)))return null;
+    return{fileId:id,name,mimeType,createdAt:String(f?.createdTime||''),updatedAt:String(f?.modifiedTime||''),size:Number.isFinite(Number(f?.size))?Number(f.size):null,fileUrl:`https://drive.google.com/file/d/${id}/view`,previewUrl:`https://drive.google.com/file/d/${id}/preview`};
+  }
+  async function directDriveLookup(rootId,iso,token){
+    const folderMime='application/vnd.google-apps.folder',weekNo=overviewWeekNo(iso),roots=await driveChildren(rootId,token);
+    const weekFolder=roots.find(f=>{if(String(f?.mimeType)!==folderMime)return false;const m=String(f?.name||'').match(/week\s*[-_()]?\s*(\d+)/i);return m&&Number(m[1])===weekNo});
+    if(!weekFolder)return{dateFolderFound:false,exactDateFolder:false,dateFolderId:'',dateFolderUrl:'',files:[],fileCount:0,directDriveUsed:true};
+    const dateFolders=await driveChildren(weekFolder.id,token),dateFolder=dateFolders.find(f=>String(f?.mimeType)===folderMime&&matchesDateFolder(f?.name,iso));
+    if(!dateFolder)return{dateFolderFound:false,exactDateFolder:false,dateFolderId:'',dateFolderUrl:'',files:[],fileCount:0,directDriveUsed:true,weekFolderId:weekFolder.id};
+    const raw=await driveChildren(dateFolder.id,token),files=raw.map(previewFileMeta).filter(Boolean).sort((a,b)=>{const ta=Date.parse(a.createdAt)||Date.parse(a.updatedAt)||0,tb=Date.parse(b.createdAt)||Date.parse(b.updatedAt)||0;return tb-ta});
+    return{dateFolderFound:true,exactDateFolder:true,dateFolderId:dateFolder.id,dateFolderUrl:`https://drive.google.com/drive/folders/${dateFolder.id}`,folderId:dateFolder.id,folderUrl:`https://drive.google.com/drive/folders/${dateFolder.id}`,files,fileCount:files.length,latestPreviewFile:files[0]||null,directDriveUsed:true,weekFolderId:weekFolder.id,week:weekNo,expectedWeek:weekNo,expectedDateFolder:iso.slice(5,7)+iso.slice(8,10)};
+  }
+  async function getDrive(cid,iso){
+    const idToken=await user.getIdToken(),base=await post('/api/admin-drive-review',{idToken,action:'list',classId:String(cid),date:iso,folderKey:'manualAttendance'});
+    if(Array.isArray(base.files)&&base.files.length)return base;
+    const rootId=String(base.rootFolderId||((!base.exactDateFolder&&base.folderId)?base.folderId:'')||'');
+    if(!rootId)return base;
+    let token=driveToken;
+    if(!token&&typeof getDriveAccessToken==='function'){try{token=String(await getDriveAccessToken(false)||'');driveToken=token}catch{}}
+    if(!token)return base;
+    try{const direct=await directDriveLookup(rootId,iso,token);return{...base,...direct,rootFolderId:rootId,rootFolderUrl:base.rootFolderUrl||base.folderUrl||'',bridgeUsed:false}}
+    catch(e){return{...base,directDriveError:String(e.message||e),rootFolderId:rootId}}
+  }
   function parseReader(out){
     const a=out.attendance||[],h=a[0]||[];
     attendanceBackgrounds=Array.isArray(out.attendanceBackgrounds)?out.attendanceBackgrounds:(Array.isArray(out.backgrounds)?out.backgrounds:[]);
@@ -155,7 +207,7 @@ async function getColors(cid){
         fileCount.textContent=`${reported}개 · 날짜폴더`;
         fileSel.innerHTML='<option value="">날짜 폴더 자동 확인됨</option>';
         if(typeof folderTarget!=='undefined'&&folderTarget){folderTarget.classList.remove('warn');folderTarget.innerHTML=`<strong>${esc(currentIso)} 날짜 폴더 확인됨</strong><span>업로드 확인과 동일한 폴더 판정</span>`}
-        viewer.innerHTML=reported?'<div class="viewer-empty">날짜 폴더와 파일 업로드는 자동 확인됐지만 미리보기 파일 정보를 받지 못했습니다.<br>읽기 전용 Drive 브리지 연결을 확인해 주세요.</div>':'<div class="viewer-empty">날짜 폴더는 자동으로 확인됐으며 현재 업로드된 수기출석부 파일이 없습니다.</div>';
+        viewer.innerHTML=reported?'<div class="viewer-empty">날짜 폴더와 파일 업로드는 확인됐지만 Google Drive 파일 목록 권한을 받지 못했습니다.<br>출석부 한눈에 보기 탭을 다시 열어 Drive 읽기 권한을 연결해 주세요.</div>':'<div class="viewer-empty">날짜 폴더는 자동으로 확인됐으며 현재 업로드된 수기출석부 파일이 없습니다.</div>';
         return;
       }
       if(typeof folderTarget!=='undefined'&&folderTarget){folderTarget.innerHTML=`<strong>${esc(currentIso)} 날짜 폴더 확인됨</strong>${folderUrl?`<a href="${esc(folderUrl)}" target="_blank" rel="noopener noreferrer">날짜 폴더 새 창</a>`:''}`}
