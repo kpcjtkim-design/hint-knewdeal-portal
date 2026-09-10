@@ -8,6 +8,56 @@ service cloud.firestore {
     function profile(){return get(/databases/$(database)/documents/users/$(email())).data;}
     function isAdmin(){return bootstrapAdmin()||(profileExists()&&profile().active==true&&profile().role=='ADMIN');}
     function isTeacher(){return profileExists()&&profile().active==true&&profile().role=='TEACHER';}
+    function checkhereApprover(){return signedIn() && email()=='hint.kpc@gmail.com' && request.auth.token.email_verified==true && request.auth.token.firebase.sign_in_provider=='google.com';}
+    function requestTeacherOwns(classId){
+      let p = profile();
+      let primary = p.get('primaryClassId',p.get('classId',''));
+      let extra = p.get('tempClassIds',p.get('classIds',[]));
+      return isTeacher() && (classId == primary || (extra is list && classId in extra));
+    }
+    function validChanges(c){
+      return c is map && c.keys().size()>0 && c.keys().hasOnly(['entry','exit','entryMemo','exitMemo'])
+        && (!('entry' in c) || (c.entry is string && c.entry.matches('([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]')))
+        && (!('exit' in c) || (c.exit is string && c.exit.matches('([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]')))
+        && (!('entryMemo' in c) || (c.entryMemo is string && c.entryMemo.size()<=500))
+        && (!('exitMemo' in c) || (c.exitMemo is string && c.exitMemo.size()<=500));
+    }
+    match /checkhereRequests/{requestId}{
+      allow read: if isAdmin() || (isTeacher() && resource.data.createdBy==email() && requestTeacherOwns(resource.data.classId));
+      allow create: if signedIn() && request.auth.token.email_verified==true
+        && (isAdmin() || requestTeacherOwns(request.resource.data.classId))
+        && request.resource.data.keys().hasOnly(['classId','date','name','phoneLast4','reason','changes','createdBy','createdAt','updatedAt','status'])
+        && request.resource.data.classId is string && request.resource.data.classId.matches('([1-9]|1[0-7])')
+        && request.resource.data.date is string && request.resource.data.date.matches('2026-[0-9]{2}-[0-9]{2}')
+        && request.resource.data.date>='2026-07-27' && request.resource.data.date<='2026-10-22'
+        && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=60
+        && request.resource.data.phoneLast4 is string && request.resource.data.phoneLast4.matches('([0-9]{4})?')
+        && request.resource.data.reason is string && request.resource.data.reason.size()>0 && request.resource.data.reason.size()<=1000
+        && validChanges(request.resource.data.changes)
+        && request.resource.data.createdBy==email() && request.resource.data.status=='pending'
+        && request.resource.data.createdAt==request.time && request.resource.data.updatedAt==request.time;
+      allow update: if checkhereApprover() && request.resource.data.updatedAt==request.time && (
+        (resource.data.status=='pending' && request.resource.data.status=='approved'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','approval','approvedBy','approvedAt','updatedAt'])
+          && request.resource.data.approvedBy==email() && request.resource.data.approvedAt==request.time
+          && request.resource.data.approval is map
+          && request.resource.data.approval.keys().hasOnly(['recordId','version','before','after','reason'])
+          && request.resource.data.approval.recordId is string && request.resource.data.approval.version is string
+          && request.resource.data.approval.reason==resource.data.reason
+          && validChanges(request.resource.data.approval.after))
+        || (resource.data.status=='pending' && request.resource.data.status=='rejected'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewNote','reviewedBy','updatedAt'])
+          && request.resource.data.reviewedBy==email() && request.resource.data.reviewNote is string
+          && request.resource.data.reviewNote.size()>0 && request.resource.data.reviewNote.size()<=1000)
+        || (resource.data.status=='approved' && request.resource.data.status=='applying'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attemptId','updatedAt'])
+          && request.resource.data.attemptId is string && request.resource.data.attemptId.size()>=16)
+        || (resource.data.status=='applying' && request.resource.data.status in ['verified','partial','failed','unknown','conflict']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','result','updatedAt'])
+          && request.resource.data.result is map && request.resource.data.result.message is string)
+      );
+      allow delete: if false;
+    }
     function teacherOwns(classId){
       return isTeacher() && (
         (profile().classId == classId) ||
@@ -21,6 +71,15 @@ service cloud.firestore {
     match /classes/{classId}{
       allow read: if isAdmin() || teacherOwns(classId);
       allow create, update, delete: if isAdmin();
+      match /checkhereSnapshots/{snapshotId}{
+        allow read: if isAdmin();
+        allow create: if isAdmin()
+          && request.resource.data.classId == classId
+          && request.resource.data.createdBy == request.auth.token.email
+          && request.resource.data.records is list
+          && request.resource.data.records.size() <= 1000;
+        allow update, delete: if false;
+      }
       match /customLinks/{linkId}{
         allow read: if isAdmin() || teacherOwns(classId);
         allow create, update, delete: if isAdmin() || teacherOwns(classId);

@@ -1,0 +1,1 @@
+{"name":"hint-checkhere-bridge","private":true,"version":"0.1.0","type":"module","engines":{"node":">=24"},"scripts":{"start":"node server.mjs","test":"node --test tests/*.test.mjs"},"dependencies":{"playwright":"1.62.1"}}

@@ -1,0 +1,5 @@
+checkhere/data/
+checkhere/node_modules/
+checkhere/runtime/
+checkhere/test-results/
+checkhere/*.log

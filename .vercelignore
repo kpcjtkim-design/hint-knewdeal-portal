@@ -1,0 +1,14 @@
+checkhere/data/
+checkhere/node_modules/
+checkhere/runtime/
+checkhere/test-results/
+checkhere/tests/
+checkhere/*.log
+checkhere/server.mjs
+checkhere/collector.mjs
+checkhere/identity.mjs
+checkhere/writeback.mjs
+checkhere/cloud-approval.mjs
+checkhere/firebase-public.mjs
+checkhere/Start.ps1
+checkhere/*.cmd
