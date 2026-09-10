@@ -1,8 +1,4 @@
-from pathlib import Path
-
-root = Path('.')
-
-launcher = r'''#!/bin/bash
+#!/bin/bash
 set -u
 
 BRIDGE_ROOT="$(cd "$(dirname "$0")" && pwd -P)"
@@ -127,62 +123,3 @@ echo "[체크히어] 처음이면 '체크히어 로그인'을 눌러 전용 Chro
 echo "[체크히어] 이 터미널 창은 닫아도 수집 프로그램은 계속 실행됩니다."
 sleep 2
 exit 0
-'''
-
-launcher_path = root / 'checkhere' / '체크히어 시작.command'
-launcher_path.write_text(launcher, encoding='utf-8', newline='\n')
-launcher_path.chmod(0o755)
-
-ui = root / 'checkhere-ui.mjs'
-s = ui.read_text(encoding='utf-8')
-replacements = {
-    '<summary>윈도우 연결 프로그램 설정</summary>': '<summary>수집 연결 프로그램 설정</summary>',
-    '이 PC에서 ‘체크히어 시작’을 실행하세요.': 'Windows에서는 ‘체크히어 시작.cmd’, macOS에서는 ‘체크히어 시작.command’를 실행하세요.',
-    'aria-label="윈도우 연결 키"': 'aria-label="로컬 연결 키"',
-    "윈도우 연결 키를 먼저 입력해 주세요.": "로컬 연결 키를 먼저 입력해 주세요.",
-    "윈도우 연결 프로그램에 연결하지 못했습니다. ‘체크히어 시작’을 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.": "수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.",
-    "key?'PC 연결됨 · 로그인 확인'": "key?'로컬 연결됨 · 로그인 확인'",
-}
-for old, new in replacements.items():
-    if old not in s:
-        raise SystemExit(f'checkhere-ui anchor missing: {old}')
-    s = s.replace(old, new)
-ui.write_text(s, encoding='utf-8')
-
-portal = root / 'checkhere-portal.mjs'
-s = portal.read_text(encoding='utf-8')
-old = "./checkhere-ui.mjs?v=20260910-review2"
-new = "./checkhere-ui.mjs?v=20260910-review3"
-if old not in s:
-    raise SystemExit('checkhere-portal cache anchor missing')
-portal.write_text(s.replace(old, new, 1), encoding='utf-8')
-
-vi = root / '.vercelignore'
-s = vi.read_text(encoding='utf-8')
-if 'checkhere/*.command' not in s:
-    s = s.rstrip() + '\ncheckhere/*.command\n'
-vi.write_text(s, encoding='utf-8')
-
-readme = root / 'checkhere' / 'README.md'
-s = readme.read_text(encoding='utf-8')
-s = s.replace('Windows 연결 프로그램입니다.', 'Windows·macOS 로컬 연결 프로그램입니다.', 1)
-if '## 이 PC에서 실행' in s:
-    s = s.replace('## 이 PC에서 실행', '## Windows에서 실행', 1)
-mac_section = '''## macOS에서 실행
-
-1. Google Chrome과 Node.js 24 이상을 준비합니다. `체크히어 시작.command`는 프로젝트의 `runtime/node`, Codex 런타임, Homebrew, Volta, asdf, mise 및 일반 PATH 순서로 Node를 찾습니다.
-2. `체크히어 시작.command`를 더블클릭합니다. Git clone으로 받은 파일은 실행 권한이 유지됩니다. ZIP 등으로 받아 실행 권한이 사라진 경우 터미널에서 `chmod +x "체크히어 시작.command"`를 한 번 실행합니다.
-3. 첫 실행에서 Playwright가 없으면 같은 폴더의 `package.json`을 기준으로 npm 의존성을 자동 설치합니다. Playwright 자체 Chromium은 받지 않고 설치된 Google Chrome을 사용합니다.
-4. `http://127.0.0.1:8765`가 Chrome에서 자동으로 열립니다. **체크히어 로그인**을 누르고 새 전용 Chrome 창에서 로그인합니다. macOS에서도 `data/chrome-profile`에 전용 로그인 세션이 유지됩니다.
-5. 운영 포털의 **체크히어** 탭에서 로컬 화면의 연결 키를 입력하고 수집합니다. 브라우저가 로컬 네트워크 접근을 묻는 경우 허용해야 합니다.
-6. 이후 수집·검토·지정 관리자 수정·Firebase 보관 흐름은 Windows와 동일합니다. Windows의 `Start.ps1` 및 `.cmd` 파일은 그대로 유지됩니다.
-
-> macOS 실행기는 Apple Silicon과 Intel Mac의 일반적인 Homebrew 경로를 모두 확인합니다. 실제 체크히어 화면 DOM과 로그인 정책은 Windows와 동일한 Playwright 수집기를 사용하므로, 최초 배포 후 실제 Mac에서 로그인 → 1개 반·1개 날짜 수집 → 읽기 전용 검수까지 먼저 확인한 뒤 수정 기능을 사용하는 것을 권장합니다.
-
-'''
-if '## macOS에서 실행' not in s:
-    marker = '## 플랫폼 연결\n'
-    if marker not in s:
-        raise SystemExit('README platform marker missing')
-    s = s.replace(marker, mac_section + marker, 1)
-readme.write_text(s, encoding='utf-8')

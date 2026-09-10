@@ -1,5 +1,5 @@
 import {collection,doc,getDoc,getDocs,setDoc,query,orderBy,limit,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {mountCheckHere} from './checkhere-ui.mjs?v=20260910-review2';
+import {mountCheckHere} from './checkhere-ui.mjs?v=20260910-review3';
 import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs';
 import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
