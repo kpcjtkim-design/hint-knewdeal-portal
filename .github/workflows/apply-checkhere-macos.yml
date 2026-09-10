@@ -1,0 +1,54 @@
+name: Apply CheckHere macOS launcher
+
+on:
+  push:
+    branches: [patch-checkhere-macos-20260910]
+    paths:
+      - '.github/workflows/apply-checkhere-macos.yml'
+      - 'tools/apply_checkhere_macos.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: patch-checkhere-macos-20260910
+          fetch-depth: 0
+      - name: Apply macOS launcher patch
+        run: python tools/apply_checkhere_macos.py
+      - name: Validate macOS launcher and shared UI
+        shell: bash
+        run: |
+          bash -n "checkhere/체크히어 시작.command"
+          test -x "checkhere/체크히어 시작.command"
+          grep -q 'uname -s' "checkhere/체크히어 시작.command"
+          grep -q 'Node.js 24' "checkhere/체크히어 시작.command"
+          grep -q 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1' "checkhere/체크히어 시작.command"
+          grep -q 'Google Chrome' "checkhere/체크히어 시작.command"
+          grep -q '127.0.0.1:8765' "checkhere/체크히어 시작.command"
+          grep -q '수집 연결 프로그램 설정' checkhere-ui.mjs
+          grep -q 'macOS에서는 ‘체크히어 시작.command’' checkhere-ui.mjs
+          grep -q '로컬 연결 키를 먼저 입력해 주세요.' checkhere-ui.mjs
+          grep -q 'checkhere-ui.mjs?v=20260910-review3' checkhere-portal.mjs
+          grep -q 'checkhere/\*.command' .vercelignore
+          grep -q '## macOS에서 실행' checkhere/README.md
+          node --check checkhere/server.mjs
+          node --check checkhere/collector.mjs
+          node --check checkhere-ui.mjs
+          git diff --check
+      - name: Commit to main
+        shell: bash
+        run: |
+          rm -f tools/apply_checkhere_macos.py
+          rm -f .github/workflows/apply-checkhere-macos.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add macOS CheckHere launcher"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
