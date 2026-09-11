@@ -85,6 +85,37 @@ service cloud.firestore {
         allow create, update, delete: if isAdmin() || teacherOwns(classId);
       }
     }
+    // Timetable beta data is isolated from attendance and production class settings.
+    function timetableTeacherOwns(classId){
+      let p = profile();
+      return isTeacher() && (p.get('primaryClassId','') == classId || p.get('classId','') == classId
+        || classId in p.get('classIds',[]) || classId in p.get('tempClassIds',[]));
+    }
+    function validTimetable(classId){
+      return request.resource.data.classId == classId
+        && classId.matches('([1-9]|1[0-7])')
+        && request.resource.data.entries is list && request.resource.data.entries.size() <= 500
+        && request.resource.data.revision is int
+        && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time;
+    }
+    match /timetableBetaDrafts/{classId}{
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && validTimetable(classId);
+      allow delete: if false;
+    }
+    match /timetableBetaPublished/{classId}{
+      allow read: if isAdmin() || timetableTeacherOwns(classId);
+      allow create, update: if isAdmin() && validTimetable(classId);
+      allow delete: if false;
+    }
+    match /timetableBetaInstructors/{instructorId}{
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && request.resource.data.name is string
+        && request.resource.data.name.size()>0 && request.resource.data.name.size()<=100
+        && request.resource.data.keys().hasOnly(['name','organization','phone','note','revision','updatedBy','updatedAt'])
+        && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
     match /settings/{settingId}{
       allow read: if isAdmin() || isTeacher();
       allow create, update, delete: if isAdmin();
