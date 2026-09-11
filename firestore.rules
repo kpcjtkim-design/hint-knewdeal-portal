@@ -116,6 +116,28 @@ service cloud.firestore {
         && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
+    // Beta CheckHere proposals remain private to administrators. Sources are immutable.
+    match /checkhereProposalDrafts/{draftId}{
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.classId is string
+        && request.resource.data.classId.matches('([1-9]|1[0-7])')
+        && request.resource.data.date is string
+        && request.resource.data.students is map
+        && request.resource.data.updatedBy == email()
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /checkhereProposalSources/{sourceId}{
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.requestId is string
+        && request.resource.data.record is map
+        && validChanges(request.resource.data.changes)
+        && request.resource.data.updatedBy == email()
+        && request.resource.data.updatedAt == request.time;
+      allow update, delete: if false;
+    }
     match /settings/{settingId}{
       allow read: if isAdmin() || isTeacher();
       allow create, update, delete: if isAdmin();

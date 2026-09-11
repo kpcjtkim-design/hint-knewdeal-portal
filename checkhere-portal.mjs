@@ -7,7 +7,8 @@ import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
   if(!user)throw new Error('관리자 로그인이 필요합니다.');
   const canEdit=await canEditCheckHere(user);
-  host.innerHTML=(showRequests?'<div data-requests></div>':'')+'<div data-collector-host></div>';
+  host.innerHTML=(showRequests?'<nav class="admin-tabs" aria-label="체크히어 업무"><button class="tab active" data-ch-view="collect">수집·검수</button><button class="tab" data-ch-view="requests">반영 요청·승인</button></nav>':'')+'<div data-collector-host></div>'+(showRequests?'<div data-requests hidden></div>':'');
+  if(showRequests)host.querySelectorAll('[data-ch-view]').forEach(b=>b.onclick=()=>{const approval=b.dataset.chView==='requests';host.querySelector('[data-requests]').hidden=!approval;host.querySelector('[data-collector-host]').hidden=approval;host.querySelectorAll('[data-ch-view]').forEach(x=>x.classList.toggle('active',x===b));if(approval)requests?.refresh();});
   let controller,requests;
   const applyChange=createDirectEditor({user,controller:()=>controller,store:{
     async get(id){const snap=await getDoc(doc(db,'checkhereRequests',id));return snap.exists()?snap.data():null;},
@@ -35,7 +36,7 @@ export async function mountCheckHerePortal(host,{db,user,classes,showRequests=fa
 
     }
   });
-  if(showRequests)requests=await mountCheckHereRequests(host.querySelector('[data-requests]'),{db,user,classes,admin:true,controller:()=>controller,openCollector(){host.querySelector('[data-collector-host]').scrollIntoView({block:'start'});}});
+  if(showRequests)requests=await mountCheckHereRequests(host.querySelector('[data-requests]'),{db,user,classes,admin:true,controller:()=>controller,onCount(n){host.querySelector('[data-ch-view=requests]').textContent=`반영 요청·승인${n?' ('+n+')':''}`;},openCollector(){host.querySelector('[data-ch-view=collect]')?.click();host.querySelector('[data-collector-host]').scrollIntoView({block:'start'});}});
   return()=>{stop();requests?.dispose();};
 }
 

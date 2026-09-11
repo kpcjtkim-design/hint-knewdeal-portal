@@ -1,3 +1,4 @@
+import {createProposalReview} from './checkhere-proposals.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {GoogleAuthProvider,reauthenticateWithPopup} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {ATTENDANCE_OPTIONS,EVIDENCE_OPTIONS,EVIDENCE_COLORS,emptyStatus,hasExistingReason,portalStatus,evidenceStatus,rewriteReasons,sheetStatus,matchSnapshot} from './attendance-beta-core.mjs';
@@ -18,6 +19,7 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   const rawColor=s=>String(state().backgrounds?.[s.rowIndex+1]?.[state().date.idx+4]||'#ffffff').toLowerCase();
   function displayStatus(s){const raw=String(s.all[state().date.idx]||'').trim();try{return portalStatus(raw,info(s));}catch{return raw||'해당없음';}}
   function displayEvidence(s){return evidenceStatus(rawColor(s),String(s.all[state().date.idx]||''),info(s),colorState);}
+  const proposals=createProposalReview({db,user,root,render,showErr,hasUnsavedReason:()=>drafts.size>0,getContext:s=>({classId:state().classId,date:state().iso,name:s.name,status:displayStatus(s),reason:currentReason(s),raw:state().raw,record:matchSnapshot(s,state().students,snapshots).record})});
   async function persistMeta(s,patch){const ctx=state(),ref=doc(db,'settings',`attendanceBeta_${ctx.classId}_${ctx.iso}`);metadata={...metadata,[key(s)]:{...info(s),...patch}};try{await setDoc(ref,{classId:ctx.classId,date:ctx.iso,students:{[key(s)]:patch},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});}catch(e){showErr(new Error('시트 저장은 완료됐지만 포털 세부 구분 저장에 실패했습니다. '+e.message));}}
   function controls(s){
     const status=displayStatus(s),evidence=displayEvidence(s),disabled=(!writer.connected()||working||loading)?'disabled':'';
@@ -25,16 +27,17 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
     return {status:`<select class="beta-status" aria-label="${esc(s.name)} 출결" data-student="${esc(key(s))}" ${disabled}>${options.map(x=>`<option ${x===status?'selected':''}>${esc(x)}</option>`).join('')}</select>`,reason:`<input class="beta-reason" aria-label="${esc(s.name)} 사유" maxlength="500" data-student="${esc(key(s))}" value="${esc(drafts.has(key(s))?drafts.get(key(s)):currentReason(s))}" ${working||loading?'disabled':''}>`,evidence:`<select class="beta-evidence" aria-label="${esc(s.name)} 서류제출" data-student="${esc(key(s))}" ${disabled}>${EVIDENCE_OPTIONS.map(x=>`<option ${x===evidence?'selected':''}>${x}</option>`).join('')}</select>`};
   }
   function snapshotCells(s,memoButton=()=> ''){
-    const cell=(value,category)=>`<div class="cell beta-source"><div class="source-value">${value}</div>${category?memoButton(category):''}</div>`;
+    const cell=(value,category,field)=>`<div class="cell beta-source"><div class="source-value">${value}</div>${field?proposals.html(s,field):''}${category?memoButton(category):''}</div>`;
     const {record:r,error}=matchSnapshot(s,state().students,snapshots);
     if(snapshotError||!r)return cell(esc(snapshotError||error),'checkhereTimes')+cell('—')+cell('—','checkhereEntry')+cell('—','checkhereExit')+cell('—','checkhereOutings');
     const time=r.collectedAt?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(r.collectedAt)):'';
     const audited=judge(r);
-    return cell(`${esc(r.rawEntry??r.entry??'—')}<br>→ ${esc(r.exit||'—')}<small>수집 ${esc(time)}</small>`,'checkhereTimes')+cell(`${audited.labels.map(esc).join(' · ')}<small>${r.readState==='complete'?'저장본':'상세 수집 실패'}</small>`)+cell(esc(r.entryMemo??'미수집'),'checkhereEntry')+cell(esc(r.exitMemo??'미수집'),'checkhereExit')+cell(r.outings?.map(x=>`${esc(x.start||'—')} ~ ${esc(x.end||'—')}`).join('<br>')||(r.readState==='complete'?'없음':'미확인'),'checkhereOutings');
+    return cell(`${esc(r.rawEntry??r.entry??'—')}<br>→ ${esc(r.exit||'—')}<small>수집 ${esc(time)}</small>`,'checkhereTimes')+cell(`${audited.labels.map(esc).join(' · ')}<small>${r.readState==='complete'?'저장본':'상세 수집 실패'}</small>`)+cell(esc(r.entryMemo??'미수집'),'checkhereEntry','entryMemo')+cell(esc(r.exitMemo??'미수집'),'checkhereExit','exitMemo')+cell(r.outings?.map(x=>`${esc(x.start||'—')} ~ ${esc(x.end||'—')}`).join('<br>')||(r.readState==='complete'?'없음':'미확인'),'checkhereOutings');
   }
   function headerState(){const save=root.querySelector('#saveReasons');if(save){save.textContent=`사유 저장${drafts.size?' ('+drafts.size+')':''}`;save.disabled=!drafts.size||working||loading||!writer.connected();}const c=root.querySelector('#sheetConnect');if(c){c.disabled=working||loading;c.textContent=writer.connected()?'내 계정 연결됨':'내 계정 시트 연결';}for(const id of ['classSel','dateSel','reload']){const el=root.querySelector('#'+id);if(el)el.disabled=working||loading;}}
   async function action(fn){if(working||loading)return;working=true;showErr('');render();try{await fn();}catch(e){showErr(e);}finally{working=false;render();}}
   function bind(){
+    proposals.bind(state().students);
     const student=id=>state().students.find(s=>key(s)===id);
     root.querySelectorAll('.beta-status').forEach(el=>el.onchange=()=>{const s=student(el.dataset.student),before=displayStatus(s),after=el.value;el.value=before;if(after===before)return;if(!emptyStatus(before)&&!confirm(`${s.name}의 출결을 변경하시겠습니까?\n${before} → ${after}`))return;action(async()=>{const ctx=state(),raw=String(s.all[ctx.date.idx]||'').trim();await writer.write({classId:ctx.classId,date:ctx.iso,name:s.name,kind:'status',before:raw,after});s.all[ctx.date.idx]=sheetStatus(after);await persistMeta(s,{portalStatus:after,sheetStatus:sheetStatus(after)});});});
     root.querySelectorAll('.beta-evidence').forEach(el=>el.onchange=()=>{const s=student(el.dataset.student),before=displayEvidence(s),after=el.value;el.value=before;if(after===before)return;if(!confirm(`${s.name}의 서류제출 상태와 시트 배경색을 변경하시겠습니까?\n${before} → ${after}`))return;action(async()=>{const ctx=state(),color=EVIDENCE_COLORS[after];await writer.write({classId:ctx.classId,date:ctx.iso,name:s.name,kind:'color',before:rawColor(s),after:color});ctx.backgrounds[s.rowIndex+1]??=[];ctx.backgrounds[s.rowIndex+1][ctx.date.idx+4]=color;await persistMeta(s,{evidenceStatus:after,sheetColor:color});});});
@@ -48,7 +51,8 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   root.querySelector('#sheetConnect').onclick=()=>action(async()=>{await writer.connect(state().classId);});
   root.querySelector('#saveReasons').onclick=saveReasons;
   return {controls,snapshotCells,bind,displayStatus,displayEvidence,currentReason,draftReason:s=>drafts.get(key(s))??currentReason(s),snapshotFor:s=>matchSnapshot(s,state().students,snapshots).record,
+    proposalExport:s=>proposals.exportFor(s),
     canNavigate(){if(working||loading)return false;return !drafts.size||confirm('저장하지 않은 사유가 있습니다. 이동하면 입력 중인 사유가 사라집니다. 이동하시겠습니까?');},
-    async load(classId,date){const n=++sequence;loading=true;drafts.clear();metadata={};snapshots=[];snapshotError='';headerState();const results=await Promise.allSettled([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date)]);if(n!==sequence)return;loading=false;if(results[0].status==='fulfilled')metadata=results[0].value.data()?.students||{};else showErr(new Error('포털 세부 구분을 불러오지 못했습니다. '+results[0].reason.message));if(results[1].status==='fulfilled')snapshots=results[1].value;else snapshotError='체크히어 저장본 조회 실패 · 다시 읽기 필요';headerState();},
+    async load(classId,date){const n=++sequence;loading=true;drafts.clear();metadata={};snapshots=[];snapshotError='';headerState();const results=await Promise.allSettled([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.load(classId,date)]);if(n!==sequence)return;loading=false;if(results[0].status==='fulfilled')metadata=results[0].value.data()?.students||{};else showErr(new Error('포털 세부 구분을 불러오지 못했습니다. '+results[0].reason.message));if(results[1].status==='fulfilled')snapshots=results[1].value;else snapshotError='체크히어 저장본 조회 실패 · 다시 읽기 필요';headerState();},
   };
 }
