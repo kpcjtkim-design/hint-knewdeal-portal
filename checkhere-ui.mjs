@@ -1,3 +1,5 @@
+import {runCollectionQueue} from './checkhere/bulk-collect.mjs';
+import {collectionDates,koreaToday} from './attendance-beta-core.mjs';
 import {judge} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const local=()=>['127.0.0.1','localhost'].includes(location.hostname)&&location.port==='8765';
@@ -5,12 +7,13 @@ const time=v=>v||'—';
 export async function mountCheckHere(host,ctx={}){
   const root=host.shadowRoot||host.attachShadow({mode:'open'}),css=await(await fetch('/checkhere/ui.css')).text();
   const canEdit=ctx.canEdit??!!(ctx.requestNew||ctx.applyChange);
+  let batchRunning=false,batchStopped=false;
   let key='',state={records:[],jobs:[]},pollTimer=null,shownJobs=new Set(),editing=false,cloudShown=false;
   root.innerHTML=`<style>${css}</style><div class="app"><header class="top"><div><div class="brand">HINT / ATTENDANCE REVIEW</div><h1>체크히어 검수</h1><div class="muted">입·퇴실, 관리자 메모, 외출 구간을 한 번에 확인합니다.</div></div><div class="line"><span id="connectionStatus" class="badge">연결 대기</span><button id="connect">체크히어 로그인</button></div></header>
     <details id="pairing" class="card connection"><summary>수집 연결 프로그램 설정</summary><p class="muted">Windows에서는 ‘체크히어 시작.cmd’, macOS에서는 ‘체크히어 시작.command’를 실행하세요. 플랫폼에서는 로컬 화면에 표시된 연결 키를 아래에 입력하면 됩니다. 프로그램을 재시작하면 키가 바뀝니다.</p><div class="line"><input id="keyInput" type="password" autocomplete="off" aria-label="로컬 연결 키" placeholder="연결 키"><button id="pair">연결</button></div><div id="localKey"></div></details>
-    <section class="toolbar"><div><label for="class">반</label><select id="class">${Array.from({length:17},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}반</option>`).join('')}</select></div><div><label for="from">시작 날짜</label><input id="from" type="date" value="2026-09-03"></div><div><label for="to">종료 날짜</label><input id="to" type="date" value="2026-09-03"></div><button id="sync" class="primary">체크히어에서 수집</button><button id="refresh">저장된 기록 조회</button><button id="cancel" hidden>수집 중단</button>${ctx.load?'<button id="loadCloud">플랫폼 저장본 조회</button><button id="saveCloud">플랫폼에 저장</button>':''}</section>
+    <section class="toolbar"><div><label for="class">반</label><select id="class"><option value="all">전체 17개 반</option>${Array.from({length:17},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}반</option>`).join('')}</select></div><div><label for="from">시작 날짜</label><input id="from" type="date" value="2026-09-03"></div><div><label for="to">종료 날짜</label><input id="to" type="date" value="2026-09-03"></div><button id="bulkPreset">전체반 · 8/27~오늘</button><button id="sync" class="primary">체크히어에서 수집</button><button id="refresh">저장된 기록 조회</button><button id="cancel" hidden>수집 중단</button>${ctx.load?'<button id="loadCloud">플랫폼 저장본 조회</button><button id="saveCloud">플랫폼에 저장</button>':''}</section>
     <div class="notice">기준 09:00–18:00 · 점심 12:00–13:00 제외 · 09:11부터 지각 · 17:50 이전 조퇴. 시간만으로 인정출석을 확정하지 않습니다. 저장본과 상세 수집 실패는 별도로 표시합니다.</div>
-    <div id="jobStatus" role="status" aria-live="polite"></div><section id="stats" class="stats"></section><div class="filters"><div class="line"><select id="filter" aria-label="검수 상태"><option value="all">전체 기록</option><option value="review">확인 필요</option><option value="memo">사유 확인</option><option value="partial">재수집 필요</option></select><input id="search" placeholder="학생 이름 검색" aria-label="학생 이름 검색"></div><button id="export">검수 결과 내보내기</button></div><div id="table"></div><div class="foot">시간 판정은 검토를 돕는 결과입니다. 정상 시간으로 임의 보정하지 않습니다. 중복 출결은 반영에서 제외합니다.<br>반영 완료는 체크히어를 다시 읽어 시간과 메모가 일치한 경우에만 표시합니다. Google Sheet 및 출결 파일을 수정·삭제하지 않습니다.</div><details><summary>최근 작업 결과</summary><div id="jobs"></div></details></div><div id="overlay"></div><div id="alerts"></div>`;
+    <div id="bulkStatus" role="status"></div><div id="jobStatus" role="status" aria-live="polite"></div><section id="stats" class="stats"></section><div class="filters"><div class="line"><select id="filter" aria-label="검수 상태"><option value="all">전체 기록</option><option value="review">확인 필요</option><option value="memo">사유 확인</option><option value="partial">재수집 필요</option></select><input id="search" placeholder="학생 이름 검색" aria-label="학생 이름 검색"></div><button id="export">검수 결과 내보내기</button></div><div id="table"></div><div class="foot">시간 판정은 검토를 돕는 결과입니다. 정상 시간으로 임의 보정하지 않습니다. 중복 출결은 반영에서 제외합니다.<br>반영 완료는 체크히어를 다시 읽어 시간과 메모가 일치한 경우에만 표시합니다. Google Sheet 및 출결 파일을 수정·삭제하지 않습니다.</div><details><summary>최근 작업 결과</summary><div id="jobs"></div></details></div><div id="overlay"></div><div id="alerts"></div>`;
   const $=s=>root.querySelector(s);
   function alertMessage(title,message){$('#alerts').innerHTML=`<div class="alert" role="alertdialog" aria-modal="true" aria-label="${esc(title)}"><div><h2>${esc(title)}</h2><p>${esc(message)}</p><div class="actions"><button id="alertClose" class="primary">확인</button></div></div></div>`;$('#alertClose').onclick=()=>{$('#alerts').innerHTML='';};$('#alertClose').focus();}
   async function api(path,data){
@@ -18,12 +21,12 @@ export async function mountCheckHere(host,ctx={}){
     let r;try{r=await fetch(`http://127.0.0.1:8765/api/${path}`,{method:data?'POST':'GET',headers:{'x-hint-key':key,...(data?{'content-type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(30000)});}catch{throw new Error('수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.');}
     const d=await r.json();if(!r.ok)throw new Error(d.error||'요청에 실패했습니다.');return d;
   }
-  const selected=()=>state.records.filter(r=>String(r.classId)===$('#class').value&&r.date>=$('#from').value&&r.date<=$('#to').value);
+  const selected=()=>state.records.filter(r=>($('#class').value==='all'||String(r.classId)===$('#class').value)&&r.date>=$('#from').value&&r.date<=$('#to').value);
   function render(){
     if(!host.isConnected){clearTimeout(pollTimer);return;}
     $('#connectionStatus').textContent=state.connected?'체크히어 연결됨':key?'로컬 연결됨 · 로그인 확인':'연결 대기';$('#connectionStatus').className=`badge ${state.connected?'good':''}`;
     const busy=state.jobs.find(j=>j.id===state.busy),records=selected().map(r=>({...r,audit:judge(r)}));
-    $('#sync').disabled=!!state.busy;$('#connect').disabled=!!state.busy;$('#cancel').hidden=!(busy?.kind==='sync');
+    $('#sync').disabled=!!state.busy||batchRunning;$('#connect').disabled=!!state.busy||batchRunning;$('#cancel').hidden=!(busy?.kind==='sync')&&!batchRunning;for(const id of ['class','from','to','bulkPreset','loadCloud','saveCloud'])if($('#'+id))$('#'+id).disabled=batchRunning;
     $('#jobStatus').innerHTML=busy?`<div class="status"><span class="spinner"></span>${esc(busy.kind==='apply'?'체크히어 변경값 확인 중':busy.message)} ${busy.progress?`· ${esc(busy.progress.date)} ${busy.progress.index}/${busy.progress.total} ${esc(busy.progress.name)}`:''}</div>`:state.jobs[0]?`<div class="status">${esc(state.jobs[0].message)} <span class="muted">${esc(state.jobs[0].finishedAt?.replace('T',' ').slice(0,19)||'')}</span></div>`:'';
     const review=records.filter(r=>r.audit.issues.length),missing=records.filter(r=>r.readState!=='complete'||r.source!=='live');
     $('#stats').innerHTML=[['전체 학생·날짜',records.length,''],['확인 필요',review.length,'warn'],['사유 확인',records.filter(r=>r.audit.issues.some(i=>i.code.startsWith('MEMO')||i.code==='RECOGNIZED_MEMO')).length,'warn'],['재수집 필요',missing.length,'bad']].map(([label,n,c])=>`<div class="stat ${c}"><small>${label}</small><strong>${n}</strong></div>`).join('');
@@ -43,7 +46,8 @@ export async function mountCheckHere(host,ctx={}){
         if(batch.length)try{await ctx.save(batch,j);}catch(e){alertMessage('수집 완료 · 플랫폼 저장 실패',`PC에는 수집 결과가 남아 있습니다. 플랫폼 저장을 다시 시도해 주세요.\n${e.message}`);}
       }
     }
-    if(state.busy&&host.isConnected)pollTimer=setTimeout(()=>refresh().catch(e=>alertMessage('연결 확인',e.message)),1500);
+    if(state.busy&&!batchRunning&&host.isConnected)pollTimer=setTimeout(()=>refresh().catch(e=>alertMessage('연결 확인',e.message)),1500);
+    return state;
   }
   function openEditor(r){
     if(!canEdit||(!ctx.requestNew&&!ctx.applyChange))return alertMessage('조회 전용','이 계정에서는 체크히어 데이터를 수집하고 조회할 수 있습니다.');
@@ -70,16 +74,21 @@ export async function mountCheckHere(host,ctx={}){
     finally{b.disabled=false;b.textContent='체크히어 로그인';}
   });
   $('#refresh').onclick=handle(refresh);
-  $('#cancel').onclick=handle(async()=>{await api('cancel',{});});
+  $('#cancel').onclick=handle(async()=>{batchStopped=true;await api('cancel',{});});
+  $('#bulkPreset').onclick=()=>{$('#class').value='all';$('#from').value='2026-08-27';$('#to').value=[koreaToday(),'2026-10-22'].sort()[0];render();};
   $('#sync').onclick=handle(async()=>{
-    const from=$('#from').value,to=$('#to').value;if(!from||!to||from>to)throw new Error('시작·종료 날짜를 확인해 주세요.');
-    const dates=[];for(let d=new Date(`${from}T00:00:00Z`);d<=new Date(`${to}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+1)){if(dates.length>=31)throw new Error('한 번에 최대 31일을 수집합니다.');if(![0,6].includes(d.getUTCDay()))dates.push(d.toISOString().slice(0,10));}
-    if(!dates.length)throw new Error('평일 강의 날짜를 선택해 주세요.');await api('sync',{classId:$('#class').value,dates});await refresh();
+    if(batchRunning||state.busy)throw Error('진행 중인 작업이 있습니다.');
+    const dates=collectionDates($('#from').value,$('#to').value),classIds=$('#class').value==='all'?Array.from({length:17},(_,i)=>String(i+1)):[$('#class').value];
+    if(!dates.length)throw Error('평일 강의 날짜를 선택해 주세요.');batchRunning=true;batchStopped=false;clearTimeout(pollTimer);render();
+    try{
+      const result=await runCollectionQueue({classIds,dates,api,refresh,stopped:()=>batchStopped||!host.isConnected,onProgress:p=>{$('#bulkStatus').innerHTML=`<div class="status">전체 수집 ${p.completed}/${p.total} · ${esc(p.classId)}반 ${esc(p.date)}<br>현재 페이지와 연결 프로그램을 열어두세요.</div>`;}});
+      const errors=result.results.filter(x=>x.status!=='complete');$('#bulkStatus').innerHTML=`<div class="status">${result.stopped?'수집 중단':'전체 수집 종료'} · ${result.results.length}/${result.total} 반·날짜 · 확인 필요 ${errors.length}건${errors.length?`<details><summary>미완료·오류 목록</summary>${errors.map(x=>`<p>${esc(x.classId)}반 · ${esc(x.date)} · ${esc(x.message)}</p>`).join('')}</details>`:''}</div>`;
+    }finally{batchRunning=false;render();}
   });
   for(const selector of ['#class','#from','#to','#filter','#search'])$(selector).addEventListener(selector==='#search'?'input':'change',render);
   $('#export').onclick=()=>{const data=selected().map(r=>({...r,audit:judge(r)}));if(!data.length)return alertMessage('내보낼 기록 없음','먼저 기록을 수집하거나 저장본을 조회하세요.');const url=URL.createObjectURL(new Blob([JSON.stringify({exportedAt:new Date().toISOString(),records:data},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`체크히어_${$('#class').value}반_${$('#from').value}_${$('#to').value}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   if(ctx.save)$('#saveCloud').onclick=handle(async()=>{const records=selected().filter(r=>r.source==='live');if(!records.length)throw new Error('현재 PC에서 수집한 기록이 없습니다.');await ctx.save(records,{id:crypto.randomUUID(),status:'manual_archive'});alertMessage('플랫폼 저장 완료','선택한 반·날짜의 수집 기록을 플랫폼에 보관했습니다.');});
-  if(ctx.load)$('#loadCloud').onclick=handle(async()=>{state.records=await ctx.load($('#class').value);state.busy=null;cloudShown=true;render();});
+  if(ctx.load)$('#loadCloud').onclick=handle(async()=>{state.records=await ctx.load($('#class').value,{from:$('#from').value,to:$('#to').value});state.busy=null;cloudShown=true;render();});
   render();
   if(local())try{key=(await(await fetch('/api/session')).json()).key;$('#localKey').innerHTML=`<p class="muted">플랫폼 연결 키 · 이 키를 가진 화면에서 수집·반영할 수 있습니다.</p><p class="key">${esc(key)}</p><button id="copyKey">연결 키 복사</button>`;$('#copyKey').onclick=handle(()=>navigator.clipboard.writeText(key));await refresh();}catch(e){alertMessage('시작 확인',e.message);}
   else{$('#pairing').open=true;}
@@ -87,3 +96,4 @@ export async function mountCheckHere(host,ctx={}){
   return()=>{clearTimeout(pollTimer);editing=false;};
 }
 const standalone=document.getElementById('checkhereApp');if(standalone)mountCheckHere(standalone);
+

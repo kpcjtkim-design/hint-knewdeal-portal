@@ -1,5 +1,7 @@
+import {loadCheckHereDay} from './checkhere-snapshots.mjs';
+import {collectionDates} from './attendance-beta-core.mjs';
 import {collection,doc,getDoc,getDocs,setDoc,query,orderBy,limit,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {mountCheckHere} from './checkhere-ui.mjs?v=20260910-review3';
+import {mountCheckHere} from './checkhere-ui.mjs?v=20260911-beta1';
 import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs';
 import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
@@ -26,12 +28,14 @@ export async function mountCheckHerePortal(host,{db,user,classes,showRequests=fa
         await setDoc(ref,{classId:String(batch[0].classId),date:batch[0].date,jobId:job.id,jobStatus:job.status,records:clean,createdAt:serverTimestamp(),createdBy:user.email,source:'checkhere-windows-bridge-v0.1'});
       }
     },
-    async load(classId){
-      const docs=await getDocs(query(collection(db,'classes',String(classId),'checkhereSnapshots'),orderBy('createdAt','desc'),limit(50))),found=new Map();
-      for(const d of docs.docs)for(const r of d.data().records||[])if(!found.has(r.id))found.set(r.id,{...r,source:'snapshot'});
-      return[...found.values()];
+    async load(classId,{from,to}){
+      const classIds=classId==='all'?Array.from({length:17},(_,i)=>String(i+1)):[classId],records=[];
+      for(const cid of classIds)for(const date of collectionDates(from,to))records.push(...await loadCheckHereDay(db,cid,date));
+      return records.map(r=>({...r,source:'snapshot'}));
+
     }
   });
   if(showRequests)requests=await mountCheckHereRequests(host.querySelector('[data-requests]'),{db,user,classes,admin:true,controller:()=>controller,openCollector(){host.querySelector('[data-collector-host]').scrollIntoView({block:'start'});}});
   return()=>{stop();requests?.dispose();};
 }
+

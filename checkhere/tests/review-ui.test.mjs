@@ -15,13 +15,13 @@ test('review opens directly, staff only reads, designated administrator can appl
         return route.fulfill({headers,json:state});
       }
       if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:`<main style="width:calc(100% - 48px);margin:auto"><div id="host"></div></main><script type="module">import{mountCheckHerePortal}from'/checkhere-portal.mjs';window.rows={};await mountCheckHerePortal(document.querySelector('#host'),{db:{},classes:[{id:'2'}],user:{email:'${role==='editor'?'hint.kpc@gmail.com':'staff@example.com'}',getIdTokenResult:async()=>({claims:{email_verified:true,firebase:{sign_in_provider:'google.com'}}}),getIdToken:async()=>'fixture-token'}});</script>`});
-      const path=url.pathname.slice(1);if(['checkhere-portal.mjs','checkhere-ui.mjs','checkhere-requests.mjs','checkhere/approval-core.mjs','checkhere/direct-edit.mjs','checkhere/rules.mjs','checkhere/ui.css'].includes(path))return route.fulfill({contentType:path.endsWith('.css')?'text/css':'text/javascript',body:readFileSync(join(base,path),'utf8')});
+      const path=url.pathname.slice(1);if(['checkhere-portal.mjs','checkhere-ui.mjs','checkhere-requests.mjs','checkhere/approval-core.mjs','checkhere/direct-edit.mjs','checkhere/rules.mjs','checkhere/ui.css','checkhere-snapshots.mjs','attendance-beta-core.mjs','checkhere/bulk-collect.mjs'].includes(path))return route.fulfill({contentType:path.endsWith('.css')?'text/css':'text/javascript',body:readFileSync(join(base,path),'utf8')});
       return route.abort();
     });
     await page.goto('https://fixture.test/');await page.getByRole('heading',{name:'체크히어 검수',exact:true}).waitFor();
     assert.equal(await page.getByRole('heading',{name:'체크히어 수정 요청 · 승인',exact:true}).count(),0);
     assert.equal(await page.getByText('수집 PC 연결 · 체크히어 기록 보기',{exact:true}).count(),0);
-    await page.getByRole('textbox',{name:'윈도우 연결 키'}).fill('fixture-key');await page.getByRole('button',{name:'연결',exact:true}).click();await page.getByText('가상학생',{exact:true}).waitFor();
+    await page.getByRole('textbox',{name:'로컬 연결 키'}).fill('fixture-key');await page.getByRole('button',{name:'연결',exact:true}).click();await page.getByText('가상학생',{exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'검토·수정',exact:true}).count(),role==='editor'?1:0);
     assert(await page.getByRole('button',{name:'체크히어에서 수집',exact:true}).isVisible());assert((await page.locator('#host').boundingBox()).width>1500);
     if(role==='editor'){
