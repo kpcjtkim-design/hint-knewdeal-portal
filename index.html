@@ -179,12 +179,12 @@ async function adminView(user,p,tab='attendanceOverview',selected='1'){try{
  }catch(e){fatal(user,'관리자 화면을 불러오지 못했습니다.',e)}}
 async function timetableAdmin(user,p){
   const host=document.getElementById('adminBody');host.closest('.page').classList.add('checkhere-page');
-  const mod=await import('/timetable.mjs?v=20260911-1');await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});
+  const mod=await import('/timetable.mjs?v=20260911-2');await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});
 }
 async function attachTeacherTimetable(parent,user,c){
   const host=document.createElement('div');host.id='teacherTimetable';const hero=parent.querySelector('.hero');
   if(!hero)return;hero.after(host);
-  try{const mod=await import('/timetable.mjs?v=20260911-1');await mod.mountTeacherTimetable(host,{db,user,classInfo:c});}catch(e){host.textContent='시간표를 불러오지 못했습니다. '+e.message;}
+  try{const mod=await import('/timetable.mjs?v=20260911-2');await mod.mountTeacherTimetable(host,{db,user,classInfo:c});}catch(e){host.textContent='시간표를 불러오지 못했습니다. '+e.message;}
 }
 async function checkhereAdmin(user,p){
   const host=document.getElementById('adminBody');

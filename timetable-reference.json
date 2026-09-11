@@ -1,0 +1,464 @@
+{
+  "version": "20260911-curriculum-1",
+  "sources": [
+    {
+      "title": "만족도조사 모듈별 응답률 시트",
+      "url": "https://docs.google.com/spreadsheets/d/1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34/edit#gid=251616448"
+    },
+    {
+      "title": "만족도조사 관리 시트",
+      "url": "https://docs.google.com/spreadsheets/d/1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34/edit#gid=2136777389"
+    }
+  ],
+  "courses": {
+    "제조지능화": [
+      "생산시스템 및 제조공학",
+      "[실습] 3D CAD기반 설계 실습",
+      "제품설계 및 생산자동화",
+      "AI기반 제조데이터 분석 입문 - Python/통계",
+      "품질경영 개요 및 품질 관리",
+      "품질관리 기법 및 신뢰성 분석 기초",
+      "품질문제 해결 실습",
+      "제조 장비 건전성 관리 입문",
+      "제조 장비 건전성 시스템 구축 및 운영",
+      "스마트팩토리 주요 기술",
+      "AI기반 스마트팩토리 설계 및 운영 기술",
+      "AI기반 스마트팩토리 설계 및 운영 실습",
+      "장비 건전성 관리 시스템 설계 실습"
+    ],
+    "임베디드 AI(SW)": [
+      "모빌리티 SW 개론 및 프로세스",
+      "자동차 전장시스템 이해",
+      "C 프로그래밍",
+      "AI를 위한 Python",
+      "임베디드 시스템의 이해",
+      "임베디드 시스템 인터페이스 회로",
+      "MCU 프로그래밍",
+      "자동차 통신 시스템",
+      "임베디드 리눅스 시스템",
+      "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "SW 보안 및 OTA",
+      "딥러닝 기반 영상인식",
+      "임베디드 AI 구현 및 최적화"
+    ],
+    "임베디드 AI(HW)": [
+      "자동차 전장시스템 이해",
+      "모빌리티 SW 개론 및 프로세스",
+      "C 프로그래밍",
+      "임베디드 시스템의 이해",
+      "MCU 프로그래밍",
+      "자동차 통신 시스템",
+      "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "Matlab+Simulink",
+      "전자제어기를 위한 모델 기반 제어",
+      "SW 테스팅",
+      "MBD 활용 임베디드 AI 구현 및 최적화",
+      "임베디드 시스템 인터페이스 회로",
+      "AI를 위한 Python"
+    ]
+  },
+  "facilities": [
+    {
+      "classId": "1",
+      "disassembly": "천안GLC",
+      "factory": "화성공장"
+    },
+    {
+      "classId": "2",
+      "disassembly": "천안GLC",
+      "factory": "화성공장"
+    },
+    {
+      "classId": "3",
+      "disassembly": "오산공장",
+      "factory": "아산공장"
+    },
+    {
+      "classId": "4",
+      "disassembly": "오산공장",
+      "factory": "아산공장"
+    },
+    {
+      "classId": "5",
+      "disassembly": "오산공장",
+      "factory": "아산공장"
+    },
+    {
+      "classId": "6",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "7",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "8",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "9",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "10",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "11",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "12",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "13",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "14",
+      "disassembly": "울산공장",
+      "factory": "울산공장"
+    },
+    {
+      "classId": "15",
+      "disassembly": "폴리텍대학교",
+      "factory": "광주공장"
+    },
+    {
+      "classId": "16",
+      "disassembly": "폴리텍대학교",
+      "factory": "광주공장"
+    },
+    {
+      "classId": "17",
+      "disassembly": "폴리텍대학교",
+      "factory": "광주공장"
+    }
+  ],
+  "patches": [
+    {
+      "id": "lecture-2",
+      "before": {
+        "course": "임베디드 AI(HW)",
+        "module": "실차체험",
+        "title": "실차체험(천안GLC)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "천안GLC · 분해조립",
+        "venue": "천안GLC"
+      }
+    },
+    {
+      "id": "lecture-13",
+      "before": {
+        "course": "임베디드 AI(HW)",
+        "module": "공장견학",
+        "title": "화성공장(견학+이론)"
+      },
+      "after": {
+        "title": "화성공장 · 견학·이론",
+        "venue": "화성공장"
+      }
+    },
+    {
+      "id": "lecture-25",
+      "before": {
+        "course": "임베디드 AI(HW)",
+        "module": "실차체험",
+        "title": "실차체험(울산)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "울산공장 · 분해조립",
+        "venue": "울산공장"
+      }
+    },
+    {
+      "id": "lecture-26",
+      "before": {
+        "course": "임베디드 AI(HW)",
+        "module": "공장견학",
+        "title": "울산공장(견학+이론)"
+      },
+      "after": {
+        "title": "울산공장 · 견학·이론",
+        "venue": "울산공장"
+      }
+    },
+    {
+      "id": "lecture-30",
+      "before": {
+        "course": "제조지능화",
+        "module": "실차체험",
+        "title": "실차체험(천안GLC)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "천안GLC · 분해조립",
+        "venue": "천안GLC"
+      }
+    },
+    {
+      "id": "lecture-37",
+      "before": {
+        "course": "제조지능화",
+        "module": "직무특화",
+        "title": "AI기반 제조데이터 분석 입문"
+      },
+      "after": {
+        "title": "AI기반 제조데이터 분석 입문 - Python/통계"
+      }
+    },
+    {
+      "id": "lecture-39",
+      "before": {
+        "course": "제조지능화",
+        "module": "공장견학",
+        "title": "화성공장(견학+이론)"
+      },
+      "after": {
+        "title": "화성공장 · 견학·이론",
+        "venue": "화성공장"
+      }
+    },
+    {
+      "id": "lecture-45",
+      "before": {
+        "course": "제조지능화",
+        "module": "직무특화",
+        "title": "제조 장비 건전성 관리 시스템 설계 실습"
+      },
+      "after": {
+        "title": "장비 건전성 관리 시스템 설계 실습"
+      }
+    },
+    {
+      "id": "lecture-49",
+      "before": {
+        "course": "제조지능화",
+        "module": "직무특화",
+        "title": "AI 기반 스마트팩토리 설계 및 운영 실습"
+      },
+      "after": {
+        "title": "AI기반 스마트팩토리 설계 및 운영 실습"
+      }
+    },
+    {
+      "id": "lecture-53",
+      "before": {
+        "course": "제조지능화",
+        "module": "실차체험",
+        "title": "실차체험(오산)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "오산공장 · 분해조립",
+        "venue": "오산공장"
+      }
+    },
+    {
+      "id": "lecture-54",
+      "before": {
+        "course": "제조지능화",
+        "module": "공장견학",
+        "title": "아산공장(견학+이론)"
+      },
+      "after": {
+        "title": "아산공장 · 견학·이론",
+        "venue": "아산공장"
+      }
+    },
+    {
+      "id": "lecture-55",
+      "before": {
+        "course": "제조지능화",
+        "module": "공장견학",
+        "title": "울산공장(견학+이론)"
+      },
+      "after": {
+        "title": "울산공장 · 견학·이론",
+        "venue": "울산공장"
+      }
+    },
+    {
+      "id": "lecture-56",
+      "before": {
+        "course": "제조지능화",
+        "module": "실차체험",
+        "title": "실차체험(울산)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "울산공장 · 분해조립",
+        "venue": "울산공장"
+      }
+    },
+    {
+      "id": "lecture-57",
+      "before": {
+        "course": "제조지능화",
+        "module": "실차체험",
+        "title": "실차체험(폴리텍대)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "폴리텍대학교 · 분해조립",
+        "venue": "폴리텍대학교"
+      }
+    },
+    {
+      "id": "lecture-58",
+      "before": {
+        "course": "제조지능화",
+        "module": "공장견학",
+        "title": "광주공장(견학+이론)"
+      },
+      "after": {
+        "title": "광주공장 · 견학·이론",
+        "venue": "광주공장"
+      }
+    },
+    {
+      "id": "lecture-70",
+      "before": {
+        "course": "임베디드 AI(SW)",
+        "module": "실차체험",
+        "title": "실차체험(오산)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "오산공장 · 분해조립",
+        "venue": "오산공장"
+      }
+    },
+    {
+      "id": "lecture-72",
+      "before": {
+        "course": "임베디드 AI(SW)",
+        "module": "공장견학",
+        "title": "아산공장(견학+이론)"
+      },
+      "after": {
+        "title": "아산공장 · 견학·이론",
+        "venue": "아산공장"
+      }
+    },
+    {
+      "id": "lecture-85",
+      "before": {
+        "course": "임베디드 AI(SW)",
+        "module": "실차체험",
+        "title": "실차체험(울산)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "울산공장 · 분해조립",
+        "venue": "울산공장"
+      }
+    },
+    {
+      "id": "lecture-86",
+      "before": {
+        "course": "임베디드 AI(SW)",
+        "module": "공장견학",
+        "title": "울산공장(견학+이론)"
+      },
+      "after": {
+        "title": "울산공장 · 견학·이론",
+        "venue": "울산공장"
+      }
+    },
+    {
+      "id": "lecture-87",
+      "before": {
+        "course": "임베디드 AI(SW)",
+        "module": "실차체험",
+        "title": "실차체험(폴리텍대)"
+      },
+      "after": {
+        "module": "분해조립",
+        "title": "폴리텍대학교 · 분해조립",
+        "venue": "폴리텍대학교"
+      }
+    },
+    {
+      "id": "lecture-88",
+      "before": {
+        "course": "임베디드 AI(SW)",
+        "module": "공장견학",
+        "title": "광주공장(견학+이론)"
+      },
+      "after": {
+        "title": "광주공장 · 견학·이론",
+        "venue": "광주공장"
+      }
+    }
+  ],
+  "additions": [
+    {
+      "id": "sheet-hw-python-20260911",
+      "course": "임베디드 AI(HW)",
+      "module": "직무특화",
+      "title": "AI를 위한 Python",
+      "days": null
+    },
+    {
+      "id": "sheet-facility-1-20260911",
+      "course": "임베디드 AI(HW)",
+      "module": "공장견학",
+      "title": "아산공장 · 견학·이론",
+      "venue": "아산공장",
+      "days": 1
+    },
+    {
+      "id": "sheet-facility-2-20260911",
+      "course": "임베디드 AI(HW)",
+      "module": "공장견학",
+      "title": "광주공장 · 견학·이론",
+      "venue": "광주공장",
+      "days": 1
+    },
+    {
+      "id": "sheet-facility-3-20260911",
+      "course": "임베디드 AI(HW)",
+      "module": "분해조립",
+      "title": "오산공장 · 분해조립",
+      "venue": "오산공장",
+      "days": 1
+    },
+    {
+      "id": "sheet-facility-4-20260911",
+      "course": "임베디드 AI(HW)",
+      "module": "분해조립",
+      "title": "폴리텍대학교 · 분해조립",
+      "venue": "폴리텍대학교",
+      "days": 1
+    },
+    {
+      "id": "sheet-facility-5-20260911",
+      "course": "임베디드 AI(SW)",
+      "module": "공장견학",
+      "title": "화성공장 · 견학·이론",
+      "venue": "화성공장",
+      "days": 1
+    },
+    {
+      "id": "sheet-facility-6-20260911",
+      "course": "임베디드 AI(SW)",
+      "module": "분해조립",
+      "title": "천안GLC · 분해조립",
+      "venue": "천안GLC",
+      "days": 1
+    }
+  ]
+}
