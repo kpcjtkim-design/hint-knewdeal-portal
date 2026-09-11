@@ -1,6 +1,6 @@
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {GoogleAuthProvider,reauthenticateWithPopup} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
-import {ATTENDANCE_OPTIONS,EVIDENCE_OPTIONS,EVIDENCE_COLORS,emptyStatus,portalStatus,evidenceStatus,rewriteReasons,sheetStatus,matchSnapshot} from './attendance-beta-core.mjs';
+import {ATTENDANCE_OPTIONS,EVIDENCE_OPTIONS,EVIDENCE_COLORS,emptyStatus,hasExistingReason,portalStatus,evidenceStatus,rewriteReasons,sheetStatus,matchSnapshot} from './attendance-beta-core.mjs';
 import {createSheetWriter} from './attendance-beta-sheet.mjs';
 import {loadCheckHereDay} from './checkhere-snapshots.mjs';
 import {judge} from './checkhere/rules.mjs';
@@ -41,7 +41,7 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   }
   async function saveReasons(){
     const changed=state().students.filter(s=>drafts.has(key(s)));if(!changed.length)return;
-    const correcting=changed.filter(s=>currentReason(s).trim());if(correcting.length&&!confirm(`기존 사유를 변경하시겠습니까?\n${correcting.map(s=>s.name).join(', ')}`))return;
+    const correcting=changed.filter(s=>hasExistingReason(state().raw,s.name,currentReason(s)));if(correcting.length&&!confirm(`기존 사유를 변경하시겠습니까?\n${correcting.map(s=>s.name).join(', ')}`))return;
     await action(async()=>{const ctx=state(),updates=Object.fromEntries(changed.map(s=>[s.name,drafts.get(key(s))])),next=rewriteReasons(ctx.raw,updates,ctx.students.map(x=>x.name));if(next!==ctx.raw){await writer.write({classId:ctx.classId,date:ctx.iso,name:changed[0].name,kind:'reason',before:ctx.raw,after:next});ctx.setRaw(next);}for(const s of changed){const value=updates[s.name].trim();await persistMeta(s,{portalReason:value,reasonEntry:value?`${s.name}: ${value}`:''});}drafts.clear();});
   }
   root.querySelector('#sheetConnect').onclick=()=>action(async()=>{await writer.connect(state().classId);});

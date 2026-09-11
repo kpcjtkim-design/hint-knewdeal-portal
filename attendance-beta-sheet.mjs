@@ -50,5 +50,5 @@ export function createSheetWriter({authorize,getClassConfig,fetchImpl=fetch}){
       return {value:actual,range,verified:true};
     }finally{busy=false;}
   }
-  return {async connect(classId){token=await authorize();await layout(classId);return true;},write,connected:()=>!!token,disconnect(){token='';}};
+  return {async connect(classId){token='';try{token=await authorize();await layout(classId);return true;}catch(e){token='';throw e;}},write,connected:()=>!!token,disconnect(){token='';}};
 }

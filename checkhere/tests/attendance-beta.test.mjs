@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {ATTENDANCE_OPTIONS,sheetStatus,EVIDENCE_COLORS,latestTeachingDate,resolveSheetTarget,rewriteReasons,latestSnapshots,matchSnapshot,portalStatus,evidenceStatus} from '../../attendance-beta-core.mjs';
+import {ATTENDANCE_OPTIONS,sheetStatus,EVIDENCE_COLORS,latestTeachingDate,resolveSheetTarget,rewriteReasons,latestSnapshots,matchSnapshot,portalStatus,evidenceStatus,hasExistingReason} from '../../attendance-beta-core.mjs';
 import {createSheetWriter} from '../../attendance-beta-sheet.mjs';
 import {runCollectionQueue} from '../bulk-collect.mjs';
 test('portal distinctions map to shared sheet values and latest teaching day excludes future dates',()=>{
@@ -16,6 +16,9 @@ test('cell targets require unique student and matching attendance and reason dat
   assert.throws(()=>resolveSheetTarget({...source,attendance:[...source.attendance,['가상나']]},'가상나','2026-09-03'));
 });
 test('reason edits preserve other students, split explicit shared reasons and reject ambiguity',()=>{
+  assert.equal(hasExistingReason('가상가: 파서가 놓친 사유','가상가',''),true);
+  assert.equal(hasExistingReason('가상나: 시험','가상가',''),false);
+  assert.equal(hasExistingReason('가상가: ','가상가',''),false);
   assert.equal(rewriteReasons('*발생사유\n가상나: 시험',{가상가:'병원'},['가상가','가상나']),'*발생사유\n가상나: 시험\n가상가: 병원');
   assert.equal(rewriteReasons('가상가: 예전\n가상나: 시험',{가상가:'새 사유'},['가상가','가상나']),'가상가: 새 사유\n가상나: 시험');
   assert.equal(rewriteReasons('가상가, 가상나 - 병원',{가상가:'면접'},['가상가','가상나']),'가상가: 면접\n가상나: 병원');

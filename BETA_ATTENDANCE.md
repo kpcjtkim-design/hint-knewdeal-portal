@@ -49,6 +49,10 @@
 
 실제 운영 시트의 출결이나 사유·색을 개발 시험으로 변경하지 않는다. 실제 OAuth 승인과 원본 저장은 사용자 베타 검증 단계에서 구분해 확인한다.
 
+2026-09-11: 자동 검사 52개 통과. Vercel Preview 배포, Firebase 베타 도메인 등록(사용자 승인), 실제 관리자 로그인과 시트 조회, 오늘 날짜 기본 선택, 2반 9/3 체크히어 저장본의 시간·사유·외출 표시와 서류 메모 팝업을 확인했다. 실제 운영 셀 저장과 500명 전체 재수집은 실행하지 않았다.
+
+베타 주소: https://hint-knewdealportal-git-beta-att-6cd8f6-kpcjtkim-9910s-projects.vercel.app/
+
 참고: https://developers.google.com/workspace/sheets/api/scopes
 https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification
 https://firebase.google.com/docs/auth/web/google-signin

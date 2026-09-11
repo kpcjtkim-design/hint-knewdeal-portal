@@ -4,6 +4,10 @@ export const EVIDENCE_COLORS={미해당:'#ffffff',미제출:'#ff0000',반려:'#f
 export const recognized=s=>['인정출석','인정지각','인정조퇴','인정외출'].includes(s);
 export const sheetStatus=s=>{if(!ATTENDANCE_OPTIONS.includes(s))throw Error('지원하지 않는 출결 상태입니다.');return recognized(s)?'인정출석':s;};
 export const emptyStatus=s=>!String(s||'').trim()||['해당없음','미입력','-'].includes(String(s).trim());
+export function hasExistingReason(raw,name,parsed=''){
+  if(String(parsed||'').trim())return true;
+  return String(raw||'').split(/\r?\n/).some(line=>{const at=line.indexOf(name);return at>=0&&!!line.slice(at+name.length).replace(/^[\s:：_\-]+/,'').trim();});
+}
 export const koreaToday=(now=new Date())=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
 export function latestTeachingDate(dates,today=koreaToday()){
   const sorted=[...dates].filter(x=>x.iso).sort((a,b)=>a.iso.localeCompare(b.iso));
