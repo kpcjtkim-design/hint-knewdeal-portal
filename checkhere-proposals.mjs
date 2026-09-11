@@ -1,3 +1,4 @@
+import {reasonFor} from './attendance-reason-parser.mjs';
 import {collection,doc,getDoc,getDocs,query,where,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {portalStatus,isoLabel} from './attendance-beta-core.mjs';
 import {cleanRequest} from './checkhere/approval-core.mjs';
@@ -16,7 +17,10 @@ export async function validateSheetSource(db,user,c){
   if(dates.length!==1||students.length!==1||reasonDates.length!==1)throw Error('시트 학생·날짜 연결이 달라졌습니다. 다시 읽고 검토해 주세요.');
   const raw=String(data.reasons?.[1]?.[reasonDates[0].i]||''),rawStatus=String(students[0][dates[0].i]||'').trim();
   const meta=(await getDoc(doc(db,'settings',`attendanceBeta_${c.classId}_${c.date}`))).data()?.students?.[c.studentKey]||{};
-  if(raw!==c.raw||portalStatus(rawStatus,meta)!==c.status)throw Error('요청의 기준인 시트 출결·사유가 바뀌었습니다. 출결대조에서 다시 읽고 검토해 주세요.');
+  const roster=a.slice(1).map(row=>String(row[0]||'').trim());
+  const currentReason=meta.reasonEntry&&raw.split(/\r?\n/).includes(meta.reasonEntry)?meta.portalReason:reasonFor(c.name,raw,roster,rawStatus);
+  const expectedReason=c.reason??reasonFor(c.name,c.raw,roster,rawStatus);
+  if(currentReason!==expectedReason||portalStatus(rawStatus,meta)!==c.status)throw Error('요청의 기준인 시트 출결·사유가 바뀌었습니다. 출결대조에서 다시 읽고 검토해 주세요.');
 }
 export async function validateLinkedRequest(db,user,request,record){
   if(!request.id.startsWith('proposal_'))return;
@@ -66,7 +70,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
       if(previousId){const pending=await tx.get(doc(db,'checkhereRequests',previousId));if(ACTIVE_REQUESTS.includes(pending.data()?.status))throw Error('이미 승인 대기 또는 반영 중인 요청이 있습니다.');}
       if(activeFor(s))throw Error('해당 학생의 진행 중인 요청이 있습니다. 먼저 처리 결과를 확인해 주세요.');
       tx.set(doc(db,'checkhereRequests',id),{...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-      tx.set(doc(db,'checkhereProposalSources',contextId(id)),{requestId:id,classId:v.c.classId,date:v.c.date,name:s.name,studentKey:key(s),status:v.c.status,raw:v.c.raw,record:sourceRecord(v.c.record),changes,updatedBy:user.email,updatedAt:serverTimestamp()});
+      tx.set(doc(db,'checkhereProposalSources',contextId(id)),{requestId:id,classId:v.c.classId,date:v.c.date,name:s.name,studentKey:key(s),status:v.c.status,reason:v.c.reason,raw:v.c.raw,record:sourceRecord(v.c.record),changes,updatedBy:user.email,updatedAt:serverTimestamp()});
       tx.set(ref,{classId:v.c.classId,date:v.c.date,students:{[key(s)]:{text,field,fingerprint:fingerprint(v.c),revision:(previous?.revision||0)+1,activeId:id}},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});
     });
     await load(v.c.classId,v.c.date);
