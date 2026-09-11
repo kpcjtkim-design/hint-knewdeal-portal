@@ -34,7 +34,31 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     c=dialogs.length;await page.getByLabel('가상가 서류제출').selectOption('반려');await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('.beta-evidence').disabled===false);assert.equal(colors[0],'#ff0000');assert.equal(dialogs.length,c+1);
     await page.getByLabel('가상가 서류제출').selectOption('미제출');await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('.beta-evidence').disabled===false);assert.equal(colors[0],'#ff0000');assert.equal(dialogs.length,c+2);
     await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.getByLabel('가상가 출결').waitFor();await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('.beta-status').disabled===false);assert.equal(await page.getByLabel('가상가 출결').inputValue(),'인정지각');assert.equal(await page.getByLabel('가상가 서류제출').inputValue(),'미제출');
-    await page.locator('[data-docmemo]').first().click();await page.getByLabel('서류제출 관련 메모',{exact:true}).fill('서류 추가 확인');await page.getByRole('button',{name:'닫기',exact:true}).click();await page.getByRole('button',{name:'● 메모 있음',exact:true}).waitFor();
+    await page.locator('[data-docmemo]').first().click();await page.getByLabel('서류제출 관련 메모',{exact:true}).fill('서류 추가 확인');await page.getByRole('button',{name:'닫기',exact:true}).click();await page.locator('[data-docmemo]').first().getByText('● 메모 있음',{exact:true}).waitFor();
+    await page.evaluate(()=>{window.docs['settings/attendanceOverviewMemo_1_2026-09-11'].memos['0_가상가'].checkhere='이전 통합 메모';window.docs['settings/attendanceOverviewMemo_1_2026-09-11'].memos['0_가상가'].manual='수기 기존 메모';});
+    await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.getByRole('button',{name:'가상가 입퇴실 관련 메모',exact:true}).waitFor();
+    assert.equal(await page.locator('.table-head > div').count(),10);assert.equal(await page.locator('[data-category="checkhere"]').count(),0);
+    assert.equal(await page.locator('.student-row').nth(1).locator('[data-column-memo]').count(),4);
+    await page.getByRole('button',{name:'가상가 입퇴실 관련 메모',exact:true}).click();await page.getByRole('button',{name:'기존 통합 체크히어 메모 보기',exact:true}).click();assert.equal(await page.getByLabel('기존 통합 체크히어 메모',{exact:true}).inputValue(),'이전 통합 메모');await page.getByRole('button',{name:'닫기',exact:true}).click();
+    const categories={checkhereTimes:'입퇴실 관련 메모',checkhereEntry:'입실 관리자메모 관련 메모',checkhereExit:'퇴실 관리자메모 관련 메모',checkhereOutings:'외출구간 관련 메모'};
+    for(const [category,label] of Object.entries(categories)){
+      await page.getByRole('button',{name:'가상가 '+label,exact:true}).click();await page.getByLabel(label,{exact:true}).fill(category+' 별도 저장');
+      if(category==='checkhereTimes'){await page.getByRole('dialog').getByRole('button',{name:'담임 알림',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:/✓ 알림/}).waitFor();assert(await page.getByRole('dialog').getByRole('button',{name:'이행 확인',exact:true}).isEnabled());}
+      await page.getByRole('button',{name:'닫기',exact:true}).click();await page.getByRole('button',{name:'가상가 '+label,exact:true}).getByText('● 메모 있음').waitFor();
+    }
+    await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.locator('[data-category="manual"]').first().waitFor();
+    const memo=await page.evaluate(()=>window.docs['settings/attendanceOverviewMemo_1_2026-09-11'].memos['0_가상가']);
+    for(const c of Object.keys(categories))assert.equal(memo[c],c+' 별도 저장');assert.equal(memo.checkhere,'이전 통합 메모');assert.equal(memo.manual,'수기 기존 메모');assert.equal(memo.documents,'서류 추가 확인');assert(memo.followup.checkhereTimes.notifiedAt);
+    await page.getByRole('button',{name:'가상가 외출구간 관련 메모',exact:true}).click();assert.equal(await page.getByLabel('외출구간 관련 메모',{exact:true}).inputValue(),'checkhereOutings 별도 저장');await page.getByRole('button',{name:'닫기',exact:true}).click();
+    for(const width of [1280,1920]){
+      await page.setViewportSize({width,height:1050});
+      const geometry=await page.evaluate(()=>{const root=document.querySelector('#host').shadowRoot,scroller=root.querySelector('.table-scroll');scroller.scrollLeft=scroller.scrollWidth;const outer=scroller.getBoundingClientRect(),last=root.querySelector('.student-row .cell:last-child textarea').getBoundingClientRect();const heads=[...root.querySelectorAll('.table-head>div')],cells=[...root.querySelector('.student-row').children];return {inside:last.left>=outer.left&&last.right<=outer.right,width:last.width,aligned:heads.every((h,i)=>Math.abs(h.getBoundingClientRect().left-cells[i].getBoundingClientRect().left)<2)};});
+      assert(geometry.inside,'manual memo must remain fully reachable by horizontal scroll');assert(geometry.width>=200);assert(geometry.aligned,'header and row columns must align');
+    }
+    await page.evaluate(()=>{window.XLSX={utils:{aoa_to_sheet:rows=>(window.exportedRows=rows,{}),book_new:()=>({}),book_append_sheet(){}},writeFile(){}};});
+    await page.getByRole('button',{name:'⇩ 엑셀 다운로드',exact:true}).click();
+    const exported=await page.evaluate(()=>window.exportedRows),header=exported.find(r=>r[0]==='이름'),student=exported.find(r=>r[0]==='가상가');
+    for(const [category,label]of Object.entries(categories))assert.equal(student[header.indexOf(label)],category+' 별도 저장');
     const out=join(base,'checkhere/test-results');mkdirSync(out,{recursive:true});await page.screenshot({path:join(out,'attendance-beta-desktop.png'),fullPage:true});
     assert(writes.every(x=>x.range.endRowIndex-x.range.startRowIndex===1&&x.range.endColumnIndex-x.range.startColumnIndex===1));
   }finally{await browser.close();}

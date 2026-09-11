@@ -24,12 +24,13 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
     const options=ATTENDANCE_OPTIONS.includes(status)?ATTENDANCE_OPTIONS:[status,...ATTENDANCE_OPTIONS];
     return {status:`<select class="beta-status" aria-label="${esc(s.name)} 출결" data-student="${esc(key(s))}" ${disabled}>${options.map(x=>`<option ${x===status?'selected':''}>${esc(x)}</option>`).join('')}</select>`,reason:`<input class="beta-reason" aria-label="${esc(s.name)} 사유" maxlength="500" data-student="${esc(key(s))}" value="${esc(drafts.has(key(s))?drafts.get(key(s)):currentReason(s))}" ${working||loading?'disabled':''}>`,evidence:`<select class="beta-evidence" aria-label="${esc(s.name)} 서류제출" data-student="${esc(key(s))}" ${disabled}>${EVIDENCE_OPTIONS.map(x=>`<option ${x===evidence?'selected':''}>${x}</option>`).join('')}</select>`};
   }
-  function snapshotCells(s){
-    if(snapshotError)return`<div class="cell beta-source" style="grid-column:span 5">${esc(snapshotError)}</div>`;
-    const {record:r,error}=matchSnapshot(s,state().students,snapshots);if(!r)return`<div class="cell beta-source" style="grid-column:span 5">${esc(error)}</div>`;
+  function snapshotCells(s,memoButton=()=> ''){
+    const cell=(value,category)=>`<div class="cell beta-source"><div class="source-value">${value}</div>${category?memoButton(category):''}</div>`;
+    const {record:r,error}=matchSnapshot(s,state().students,snapshots);
+    if(snapshotError||!r)return cell(esc(snapshotError||error),'checkhereTimes')+cell('—')+cell('—','checkhereEntry')+cell('—','checkhereExit')+cell('—','checkhereOutings');
     const time=r.collectedAt?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(r.collectedAt)):'';
-    const audited=judge(r),cell=x=>`<div class="cell beta-source">${x}</div>`;
-    return cell(`${esc(r.rawEntry??r.entry??'—')}<br>→ ${esc(r.exit||'—')}<small>수집 ${esc(time)}</small>`)+cell(`${audited.labels.map(esc).join(' · ')}<small>${r.readState==='complete'?'저장본':'상세 수집 실패'}</small>`)+cell(esc(r.entryMemo??'미수집'))+cell(esc(r.exitMemo??'미수집'))+cell(r.outings?.map(x=>`${esc(x.start||'—')} ~ ${esc(x.end||'—')}`).join('<br>')||(r.readState==='complete'?'없음':'미확인'));
+    const audited=judge(r);
+    return cell(`${esc(r.rawEntry??r.entry??'—')}<br>→ ${esc(r.exit||'—')}<small>수집 ${esc(time)}</small>`,'checkhereTimes')+cell(`${audited.labels.map(esc).join(' · ')}<small>${r.readState==='complete'?'저장본':'상세 수집 실패'}</small>`)+cell(esc(r.entryMemo??'미수집'),'checkhereEntry')+cell(esc(r.exitMemo??'미수집'),'checkhereExit')+cell(r.outings?.map(x=>`${esc(x.start||'—')} ~ ${esc(x.end||'—')}`).join('<br>')||(r.readState==='complete'?'없음':'미확인'),'checkhereOutings');
   }
   function headerState(){const save=root.querySelector('#saveReasons');if(save){save.textContent=`사유 저장${drafts.size?' ('+drafts.size+')':''}`;save.disabled=!drafts.size||working||loading||!writer.connected();}const c=root.querySelector('#sheetConnect');if(c){c.disabled=working||loading;c.textContent=writer.connected()?'내 계정 연결됨':'내 계정 시트 연결';}for(const id of ['classSel','dateSel','reload']){const el=root.querySelector('#'+id);if(el)el.disabled=working||loading;}}
   async function action(fn){if(working||loading)return;working=true;showErr('');render();try{await fn();}catch(e){showErr(e);}finally{working=false;render();}}
