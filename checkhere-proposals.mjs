@@ -39,7 +39,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
     const v=view(s);if(field!==v.field||(!v.auto.supported&&!v.draft&&!v.request))return '';
     const changed=v.text&&v.text!==v.c.record?.[v.field],active=v.request&&ACTIVE_REQUESTS.includes(v.request.status);
     const label=loadError?'제안 조회 실패':active?PROPOSAL_STATUS[v.request.status]:v.stale?'재검토 필요':changed?'변경 필요':v.text?'현재 기록과 일치':'확인 필요';
-    return `<div class="proposal-box ${changed||v.stale?'changed':''}"><strong>${esc(label)}</strong>${v.request&&!active?`<small>최근 요청: ${esc(PROPOSAL_STATUS[v.request.status]||v.request.status)}</small>`:''}<div class="proposal-preview">${esc(v.text||v.auto.notes[0]||'사유 확인 필요')}</div><button type="button" class="btn soft" data-proposal="${esc(key(s))}" ${loadError?'disabled':''}>${active?'요청 내용 보기':'반영할 사유 검토'}</button><small>승인 전 · 체크히어에 미반영</small></div>`;
+    return `<div class="proposal-box ${changed||v.stale?'changed':''}"><strong>${esc(label)}</strong>${v.request&&!active?`<small>최근 요청: ${esc(PROPOSAL_STATUS[v.request.status]||v.request.status)}</small>`:''}<div class="proposal-preview">${esc(v.text||v.auto.notes[0]||'사유 확인 필요')}</div><button type="button" class="btn soft" data-proposal="${esc(key(s))}" ${loadError?'disabled':''}>${active?'요청 내용 보기':'반영할 사유 검토'}</button><small>${active?'요청 접수 · 완료 상태 확인 필요':changed?'승인 전 · 체크히어에 미반영':v.text?'수집된 체크히어 사유와 같습니다.':'원문·시간 확인 후 검토해 주세요.'}</small></div>`;
   }
   async function load(classId,iso){
     const n=++sequence;cid=String(classId);date=iso;saved={};requests=[];loadError='';

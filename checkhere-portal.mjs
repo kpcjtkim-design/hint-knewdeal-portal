@@ -7,8 +7,8 @@ import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
   if(!user)throw new Error('관리자 로그인이 필요합니다.');
   const canEdit=await canEditCheckHere(user);
-  host.innerHTML=(showRequests?'<nav class="admin-tabs" aria-label="체크히어 업무"><button class="tab active" data-ch-view="collect">수집·검수</button><button class="tab" data-ch-view="requests">반영 요청·승인</button></nav>':'')+'<div data-collector-host></div>'+(showRequests?'<div data-requests hidden></div>':'');
-  if(showRequests)host.querySelectorAll('[data-ch-view]').forEach(b=>b.onclick=()=>{const approval=b.dataset.chView==='requests';host.querySelector('[data-requests]').hidden=!approval;host.querySelector('[data-collector-host]').hidden=approval;host.querySelectorAll('[data-ch-view]').forEach(x=>x.classList.toggle('active',x===b));if(approval)requests?.refresh();});
+  host.innerHTML=(showRequests?'<nav class="admin-tabs" aria-label="체크히어 업무"><button class="tab active" data-ch-view="collect">수집·검수</button><button class="tab" data-ch-view="requests">반영 요청·승인</button></nav>':'')+'<div data-collector-host></div>'+(showRequests?'<div data-requests hidden style="display:none"></div>':'');
+  if(showRequests)host.querySelectorAll('[data-ch-view]').forEach(b=>b.onclick=()=>{const approval=b.dataset.chView==='requests';host.querySelector('[data-requests]').hidden=!approval;host.querySelector('[data-collector-host]').hidden=approval;host.querySelector('[data-collector-host]').style.display=approval?'none':'block';host.querySelector('[data-requests]').style.display=approval?'block':'none';host.querySelectorAll('[data-ch-view]').forEach(x=>x.classList.toggle('active',x===b));if(approval)requests?.refresh();});
   let controller,requests;
   const applyChange=createDirectEditor({user,controller:()=>controller,store:{
     async get(id){const snap=await getDoc(doc(db,'checkhereRequests',id));return snap.exists()?snap.data():null;},
