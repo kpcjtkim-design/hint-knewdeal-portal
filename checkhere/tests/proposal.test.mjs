@@ -33,8 +33,8 @@ test('independent column requests remain valid after another column applies; tar
 });
 test('ambiguous reasons and normalized times never fabricate actual times',()=>{
  assert.equal(reasonCategory('병원 또는 면접 확인 필요'),'');assert.equal(reasonCategory('병원 면접'),'');assert.equal(reasonCategory('인적성 시험'),'인적성');assert.equal(reasonCategory('외조모상'),'외조모상');
- assert.equal(suggestReason({status:'인정지각',reason:'병원',record:{...record(),entry:'09:00:00'}}).text,'');
- assert.equal(suggestReason({status:'인정지각',reason:'알 수 없음',record:record()}).text,'');
+ assert.match(suggestReason({status:'인정지각',reason:'병원',record:{...record(),entry:'09:00:00'}}).text,/시간 확인/);
+ assert.match(suggestReason({status:'인정지각',reason:'알 수 없음',record:record()}).text,/사유 확인/);
  assert.equal(suggestReason({status:'중복',record:record()}).supported,false);
 });
 test('outings require all real intervals and retain multiple intervals',()=>{

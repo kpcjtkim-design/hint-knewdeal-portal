@@ -1,0 +1,3656 @@
+{
+  "version": "20260914",
+  "sourceUrl": "https://docs.google.com/spreadsheets/d/1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34/edit#gid=2136777389",
+  "events": [
+    {
+      "id": "survey-3-3",
+      "classId": "3",
+      "date": "2026-08-26",
+      "title": "직무특화_C 프로그래밍",
+      "url": "https://forms.gle/TMCvvkaysvLvSHA78",
+      "sourceRow": 3
+    },
+    {
+      "id": "survey-4-4",
+      "classId": "4",
+      "date": "2026-08-27",
+      "title": "[실습] 3D CAD기반 설계 실습(고정)",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-5-4",
+      "classId": "5",
+      "date": "2026-08-27",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-6-4",
+      "classId": "6",
+      "date": "2026-08-27",
+      "title": "직무특화_SW 테스팅",
+      "url": "https://forms.gle/UxNbybArw8pbNEHK8",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-7-4",
+      "classId": "7",
+      "date": "2026-08-27",
+      "title": "직무특화_AI를 위한 Python",
+      "url": "https://forms.gle/GqfEiY24v5Bsp57z8",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-8-4",
+      "classId": "8",
+      "date": "2026-08-27",
+      "title": "제품설계 및 생산자동화",
+      "url": "https://forms.gle/WhEzpP5XGdDjn4Am9",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-9-4",
+      "classId": "9",
+      "date": "2026-08-27",
+      "title": "[실습] 3D CAD기반 설계 실습(고정)",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-10-4",
+      "classId": "10",
+      "date": "2026-08-27",
+      "title": "직무특화_모빌리티 SW 개론 및 프로세스",
+      "url": "https://forms.gle/K31VUYij4WakHRoz7",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-11-4",
+      "classId": "11",
+      "date": "2026-08-27",
+      "title": "AI를 위한 Python",
+      "url": "https://forms.gle/xoDCJuNGQjbTMqJk7",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-12-4",
+      "classId": "12",
+      "date": "2026-08-27",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-13-4",
+      "classId": "13",
+      "date": "2026-08-27",
+      "title": "제품설계 및 생산자동화",
+      "url": "https://forms.gle/WhEzpP5XGdDjn4Am9",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-14-4",
+      "classId": "14",
+      "date": "2026-08-27",
+      "title": "[실습] 3D CAD기반 설계 실습(고정)",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-15-4",
+      "classId": "15",
+      "date": "2026-08-27",
+      "title": "직무특화_AI를 위한 Python",
+      "url": "https://forms.gle/gPBCtaCVZR4rc6zp7",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-16-4",
+      "classId": "16",
+      "date": "2026-08-27",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-17-4",
+      "classId": "17",
+      "date": "2026-08-27",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 4
+    },
+    {
+      "id": "survey-1-5",
+      "classId": "1",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-2-5",
+      "classId": "2",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-3-5",
+      "classId": "3",
+      "date": "2026-08-28",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-4-5",
+      "classId": "4",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-5-5",
+      "classId": "5",
+      "date": "2026-08-28",
+      "title": "아산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-6-5",
+      "classId": "6",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-7-5",
+      "classId": "7",
+      "date": "2026-08-28",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-8-5",
+      "classId": "8",
+      "date": "2026-08-28",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-9-5",
+      "classId": "9",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-10-5",
+      "classId": "10",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-11-5",
+      "classId": "11",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-12-5",
+      "classId": "12",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-13-5",
+      "classId": "13",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-14-5",
+      "classId": "14",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-15-5",
+      "classId": "15",
+      "date": "2026-08-28",
+      "title": "동기부여 -2",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSfhLJzJSJ4L7ot5ohic74PQZfXTkzGGtXVglvwqBXsXFQSZDA/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-16-5",
+      "classId": "16",
+      "date": "2026-08-28",
+      "title": "폴리텍대-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-17-5",
+      "classId": "17",
+      "date": "2026-08-28",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 5
+    },
+    {
+      "id": "survey-1-8",
+      "classId": "1",
+      "date": "2026-08-31",
+      "title": "직무특화_C 프로그래밍",
+      "url": "https://forms.gle/DV2o2MupDS6ftX3o6",
+      "sourceRow": 8
+    },
+    {
+      "id": "survey-2-8",
+      "classId": "2",
+      "date": "2026-08-31",
+      "title": "제품설계 및 생산자동화",
+      "url": "https://forms.gle/wDKRsfynGdLzaGhMA",
+      "sourceRow": 8
+    },
+    {
+      "id": "survey-3-8",
+      "classId": "3",
+      "date": "2026-08-31",
+      "title": "직무특화_AI를 위한 Python",
+      "url": "https://forms.gle/Wsv81EvMYAQoxRgr7",
+      "sourceRow": 8
+    },
+    {
+      "id": "survey-6-9",
+      "classId": "6",
+      "date": "2026-09-01",
+      "title": "직무특화_Matlab+Simulink",
+      "url": "https://forms.gle/Kdu18vzHVHeJCdWx9",
+      "sourceRow": 9
+    },
+    {
+      "id": "survey-7-9",
+      "classId": "7",
+      "date": "2026-09-01",
+      "title": "직무특화_C 프로그래밍",
+      "url": "https://forms.gle/7FvuqVxR8C1WuCFV6",
+      "sourceRow": 9
+    },
+    {
+      "id": "survey-8-9",
+      "classId": "8",
+      "date": "2026-09-01",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 9
+    },
+    {
+      "id": "survey-10-9",
+      "classId": "10",
+      "date": "2026-09-01",
+      "title": "임베디드 시스템의 이해",
+      "url": "https://forms.gle/hhHybAndLN3PwLDj7",
+      "sourceRow": 9
+    },
+    {
+      "id": "survey-11-9",
+      "classId": "11",
+      "date": "2026-09-01",
+      "title": "임베디드 시스템의 이해",
+      "url": "https://forms.gle/oGFj7PfS9Wo81KwE6",
+      "sourceRow": 9
+    },
+    {
+      "id": "survey-15-9",
+      "classId": "15",
+      "date": "2026-09-01",
+      "title": "직무특화_임베디드 시스템의 이해",
+      "url": "https://forms.gle/ovfShHYiWCZRToio8",
+      "sourceRow": 9
+    },
+    {
+      "id": "survey-1-10",
+      "classId": "1",
+      "date": "2026-09-02",
+      "title": "직무특화_임베디드 시스템의 이해",
+      "url": "https://forms.gle/owP6sQ7nexjNuAhA6",
+      "sourceRow": 10
+    },
+    {
+      "id": "survey-3-10",
+      "classId": "3",
+      "date": "2026-09-02",
+      "title": "직무특화_임베디드 시스템의 이해",
+      "url": "https://forms.gle/opYLrXiCVYDvSmWr5",
+      "sourceRow": 10
+    },
+    {
+      "id": "survey-6-11",
+      "classId": "6",
+      "date": "2026-09-03",
+      "title": "직무특화_전자제어기를 위한 모델 기반 제어",
+      "url": "https://forms.gle/HzWTRBZdzjHDtXPc7",
+      "sourceRow": 11
+    },
+    {
+      "id": "survey-7-11",
+      "classId": "7",
+      "date": "2026-09-03",
+      "title": "직무특화_임베디드 시스템의 이해",
+      "url": "https://forms.gle/Z7v6HaFfgPAAvDu6A",
+      "sourceRow": 11
+    },
+    {
+      "id": "survey-10-11",
+      "classId": "10",
+      "date": "2026-09-03",
+      "title": "직무특화_임베디드 시스템 인터페이스 회로",
+      "url": "https://forms.gle/8UZSehaA8LKkjayU9",
+      "sourceRow": 11
+    },
+    {
+      "id": "survey-11-11",
+      "classId": "11",
+      "date": "2026-09-03",
+      "title": "임베디드 시스템 인터페이스 회로",
+      "url": "https://forms.gle/UXbZTMojKWwe4BfX9",
+      "sourceRow": 11
+    },
+    {
+      "id": "survey-15-11",
+      "classId": "15",
+      "date": "2026-09-03",
+      "title": "직무특화_임베디드 시스템 인터페이스 회로",
+      "url": "https://forms.gle/RyVEx3DzXvfNouD88",
+      "sourceRow": 11
+    },
+    {
+      "id": "survey-1-12",
+      "classId": "1",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-2-12",
+      "classId": "2",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-3-12",
+      "classId": "3",
+      "date": "2026-09-04",
+      "title": "오산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-4-12",
+      "classId": "4",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-5-12",
+      "classId": "5",
+      "date": "2026-09-04",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-6-12",
+      "classId": "6",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-7-12",
+      "classId": "7",
+      "date": "2026-09-04",
+      "title": "동기부여 -2",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSfhLJzJSJ4L7ot5ohic74PQZfXTkzGGtXVglvwqBXsXFQSZDA/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-8-12",
+      "classId": "8",
+      "date": "2026-09-04",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-9-12",
+      "classId": "9",
+      "date": "2026-09-04",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-10-12",
+      "classId": "10",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-11-12",
+      "classId": "11",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-12-12",
+      "classId": "12",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-13-12",
+      "classId": "13",
+      "date": "2026-09-04",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-14-12",
+      "classId": "14",
+      "date": "2026-09-04",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-15-12",
+      "classId": "15",
+      "date": "2026-09-04",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-16-12",
+      "classId": "16",
+      "date": "2026-09-04",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-17-12",
+      "classId": "17",
+      "date": "2026-09-04",
+      "title": "폴리텍대-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 12
+    },
+    {
+      "id": "survey-1-15",
+      "classId": "1",
+      "date": "2026-09-07",
+      "title": "직무특화_임베디드 시스템 인터페이스 회로",
+      "url": "https://forms.gle/sLBa3wMQrb5viJLh8",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-3-15",
+      "classId": "3",
+      "date": "2026-09-07",
+      "title": "임베디드 시스템 인터페이스 회로",
+      "url": "https://forms.gle/51PDfhvBfwqtwakg8",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-4-15",
+      "classId": "4",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-5-15",
+      "classId": "5",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-8-15",
+      "classId": "8",
+      "date": "2026-09-07",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-9-15",
+      "classId": "9",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-12-15",
+      "classId": "12",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-13-15",
+      "classId": "13",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/BXDK9KTXSseqEHUj8",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-14-15",
+      "classId": "14",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-16-15",
+      "classId": "16",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-17-15",
+      "classId": "17",
+      "date": "2026-09-07",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 15
+    },
+    {
+      "id": "survey-2-16",
+      "classId": "2",
+      "date": "2026-09-08",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/VuJ1AxZt9VSQxetk7",
+      "sourceRow": 16
+    },
+    {
+      "id": "survey-6-16",
+      "classId": "6",
+      "date": "2026-09-08",
+      "title": "직무특화_임베디드 시스템 인터페이스 회로",
+      "url": "https://forms.gle/hqeZWKV6E4qqRV5h7",
+      "sourceRow": 16
+    },
+    {
+      "id": "survey-4-17",
+      "classId": "4",
+      "date": "2026-09-09",
+      "title": "오산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-5-17",
+      "classId": "5",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-7-17",
+      "classId": "7",
+      "date": "2026-09-09",
+      "title": "직무특화_MCU 프로그래밍",
+      "url": "https://forms.gle/BiVQyc3oqnGvaBAu5",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-9-17",
+      "classId": "9",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-10-17",
+      "classId": "10",
+      "date": "2026-09-09",
+      "title": "MCU 프로그래밍",
+      "url": "https://forms.gle/BBTs5VxYoTkqpVf27",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-11-17",
+      "classId": "11",
+      "date": "2026-09-09",
+      "title": "MCU 프로그래밍",
+      "url": "https://forms.gle/xLkvi6AidpNpn6Sq7",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-12-17",
+      "classId": "12",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-13-17",
+      "classId": "13",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-14-17",
+      "classId": "14",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7mktzoq6bMc5hp1E7",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-15-17",
+      "classId": "15",
+      "date": "2026-09-09",
+      "title": "직무특화_MCU 프로그래밍",
+      "url": "https://forms.gle/oqd5q8qD2kJApU3R9",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-16-17",
+      "classId": "16",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/QBznqkhuoaWU1L248",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-17-17",
+      "classId": "17",
+      "date": "2026-09-09",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/QBznqkhuoaWU1L248",
+      "sourceRow": 17
+    },
+    {
+      "id": "survey-1-18",
+      "classId": "1",
+      "date": "2026-09-10",
+      "title": "직무특화_MCU 프로그래밍",
+      "url": "https://forms.gle/nCz85wvSiwiyfjuQ6",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-2-18",
+      "classId": "2",
+      "date": "2026-09-10",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-3-18",
+      "classId": "3",
+      "date": "2026-09-10",
+      "title": "직무특화_MCU 프로그래밍",
+      "url": "https://forms.gle/stV1CkVvz3rM1Uge9",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-4-18",
+      "classId": "4",
+      "date": "2026-09-10",
+      "title": "품질경영 개요 및 품질 관리",
+      "url": "https://forms.gle/7PaQddqYP1XBwZtx9",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-8-18",
+      "classId": "8",
+      "date": "2026-09-10",
+      "title": "AI기반 제조데이터 분석 입문",
+      "url": "https://forms.gle/doVkCVSdDbRMRCDd9",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-15-18",
+      "classId": "15",
+      "date": "2026-09-10",
+      "title": "광주공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-16-18",
+      "classId": "16",
+      "date": "2026-09-10",
+      "title": "광주공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 18
+    },
+    {
+      "id": "survey-1-19",
+      "classId": "1",
+      "date": "2026-09-11",
+      "title": "화성공장(견학+이론)",
+      "url": "https://forms.gle/KpqyVXkQgkrZhwmr5",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-2-19",
+      "classId": "2",
+      "date": "2026-09-11",
+      "title": "화성공장(견학+이론)",
+      "url": "https://forms.gle/KpqyVXkQgkrZhwmr5",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-3-19",
+      "classId": "3",
+      "date": "2026-09-11",
+      "title": "아산공장(견학+이론)",
+      "url": "https://forms.gle/R1o8FxhWBgxz4Yb99",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-4-19",
+      "classId": "4",
+      "date": "2026-09-11",
+      "title": "아산공장(견학+이론)",
+      "url": "https://forms.gle/R1o8FxhWBgxz4Yb99",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-5-19",
+      "classId": "5",
+      "date": "2026-09-11",
+      "title": "오산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-7-19",
+      "classId": "7",
+      "date": "2026-09-11",
+      "title": "동기부여 -3",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesjoXqDldDZRTu9SXGvXVAGSJ53i0oxZxqonWBCZenlZD5Sw/viewform",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-8-19",
+      "classId": "8",
+      "date": "2026-09-11",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-9-19",
+      "classId": "9",
+      "date": "2026-09-11",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-14-19",
+      "classId": "14",
+      "date": "2026-09-11",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-17-19",
+      "classId": "17",
+      "date": "2026-09-11",
+      "title": "광주공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 19
+    },
+    {
+      "id": "survey-10-22",
+      "classId": "10",
+      "date": "2026-09-14",
+      "title": "직무특화_자동차 통신 시스템",
+      "url": "https://forms.gle/GjtkEPKzmZ2JzAFG6",
+      "sourceRow": 22
+    },
+    {
+      "id": "survey-11-22",
+      "classId": "11",
+      "date": "2026-09-14",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 22
+    },
+    {
+      "id": "survey-15-22",
+      "classId": "15",
+      "date": "2026-09-14",
+      "title": "직무특화_자동차 통신 시스템",
+      "url": "https://forms.gle/JGEWyyGcPtf9s2yK9",
+      "sourceRow": 22
+    },
+    {
+      "id": "survey-1-23",
+      "classId": "1",
+      "date": "2026-09-15",
+      "title": "직무특화_자동차 통신 시스템",
+      "url": "https://forms.gle/2qAGxkLMRjH5pKJN7",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-3-23",
+      "classId": "3",
+      "date": "2026-09-15",
+      "title": "직무특화_자동차 통신 시스템",
+      "url": "https://forms.gle/nQ6CBp7heQB8QHtC7",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-5-23",
+      "classId": "5",
+      "date": "2026-09-15",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-6-23",
+      "classId": "6",
+      "date": "2026-09-15",
+      "title": "직무특화_C 프로그래밍",
+      "url": "https://forms.gle/8nSm7KBYNMiLnq5M6",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-9-23",
+      "classId": "9",
+      "date": "2026-09-15",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-11-23",
+      "classId": "11",
+      "date": "2026-09-15",
+      "title": "자동차 통신 시스템",
+      "url": "https://forms.gle/ywJVA2QGJ5Zooxb9A",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-12-23",
+      "classId": "12",
+      "date": "2026-09-15",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-13-23",
+      "classId": "13",
+      "date": "2026-09-15",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-14-23",
+      "classId": "14",
+      "date": "2026-09-15",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-16-23",
+      "classId": "16",
+      "date": "2026-09-15",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-17-23",
+      "classId": "17",
+      "date": "2026-09-15",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 23
+    },
+    {
+      "id": "survey-2-24",
+      "classId": "2",
+      "date": "2026-09-16",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-4-24",
+      "classId": "4",
+      "date": "2026-09-16",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-5-24",
+      "classId": "5",
+      "date": "2026-09-16",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-7-24",
+      "classId": "7",
+      "date": "2026-09-16",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/8FvsM13XpCgXkBVF6",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-8-24",
+      "classId": "8",
+      "date": "2026-09-16",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-9-24",
+      "classId": "9",
+      "date": "2026-09-16",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-10-24",
+      "classId": "10",
+      "date": "2026-09-16",
+      "title": "직무특화_Matlab+Simulink",
+      "url": "https://forms.gle/r31dssWh5uY5g6XN7",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-12-24",
+      "classId": "12",
+      "date": "2026-09-16",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-13-24",
+      "classId": "13",
+      "date": "2026-09-16",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-14-24",
+      "classId": "14",
+      "date": "2026-09-16",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-15-24",
+      "classId": "15",
+      "date": "2026-09-16",
+      "title": "직무특화_임베디드 리눅스 시스템",
+      "url": "https://forms.gle/z5F1YajgY45bdpQo6",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-16-24",
+      "classId": "16",
+      "date": "2026-09-16",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-17-24",
+      "classId": "17",
+      "date": "2026-09-16",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 24
+    },
+    {
+      "id": "survey-2-25",
+      "classId": "2",
+      "date": "2026-09-17",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-3-25",
+      "classId": "3",
+      "date": "2026-09-17",
+      "title": "직무특화_임베디드 리눅스 시스템",
+      "url": "https://forms.gle/1zfbcHHtqW2pGst37",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-4-25",
+      "classId": "4",
+      "date": "2026-09-17",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-6-25",
+      "classId": "6",
+      "date": "2026-09-17",
+      "title": "직무특화_임베디드 시스템의 이해",
+      "url": "https://forms.gle/NVUPxFrdzbg4wEuSA",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-8-25",
+      "classId": "8",
+      "date": "2026-09-17",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-11-25",
+      "classId": "11",
+      "date": "2026-09-17",
+      "title": "임베디드 리눅스 시스템",
+      "url": "https://forms.gle/wfoG4tSEoVCurKeV8",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-12-25",
+      "classId": "12",
+      "date": "2026-09-17",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-13-25",
+      "classId": "13",
+      "date": "2026-09-17",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-14-25",
+      "classId": "14",
+      "date": "2026-09-17",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 25
+    },
+    {
+      "id": "survey-1-26",
+      "classId": "1",
+      "date": "2026-09-18",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/7o57ioHHupmhuhEd7",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-5-26",
+      "classId": "5",
+      "date": "2026-09-18",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-7-26",
+      "classId": "7",
+      "date": "2026-09-18",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-10-26",
+      "classId": "10",
+      "date": "2026-09-18",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-15-26",
+      "classId": "15",
+      "date": "2026-09-18",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-16-26",
+      "classId": "16",
+      "date": "2026-09-18",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-17-26",
+      "classId": "17",
+      "date": "2026-09-18",
+      "title": "동기부여 -4",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdgHEmJcPnfeZ3KzIi7btNQpCg7o8s2YsUFquBWXucBgE0HCg/viewform",
+      "sourceRow": 26
+    },
+    {
+      "id": "survey-8-29",
+      "classId": "8",
+      "date": "2026-09-21",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 29
+    },
+    {
+      "id": "survey-9-29",
+      "classId": "9",
+      "date": "2026-09-21",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 29
+    },
+    {
+      "id": "survey-1-31",
+      "classId": "1",
+      "date": "2026-09-22",
+      "title": "직무특화_Matlab+Simulink",
+      "url": "https://forms.gle/14zzmU4wmRqovBNY7",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-2-31",
+      "classId": "2",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-3-31",
+      "classId": "3",
+      "date": "2026-09-22",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/cMt4nnps5fsdQSyt9",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-4-31",
+      "classId": "4",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-5-31",
+      "classId": "5",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-6-31",
+      "classId": "6",
+      "date": "2026-09-22",
+      "title": "직무특화_MCU 프로그래밍",
+      "url": "https://forms.gle/ztejcTcsqd28wafS6",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-7-31",
+      "classId": "7",
+      "date": "2026-09-22",
+      "title": "직무특화_SW 보안 및 OTA",
+      "url": "https://forms.gle/a4q6GGrTGcWF48WMA",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-10-31",
+      "classId": "10",
+      "date": "2026-09-22",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/gdv12D2WWCL8q38Y9",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-11-31",
+      "classId": "11",
+      "date": "2026-09-22",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/G582wR9MtD6uiaCQ6",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-12-31",
+      "classId": "12",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-13-31",
+      "classId": "13",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-14-31",
+      "classId": "14",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-15-31",
+      "classId": "15",
+      "date": "2026-09-22",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/oarKhbp27vebFGEx6",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-16-31",
+      "classId": "16",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-17-31",
+      "classId": "17",
+      "date": "2026-09-22",
+      "title": "제조 장비 건전성 관리 입문",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSesXlALUdxO4NdhWW_tOx5DKz_y0kIntS8EdbWmXnQAl032Vw/viewform?usp=header",
+      "sourceRow": 31
+    },
+    {
+      "id": "survey-9-32",
+      "classId": "9",
+      "date": "2026-09-23",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 32
+    },
+    {
+      "id": "survey-1-33",
+      "classId": "1",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-2-33",
+      "classId": "2",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-3-33",
+      "classId": "3",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-4-33",
+      "classId": "4",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-5-33",
+      "classId": "5",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-6-33",
+      "classId": "6",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-7-33",
+      "classId": "7",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-8-33",
+      "classId": "8",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-9-33",
+      "classId": "9",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-10-33",
+      "classId": "10",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-11-33",
+      "classId": "11",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-12-33",
+      "classId": "12",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-13-33",
+      "classId": "13",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-14-33",
+      "classId": "14",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-15-33",
+      "classId": "15",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-16-33",
+      "classId": "16",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-17-33",
+      "classId": "17",
+      "date": "2026-09-24",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 33
+    },
+    {
+      "id": "survey-1-34",
+      "classId": "1",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-2-34",
+      "classId": "2",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-3-34",
+      "classId": "3",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-4-34",
+      "classId": "4",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-5-34",
+      "classId": "5",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-6-34",
+      "classId": "6",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-7-34",
+      "classId": "7",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-8-34",
+      "classId": "8",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-9-34",
+      "classId": "9",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-10-34",
+      "classId": "10",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-11-34",
+      "classId": "11",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-12-34",
+      "classId": "12",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-13-34",
+      "classId": "13",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-14-34",
+      "classId": "14",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-15-34",
+      "classId": "15",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-16-34",
+      "classId": "16",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-17-34",
+      "classId": "17",
+      "date": "2026-09-25",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 34
+    },
+    {
+      "id": "survey-1-35",
+      "classId": "1",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-2-35",
+      "classId": "2",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-3-35",
+      "classId": "3",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-4-35",
+      "classId": "4",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-5-35",
+      "classId": "5",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-6-35",
+      "classId": "6",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-7-35",
+      "classId": "7",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-8-35",
+      "classId": "8",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-9-35",
+      "classId": "9",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-10-35",
+      "classId": "10",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-11-35",
+      "classId": "11",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-12-35",
+      "classId": "12",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-13-35",
+      "classId": "13",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-14-35",
+      "classId": "14",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-15-35",
+      "classId": "15",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-16-35",
+      "classId": "16",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-17-35",
+      "classId": "17",
+      "date": "2026-09-26",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 35
+    },
+    {
+      "id": "survey-1-36",
+      "classId": "1",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-2-36",
+      "classId": "2",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-3-36",
+      "classId": "3",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-4-36",
+      "classId": "4",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-5-36",
+      "classId": "5",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-6-36",
+      "classId": "6",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-7-36",
+      "classId": "7",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-8-36",
+      "classId": "8",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-9-36",
+      "classId": "9",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-10-36",
+      "classId": "10",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-11-36",
+      "classId": "11",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-12-36",
+      "classId": "12",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-13-36",
+      "classId": "13",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-14-36",
+      "classId": "14",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-15-36",
+      "classId": "15",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-16-36",
+      "classId": "16",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-17-36",
+      "classId": "17",
+      "date": "2026-09-27",
+      "title": "추석연휴",
+      "url": "",
+      "sourceRow": 36
+    },
+    {
+      "id": "survey-2-37",
+      "classId": "2",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-4-37",
+      "classId": "4",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-5-37",
+      "classId": "5",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-7-37",
+      "classId": "7",
+      "date": "2026-09-28",
+      "title": "직무특화_자동차 통신 시스템",
+      "url": "https://forms.gle/TXpw6t24AcVGGfiF9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-8-37",
+      "classId": "8",
+      "date": "2026-09-28",
+      "title": "품질관리 기법 및 신뢰성 분석 기초",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLScQqIN7tClK4loNchRx3csAmbmIqRDPtmEofh0PdIdmvG-NdQ/viewform?usp=header",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-9-37",
+      "classId": "9",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-12-37",
+      "classId": "12",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-13-37",
+      "classId": "13",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-14-37",
+      "classId": "14",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-16-37",
+      "classId": "16",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-17-37",
+      "classId": "17",
+      "date": "2026-09-28",
+      "title": "제조 장비 건전성 시스템 구축 및 운영",
+      "url": "https://forms.gle/5hYbdyhsWgt7oBYZ9",
+      "sourceRow": 37
+    },
+    {
+      "id": "survey-2-38",
+      "classId": "2",
+      "date": "2026-09-29",
+      "title": "장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/FH4xvqZhcALMHXe79",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-3-38",
+      "classId": "3",
+      "date": "2026-09-29",
+      "title": "직무특화_SW 보안 및 OTA",
+      "url": "https://forms.gle/zEfYaQhmtiHdfHhc6",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-4-38",
+      "classId": "4",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/rY1PVdyCjjWXWyVz9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-5-38",
+      "classId": "5",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/rY1PVdyCjjWXWyVz9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-8-38",
+      "classId": "8",
+      "date": "2026-09-29",
+      "title": "품질문제 해결 실습",
+      "url": "https://forms.gle/kfHSurrMnTUnBQHNA",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-10-38",
+      "classId": "10",
+      "date": "2026-09-29",
+      "title": "직무특화_SW 테스팅",
+      "url": "https://forms.gle/YUBkz5QuBmemcWH48",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-11-38",
+      "classId": "11",
+      "date": "2026-09-29",
+      "title": "SW 보안 및 OTA",
+      "url": "https://forms.gle/EbwDskX21fWPVG657",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-12-38",
+      "classId": "12",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-13-38",
+      "classId": "13",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-14-38",
+      "classId": "14",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-15-38",
+      "classId": "15",
+      "date": "2026-09-29",
+      "title": "직무특화_SW 보안 및 OTA",
+      "url": "https://forms.gle/7XTiQuat7HNM14my8",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-16-38",
+      "classId": "16",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-17-38",
+      "classId": "17",
+      "date": "2026-09-29",
+      "title": "제조 장비 건전성 관리 시스템 설계 실습",
+      "url": "https://forms.gle/nBNnJmHmWEDPXDBm9",
+      "sourceRow": 38
+    },
+    {
+      "id": "survey-1-39",
+      "classId": "1",
+      "date": "2026-09-30",
+      "title": "직무특화_전자제어기를 위한 모델 기반 제어",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdmby5IvQyET1T8KSyU5BOewgb_r0zv8FISj7hFkMJad7fmBA/viewform?usp=dialog",
+      "sourceRow": 39
+    },
+    {
+      "id": "survey-9-39",
+      "classId": "9",
+      "date": "2026-09-30",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 39
+    },
+    {
+      "id": "survey-2-41",
+      "classId": "2",
+      "date": "2026-10-01",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/M4fmr7G3e476AMcp7",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-4-41",
+      "classId": "4",
+      "date": "2026-10-01",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-5-41",
+      "classId": "5",
+      "date": "2026-10-01",
+      "title": "[실습] 3D CAD기반 설계 실습",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-6-41",
+      "classId": "6",
+      "date": "2026-10-01",
+      "title": "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "url": "https://forms.gle/VWk2gSxe8Hzxh9h37",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-8-41",
+      "classId": "8",
+      "date": "2026-10-01",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-12-41",
+      "classId": "12",
+      "date": "2026-10-01",
+      "title": "[실습] 3D CAD기반 설계 실습(고정)",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-13-41",
+      "classId": "13",
+      "date": "2026-10-01",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-14-41",
+      "classId": "14",
+      "date": "2026-10-01",
+      "title": "스마트팩토리 주요 기술",
+      "url": "https://forms.gle/igBLwEWyE1s1g3vU9",
+      "sourceRow": 41
+    },
+    {
+      "id": "survey-1-42",
+      "classId": "1",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-2-42",
+      "classId": "2",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-3-42",
+      "classId": "3",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-4-42",
+      "classId": "4",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-5-42",
+      "classId": "5",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-6-42",
+      "classId": "6",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-7-42",
+      "classId": "7",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-8-42",
+      "classId": "8",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-9-42",
+      "classId": "9",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-10-42",
+      "classId": "10",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-11-42",
+      "classId": "11",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-12-42",
+      "classId": "12",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-13-42",
+      "classId": "13",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-14-42",
+      "classId": "14",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-15-42",
+      "classId": "15",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-16-42",
+      "classId": "16",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-17-42",
+      "classId": "17",
+      "date": "2026-10-02",
+      "title": "현직자특강(비대면)",
+      "url": "",
+      "sourceRow": 42
+    },
+    {
+      "id": "survey-1-45",
+      "classId": "1",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-2-45",
+      "classId": "2",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-3-45",
+      "classId": "3",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-4-45",
+      "classId": "4",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-5-45",
+      "classId": "5",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-6-45",
+      "classId": "6",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-7-45",
+      "classId": "7",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-8-45",
+      "classId": "8",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-9-45",
+      "classId": "9",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-10-45",
+      "classId": "10",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-11-45",
+      "classId": "11",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-12-45",
+      "classId": "12",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-13-45",
+      "classId": "13",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-14-45",
+      "classId": "14",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-15-45",
+      "classId": "15",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-16-45",
+      "classId": "16",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-17-45",
+      "classId": "17",
+      "date": "2026-10-05",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 45
+    },
+    {
+      "id": "survey-7-46",
+      "classId": "7",
+      "date": "2026-10-06",
+      "title": "직무특화_딥러닝 기반 영상 인식",
+      "url": "https://forms.gle/8yCiBDxJUD7rmxhQA",
+      "sourceRow": 46
+    },
+    {
+      "id": "survey-13-46",
+      "classId": "13",
+      "date": "2026-10-06",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 46
+    },
+    {
+      "id": "survey-16-46",
+      "classId": "16",
+      "date": "2026-10-06",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 46
+    },
+    {
+      "id": "survey-17-46",
+      "classId": "17",
+      "date": "2026-10-06",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 46
+    },
+    {
+      "id": "survey-1-47",
+      "classId": "1",
+      "date": "2026-10-07",
+      "title": "직무특화_SW 테스팅",
+      "url": "https://forms.gle/xG4JYfWUANeMkYNe8",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-3-47",
+      "classId": "3",
+      "date": "2026-10-07",
+      "title": "직무특화_딥러닝 기반 영상인식",
+      "url": "https://forms.gle/R3Hnm4kg65tX4R8Z9",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-6-47",
+      "classId": "6",
+      "date": "2026-10-07",
+      "title": "직무특화_자동차 통신 시스템",
+      "url": "https://forms.gle/p6qk3VAWBVnBQ4847",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-9-47",
+      "classId": "9",
+      "date": "2026-10-07",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-10-47",
+      "classId": "10",
+      "date": "2026-10-07",
+      "title": "전자제어기를 위한 모델 기반 제어",
+      "url": "https://forms.gle/kzAKhVEWQin6UiV49",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-11-47",
+      "classId": "11",
+      "date": "2026-10-07",
+      "title": "딥러닝 기반 영상인식",
+      "url": "https://forms.gle/vdQUoBqTjPNJkfCZA",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-13-47",
+      "classId": "13",
+      "date": "2026-10-07",
+      "title": "개천절 대체휴무",
+      "url": "",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-15-47",
+      "classId": "15",
+      "date": "2026-10-07",
+      "title": "직무특화-딥러닝 기반 영상인식",
+      "url": "https://forms.gle/AocpYbRZWTw1ykkY9",
+      "sourceRow": 47
+    },
+    {
+      "id": "survey-2-49",
+      "classId": "2",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://forms.gle/V7CzkbDJifsKKeV17",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-4-49",
+      "classId": "4",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-5-49",
+      "classId": "5",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-7-49",
+      "classId": "7",
+      "date": "2026-10-08",
+      "title": "직무특화_임베디드 리눅스",
+      "url": "https://forms.gle/PUsPPMWmLyBme3ib7",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-8-49",
+      "classId": "8",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-12-49",
+      "classId": "12",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-13-49",
+      "classId": "13",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-14-49",
+      "classId": "14",
+      "date": "2026-10-08",
+      "title": "AI기반 스마트팩토리 설계 및 운영 기술",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-16-49",
+      "classId": "16",
+      "date": "2026-10-08",
+      "title": "[실습] 3D CAD기반 설계 실습",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-17-49",
+      "classId": "17",
+      "date": "2026-10-08",
+      "title": "[실습] 3D CAD기반 설계 실습",
+      "url": "https://forms.gle/2PgyKd7BFX7KaqZp6",
+      "sourceRow": 49
+    },
+    {
+      "id": "survey-1-50",
+      "classId": "1",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-2-50",
+      "classId": "2",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-3-50",
+      "classId": "3",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-4-50",
+      "classId": "4",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-5-50",
+      "classId": "5",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-6-50",
+      "classId": "6",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-7-50",
+      "classId": "7",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-8-50",
+      "classId": "8",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-9-50",
+      "classId": "9",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-10-50",
+      "classId": "10",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-11-50",
+      "classId": "11",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-12-50",
+      "classId": "12",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-13-50",
+      "classId": "13",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-14-50",
+      "classId": "14",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-15-50",
+      "classId": "15",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-16-50",
+      "classId": "16",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-17-50",
+      "classId": "17",
+      "date": "2026-10-09",
+      "title": "한글날",
+      "url": "",
+      "sourceRow": 50
+    },
+    {
+      "id": "survey-9-53",
+      "classId": "9",
+      "date": "2026-10-12",
+      "title": "울산-분해조립",
+      "url": "https://forms.gle/ofPgmp6Nssj3oP9c8",
+      "sourceRow": 53
+    },
+    {
+      "id": "survey-1-55",
+      "classId": "1",
+      "date": "2026-10-14",
+      "title": "MBD 활용 임베디드 AI 구현 및 최적화",
+      "url": "https://forms.gle/KgKhw1HWd5tZ4n2FA",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-2-55",
+      "classId": "2",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-3-55",
+      "classId": "3",
+      "date": "2026-10-14",
+      "title": "직무특화_임베디드AI구현 및 최적화",
+      "url": "https://forms.gle/pwwqFW6LiQhrb4366",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-4-55",
+      "classId": "4",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-5-55",
+      "classId": "5",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-6-55",
+      "classId": "6",
+      "date": "2026-10-14",
+      "title": "직무특화_MBD 활용 임베디드 AI 구현 및 최적화",
+      "url": "https://forms.gle/HSUoBuYbhGSRhoZf7",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-7-55",
+      "classId": "7",
+      "date": "2026-10-14",
+      "title": "직무특화_임베디드 AI 구현 및 최적화",
+      "url": "https://forms.gle/L64aE3orM6t9x4iu9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-8-55",
+      "classId": "8",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-9-55",
+      "classId": "9",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-10-55",
+      "classId": "10",
+      "date": "2026-10-14",
+      "title": "MBD 활용 임베디드 AI 구현 및 최적화",
+      "url": "https://forms.gle/A6CYcGhNbuHGVvqp9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-11-55",
+      "classId": "11",
+      "date": "2026-10-14",
+      "title": "임베디드 AI 구현 및 최적화",
+      "url": "https://forms.gle/BgVrWL5TkBSTBzMt6",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-12-55",
+      "classId": "12",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-13-55",
+      "classId": "13",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/zfdagi8o3Z1eQR3q9",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-14-55",
+      "classId": "14",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/KxsZWSSz36Fb9UaVA",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-15-55",
+      "classId": "15",
+      "date": "2026-10-14",
+      "title": "직무특화_임베디드 AI 구현 및 최적화",
+      "url": "https://forms.gle/AwJKfwHqwBu32z2s7",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-16-55",
+      "classId": "16",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://forms.gle/52AZGA4wHrDq7Jnt7",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-17-55",
+      "classId": "17",
+      "date": "2026-10-14",
+      "title": "AI 기반 스마트팩토리 설계 및 운영 실습",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSf6RowwCT2FcQLw9xoq-0-bXDU8PE8fks2xIhs_Xxp50vZ4lw/viewform?usp=header",
+      "sourceRow": 55
+    },
+    {
+      "id": "survey-1-57",
+      "classId": "1",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-2-57",
+      "classId": "2",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-3-57",
+      "classId": "3",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-4-57",
+      "classId": "4",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-5-57",
+      "classId": "5",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-6-57",
+      "classId": "6",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-7-57",
+      "classId": "7",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-8-57",
+      "classId": "8",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-9-57",
+      "classId": "9",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-10-57",
+      "classId": "10",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-11-57",
+      "classId": "11",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-12-57",
+      "classId": "12",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-13-57",
+      "classId": "13",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-14-57",
+      "classId": "14",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-15-57",
+      "classId": "15",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-16-57",
+      "classId": "16",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-17-57",
+      "classId": "17",
+      "date": "2026-10-15",
+      "title": "문화체험",
+      "url": "",
+      "sourceRow": 57
+    },
+    {
+      "id": "survey-6-58",
+      "classId": "6",
+      "date": "2026-10-16",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 58
+    },
+    {
+      "id": "survey-10-61",
+      "classId": "10",
+      "date": "2026-10-19",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 61
+    },
+    {
+      "id": "survey-11-61",
+      "classId": "11",
+      "date": "2026-10-19",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 61
+    },
+    {
+      "id": "survey-12-61",
+      "classId": "12",
+      "date": "2026-10-19",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 61
+    },
+    {
+      "id": "survey-13-61",
+      "classId": "13",
+      "date": "2026-10-19",
+      "title": "울산공장(견학+이론)",
+      "url": "https://forms.gle/st41zmxef51gQC4m7",
+      "sourceRow": 61
+    },
+    {
+      "id": "survey-1-63",
+      "classId": "1",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-2-63",
+      "classId": "2",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-3-63",
+      "classId": "3",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-4-63",
+      "classId": "4",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-5-63",
+      "classId": "5",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-6-63",
+      "classId": "6",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-7-63",
+      "classId": "7",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-8-63",
+      "classId": "8",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-9-63",
+      "classId": "9",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-10-63",
+      "classId": "10",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-11-63",
+      "classId": "11",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-12-63",
+      "classId": "12",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-13-63",
+      "classId": "13",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-14-63",
+      "classId": "14",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-15-63",
+      "classId": "15",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-16-63",
+      "classId": "16",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-17-63",
+      "classId": "17",
+      "date": "2026-10-21",
+      "title": "진로취업",
+      "url": "",
+      "sourceRow": 63
+    },
+    {
+      "id": "survey-1-64",
+      "classId": "1",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-2-64",
+      "classId": "2",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-3-64",
+      "classId": "3",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-4-64",
+      "classId": "4",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-5-64",
+      "classId": "5",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-6-64",
+      "classId": "6",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-7-64",
+      "classId": "7",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-8-64",
+      "classId": "8",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-9-64",
+      "classId": "9",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-10-64",
+      "classId": "10",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-11-64",
+      "classId": "11",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-12-64",
+      "classId": "12",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-13-64",
+      "classId": "13",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-14-64",
+      "classId": "14",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-15-64",
+      "classId": "15",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-16-64",
+      "classId": "16",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    },
+    {
+      "id": "survey-17-64",
+      "classId": "17",
+      "date": "2026-10-22",
+      "title": "수료식-행사",
+      "url": "",
+      "sourceRow": 64
+    }
+  ],
+  "responseSources": [
+    {
+      "id": "response-3",
+      "module": "그룹특화",
+      "title": "[K-뉴딜 아카데미] 천안 현장 교육 만족도 조사(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1E9c6EMcRZ8w9vUZUHMXgkp62Av84FP-JsAkoQDVZ4gM/edit"
+    },
+    {
+      "id": "response-4",
+      "module": "그룹특화",
+      "title": "[K-뉴딜 아카데미] 울산 현장 교육 만족도 조사(6반, 7반)(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1Vv0tQixZ2C3GLlg8K70Db2q6qMvwcZknQGOrnRtxZV0/edit"
+    },
+    {
+      "id": "response-5",
+      "module": "그룹특화",
+      "title": "[K-뉴딜 아카데미] 현장 교육 만족도 조사(그룹특화-분해조립교육) (응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1g-uhBB05HK9mqjlW6sFugs7eBy4z4PVBDB5jmcxi-vs/edit"
+    },
+    {
+      "id": "response-6",
+      "module": "그룹특화",
+      "title": "공장견학+생산공정 이론교육",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1dmABtTcX6SfOX11XZiRkhn9vYjt7h_0YLRPidC1FCzc/edit"
+    },
+    {
+      "id": "response-7",
+      "module": "동기부여",
+      "title": "3주차_성장 몰입 Design",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1dUYJFJ6zEryfFti5EjYaLTsJybdKLNRC_aKRcGkrJag/edit"
+    },
+    {
+      "id": "response-8",
+      "module": "동기부여",
+      "title": "4주차_비전 설계 Focus",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1ThVAzZagOygXk9ODmyBZIYXjifAbIWEkjKCj84ay_z4/edit?gid=734392643"
+    },
+    {
+      "id": "response-9",
+      "module": "동기부여",
+      "title": "2주차_회복 탄력성 Care",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1wvZZKw-S2WzGnb_COzSXivD60bWpentwkGcZIcY1V4U/edit"
+    },
+    {
+      "id": "response-10",
+      "module": "동기부여",
+      "title": "1주차_강점혁명Aware",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/181Slb4j4TefSLjXqS7DWDF15e3TSyIYvE2-U_SvKdNQ/edit"
+    },
+    {
+      "id": "response-11",
+      "module": "디지털스킬",
+      "title": "k-뉴딜아카데미 만족도 조사(디지털 스킬)_AI 교육(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1_7UAwllapWW9xB3Lku0U8WZlzPlja_-J4nHZb1HHDgk/edit"
+    },
+    {
+      "id": "response-12",
+      "module": "소프트스킬",
+      "title": "k-뉴딜아카데미 만족도 조사(소프트 스킬)_1-3일차 (3~17반)(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1l1_N6l1LA6QfV7tGiirNa4ZIeIx6C1E7Uysusi5cnIQ/edit"
+    },
+    {
+      "id": "response-13",
+      "module": "소프트스킬",
+      "title": "k-뉴딜아카데미 만족도 조사(소프트 스킬)_1-2일차 (1,2반)(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/15ZeeyV3X84jMi58sG63M7q7ZNkecmFWB1XUUhk9tECQ/edit"
+    },
+    {
+      "id": "response-14",
+      "module": "소프트스킬",
+      "title": "k-뉴딜아카데미 만족도 조사(소프트 스킬)_3일차 (1,2반)(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1sBs7tNh0PW0yDelXDyaK3_MCy_dbjSxNuU07EWYd2gk/edit"
+    },
+    {
+      "id": "response-15",
+      "module": "직무특화",
+      "title": "k-뉴딜아카데미 만족도 조사(직무특화)_비대면(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1zSxzPcqZfQBdRZwhOWfc3E3J5ZAMbZKbQedVdNzBitI/edit"
+    },
+    {
+      "id": "response-16",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(C 프로그래밍(SW))",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1fkJlzJKrgg_nauofbCSxQcSgz4PiV2X5rQj0f1fbSVc/edit"
+    },
+    {
+      "id": "response-17",
+      "module": "직무특화",
+      "title": "제조지능화(스마트팩토리 주요 기술)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1cbtGuwAlTkRKnFvUBkzxrNFH3uZwyp4Rgc37P2Lerf0/edit"
+    },
+    {
+      "id": "response-18",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(AI를 위한 Python)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1EqVof0SCh4oT3XUk6dCS-9J405iQHdH4qTg5P5FPPLY/edit"
+    },
+    {
+      "id": "response-19",
+      "module": "직무특화",
+      "title": "제조지능화(제품설계 및 생산자동화)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/19kMXq2FQ92rZlj8XvQf4YNyLVqs9iXyRW6J0ovtXqAQ/edit"
+    },
+    {
+      "id": "response-20",
+      "module": "직무특화",
+      "title": "제조지능화(3D CAD기반 설계 실습)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1srn965m12KFqoGWH4U-h0eE5dCvbAP88mk3sqGLm974/edit"
+    },
+    {
+      "id": "response-21",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(C 프로그래밍-HW)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/151SKsTRXZBvtr92OTcaCpMTj2hKZzVwBMmQgqH-5kuE/edit"
+    },
+    {
+      "id": "response-22",
+      "module": "직무특화",
+      "title": "제조지능화(품질경영 개요 및 품질 관리)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1dvhDnUSeGdwVP9UvjDgN17YAG-BEEy6tagXlKyvlF6A/edit?gid=399544418"
+    },
+    {
+      "id": "response-23",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(임베디드 시스템 이해)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1HEGnkGTbzX_GRGBwFH85MVloknfqf-BKt2NQAj5z2Xg/edit?gid=486849296"
+    },
+    {
+      "id": "response-24",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(모빌리티 SW 개론 및 프로세스)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1K7DbG-PICTi4fJrmCf1sPL_5xZTMAziCCWvqc0-ObS8/edit"
+    },
+    {
+      "id": "response-25",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(임베디드 시스템 이해)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1G2Cm0lRyIfCt1OS3rQqVvLMgRx5NoLUwmewzNOBtAmM/edit"
+    },
+    {
+      "id": "response-26",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(자동차전장시스템 이해)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/12ytDcEXg6EnDWZ30Em0Q2QF2H-cT9zyhH6Ri-c4XleQ/edit"
+    },
+    {
+      "id": "response-27",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(Matlab, Simulink)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/10ffWphxvvQmzmxXUabFfbmxkw_z942t53QYPoNGNtqE/edit"
+    },
+    {
+      "id": "response-28",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(SW 테스팅)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1yBumfUq0UYb3CHUJJR1uQwT95QtOjjUliLoD4NhByCs/edit"
+    },
+    {
+      "id": "response-29",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(모빌리티 SW 개론 및 프로세스)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/15eYGH3KXgPHadqr5TIDF6Javi3KG7Tt0skD15ZVqwP8/edit"
+    },
+    {
+      "id": "response-30",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(임베디드 시스템 인터페이스 회로)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1HypzNKuX_XqIyhdOfqB7J6IQPIyaWUy2sM2L9qbgGFU/edit"
+    },
+    {
+      "id": "response-31",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(자동차 전장시스템 이해)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1_O388ZBrS1ZK2LRku2MHbdP5iBn94KlKFNQeG9U0eWk/edit"
+    },
+    {
+      "id": "response-32",
+      "module": "직무특화",
+      "title": "제조지능화(생산시스템 및 제조공학)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1S7K6eDr-oBb1q3l_8qc1goX8YQywNFefT-exkYac-30/edit"
+    },
+    {
+      "id": "response-33",
+      "module": "직무특화",
+      "title": "제조지능화(AI기반 제조데이터 분석 입문-Python·통계)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1mawfo3heSONLctUj40AGJhdRA80BAw5eKVdHGBIawes/edit?gid=679866063"
+    },
+    {
+      "id": "response-34",
+      "module": "직무특화",
+      "title": "제조지능화(품질관리 기법 및 신뢰성 분석 기초)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1kpK8P8B1iEvea3XBv7s3h-TyETxavhBjg3ZH2m8PCSY/edit?gid=400270057"
+    },
+    {
+      "id": "response-35",
+      "module": "직무특화",
+      "title": "제조지능화(품질문제 해결 실습)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1iWp9yExSoG3LjQlOrLcWLh4Jeyv9UQvZcpkK5gqifr8/edit?gid=293149193"
+    },
+    {
+      "id": "response-36",
+      "module": "직무특화",
+      "title": "제조지능화(제조 장비 건전성 관리 입문-예측 유지보수)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1SAk_6pOo7lxc58HBLz525bCdGJ8Pmc3y9GPRGFvewnw/edit?gid=178170668"
+    },
+    {
+      "id": "response-37",
+      "module": "직무특화",
+      "title": "제조지능화(제조 장비 건정성 시스템 구축 및 운영)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1xfNfE3AOC1evqR8pttQ8JjPF_gn04hTL4er1eRTG9Q4/edit?gid=1205086211"
+    },
+    {
+      "id": "response-38",
+      "module": "직무특화",
+      "title": "제조지능화(장비 건전성 관리 시스템 설계 실습)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1DdvL9Op1uLUNa27PpJdM2nF2kEP0fnHFPROkJMpXgsE/edit?gid=348093788"
+    },
+    {
+      "id": "response-39",
+      "module": "직무특화",
+      "title": "제조지능화(AI기반 스마트팩토리 설계 및 운영 기술)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1v0zO9DRnwXuIoTGsZ_SkF_fAa0_3H7zgkcbi5TAf9Mw/edit?gid=859704291"
+    },
+    {
+      "id": "response-40",
+      "module": "직무특화",
+      "title": "제조지능화(AI기반 스마트팩토리 설계 및 운영 실습)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/16j93kBwHoRtoz1nu7EvhQOg97W4xULtXdZehai5M6d8/edit?gid=127068568"
+    },
+    {
+      "id": "response-41",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(MCU 프로그래밍-SW 전공자 대상)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1aHTaXFK_eX7k9OlnRgfmnrcEFOE8LEZdPt1qJTTUt5c/edit?gid=1731644044"
+    },
+    {
+      "id": "response-42",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(자동차 통신 시스템)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1BKGrZmC6Nm9davBL-whsoJ-1znz_GSnobE-1_EwYX_s/edit?gid=518410440"
+    },
+    {
+      "id": "response-43",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(실시간 운영체제 기반 전자제어기 프로그래밍)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1hF9FajUyS-RxEOXNUtTDzByhNeuIB-BiXzYksYjvKNw/edit?gid=1531119731"
+    },
+    {
+      "id": "response-44",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(SW보안 및 OTA)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/16QyrYViUxFljhI4dXnb226QmliYlxwYvN3QFsIe0yM4/edit?gid=1845805384"
+    },
+    {
+      "id": "response-45",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(딥러닝 기반 영상인식)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1QJzI5QmIwAmpyodev2VLqQpOfJuv_sD1Cy0lEnwGJgs/edit?gid=1752222535"
+    },
+    {
+      "id": "response-46",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(임베디드 AI 구현 및 최적화)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1v_h1NGnudPWaZImSb_dm47ttybUJooaIGc3BAFclu6w/edit?gid=730984946"
+    },
+    {
+      "id": "response-47",
+      "module": "직무특화",
+      "title": "임베디드AI-SW(임베디드 리눅스 시스템)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1Ke7VE4NVIG0X2Je5KmgE6pA5gY7HAXo9kc9kV92MfbI/edit?gid=1513325996"
+    },
+    {
+      "id": "response-48",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(실시간 운영체제 기반 전자제어기 프로그래밍)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1-ibtqIZmOOkrcq3sins2M8PMp8azDvGdJZmy3QO1rsA/edit?gid=630976628"
+    },
+    {
+      "id": "response-49",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(임베디드 시스템 인터페이스 회로)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1JC6mb9TljK7LDraNw8N-S3TQw8NkGmXGvPTTWr5r4pA/edit?gid=1988419697"
+    },
+    {
+      "id": "response-50",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(자동차 통신 시스템)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1Op-YaHh7ee3PjmtIVNkRDYwwvRkNZ2gpqpBJ_uGz36Q/edit?gid=1643910431"
+    },
+    {
+      "id": "response-51",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(전자제어기를 위한 모델 기반 제어)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1Bs6IDOjryleff05mYFi9uhvVwqqyYh6ODsmauWfaAZU/edit?gid=1554936287"
+    },
+    {
+      "id": "response-52",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(AI를 위한 Python)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1PC5_hUoTPMcU4TVhLsM8o1JfBPdGgaTq4GMOa07j59c/edit?gid=194577752"
+    },
+    {
+      "id": "response-53",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(MBD 활용 임베디드 AI 구현 및 최적화)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/11hEuJGJv34qAoNE1KcLPqt1e6-h3QgVdWK7iscF2vRU/edit?gid=1596374764"
+    },
+    {
+      "id": "response-54",
+      "module": "직무특화",
+      "title": "임베디드AI-HW(MCU 프로그래밍-HW 전공자 대상)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1MpQ6E9r6AFS__I1fX6ua6SXqKaqyM36B9EDr4rHn7xc/edit?gid=642055989"
+    }
+  ]
+}

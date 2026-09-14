@@ -22,7 +22,7 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
       if(url.pathname==='/api/attendance-reader'&&readFailure)return route.fulfill({status:503,json:{ok:false,error:'READER_BAD_RESPONSE'}});
       if(url.pathname==='/api/attendance-reader')return route.fulfill({json:{ok:true,attendance:attendance(),reasons:reasons(),attendanceBackgrounds:[[],...colors.map(c=>['','','','','#ffffff',c,'#ffffff'])]}});
       if(url.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<section class="attendance-native-shell"><div id="host"></div></section><script type="module">import{mountAttendanceOverview}from'/attendance-overview.js';window.mounted=await mountAttendanceOverview(document.querySelector('#host'),{auth:{},db:{},user:{email:'staff@example.com',getIdToken:async()=>'fixture-token'},classes:[{id:'1',course:'과정'}]});</script>`});
-      const path=url.pathname.slice(1);if(['attendance-io.mjs','attendance-overview.js','attendance-beta.mjs','attendance-beta-core.mjs','attendance-beta-sheet.mjs','checkhere-snapshots.mjs','checkhere/rules.mjs','checkhere-request-actions.mjs','timetable-core.mjs','checkhere-proposals.mjs','attendance-reason-parser.mjs','checkhere-proposal-core.mjs','checkhere/approval-core.mjs'].includes(path))return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,path),'utf8')});
+      const path=url.pathname.slice(1);if(['survey-links.mjs','survey-core.mjs','survey-catalog.json','timetable-holiday.mjs','survey-view.mjs','survey-store.mjs','survey-google.mjs','survey.css','attendance-beta-core.mjs','attendance-rollout.mjs','attendance-io.mjs','attendance-io.mjs','attendance-overview.js','attendance-beta.mjs','attendance-beta-core.mjs','attendance-beta-sheet.mjs','checkhere-snapshots.mjs','checkhere/rules.mjs','checkhere-request-actions.mjs','timetable-core.mjs','checkhere-proposals.mjs','attendance-reason-parser.mjs','checkhere-proposal-core.mjs','checkhere/approval-core.mjs'].includes(path))return route.fulfill({contentType:path.endsWith('.json')?'application/json':'text/javascript',body:readFileSync(join(base,path),'utf8')});
       return route.abort();
     });
     await page.goto('https://fixture.test/');await page.getByLabel('가상가 출결').waitFor();assert.equal(await page.locator('#dateSel').inputValue(),'9/11');await page.getByText(/견학일 · 공장견학/).waitFor();assert.equal(await page.locator('[data-proposal-bulk]').count(),3);assert(await page.getByLabel('가상가 출결').isDisabled());await page.locator('.source-value').filter({hasText:'수집된 입실 메모'}).waitFor();
@@ -90,7 +90,7 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     await page.getByLabel('가상가 사유').fill('입력 중 사유');raw='가상가: 병원\n가상나: 시험';
     await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await page.getByText('시트 자동 확인 대기 · 입력·저장 완료 후 재개',{exact:true}).waitFor();assert.equal(await page.getByLabel('가상가 사유').inputValue(),'입력 중 사유');
-    await page.getByText('공장견학(화성) · 모듈 종료일, 만족도조사 필요',{exact:true}).waitFor();
+    await page.getByRole('link',{name:'공장견학(화성) · 모듈 종료일, 만족도조사 필요 ↗',exact:true}).waitFor();
     await page.evaluate(()=>window.mounted.dispose());
     const out=join(base,'checkhere/test-results');mkdirSync(out,{recursive:true});await page.screenshot({path:join(out,'attendance-beta-desktop.png'),fullPage:true});
     assert(writes.every(x=>x.range.endRowIndex-x.range.startRowIndex===1&&x.range.endColumnIndex-x.range.startColumnIndex===1));

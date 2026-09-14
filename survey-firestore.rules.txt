@@ -1,0 +1,19 @@
+    // Beta survey results: own-class reads, designated sync owner writes.
+    match /surveyBetaSummaries/{classId}/surveys/{eventId}{
+      allow read: if isAdmin() || timetableTeacherOwns(classId);
+      allow create, update: if isAdmin()
+        && request.auth.token.email_verified == true
+        && email() == 'hint.kpc@gmail.com'
+        && classId.matches('([1-9]|1[0-7])')
+        && request.resource.data.classId == classId
+        && request.resource.data.eventId == eventId
+        && request.resource.data.updatedBy == email()
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.keys().hasOnly(['classId','eventId','title','date','sourceId','url','syncedAt','scheduleFingerprint','answered','missing','review','excluded','unknown','invalidCount','duplicateCount','eligibleCount','updatedBy','updatedAt'])
+        && request.resource.data.answered is list && request.resource.data.answered.size() <= 100
+        && request.resource.data.missing is list && request.resource.data.missing.size() <= 100
+        && request.resource.data.review is list && request.resource.data.review.size() <= 100
+        && request.resource.data.excluded is list && request.resource.data.excluded.size() <= 100
+        && request.resource.data.unknown is list && request.resource.data.unknown.size() <= 500;
+      allow delete: if false;
+    }
