@@ -19,3 +19,15 @@ export function conflicts(entry,classes,classId){
 }
 export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,...out}=e;return {...out,instructorName:instructors[e.instructorId]?.name||''};});}
 export function visibleToday(entries,today=todayKST()){const sorted=sortEntries(entries);return{today:sorted.filter(e=>e.date===today),next:sorted.find(e=>e.date>today&&e.kind!=='holiday')||null};}
+// Per-class, per-lecture final scheduled date, not the end of a broad module.
+const lectureKey=e=>JSON.stringify([e.classId||'',e.course||'',e.lectureId||[e.module||'',e.title?.trim()||'']]);
+export function lectureEndDays(entries){
+ const last=new Map();
+ for(const e of entries)if(e.kind!=='holiday'&&e.date&&(e.lectureId||e.title?.trim())){
+  const key=lectureKey(e);if(!last.has(key)||e.date>last.get(key))last.set(key,e.date);
+ }
+ return entries.filter(e=>e.kind!=='holiday'&&e.date===last.get(lectureKey(e)));
+}
+export function lectureEndsOn(entries,date){
+ return [...new Map(lectureEndDays(entries).filter(e=>e.date===date).map(e=>[lectureKey(e),e])).values()];
+}

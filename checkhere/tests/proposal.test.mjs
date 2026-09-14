@@ -48,3 +48,12 @@ test('proposal context pins identity and source values, not collection timestamp
  for(const patch of [{id:'another'},{version:'v2'},{entryMemo:'someone changed it'},{teacher:'다른담임'}])assert.throws(()=>assertProposalSource(ctx,{...r,...patch}));
  assert.deepEqual(requestChanges(r,'entryMemo','새 사유'),{entryMemo:'새 사유'});assert.throws(()=>requestChanges(r,'entry','09:00'));assert.throws(()=>requestChanges(r,'entryMemo',''));
 });
+
+test('explicit blank memo changes clear old reasons without permitting time deletion',()=>{
+ const r={...record(),entryMemo:'오래된 사유',exitMemo:'오래된 퇴실 사유'};
+ assert.deepEqual(requestChanges(r,'entryMemo',''),{entryMemo:''});
+ assert.deepEqual(requestChanges(r,'exitMemo','   '),{exitMemo:''});
+ assert.throws(()=>requestChanges(r,'times',{entry:'',exit:''}));
+ assert.throws(()=>requestChanges(r,'entryMemo','x'.repeat(501)));
+ const recommendation=suggestReason({status:'출석',record:r});assert(recommendation.clear);assert.equal(recommendation.text,'');assert.deepEqual(recommendation.fields,['entryMemo','exitMemo']);
+});

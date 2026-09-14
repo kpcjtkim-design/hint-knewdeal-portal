@@ -2,3 +2,5 @@
 @media(max-width:700px){.teacher-calendar .toolbar label{flex:1 0 100%;order:-1}.teacher-calendar .toolbar button{flex:1 0 auto;min-width:44px}.teacher-calendar .toolbar input{min-width:160px}.teacher-calendar .top{align-items:flex-start}}
 
 .curriculum-reference{margin:12px 0;background:#f7fafc}.curriculum-reference table{width:100%;border-collapse:collapse;text-align:left}.curriculum-reference th,.curriculum-reference td{padding:10px;border-bottom:1px solid #dce5ef}.curriculum-reference a{color:#215b96}
+
+.lecture-end{display:block;margin-top:7px;padding:5px 7px;border-radius:5px;background:#fff0c2;color:#774900;font-size:12px;font-weight:750;line-height:1.5;white-space:normal}.lecture-end.notice{margin:8px 0;padding:10px 12px;border-left:4px solid #d89b19}

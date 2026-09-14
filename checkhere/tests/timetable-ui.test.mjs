@@ -14,12 +14,19 @@ test('timetable imports, edits, conflict-checks, publishes and renders teacher m
  await page.getByRole('button',{name:'반별 시간표',exact:true}).click();await page.locator('#classFilter').selectOption('1');await page.locator('#date').fill('2026-09-11');await page.locator('#date').dispatchEvent('change');await page.locator('[data-edit]').first().click();assert.deepEqual(errors,[]);await page.locator('#editor select[name=instructorId]').selectOption({label:'시험 강사'});await page.getByRole('button',{name:'편집본 저장',exact:true}).click();await page.getByRole('status').getByText(/편집본을 저장/).waitFor();
  assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaPublished/')).length),0);
  await page.getByRole('button',{name:'선택 반 담임에게 공개'}).click();await page.getByRole('status').getByText(/1\/1개 반 공개 완료/).waitFor();assert.equal(await page.evaluate(()=>JSON.stringify(window.docs['timetableBetaPublished/1']).includes('010-0000')),false);
+ const finalLesson=await page.evaluate(()=>{const e=window.docs['timetableBetaDrafts/1'].entries.filter(e=>e.title==='MCU 프로그래밍').sort((a,b)=>a.date.localeCompare(b.date));return e.at(-1);});
+ await page.locator('#date').fill(finalLesson.date);await page.locator('#date').dispatchEvent('change');
+ await page.locator('.lecture-end.notice').filter({hasText:'MCU 프로그래밍'}).waitFor();
+ assert.equal(await page.locator(`[data-edit="${finalLesson.id}"] .lecture-end`).textContent(),'모듈 종료일, 만족도조사 필요');
  // A stale editor must not overwrite a concurrent administrative change.
  await page.locator('[data-edit]').first().click();await page.evaluate(()=>window.docs['timetableBetaDrafts/1'].revision++);await page.getByLabel('전달사항',{exact:true}).fill('stale change');await page.getByRole('button',{name:'편집본 저장',exact:true}).click();await page.getByRole('alert').getByText(/다른 관리자/).waitFor();await page.getByRole('button',{name:'취소',exact:true}).click();
  await page.getByRole('button',{name:'과정·강의 관리',exact:true}).click();await page.getByRole('button',{name:'+ 과정',exact:true}).click();await page.getByText('새 과정',{exact:true}).first().waitFor();
  await page.getByRole('button',{name:'담임 화면 미리보기',exact:true}).click();await page.getByRole('heading',{name:/오늘의 수업/}).waitFor();
  const out=join(base,'checkhere/test-results');mkdirSync(out,{recursive:true});await page.screenshot({path:join(out,'timetable-teacher-desktop.png'),fullPage:true});
  await page.evaluate(()=>window.mountTeacher());await page.getByRole('heading',{name:/오늘의 수업/}).waitFor();assert.equal(await page.getByText('010-0000-0000',{exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'편집본 저장'}).count(),0);
+ await page.locator('#date').fill(finalLesson.date);await page.locator('#date').dispatchEvent('change');
+ const endCard=page.locator('.teacher-calendar .schedule-scroll .lesson').filter({hasText:'MCU 프로그래밍'}).filter({has:page.locator('.lecture-end')});
+ assert.equal(await endCard.count(),1,'published individual lecture final day shown to teacher');
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:join(out,'timetable-teacher-mobile.png'),fullPage:true});assert.equal(await page.locator('.mobile-list').isVisible(),true);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-import {weekDays,monthDays,validateEntry,conflicts,publishEntries,visibleToday} from '../../timetable-core.mjs';
+import {weekDays,monthDays,validateEntry,conflicts,publishEntries,visibleToday,lectureEndDays,lectureEndsOn} from '../../timetable-core.mjs';
 const seed=JSON.parse(readFileSync(new URL('../../timetable-seed.json',import.meta.url)));
 test('import preserves all 17 classes and multiple same-day events, without inventing times or contacts',()=>{
  assert.equal(Object.keys(seed.classes).length,17);assert.equal(seed.classes['1'].entries.filter(e=>e.date==='2026-09-21').length,2);
@@ -17,4 +17,15 @@ test('invalid times rejected; instructor conflicts and privacy-safe publication'
  assert.equal(conflicts(e,{'1':{entries:[e]}},'1').length,0);
  const p=publishEntries([{...e,sourceText:'original'}],{i:{name:'강사',phone:'private',note:'private'}});
  assert.equal(p[0].instructorName,'강사');assert(!JSON.stringify(p).includes('private'));assert(!('sourceText' in p[0]));
+});
+
+test('lecture completion uses each lecture last scheduled date, isolated by class and course',()=>{
+ const make=(id,title,date,extra={})=>({id,title,date,lectureId:title,course:'HW',module:'직무특화',day:1,kind:'class',...extra});
+ const rows=[make('a','SW 테스팅','2026-09-01'),make('b','SW 테스팅','2026-09-03'),make('c','MCU','2026-09-10'),make('d','MCU','2026-09-11'),make('holiday','MCU','2026-09-12',{kind:'holiday'}),make('e','SW 테스팅','2026-09-02',{course:'SW'}),make('f','SW 테스팅','2026-09-01',{classId:'2'})];
+ assert.deepEqual(lectureEndDays(rows).map(e=>e.id),['b','d','e','f']);
+ assert.deepEqual(lectureEndsOn(rows,'2026-09-03').map(e=>e.title),['SW 테스팅']);
+ assert.equal(lectureEndsOn(rows,'2026-09-12').length,0);
+ rows.push(make('g','SW 테스팅','2026-09-15'));
+ assert.equal(lectureEndsOn(rows,'2026-09-03').length,0,'schedule extension moves the notice');
+ assert.equal(lectureEndsOn([...rows,{...rows.at(-1),id:'g2'}],'2026-09-15').length,1,'same-date lecture sessions produce one notice');
 });

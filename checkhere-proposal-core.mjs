@@ -1,6 +1,6 @@
 // Deterministic suggestions. No attendance, evidence, or CheckHere write occurs here.
 export const ACTIVE_REQUESTS=['pending','approved','applying'];
-export const PROPOSAL_STATUS={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'반영 확인 완료',rejected:'반려',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
+export const PROPOSAL_STATUS={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'반영 확인 완료',rejected:'반려',withdrawn:'철회',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
 const hm=v=>/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(v||'')?v.slice(0,5):'';
 export const sourceRecord=r=>Object.fromEntries(['id','classId','date','name','phoneLast4','version','entry','rawEntry','exit','entryMemo','exitMemo','outings','teacher','schedule','readState'].map(k=>[k,r?.[k]??null]));
 export const sameRecord=(a,b)=>JSON.stringify(sourceRecord(a))===JSON.stringify(sourceRecord(b));
@@ -13,6 +13,7 @@ export function reasonCategory(reason){
   return kinds.length===1?kinds[0]:'';
 }
 export function suggestReason({status,reason,record:r,teacher=r?.teacher||''}){
+  if(status==='출석')return {field:'entryMemo',fields:['entryMemo','exitMemo'],text:'',clear:true,supported:true,blocked:false,notes:['정상출석 · 사유 공란을 추천합니다. 기존 사유가 있으면 공란 변경요청으로 비울 수 있습니다.']};
   const recognized=/^인정(출석|지각|조퇴|외출)$/.test(status),kind=status.replace(/^인정/,'');
   const field=kind==='조퇴'?'exitMemo':'entryMemo';
   const out={field,text:'',teacher,notes:[],supported:recognized||['지각','조퇴','외출'].includes(status),blocked:false};
@@ -62,7 +63,8 @@ export function requestChanges(record,field,value){
   const entry=out.entry||record.entry,exit=out.exit||record.exit;if(exit<entry)throw Error('퇴실이 입실보다 빠릅니다.');
   if(!Object.keys(out).length)throw Error('현재 체크히어 기록과 같습니다.');return out;
  }
- if(!['entryMemo','exitMemo'].includes(field)||typeof value!=='string'||!value.trim()||value.length>500)throw Error('반영할 사유를 1~500자로 입력해 주세요.');
+ if(!['entryMemo','exitMemo'].includes(field)||typeof value!=='string'||value.length>500)throw Error('반영할 사유는 500자 이내로 입력해 주세요. 공란도 가능합니다.');
+ if(!value.trim())value='';
  if(value===(record[field]||''))throw Error('현재 체크히어 기록과 같습니다.');return {[field]:value};
 }
 export function assertColumnSource(context,record){

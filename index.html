@@ -171,7 +171,7 @@ let adminWork=null;
 const ADMIN_GROUPS=[{name:'운영 현황',items:[['overview','전체 반 보기'],['uploads','업로드 확인']]},{name:'출결 관리',items:[['attendanceOverview','출결대조'],['checkhere','체크히어']]},{name:'교육 운영',items:[['timetable','시간표 관리']]},{name:'공지·자료',items:[['urgent','긴급 요청'],['classes','반별 자료·바로가기']]},{name:'운영 설정',items:[['users','계정·권한'],['settings','공통 설정'],['preview','담임 화면 미리보기']]}];
 async function adminView(user,p,tab='attendanceOverview',selected='1'){try{
  if(adminWork?.canLeave&&!adminWork.canLeave())return;
- if(typeof adminWork==='function')adminWork();adminWork=null;
+ if(typeof adminWork==='function')adminWork();else adminWork?.dispose?.();adminWork=null;
  const group=ADMIN_GROUPS.find(g=>g.items.some(([id])=>id===tab))||ADMIN_GROUPS[0],label=group.items.find(([id])=>id===tab)?.[1]||group.name;
  shell(user,`<div class="admin-intro"><h2>운영총괄 관리자 <span>· BETA</span></h2><span>반·날짜 기준으로 업무를 이어갑니다.</span></div><nav class="admin-major" aria-label="큰 업무 메뉴">${ADMIN_GROUPS.map(g=>`<button class="${g===group?'active':''}" data-tab="${g.items[0][0]}" aria-current="${g===group?'true':'false'}">${g.name}</button>`).join('')}</nav><nav class="admin-tabs" aria-label="${group.name} 세부 메뉴">${group.items.map(([id,name])=>`<button class="tab ${tab===id?'active':''}" data-tab="${id}" ${tab===id?'aria-current="page"':''}>${name}</button>`).join('')}</nav><div class="admin-crumb">운영 포털 &nbsp; › &nbsp; ${group.name} &nbsp; › &nbsp; ${label}</div><div id="adminBody"><div class="card empty">불러오는 중...</div></div>`);
  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>adminView(user,p,b.dataset.tab,selected));
@@ -179,16 +179,16 @@ async function adminView(user,p,tab='attendanceOverview',selected='1'){try{
  }catch(e){fatal(user,'관리자 화면을 불러오지 못했습니다.',e)}}
 async function timetableAdmin(user,p){
   const host=document.getElementById('adminBody');host.closest('.page').classList.add('checkhere-page');
-  const mod=await import('/timetable.mjs?v=20260911-2');await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});
+  const mod=await import('/timetable.mjs?v=20260914-3');await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});
 }
 async function attachTeacherTimetable(parent,user,c){
   const host=document.createElement('div');host.id='teacherTimetable';const hero=parent.querySelector('.hero');
   if(!hero)return;hero.after(host);
-  try{const mod=await import('/timetable.mjs?v=20260911-2');await mod.mountTeacherTimetable(host,{db,user,classInfo:c});}catch(e){host.textContent='시간표를 불러오지 못했습니다. '+e.message;}
+  try{const mod=await import('/timetable.mjs?v=20260914-3');await mod.mountTeacherTimetable(host,{db,user,classInfo:c});}catch(e){host.textContent='시간표를 불러오지 못했습니다. '+e.message;}
 }
 async function checkhereAdmin(user,p){
   const host=document.getElementById('adminBody');
-  const mod=await import('/checkhere-portal.mjs?v=20260914-proposal2');
+  const mod=await import('/checkhere-portal.mjs?v=20260914-proposal3');
   host.closest('.page').classList.add('checkhere-page');
   adminWork=await mod.mountCheckHerePortal(host,{db,user,classes:CLASSES,showRequests:true});
 }
@@ -200,7 +200,7 @@ async function attendanceAdmin(user,p){
 async function attendanceOverviewAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출결대조</h3><p>베타 · 출결·사유·서류 상태 입력과 체크히어 저장본을 함께 대조합니다. 시트 저장에는 개인 Google 계정의 편집 권한이 필요합니다.</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">출결대조 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-overview.js?v=20260914-proposal2`);adminWork=await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-overview.js?v=20260914-proposal3`);adminWork=await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;
