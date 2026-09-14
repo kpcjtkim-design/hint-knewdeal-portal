@@ -27,7 +27,8 @@ test('inline recommendations, manual edits, three independent requests, column b
   await open('times');await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),2,'entry reason does not block time request');
   await page.getByLabel('가상학생 퇴실 사유 추천사유',{exact:true}).fill('관리자가 확인한 퇴실 사유');
   await page.locator('[data-proposal-send="0_가상학생__exitMemo"]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),3,'third column can be requested independently');
-  await page.evaluate(async()=>{const r=Object.values(window.docs).find(v=>v.changes?.entry);r.status='verified';r.approval={after:{entry:'09:00:00',exit:'18:00:00'}};await window.reload();});
+  await page.evaluate(()=>window.record.entry='14:00:00');assert.match(await page.evaluate(()=>window.validate()),/실제 시간이 바뀌었습니다/);await page.evaluate(()=>window.record.entry='13:00:00');
+  await page.evaluate(async()=>{const r=Object.values(window.docs).find(v=>v.changes?.entry);r.status='verified';r.approvedBy='hint.kpc@gmail.com';r.approval={recordId:'record-id',before:{entry:'13:00:00',exit:'18:00:00'},after:{entry:'09:00:00',exit:'18:00:00'}};await window.reload();});
   assert(await page.locator('[data-proposal-send="0_가상학생__times"]').isDisabled(),'verified writes must not be requested again from an old platform snapshot');
   await page.getByText('반영 확인 완료 · 재수집 후 플랫폼에 저장해 주세요.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>window.validate()),'ok');
