@@ -27,6 +27,9 @@ test('inline recommendations, manual edits, three independent requests, column b
   await open('times');await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),2,'entry reason does not block time request');
   await page.getByLabel('가상학생 퇴실 사유 추천사유',{exact:true}).fill('관리자가 확인한 퇴실 사유');
   await page.locator('[data-proposal-send="0_가상학생__exitMemo"]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),3,'third column can be requested independently');
+  await page.evaluate(async()=>{const r=Object.values(window.docs).find(v=>v.changes?.entry);r.status='verified';r.approval={after:{entry:'09:00:00',exit:'18:00:00'}};await window.reload();});
+  assert(await page.locator('[data-proposal-send="0_가상학생__times"]').isDisabled(),'verified writes must not be requested again from an old platform snapshot');
+  await page.getByText('반영 확인 완료 · 재수집 후 플랫폼에 저장해 주세요.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>window.validate()),'ok');
   await page.evaluate(()=>{window.sheetRaw+='\n다른학생: 시험';window.record.version='v2';window.record.entry='09:00:00';});assert.equal(await page.evaluate(()=>window.validate()),'ok','earlier time approval and other student reason do not invalidate memo request');
   await page.evaluate(()=>window.record.entryMemo='다른 직원의 수정');assert.match(await page.evaluate(()=>window.validate()),/기록과 다릅니다/);

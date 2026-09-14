@@ -50,6 +50,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
  function disabledReason(v){
   if(working||loadError)return loadError?'추천사유 조회 실패':'요청 처리 중';
   if(!v.c.record||v.c.record.readState!=='complete'||!v.c.record.id||!v.c.record.version)return '체크히어 상세 저장본을 먼저 수집해 주세요.';
+  if(v.request?.status==='verified'&&v.request.approval&&columnFields(v.column).some(k=>(v.c.record[k]||'')!==(v.request.approval.after[k]||'')))return '반영 확인 완료 · 재수집 후 플랫폼에 저장해 주세요.';
   if(v.c.status==='중복')return '중복 출결은 개별 확인 대상입니다.';
   if(v.stale)return '시트·체크히어 근거가 바뀌었습니다. 추천을 다시 생성하거나 직접 확인해 주세요.';
   if(activeFor({name:v.c.name},v.column))return '이 항목은 승인 대기 또는 반영 중입니다.';
@@ -59,7 +60,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
  function html(s,column){
   const v=view(s,column),active=v.request&&ACTIVE_REQUESTS.includes(v.request.status),disabled=disabledReason(v),ident=esc(slot(s,column));
   let changed=false;try{requestChanges(v.c.record||{},column,v.value);changed=true;}catch{}
-  const label=active?PROPOSAL_STATUS[v.request.status]:v.stale?'재검토 필요':changed?'변경 필요':'현재 기록과 일치';
+  const label=active?PROPOSAL_STATUS[v.request.status]:disabled.startsWith('반영 확인 완료')?'반영 확인 완료':v.stale?'재검토 필요':changed?'변경 필요':'현재 기록과 일치';
   const controls=column==='times'?`<div class="proposal-times">${['entry','exit'].map(k=>`<label>${k==='entry'?'입실':'퇴실'}<input type="time" step="1" data-proposal-edit="${ident}" data-time="${k}" aria-label="${esc(s.name)} 추천 ${k==='entry'?'입실':'퇴실'}시간" value="${esc(v.value[k]||'')}" ${active?'disabled':''}></label>`).join('')}</div>`:`<textarea class="proposal-input" data-proposal-edit="${ident}" maxlength="500" aria-label="${esc(s.name+' '+REQUEST_COLUMNS[column])} 추천사유" placeholder="사유 확인 후 직접 입력" ${active?'disabled':''}>${esc(active?v.request.changes[column]??v.value:v.value)}</textarea>`;
   return `<div class="proposal-box ${changed||v.stale?'changed':''}" data-proposal-box="${ident}"><strong>${column==='times'?'추천시간':'추천사유'}</strong><small class="proposal-label">${esc(label)}</small>${controls}<small>${esc(disabled||(!v.recommended||column==='times'?v.auto.notes?.[0]||'':'시트 출결·사유와 수집 시간을 기준으로 생성'))}</small><div class="proposal-cell-actions"><button class="btn soft" data-proposal-reset="${ident}" ${active?'disabled':''}>추천 다시 생성</button><button class="btn dark" data-proposal-send="${ident}" ${disabled||!changed?'disabled':''}>변경요청</button></div>${v.stale?`<button class="btn soft" data-proposal-accept="${ident}">직접 수정값 유지 · 근거 확인</button>`:''}${active?'<small>요청 접수 · 체크히어 승인 후 반영</small>':'<small>추천값 편집만으로 체크히어가 변경되지 않습니다.</small>'}</div>`;
  }
