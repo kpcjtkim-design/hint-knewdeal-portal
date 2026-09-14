@@ -1,3 +1,4 @@
+import {excursionFor} from './checkhere-proposal-core.mjs';
 import {createProposalReview} from './checkhere-proposals.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {GoogleAuthProvider,reauthenticateWithPopup} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
@@ -7,7 +8,7 @@ import {loadCheckHereDay} from './checkhere-snapshots.mjs';
 import {judge} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFor,colorState}){
-  let metadata={},snapshots=[],snapshotError='',working=false,loading=false,sequence=0;
+  let metadata={},snapshots=[],snapshotError='',excursions=[],excursionError='',working=false,loading=false,sequence=0;
   const drafts=new Map();
   const writer=createSheetWriter({
     async authorize(){const provider=new GoogleAuthProvider();provider.addScope('https://www.googleapis.com/auth/spreadsheets');provider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');provider.setCustomParameters({login_hint:user.email,prompt:'consent'});const result=await reauthenticateWithPopup(user,provider),credential=GoogleAuthProvider.credentialFromResult(result);if(!credential?.accessToken)throw Error('Google 시트 편집 인증을 완료하지 못했습니다.');return credential.accessToken;},
@@ -19,7 +20,7 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   const rawColor=s=>String(state().backgrounds?.[s.rowIndex+1]?.[state().date.idx+4]||'#ffffff').toLowerCase();
   function displayStatus(s){const raw=String(s.all[state().date.idx]||'').trim();try{return portalStatus(raw,info(s));}catch{return raw||'해당없음';}}
   function displayEvidence(s){return evidenceStatus(rawColor(s),String(s.all[state().date.idx]||''),info(s),colorState);}
-  const proposals=createProposalReview({db,user,root,render,showErr,hasUnsavedReason:()=>drafts.size>0,getContext:s=>({classId:state().classId,date:state().iso,name:s.name,status:displayStatus(s),reason:currentReason(s),raw:state().raw,record:matchSnapshot(s,state().students,snapshots).record})});
+  const proposals=createProposalReview({db,user,root,render,showErr,hasUnsavedReason:()=>drafts.size>0,getContext:s=>({classId:state().classId,date:state().iso,name:s.name,status:displayStatus(s),reason:currentReason(s),raw:state().raw,excursion:excursions.length>0,record:matchSnapshot(s,state().students,snapshots).record})});
   async function persistMeta(s,patch){const ctx=state(),ref=doc(db,'settings',`attendanceBeta_${ctx.classId}_${ctx.iso}`);metadata={...metadata,[key(s)]:{...info(s),...patch}};try{await setDoc(ref,{classId:ctx.classId,date:ctx.iso,students:{[key(s)]:patch},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});}catch(e){showErr(new Error('시트 저장은 완료됐지만 포털 세부 구분 저장에 실패했습니다. '+e.message));}}
   function controls(s){
     const status=displayStatus(s),evidence=displayEvidence(s),disabled=(!writer.connected()||working||loading)?'disabled':'';
@@ -29,12 +30,12 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   function snapshotCells(s,memoButton=()=> ''){
     const cell=(value,category,field)=>`<div class="cell beta-source"><div class="source-value">${value}</div>${field?proposals.html(s,field):''}${category?memoButton(category):''}</div>`;
     const {record:r,error}=matchSnapshot(s,state().students,snapshots);
-    if(snapshotError||!r)return cell(esc(snapshotError||error),'checkhereTimes')+cell('—')+cell('—','checkhereEntry')+cell('—','checkhereExit')+cell('—','checkhereOutings');
+    if(snapshotError||!r)return cell(esc(snapshotError||error),'checkhereTimes','times')+cell('—')+cell('—','checkhereEntry','entryMemo')+cell('—','checkhereExit','exitMemo')+cell('—','checkhereOutings');
     const time=r.collectedAt?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(r.collectedAt)):'';
     const audited=judge(r);
-    return cell(`${esc(r.rawEntry??r.entry??'—')}<br>→ ${esc(r.exit||'—')}<small>수집 ${esc(time)}</small>`,'checkhereTimes')+cell(`${audited.labels.map(esc).join(' · ')}<small>${r.readState==='complete'?'저장본':'상세 수집 실패'}</small>`)+cell(esc(r.entryMemo??'미수집'),'checkhereEntry','entryMemo')+cell(esc(r.exitMemo??'미수집'),'checkhereExit','exitMemo')+cell(r.outings?.map(x=>`${esc(x.start||'—')} ~ ${esc(x.end||'—')}`).join('<br>')||(r.readState==='complete'?'없음':'미확인'),'checkhereOutings');
+    return cell(`${esc(r.rawEntry??r.entry??'—')}<br>→ ${esc(r.exit||'—')}<small>수집 ${esc(time)}</small>`,'checkhereTimes','times')+cell(`${audited.labels.map(esc).join(' · ')}<small>${r.readState==='complete'?'저장본':'상세 수집 실패'}</small>`)+cell(esc(r.entryMemo??'미수집'),'checkhereEntry','entryMemo')+cell(esc(r.exitMemo??'미수집'),'checkhereExit','exitMemo')+cell(r.outings?.map(x=>`${esc(x.start||'—')} ~ ${esc(x.end||'—')}`).join('<br>')||(r.readState==='complete'?'없음':'미확인'),'checkhereOutings');
   }
-  function headerState(){const save=root.querySelector('#saveReasons');if(save){save.textContent=`사유 저장${drafts.size?' ('+drafts.size+')':''}`;save.disabled=!drafts.size||working||loading||!writer.connected();}const c=root.querySelector('#sheetConnect');if(c){c.disabled=working||loading;c.textContent=writer.connected()?'내 계정 연결됨':'내 계정 시트 연결';}for(const id of ['classSel','dateSel','reload']){const el=root.querySelector('#'+id);if(el)el.disabled=working||loading;}}
+  function headerState(){const banner=root.querySelector('#excursionDay');if(banner){banner.hidden=!excursions.length&&!excursionError;banner.textContent=excursionError||('견학일 · '+excursions.map(e=>e.title).join(' / ')+' · 실제 운영 시간과 사유를 확인해 주세요.');}const save=root.querySelector('#saveReasons');if(save){save.textContent=`사유 저장${drafts.size?' ('+drafts.size+')':''}`;save.disabled=!drafts.size||working||loading||!writer.connected();}const c=root.querySelector('#sheetConnect');if(c){c.disabled=working||loading;c.textContent=writer.connected()?'내 계정 연결됨':'내 계정 시트 연결';}for(const id of ['classSel','dateSel','reload']){const el=root.querySelector('#'+id);if(el)el.disabled=working||loading;}}
   async function action(fn){if(working||loading)return;working=true;showErr('');render();try{await fn();}catch(e){showErr(e);}finally{working=false;render();}}
   function bind(){
     proposals.bind(state().students);
@@ -52,7 +53,7 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   root.querySelector('#saveReasons').onclick=saveReasons;
   return {controls,snapshotCells,bind,displayStatus,displayEvidence,currentReason,draftReason:s=>drafts.get(key(s))??currentReason(s),snapshotFor:s=>matchSnapshot(s,state().students,snapshots).record,
     proposalExport:s=>proposals.exportFor(s),
-    canNavigate(){if(working||loading)return false;return !drafts.size||confirm('저장하지 않은 사유가 있습니다. 이동하면 입력 중인 사유가 사라집니다. 이동하시겠습니까?');},
-    async load(classId,date){const n=++sequence;loading=true;drafts.clear();metadata={};snapshots=[];snapshotError='';headerState();const results=await Promise.allSettled([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.load(classId,date)]);if(n!==sequence)return;loading=false;if(results[0].status==='fulfilled')metadata=results[0].value.data()?.students||{};else showErr(new Error('포털 세부 구분을 불러오지 못했습니다. '+results[0].reason.message));if(results[1].status==='fulfilled')snapshots=results[1].value;else snapshotError='체크히어 저장본 조회 실패 · 다시 읽기 필요';headerState();},
+    canNavigate(){if(working||loading)return false;return (!drafts.size&&!proposals.hasEdits())||confirm('저장하지 않은 사유 또는 체크히어 추천 편집값이 있습니다. 이동하면 입력 중인 사유가 사라집니다. 이동하시겠습니까?');},
+    async load(classId,date){const n=++sequence;loading=true;drafts.clear();metadata={};snapshots=[];snapshotError='';excursions=[];excursionError='';headerState();const results=await Promise.allSettled([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.load(classId,date),getDoc(doc(db,'timetableBetaPublished',String(classId))),getDoc(doc(db,'timetableBetaDrafts',String(classId)))]);if(n!==sequence)return;loading=false;if(results[0].status==='fulfilled')metadata=results[0].value.data()?.students||{};else showErr(new Error('포털 세부 구분을 불러오지 못했습니다. '+results[0].reason.message));if(results[1].status==='fulfilled')snapshots=results[1].value;else snapshotError='체크히어 저장본 조회 실패 · 다시 읽기 필요';if(results[3].status==='fulfilled'&&results[4].status==='fulfilled'){const published=results[3].value.data(),draft=results[4].value.data();excursions=excursionFor((draft?.entries||published?.entries||[]),date);}else excursionError='견학일 여부 확인 실패 · 시간표를 확인해 주세요.';headerState();},
   };
 }

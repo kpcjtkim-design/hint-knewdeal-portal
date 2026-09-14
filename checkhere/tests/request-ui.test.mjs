@@ -16,7 +16,7 @@ test('teacher request, administrator approval preview and failure feedback in br
       await page.goto('https://fixture.test/');await page.getByText('수정 요청 작성',{exact:true}).click();
       await page.locator('#date').fill('2026-09-03');await page.locator('#name').fill('가상학생');await page.locator('[data-enable="entryMemo"]').check();await page.locator('#entryMemo').fill('정정 사유');await page.locator('#reason').fill('수기 확인');await page.getByRole('button',{name:'수정 요청 등록',exact:true}).click();
       await page.getByText('승인 대기',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.applied.length),0);
-      assert.equal(await page.getByRole('button',{name:'변경 전후 확인',exact:true}).count(),role==='approver'?1:0);
+      assert.equal(await page.getByRole('button',{name:'변경 전후 확인',exact:true}).count(),role==='approver'?1:0);assert.equal(await page.locator('[data-bulk-approve]').count(),role==='approver'?3:0);
       if(role==='approver'){
         await page.getByRole('button',{name:'변경 전후 확인',exact:true}).click();await page.getByRole('cell',{name:'기존 사유',exact:true}).waitFor();
         await page.evaluate(()=>{window.failApply=true;});await page.getByRole('button',{name:'승인하고 체크히어에 반영',exact:true}).click();

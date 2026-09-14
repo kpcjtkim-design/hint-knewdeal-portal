@@ -1,31 +1,44 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
-test('proposal draft, request, duplicate guard, sheet conflict, and edited draft review',async()=>{
+test('inline recommendations, manual edits, three independent requests, column bulk requests and source conflicts',async()=>{
  const base=join(import.meta.dirname,'../..'),{chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  try{
   await page.route('**/*',async route=>{
    const u=new URL(route.request().url());
    if(u.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`window.docs={};export const doc=(...x)=>({path:x.slice(1).join('/')}),collection=(...x)=>x,query=(...x)=>x,where=(...x)=>x,serverTimestamp=()=>({seconds:Date.now()/1000});export async function getDoc(r){const v=window.docs[r.path];return{data:()=>v,exists:()=>!!v};}const merge=(a,b)=>{for(const[k,v]of Object.entries(b)){if(v&&typeof v==='object'&&!Array.isArray(v)){if(!a[k])a[k]={};merge(a[k],v);}else a[k]=v;}return a;};export async function getDocs(){return{docs:Object.entries(window.docs).filter(([k])=>k.startsWith('checkhereRequests/')).map(([k,v])=>({id:k.split('/')[1],data:()=>v}))};}export async function runTransaction(db,fn){return fn({get:getDoc,set:(r,v)=>{window.docs[r.path]=merge(window.docs[r.path]||{},v);}});}`});
-   if(u.pathname==='/api/attendance-reader')return route.fulfill({json:{ok:true,attendance:[['이름','','','','9/3'],['가상학생','','','','인정출석']],reasons:[['','','','','9/3'],['','','','',await page.evaluate(()=>window.sheetRaw)]]}});
-   if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">import{createProposalReview,validateLinkedRequest}from'/checkhere-proposals.mjs';window.record={id:'record-id',version:'v1',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',teacher:'홍길동',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'13:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]};window.s={name:'가상학생',rowIndex:0};window.context={classId:'2',date:'2026-09-03',name:'가상학생',status:'인정지각',reason:'병원',raw:'가상학생: 병원',record};window.sheetRaw=context.raw;const user={email:'staff@example.com',getIdToken:async()=>'fixture'};window.docs['settings/attendanceBeta_2_2026-09-03']={students:{'0_가상학생':{portalStatus:'인정지각',sheetStatus:'인정출석'}}};const host=document.querySelector('#host'),root=host.attachShadow({mode:'open'});function render(){root.innerHTML=review.html(s,'entryMemo')+review.html(s,'exitMemo');review.bind([s]);}const review=createProposalReview({db:{},user,root,getContext:()=>context,render,showErr:e=>{window.problem=e.message},hasUnsavedReason:()=>!!window.unsaved});window.reload=async()=>{await review.load('2','2026-09-03');render();};window.validate=async()=>{const [id,r]=Object.entries(window.docs).find(([k])=>k.startsWith('checkhereRequests/'));try{await validateLinkedRequest({},user,{id:id.split('/')[1],...r},record);return 'ok';}catch(e){return e.message;}};await window.reload();</script>`});
+   if(u.pathname==='/api/attendance-reader')return route.fulfill({json:{ok:true,attendance:[['이름','','','','9/3'],['가상학생','','','','인정출석'],['다른학생','','','','인정출석']],reasons:[['','','','','9/3'],['','','','',await page.evaluate(()=>window.sheetRaw)]]}});
+   if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">import{createProposalReview,validateLinkedRequest}from'/checkhere-proposals.mjs';window.record={id:'record-id',version:'v1',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',teacher:'홍길동',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'13:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]};window.s={name:'가상학생',rowIndex:0};window.context={classId:'2',date:'2026-09-03',name:'가상학생',status:'인정지각',reason:'병원',raw:'가상학생: 병원',record};window.sheetRaw=context.raw;const user={email:'staff@example.com',getIdToken:async()=>'fixture'};window.docs['settings/attendanceBeta_2_2026-09-03']={students:{'0_가상학생':{portalStatus:'인정지각',sheetStatus:'인정출석'}}};const host=document.querySelector('#host'),root=host.attachShadow({mode:'open'});window.students=[s];root.innerHTML='<div id=rows></div>';function render(){root.querySelector('#rows').innerHTML=['times','entryMemo','exitMemo'].map(c=>'<button data-proposal-bulk='+c+'>'+c+' 일괄요청</button>').join('')+window.students.map(student=>['times','entryMemo','exitMemo'].map(c=>review.html(student,c)).join('')).join('');review.bind(window.students);}const review=createProposalReview({db:{},user,root,getContext:student=>student===s?context:({...context,name:student.name,status:'인정출석',reason:'시험',record:{...record,name:student.name,id:'second-record',entry:'09:00:00'}}),render,showErr:e=>{window.problem=e.message},hasUnsavedReason:()=>!!window.unsaved});window.reload=async()=>{await review.load('2','2026-09-03');render();};window.validate=async()=>{const [id,r]=Object.entries(window.docs).find(([k,v])=>k.startsWith('checkhereRequests/')&&v.changes.entryMemo);try{await validateLinkedRequest({},user,{id:id.split('/')[1],...r},record);return 'ok';}catch(e){return e.message;}};await window.reload();</script>`});
    const p=u.pathname.slice(1);if(['checkhere-proposals.mjs','attendance-reason-parser.mjs','checkhere-proposal-core.mjs','attendance-beta-core.mjs','checkhere/approval-core.mjs','checkhere/rules.mjs'].includes(p))return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,p),'utf8')});return route.abort();
   });
-  await page.goto('https://fixture.test/');await page.getByRole('button',{name:'반영할 사유 검토'}).click();
-  assert.equal(await page.locator('#proposalText').inputValue(),'(인정지각)병원_담임:홍길동(13:00)');
-  await page.locator('#proposalText').fill('(인정지각)병원_담임:홍길동(13:01)');await page.getByRole('button',{name:'제안만 저장',exact:true}).click();
-  assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('checkhereRequests/')).length),0);
-  await page.getByRole('button',{name:'반영할 사유 검토'}).click();await page.evaluate(()=>window.unsaved=true);await page.getByRole('button',{name:'체크히어 반영 요청',exact:true}).click();await page.getByText('시트에 저장하지 않은 사유가 있습니다. 사유 저장 후 요청해 주세요.').waitFor();
-  await page.evaluate(()=>window.unsaved=false);await page.getByRole('button',{name:'체크히어 반영 요청',exact:true}).click();await page.getByText('승인 대기',{exact:true}).waitFor();
-  const requests=await page.evaluate(()=>Object.entries(window.docs).filter(([k])=>k.startsWith('checkhereRequests/')).map(([,v])=>v));assert.equal(requests.length,1);assert.deepEqual(requests[0].changes,{entryMemo:'(인정지각)병원_담임:홍길동(13:01)'});assert.equal(requests[0].status,'pending');
-  await page.getByRole('button',{name:'요청 내용 보기'}).click();assert(await page.getByRole('button',{name:'체크히어 반영 요청',exact:true}).isDisabled());await page.getByRole('button',{name:'닫기',exact:true}).click();
+
+  await page.goto('https://fixture.test/');
+  const memo=page.getByLabel('가상학생 입실·교시 사유 추천사유',{exact:true});
+  await memo.waitFor();assert.equal(await memo.inputValue(),'(인정지각)병원_담임:홍길동(13:00)');
+  assert.equal(await page.getByLabel('가상학생 추천 입실시간').inputValue(),'09:00:00');
+  const count=()=>page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('checkhereRequests/')).length);
+  const open=column=>page.locator(`[data-proposal-bulk="${column}"]`).click();
+  const close=()=>page.locator('#closeRequests').click();
+  await memo.fill('(인정지각)병원_담임:홍길동(13:01)');assert.equal(await count(),0,'editing never writes CheckHere requests');
+  await page.evaluate(()=>window.unsaved=true);await open('entryMemo');assert.equal(await count(),0,'preview only');
+  await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'0건 요청 접수 · 1건 실패'}).waitFor();assert.match(await page.locator('#requestResult').innerText(),/시트에 저장하지 않은 사유/);await close();
+  await page.evaluate(()=>window.unsaved=false);await open('entryMemo');await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+  assert.equal(await count(),1);assert(await memo.isDisabled());
+  assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.changes?.entryMemo)?.changes.entryMemo),'(인정지각)병원_담임:홍길동(13:01)');
+  await open('times');await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),2,'entry reason does not block time request');
+  await page.getByLabel('가상학생 퇴실 사유 추천사유',{exact:true}).fill('관리자가 확인한 퇴실 사유');
+  await page.locator('[data-proposal-send="0_가상학생__exitMemo"]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),3,'third column can be requested independently');
   assert.equal(await page.evaluate(()=>window.validate()),'ok');
-  await page.evaluate(()=>window.sheetRaw+='\n다른학생: 시험');assert.equal(await page.evaluate(()=>window.validate()),'ok','another student reason must not invalidate this request');
-  await page.evaluate(()=>window.record.version='v2');assert.match(await page.evaluate(()=>window.validate()),/기록과 다릅니다/);
-  await page.evaluate(()=>{window.record.version='v1';window.sheetRaw='가상학생: 면접';});assert.match(await page.evaluate(()=>window.validate()),/바뀌었습니다/);
-  await page.evaluate(async()=>{for(const[k,v]of Object.entries(window.docs))if(k.startsWith('checkhereRequests/'))v.status='rejected';window.context.reason='면접';window.context.raw=window.sheetRaw;await window.reload();});
-  await page.getByText('재검토 필요',{exact:true}).waitFor();await page.getByRole('button',{name:'반영할 사유 검토'}).click();assert.equal(await page.locator('#proposalText').inputValue(),'(인정지각)병원_담임:홍길동(13:01)');
-  await page.getByRole('button',{name:'제안만 저장',exact:true}).click();await page.getByText('근거 변경 사항을 먼저 재검토해 주세요.').waitFor();
-  await page.getByRole('button',{name:'현재 데이터로 다시 생성'}).click();assert.equal(await page.locator('#proposalText').inputValue(),'(인정지각)면접_담임:홍길동(13:00)');
-  await page.getByRole('button',{name:'제안만 저장',exact:true}).click();assert.deepEqual(errors,[]);
+  await page.evaluate(()=>{window.sheetRaw+='\n다른학생: 시험';window.record.version='v2';window.record.entry='09:00:00';});assert.equal(await page.evaluate(()=>window.validate()),'ok','earlier time approval and other student reason do not invalidate memo request');
+  await page.evaluate(()=>window.record.entryMemo='다른 직원의 수정');assert.match(await page.evaluate(()=>window.validate()),/기록과 다릅니다/);
+  await page.evaluate(()=>{window.record.entryMemo='';window.sheetRaw='가상학생: 면접\n다른학생: 시험';});assert.match(await page.evaluate(()=>window.validate()),/바뀌었습니다/);
+  await page.evaluate(async()=>{for(const[k,v]of Object.entries(window.docs))if(k.startsWith('checkhereRequests/'))v.status='rejected';window.context.reason='면접';window.context.raw=window.sheetRaw;window.record.entry='13:00:00';await window.reload();});
+  assert.equal(await memo.inputValue(),'(인정지각)병원_담임:홍길동(13:01)');assert(await page.locator('[data-proposal-send="0_가상학생__entryMemo"]').isDisabled());
+  await page.locator('[data-proposal-reset="0_가상학생__entryMemo"]').click();assert.equal(await memo.inputValue(),'(인정지각)면접_담임:홍길동(13:00)');
+  // Add a second row, retaining the first row's saved draft. Both must be reviewed before the bulk write.
+  await page.evaluate(async()=>{window.students.push({name:'다른학생',rowIndex:1});await window.reload();});
+  await page.locator('[data-proposal-reset="0_가상학생__entryMemo"]').click();
+  await open('entryMemo');assert.equal(await page.locator('#sendSelected').innerText(),'2건 변경요청');assert.equal(await count(),3);
+  await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'2건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),5);
+  assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });

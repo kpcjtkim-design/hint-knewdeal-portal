@@ -43,8 +43,30 @@ export function suggestReason({status,reason,record:r,teacher=r?.teacher||''}){
 export function assertProposalSource(context,record){
   if(!context?.record||!sameRecord(context.record,record))throw Error('요청 당시 체크히어 기록과 다릅니다. 재수집 후 출결대조에서 제안을 다시 검토해 주세요.');
 }
-export function requestChanges(record,field,text){
-  if(!['entryMemo','exitMemo'].includes(field)||typeof text!=='string'||!text.trim()||text.length>500)throw Error('반영할 사유를 1~500자로 입력해 주세요.');
-  if(text===record[field])throw Error('이미 체크히어 기록과 같은 사유입니다.');
-  return {[field]:text};
+export const REQUEST_COLUMNS={times:'입실 → 퇴실',entryMemo:'입실·교시 사유',exitMemo:'퇴실 사유'};
+export const columnFields=column=>column==='times'?['entry','exit']:[column];
+export const requestColumn=r=>Object.keys(r.changes||{}).every(k=>['entry','exit'].includes(k))?'times':Object.keys(r.changes||{}).length===1&&['entryMemo','exitMemo'].includes(Object.keys(r.changes)[0])?Object.keys(r.changes)[0]:'combined';
+export const requestsOverlap=(a,b)=>a.classId===b.classId&&a.date===b.date&&a.name===b.name&&(!a.phoneLast4||!b.phoneLast4||a.phoneLast4===b.phoneLast4)&&Object.keys(a.changes).some(k=>Object.hasOwn(b.changes,k));
+export function excursionFor(entries,date){return entries.filter(e=>e.date===date&&e.kind!=='holiday'&&(['공장견학','분해조립','실차체험'].includes(e.module)||/분해조립|공장.*견학/.test(e.title||'')));}
+export function suggestTimes({status,record:r,excursion=false}){
+ const value={entry:r?.entry||'',exit:r?.exit||''},notes=[];
+ if(excursion)return {value,notes:['견학일 · 실제 운영 시간을 확인한 뒤 직접 입력해 주세요.']};
+ if(/^인정(출석|지각|조퇴|외출)$/.test(status))return {value:{entry:'09:00:00',exit:'18:00:00'},notes:['시트 인정출석 기준의 추천시간입니다. 실제 입퇴실 시각과 구분해 검토해 주세요.']};
+ if(status==='출석')return {value:{entry:!hm(value.entry)||hm(value.entry)>'09:10'?'09:00:00':value.entry,exit:!hm(value.exit)||hm(value.exit)<'17:50'?'18:00:00':value.exit},notes:['시트 출석 기준으로 검토할 추천시간입니다. 수정 전 실제 출석 근거를 확인해 주세요.']};
+ notes.push(status==='결석'?'결석은 시간 공란이 정상입니다. 시간 삭제는 자동 요청하지 않습니다.':'실제 수집 시간을 유지합니다. 빠진 시각은 확인 후 직접 입력해 주세요.');
+ return {value,notes};
+}
+export function requestChanges(record,field,value){
+ if(field==='times'){
+  const out={};for(const k of ['entry','exit']){const t=value?.[k];if(!hm(t))throw Error('입실·퇴실 시간을 모두 입력해 주세요.');const v=t.length===5?t+':00':t;if(v!==(record[k]||''))out[k]=v;}
+  const entry=out.entry||record.entry,exit=out.exit||record.exit;if(exit<entry)throw Error('퇴실이 입실보다 빠릅니다.');
+  if(!Object.keys(out).length)throw Error('현재 체크히어 기록과 같습니다.');return out;
+ }
+ if(!['entryMemo','exitMemo'].includes(field)||typeof value!=='string'||!value.trim()||value.length>500)throw Error('반영할 사유를 1~500자로 입력해 주세요.');
+ if(value===(record[field]||''))throw Error('현재 체크히어 기록과 같습니다.');return {[field]:value};
+}
+export function assertColumnSource(context,record){
+ if(context.sourceScope!=='column-v2')return assertProposalSource(context,record);
+ const before=context.record,identity=['id','classId','date','name','phoneLast4','teacher','schedule','readState'];
+ if(!before||identity.some(k=>(before[k]??null)!==(record[k]??null))||columnFields(context.column).some(k=>(before[k]||'')!==(record[k]||'')))throw Error('요청 당시 체크히어 기록과 다릅니다. 해당 항목을 다시 수집하고 검토해 주세요.');
 }
