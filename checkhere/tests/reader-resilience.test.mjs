@@ -8,7 +8,7 @@ const valid={ok:true,classId:'2',attendance:[['이름','','','','9/3'],['시험�
 test('reader retries temporary HTML/429 errors, validates shape, and keeps fresh approval reads out of cache',async t=>{
  const original=globalThis.fetch;let calls=0;const diagnostics=[];
  try{
-  const read=createBridgeReader({timeout:100,backoff:1,log:d=>diagnostics.push(d)});
+  const read=createBridgeReader({attempts:2,timeout:100,backoff:1,log:d=>diagnostics.push(d)});
   globalThis.fetch=async()=>++calls===1?new Response('<html>upstream error</html>',{status:502,headers:{'content-type':'text/html'}}):Response.json(valid);
   assert.equal((await read('https://bridge.test','2',{allowCache:true})).ok,true);assert.equal(calls,2);
   assert.equal((await read('https://bridge.test','2',{allowCache:true})).readerCached,true);assert.equal(calls,2);
@@ -24,7 +24,7 @@ test('reader retries temporary HTML/429 errors, validates shape, and keeps fresh
 test('reader timeouts stop, recover on a later read, and coalesce display reads',async()=>{
  const original=globalThis.fetch;let calls=0;
  try{
-  const read=createBridgeReader({timeout:20,backoff:1,log:()=>{}});
+  const read=createBridgeReader({attempts:2,timeout:20,backoff:1,log:()=>{}});
   globalThis.fetch=async(_url,{signal})=>{calls++;return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('timeout','AbortError'))));};
   await assert.rejects(read('https://bridge.test','2'),/READER_TIMEOUT/);assert.equal(calls,2);
   globalThis.fetch=async()=>{calls++;await new Promise(r=>setTimeout(r,10));return Response.json(valid);};
@@ -34,7 +34,7 @@ test('reader timeouts stop, recover on a later read, and coalesce display reads'
 test('browser reads reject invalid success pages and deadlines cleanly recover',async()=>{
  const original=globalThis.fetch;
  try{
-  globalThis.fetch=async()=>new Response('<html>sign in</html>');await assert.rejects(readJson('/reader',{}),/오류 화면/);
+  globalThis.fetch=async()=>new Response('<html>sign in</html>');await assert.rejects(readJson('/reader',{}),/기다리고/);
   globalThis.fetch=async()=>Response.json({ok:false,error:'READER_BAD_RESPONSE'},{status:503});await assert.rejects(readJson('/reader',{}),/일시적으로 불안정/);
   await assert.rejects(within(new Promise(()=>{}),10),/응답이 지연/);assert.equal(await within(Promise.resolve('recovered'),10),'recovered');
   const cancel=new AbortController();const pending=within(new Promise(()=>{}),500,undefined,cancel.signal);cancel.abort();await assert.rejects(pending,{name:'AbortError'});

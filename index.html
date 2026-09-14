@@ -14,6 +14,7 @@
 </head>
 <body><div id="app"></div><div id="toast" class="toast"></div>
 <script type="module">
+import {createReadQueue} from "/portal-read-cache.mjs";
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
@@ -55,14 +56,15 @@ const toast=m=>{const e=document.getElementById('toast');e.textContent=m;e.class
 const openUrl=u=>{const x=good(u);if(x)window.open(x,'_blank','noopener,noreferrer')};
 const classMeta=id=>CLASSES.find(c=>c.id===String(id))||{id:String(id),region:'',course:'',venue:''};
 const button=(u,label='열기')=>`<button class="btn btn-primary" data-open="${esc(good(u))}" ${good(u)?'':'disabled'}>${good(u)?esc(label):'관리자 등록 필요'}</button>`;
+const driveReads=createReadQueue({concurrency:3,ttl:120000});
 const TASK_LABELS={'2':'수기출석본','3':'교육사진','5':'출결인정자료'};
 const taskButtons=(num,u,label)=>{const n=String(num),id=driveFolderId(u),history=['2','3','5'].includes(n)?`<button type="button" class="btn btn-ghost missingDatesBtn" data-folder-id="${esc(id)}" data-task-label="${esc(TASK_LABELS[n]||'업로드')}" ${id?'':'disabled'}>미완료 날짜 보기</button>`:'';if(n==='2')return `<div class="task-actions">${button(u,label)}<button type="button" class="btn btn-soft guideBtn">스캔하는 법</button>${history}</div>`;if(history)return `<div class="task-actions">${button(u,label)}${history}</div>`;return button(u,label)};
 const localDateKey=()=>{const d=new Date(),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
 const driveFolderId=u=>{const s=String(u||'');const m=s.match(/\/folders\/([A-Za-z0-9_-]+)/);if(m)return m[1];try{const x=new URL(s);return x.searchParams.get('id')||''}catch{return''}};
 const monitoredTask=n=>['2','3','5'].includes(String(n));
 const uploadBadge=(num,url)=>{if(!monitoredTask(num))return '';const id=driveFolderId(url);return `<span class="upload-status pending" data-folder-id="${esc(id)}">● ${id?'확인 중':'폴더 미설정'}</span>`};
-async function checkDriveUpload(folderId,date=localDateKey()){if(!folderId)return {ok:false,missing:true};const q=new URLSearchParams({folderId,date});const r=await fetch(`/api/drive-monitor?${q.toString()}`,{cache:'no-store'});if(!r.ok)throw new Error(`monitor ${r.status}`);return await r.json()}
-async function refreshUploadBadges(root=document,date=localDateKey()){const els=[...root.querySelectorAll('.upload-status[data-folder-id]')];let complete=0,incomplete=0,missing=0,error=0;await Promise.all(els.map(async el=>{const id=el.dataset.folderId;if(!id){el.className='upload-status pending';el.textContent='● 폴더 미설정';missing++;return}el.className='upload-status pending';el.textContent='● 확인 중';try{const d=await checkDriveUpload(id,date);if(d.ok&&d.completed){el.className='upload-status complete';el.textContent='● 완료';complete++}else{el.className='upload-status incomplete';el.textContent='● 미완료';incomplete++}}catch(e){el.className='upload-status error';el.textContent='● 확인 오류';error++}}));const c=root.querySelector('#autoComplete'),i=root.querySelector('#autoIncomplete'),m=root.querySelector('#autoMissing'),er=root.querySelector('#autoError');if(c)c.textContent=`완료 ${complete}`;if(i)i.textContent=`미완료 ${incomplete}`;if(m)m.textContent=`폴더 미설정 ${missing}`;if(er)er.textContent=`오류 ${error}`}
+async function checkDriveUpload(folderId,date=localDateKey(),active=()=>true){if(!folderId)return {ok:false,missing:true};return driveReads.read(folderId+'|'+date,async()=>{const q=new URLSearchParams({folderId,date});const r=await fetch(`/api/drive-monitor?${q.toString()}`,{cache:'no-store',signal:AbortSignal.timeout(45000)});if(!r.ok)throw new Error(`monitor ${r.status}`);return await r.json();},{active});}
+async function refreshUploadBadges(root=document,date=localDateKey()){const els=[...root.querySelectorAll('.upload-status[data-folder-id]')];let complete=0,incomplete=0,missing=0,error=0;await Promise.all(els.map(async el=>{const id=el.dataset.folderId;if(!id){el.className='upload-status pending';el.textContent='● 폴더 미설정';missing++;return}el.className='upload-status pending';el.textContent='● 확인 중';try{const d=await checkDriveUpload(id,date,()=>el.isConnected);if(!el.isConnected)return;if(d.ok&&d.completed){el.className='upload-status complete';el.textContent='● 완료';complete++}else{el.className='upload-status incomplete';el.textContent='● 미완료';incomplete++}}catch(e){el.className='upload-status error';el.textContent='● 확인 오류';error++}}));if(els.length&&!els[0].isConnected)return;const c=root.querySelector('#autoComplete'),i=root.querySelector('#autoIncomplete'),m=root.querySelector('#autoMissing'),er=root.querySelector('#autoError');if(c)c.textContent=`완료 ${complete}`;if(i)i.textContent=`미완료 ${incomplete}`;if(m)m.textContent=`폴더 미설정 ${missing}`;if(er)er.textContent=`오류 ${error}`}
 
 function bindOpen(){document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openUrl(b.dataset.open))}
 function shell(user,body){appEl.innerHTML=`<header class="topbar"><div><p class="eyebrow">K-뉴딜 아카데미</p><h1 class="title">담임 운영 포털</h1></div><div class="top-actions"><span class="user-email">${esc(user.email)}</span><button id="logout" class="btn btn-ghost">로그아웃</button></div></header><main class="page">${body}</main>`;document.getElementById('logout').onclick=()=>signOut(auth);bindOpen()}
@@ -81,7 +83,7 @@ function courseWeekSchedule(){const groups=new Map();for(const key of courseDate
 function prettyDate(key){const d=new Date(key+'T00:00:00Z'),days=['일','월','화','수','목','금','토'];return `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}(${days[d.getUTCDay()]})`}
 function dateFolderExistsResult(d){return d&&d.ok!==false&&!['DATE_FOLDER_NOT_FOUND','WEEK_FOLDER_NOT_FOUND'].includes(d.reason)}
 function prettyShortDate(key){return `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`}
-async function refreshManualMissingInline(root=document){const el=root.querySelector('.manual-missing-inline[data-folder-id]');if(!el)return;const folderId=el.dataset.folderId;if(!folderId){el.textContent='';return}el.textContent='미업로드 확인 중…';const dates=courseDatesThrough(localDateKey()),missing=[];try{for(let i=0;i<dates.length;i+=4){const batch=dates.slice(i,i+4),results=await Promise.all(batch.map(async date=>{try{return {date,data:await checkDriveUpload(folderId,date)}}catch(e){return {date,error:e}}}));for(const r of results){if(r.error||!dateFolderExistsResult(r.data))continue;if(!r.data.completed)missing.push(r.date)}await new Promise(r=>setTimeout(r,25))}el.textContent=missing.length?`${missing.map(prettyShortDate).join(', ')} 미업로드!`:''}catch(e){el.textContent=''}}
+async function refreshManualMissingInline(root=document){const el=root.querySelector('.manual-missing-inline[data-folder-id]');if(!el)return;const folderId=el.dataset.folderId;if(!folderId){el.textContent='';return}el.textContent='미업로드 확인 중…';const dates=courseDatesThrough(localDateKey()),missing=[];try{for(let i=0;i<dates.length;i+=4){if(!el.isConnected)return;const batch=dates.slice(i,i+4),results=await Promise.all(batch.map(async date=>{try{return {date,data:await checkDriveUpload(folderId,date,()=>el.isConnected)}}catch(e){return {date,error:e}}}));for(const r of results){if(r.error||!dateFolderExistsResult(r.data))continue;if(!r.data.completed)missing.push(r.date)}await new Promise(r=>setTimeout(r,25))}el.textContent=missing.length?`${missing.map(prettyShortDate).join(', ')} 미업로드!`:''}catch(e){el.textContent=''}}
 async function showMissingDatesModal(folderId,label){
   if(!folderId)return;
   let cancelled=false;
@@ -115,9 +117,9 @@ async function showMissingDatesModal(folderId,label){
     wrap.querySelector('#missingProgressSub').textContent=`확인된 날짜 폴더 ${existing}개 · 미완료 ${missing.length}개${errors.length?` · 오류 ${errors.length}개`:''}`;
   };
   try{
-    for(let i=0;i<dates.length&&!cancelled;i+=3){
+    for(let i=0;i<dates.length&&!cancelled&&wrap.isConnected;i+=3){
       const batch=dates.slice(i,i+3);
-      const results=await Promise.all(batch.map(async date=>{try{return {date,data:await checkDriveUpload(folderId,date)}}catch(e){return {date,error:e}}}));
+      const results=await Promise.all(batch.map(async date=>{try{return {date,data:await checkDriveUpload(folderId,date,()=>!cancelled&&wrap.isConnected)}}catch(e){return {date,error:e}}}));
       for(const r of results){checked++;if(r.error){errors.push(r.date);continue}if(!dateFolderExistsResult(r.data))continue;existing++;if(!r.data.completed)missing.push(r.date)}
       progress();
       await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,40)));
@@ -179,16 +181,16 @@ async function adminView(user,p,tab='attendanceOverview',selected='1'){try{
  }catch(e){fatal(user,'관리자 화면을 불러오지 못했습니다.',e)}}
 async function timetableAdmin(user,p){
   const host=document.getElementById('adminBody');host.closest('.page').classList.add('checkhere-page');
-  const mod=await import('/timetable.mjs?v=20260914-3');await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});
+  const mod=await import('/timetable.mjs?v=20260914-4');const work=await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();
 }
 async function attachTeacherTimetable(parent,user,c){
   const host=document.createElement('div');host.id='teacherTimetable';const hero=parent.querySelector('.hero');
   if(!hero)return;hero.after(host);
-  try{const mod=await import('/timetable.mjs?v=20260914-3');await mod.mountTeacherTimetable(host,{db,user,classInfo:c});}catch(e){host.textContent='시간표를 불러오지 못했습니다. '+e.message;}
+  try{const mod=await import('/timetable.mjs?v=20260914-4');await mod.mountTeacherTimetable(host,{db,user,classInfo:c});}catch(e){host.textContent='시간표를 불러오지 못했습니다. '+e.message;}
 }
 async function checkhereAdmin(user,p){
   const host=document.getElementById('adminBody');
-  const mod=await import('/checkhere-portal.mjs?v=20260914-proposal3');
+  const mod=await import('/checkhere-portal.mjs?v=20260914-stability2');
   host.closest('.page').classList.add('checkhere-page');
   adminWork=await mod.mountCheckHerePortal(host,{db,user,classes:CLASSES,showRequests:true});
 }
@@ -200,7 +202,7 @@ async function attendanceAdmin(user,p){
 async function attendanceOverviewAdmin(user,p){
   const host=document.getElementById('adminBody');if(!host)return;
   host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출결대조</h3><p>베타 · 출결·사유·서류 상태 입력과 체크히어 저장본을 함께 대조합니다. 시트 저장에는 개인 Google 계정의 편집 권한이 필요합니다.</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">출결대조 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(`/attendance-overview.js?v=20260914-stability1`);adminWork=await mod.mountAttendanceOverview(document.getElementById('attendanceOverviewMount'),{auth,db,user,classes:CLASSES})}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+  try{const mod=await import(`/attendance-overview.js?v=20260914-stability2`);const mount=document.getElementById('attendanceOverviewMount');const work=await mod.mountAttendanceOverview(mount,{auth,db,user,classes:CLASSES});if(mount.isConnected)adminWork=work;else work?.dispose?.()}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;
@@ -229,7 +231,7 @@ async function renderUploadClassDetail(records,classId,folderKey='manualAttendan
   const dates=courseDatesThrough(localDateKey()),body=host.querySelector('#uploadDetailBody'),summary=host.querySelector('#uploadDetailSummary'),weekHost=host.querySelector('#uploadWeekSchedule');if(weekHost)weekHost.innerHTML=courseWeekSchedule().map(g=>`<div class="week-chip"><strong>WEEK ${g.week}</strong>${g.dates.map(prettyDate).join(' · ')}</div>`).join('');
   body.innerHTML='';let done=0,missing=0,none=0,err=0,checked=0;const cards=[];
   const paint=()=>{summary.innerHTML=`<span class="status-pill status-o">완료 ${done}</span><span class="status-pill status-x">미업로드 ${missing}</span><span class="status-pill status-none">폴더 없음 ${none}</span>${err?`<span class="status-pill status-none">오류 ${err}</span>`:''}<span class="status-pill status-none">${checked}/${dates.length}</span>`;body.innerHTML=cards.join('')||'<div class="empty" style="grid-column:1/-1">확인 중…</div>'};paint();
-  for(let i=0;i<dates.length;i+=4){const batch=dates.slice(i,i+4),results=await Promise.all(batch.map(async date=>{try{return {date,data:await checkDriveUpload(folderId,date)}}catch(e){return {date,error:e}}}));for(const r of results){checked++;if(r.error){err++;cards.push(`<div class="upload-day err"><strong>${prettyDate(r.date)}</strong><span class="day-state">확인 오류</span></div>`);continue}const d=r.data;if(d&&d.ok&&d.completed){done++;cards.push(`<div class="upload-day done"><strong>${prettyDate(r.date)}</strong><span class="day-state">● 완료</span></div>`)}else if(d&&['DATE_FOLDER_NOT_FOUND','WEEK_FOLDER_NOT_FOUND'].includes(d.reason)){none++;cards.push(`<div class="upload-day none"><strong>${prettyDate(r.date)}</strong><span class="day-state">폴더 없음</span></div>`)}else{missing++;cards.push(`<div class="upload-day missing"><strong>${prettyDate(r.date)}</strong><span class="day-state">● 미업로드</span></div>`)}}paint();await new Promise(r=>setTimeout(r,35))}
+  for(let i=0;i<dates.length;i+=4){if(!body.isConnected)return;const batch=dates.slice(i,i+4),results=await Promise.all(batch.map(async date=>{try{return {date,data:await checkDriveUpload(folderId,date,()=>body.isConnected)}}catch(e){return {date,error:e}}}));for(const r of results){checked++;if(r.error){err++;cards.push(`<div class="upload-day err"><strong>${prettyDate(r.date)}</strong><span class="day-state">확인 오류</span></div>`);continue}const d=r.data;if(d&&d.ok&&d.completed){done++;cards.push(`<div class="upload-day done"><strong>${prettyDate(r.date)}</strong><span class="day-state">● 완료</span></div>`)}else if(d&&['DATE_FOLDER_NOT_FOUND','WEEK_FOLDER_NOT_FOUND'].includes(d.reason)){none++;cards.push(`<div class="upload-day none"><strong>${prettyDate(r.date)}</strong><span class="day-state">폴더 없음</span></div>`)}else{missing++;cards.push(`<div class="upload-day missing"><strong>${prettyDate(r.date)}</strong><span class="day-state">● 미업로드</span></div>`)}}paint();await new Promise(r=>setTimeout(r,35))}
 }
 async function uploadAdmin(user,p,dateValue=localDateKey(),selectedClass=''){
   const records=await Promise.all(CLASSES.map(async c=>{const r=await getDoc(doc(db,'classes',c.id));return {...c,data:r.exists()?r.data():{}}}));

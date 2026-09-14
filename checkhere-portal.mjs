@@ -1,15 +1,15 @@
 import {loadCheckHereDay} from './checkhere-snapshots.mjs';
 import {collectionDates} from './attendance-beta-core.mjs';
 import {collection,doc,getDoc,getDocs,setDoc,query,orderBy,limit,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {mountCheckHere} from './checkhere-ui.mjs?v=20260911-beta1';
+import {mountCheckHere} from './checkhere-ui.mjs?v=20260914-stability2';
 import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs';
 import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
   if(!user)throw new Error('관리자 로그인이 필요합니다.');
   const canEdit=await canEditCheckHere(user);
   host.innerHTML=(showRequests?'<nav class="admin-tabs" aria-label="체크히어 업무"><button class="tab active" data-ch-view="collect">수집·검수</button><button class="tab" data-ch-view="requests">반영 요청·승인</button></nav>':'')+'<div data-collector-host></div>'+(showRequests?'<div data-requests hidden style="display:none"></div>':'');
-  if(showRequests)host.querySelectorAll('[data-ch-view]').forEach(b=>b.onclick=()=>{const approval=b.dataset.chView==='requests';host.querySelector('[data-requests]').hidden=!approval;host.querySelector('[data-collector-host]').hidden=approval;host.querySelector('[data-collector-host]').style.display=approval?'none':'block';host.querySelector('[data-requests]').style.display=approval?'block':'none';host.querySelectorAll('[data-ch-view]').forEach(x=>x.classList.toggle('active',x===b));if(approval)requests?.refresh();});
-  let controller,requests;
+  if(showRequests)host.querySelectorAll('[data-ch-view]').forEach(b=>b.onclick=()=>{const approval=b.dataset.chView==='requests';host.querySelector('[data-requests]').hidden=!approval;host.querySelector('[data-collector-host]').hidden=approval;host.querySelector('[data-collector-host]').style.display=approval?'none':'block';host.querySelector('[data-requests]').style.display=approval?'block':'none';host.querySelectorAll('[data-ch-view]').forEach(x=>x.classList.toggle('active',x===b));if(approval)void openRequests();else controller?.render?.();});
+  let controller,requests,requestMount;
   const applyChange=createDirectEditor({user,controller:()=>controller,store:{
     async get(id){const snap=await getDoc(doc(db,'checkhereRequests',id));return snap.exists()?snap.data():null;},
     async create(id,input){await setDoc(doc(db,'checkhereRequests',id),{...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});},
@@ -36,7 +36,7 @@ export async function mountCheckHerePortal(host,{db,user,classes,showRequests=fa
 
     }
   });
-  if(showRequests)requests=await mountCheckHereRequests(host.querySelector('[data-requests]'),{db,user,classes,admin:true,controller:()=>controller,onCount(n){host.querySelector('[data-ch-view=requests]').textContent=`반영 요청·승인${n?' ('+n+')':''}`;},openCollector(){host.querySelector('[data-ch-view=collect]')?.click();host.querySelector('[data-collector-host]').scrollIntoView({block:'start'});}});
+  async function openRequests(){if(requests)return requests.refresh();if(requestMount)return requestMount;requestMount=mountCheckHereRequests(host.querySelector('[data-requests]'),{db,user,classes,admin:true,controller:()=>controller,onCount(n){host.querySelector('[data-ch-view=requests]').textContent=`반영 요청·승인${n?' ('+n+')':''}`;},openCollector(){host.querySelector('[data-ch-view=collect]')?.click();host.querySelector('[data-collector-host]').scrollIntoView({block:'start'});}}).then(work=>{if(host.isConnected)requests=work;else work.dispose();}).catch(e=>{const box=host.querySelector('[data-requests]');if(box)box.textContent='요청 현황을 불러오지 못했습니다. '+e.message;}).finally(()=>{requestMount=null;});return requestMount;}
   return()=>{stop();requests?.dispose();};
 }
 

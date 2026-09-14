@@ -1,6 +1,6 @@
 // Deterministic suggestions. No attendance, evidence, or CheckHere write occurs here.
 export const ACTIVE_REQUESTS=['pending','approved','applying'];
-export const PROPOSAL_STATUS={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'반영 확인 완료',rejected:'반려',withdrawn:'철회',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
+export const PROPOSAL_STATUS={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'반영 확인 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
 const hm=v=>/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(v||'')?v.slice(0,5):'';
 export const sourceRecord=r=>Object.fromEntries(['id','classId','date','name','phoneLast4','version','entry','rawEntry','exit','entryMemo','exitMemo','outings','teacher','schedule','readState'].map(k=>[k,r?.[k]??null]));
 export const sameRecord=(a,b)=>JSON.stringify(sourceRecord(a))===JSON.stringify(sourceRecord(b));

@@ -1,6 +1,6 @@
 export const APPROVER = 'hint.kpc@gmail.com';
 export const FIELDS = {entry:'입실·교시 시간',exit:'퇴실 시간',entryMemo:'입실·교시 관리자 사유',exitMemo:'퇴실 관리자 사유'};
-export const STATUS = {pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'검증 완료',rejected:'반려',withdrawn:'철회',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
+export const STATUS = {pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'검증 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
 const own = (o,k)=>Object.hasOwn(o,k);
 export function cleanRequest(input){
   const classId=String(input.classId||''),date=String(input.date||''),name=String(input.name||'').trim(),phoneLast4=String(input.phoneLast4||'').trim(),reason=String(input.reason||'').trim();

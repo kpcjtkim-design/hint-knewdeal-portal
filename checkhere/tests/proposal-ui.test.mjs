@@ -48,6 +48,11 @@ test('inline recommendations, manual edits, three independent requests, column b
   await page.waitForFunction(()=>Object.values(window.docs).some(v=>v.status==='withdrawn'));
   assert.equal(await count(),5);assert(await memo.isEnabled());
   assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.status==='withdrawn').createdBy),'staff@example.com');
+  const cancelledValue=await memo.inputValue();
+  await page.locator('[data-proposal-send="0_가상학생__entryMemo"]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+  assert.equal(await count(),6,'identical reason after cancellation creates a new request ID');
+  assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.name==='가상학생'&&v.status==='pending').changes.entryMemo),cancelledValue);
+  await page.locator('[data-proposal-withdraw="0_가상학생__entryMemo"]').click();await page.waitForFunction(()=>Object.values(window.docs).filter(v=>v.status==='withdrawn').length===2);
   // Untouched auto drafts follow new Sheet data. Manual edits are retained with a review signal.
   await page.evaluate(()=>{window.context.reason='시험';window.refreshProposals();});
   assert.equal(await memo.inputValue(),'(인정지각)시험_담임:홍길동(13:00)');
@@ -63,7 +68,7 @@ test('inline recommendations, manual edits, three independent requests, column b
   // An approval winning the race prevents withdrawal without deleting either request.
   await page.evaluate(()=>{Object.values(window.docs).find(v=>v.name==='다른학생'&&v.status==='pending').status='approved';});
   await page.locator('[data-proposal-withdraw="1_다른학생__entryMemo"]').click();
-  await page.waitForFunction(()=>window.problem?.includes('철회할 수 없습니다'));
+  await page.waitForFunction(()=>window.problem?.includes('취소할 수 없습니다'));
   assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.name==='다른학생'&&v.changes)?.status),'approved');
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}

@@ -17,7 +17,7 @@ test('CheckHere collection and approval panels remain mutually exclusive across 
    if(p==='/checkhere-portal.mjs')return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,p.slice(1)),'utf8')});return route.abort();
   });
   await page.goto('https://fixture.test/');await page.getByRole('heading',{name:'수집 화면'}).waitFor();assert.equal(await page.getByRole('heading',{name:'승인 화면'}).isVisible(),false);
-  await page.getByRole('button',{name:'반영 요청·승인 (3)'}).click();assert.equal(await page.getByRole('heading',{name:'수집 화면'}).isVisible(),false);assert.equal(await page.getByRole('heading',{name:'승인 화면'}).isVisible(),true);
+  await page.getByRole('button',{name:'반영 요청·승인'}).click();assert.equal(await page.getByRole('heading',{name:'수집 화면'}).isVisible(),false);assert.equal(await page.getByRole('heading',{name:'승인 화면'}).isVisible(),true);
   await page.getByRole('button',{name:'수집·검수'}).click();assert.equal(await page.getByRole('heading',{name:'수집 화면'}).isVisible(),true);assert.equal(await page.getByRole('heading',{name:'승인 화면'}).isVisible(),false);
  }finally{await browser.close();}
 });

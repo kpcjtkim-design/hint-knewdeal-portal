@@ -16,7 +16,7 @@ async function profile(idToken,email){
   const f=d.fields||{};return{role:f.role?.stringValue||'',active:f.active?.booleanValue===true};
 }
 import {fetchJson,createBridgeReader,readerFailure} from '../lib/attendance-reader-transport.mjs';
-const colorBridge=createBridgeReader({attempts:1});
+const colorBridge=createBridgeReader({attempts:1,timeout:18000});
 async function readBackgrounds(url,classId){
   try{
   const d=await colorBridge(url,classId,{colorsOnly:true,allowCache:true});

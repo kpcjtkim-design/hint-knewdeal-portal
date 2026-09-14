@@ -83,7 +83,7 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     // Temporary reader failure retains both the current table and manual proposals.
     readFailure=true;await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await page.getByText(/기존 표 유지 · 시트 자동 확인 실패/).waitFor();assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');assert.equal(await page.getByLabel('가상가 사유').inputValue(),'시험');
-    await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.getByText(/다시 읽기 실패, 기존 표 유지/).waitFor();assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');assert(await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).isEnabled());
+    await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.getByText(/초 후 자동 재시도/).waitFor();assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');assert(await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).isDisabled());
     readFailure=false;raw='가상가: 면접\n가상나: 시험';await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('[aria-label="가상가 사유"]').value==='면접');assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');
     // Unsubmitted Sheet reason text is never overwritten by polling.
