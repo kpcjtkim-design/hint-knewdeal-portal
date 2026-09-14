@@ -1,5 +1,6 @@
+import {within,readJson} from './attendance-io.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
-import {createAttendanceBeta} from './attendance-beta.mjs?v=proposal3';
+import {createAttendanceBeta} from './attendance-beta.mjs?v=stability1';
 import {latestTeachingDate} from './attendance-beta-core.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
@@ -68,7 +69,7 @@ function evidenceFor(student,dateObj,status,backgrounds){
   if(state==='보완필요')return{label:'제출 필요',cls:'required'};
   return{label:'-',cls:'none'};
 }
-async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),cache:'no-store'});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{}if(!r.ok||d.ok===false)throw new Error(d.error||`${url} ${r.status}`);return d}
+const post=readJson;
 
 export async function mountAttendanceOverview(host,ctx){
   if(!host)throw new Error('출결대조 영역을 찾지 못했습니다.');
@@ -79,32 +80,21 @@ export async function mountAttendanceOverview(host,ctx){
   root.innerHTML=`<style>${STYLE}${BETA_STYLE}${SOURCE_STYLE}</style><div class="wrap"><div id="err"></div><section class="card toolbar"><div class="field"><label>반</label><select id="classSel">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('')}</select></div><div class="field"><label>교육일자</label><select id="dateSel"><option>불러오는 중…</option></select></div><button id="reload" class="btn soft">↻ 다시 읽기</button><button id="sheetConnect" class="btn soft">내 계정 시트 연결</button><button id="excelExport" class="btn dark">⇩ 엑셀 다운로드</button><span class="autosave-notice">※ 출결·서류 상태는 즉시 저장 / 사유는 열 상단 저장 / 기타 특이사항만 자동저장 · 체크히어는 승인 후 반영</span><strong id="excursionDay" class="excursion-day" hidden></strong><strong id="lectureEndDay" class="excursion-day" hidden></strong><div class="spacer"></div><span id="liveSheetState" class="state" role="status">시트 변경 자동 확인 · 30초 간격</span><span id="topState" class="state">준비 중…</span></section><div class="hint">베타 · 연결한 개인 Google 계정의 시트 편집 권한으로 선택한 학생·날짜 셀만 저장합니다. 좌측은 가-3 원문입니다.</div><section class="workspace"><aside class="left-stack"><article class="card raw-card"><div class="section-head"><div><h3>가-3 원문</h3><p>선택한 교육일의 Google Sheet 원문 내용입니다. · 가공하지 않은 원문 텍스트</p></div></div><pre id="rawReason" class="raw-text">Google Sheet를 불러오는 중…</pre></article><article class="card manual-card"><div class="section-head"><div><h3>수기출석 관련 관리자 메모</h3><p>해당 반·날짜 수기출석 전체에 대한 관리자 메모입니다.</p></div></div><div class="manual-body"><div class="manual-issue"><div class="manual-issue-head"><strong>관리자 메모</strong><span id="manualIssueState" class="manual-issue-state"></span></div><textarea id="manualIssueMemo" placeholder="전반적인 출결 특이사항, 전달사항 등을 입력하세요."></textarea><div class="followup-wrap general-followup"><div class="followup-buttons"><button type="button" id="manualNotifyBtn" class="followup-btn notified">담임 알림</button><button type="button" id="manualDoneBtn" class="followup-btn done">이행 확인</button></div></div></div></div></article></aside><article class="card data-panel"><div class="data-title"><strong>학생별 출결 대조</strong><span>시트 출결 · 서류 상태 · 체크히어 저장본 · 관리자 메모</span></div><div class="table-scroll"><div class="source-groups" aria-label="출결 데이터 출처"><div class="sheet-group">① Google Sheet <small>출결 · 사유 · 서류 상태</small></div><div class="checkhere-group">② 체크히어 <small>현재 저장본 · 반영할 사유 · 승인 요청</small></div><div class="manual-group">③ 수기출석 <small>포털 관리자 메모</small></div></div><div class="table-head"><div>이름</div><div>출석현황</div><div>사유 <button id="saveReasons" class="btn soft" disabled>사유 저장</button></div><div>서류제출 · 메모</div><div>입실 → 퇴실<button type="button" class="btn soft" data-proposal-bulk="times">일괄요청</button></div><div>시간 판정</div><div>입실·교시 사유 · 반영 제안<button type="button" class="btn soft" data-proposal-bulk="entryMemo">일괄요청</button></div><div>퇴실 사유 · 반영 제안<button type="button" class="btn soft" data-proposal-bulk="exitMemo">일괄요청</button></div><div>외출 구간</div><div>수기출석 관련 메모</div></div><div id="rows" class="rows"><div class="empty">불러오는 중…</div></div></div></article></section><dialog id="documentMemoDialog"></dialog></div>`;
   const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),excelExport=$('#excelExport'),rawReason=$('#rawReason'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState'),manualNotifyBtn=$('#manualNotifyBtn'),manualDoneBtn=$('#manualDoneBtn');
   let dates=[],students=[],reasonCells={},memos={},manualIssue='',manualIssueFollowup=emptyFollowup(),attendanceBackgrounds=[],currentIso='',currentClass='1',saveTimers=new Map(),legacyTextMemos=new Map();
-  let liveTimer,disposed=false,reading=false,epoch=0,lastLiveSignature='';
+  let liveTimer,disposed=false,reading=false,epoch=0,lastLiveSignature='',liveFailures=0;
   const edited=()=>{epoch++;};root.addEventListener('input',edited);root.addEventListener('change',edited);
   const colorCache=new Map(),colorPromises=new Map();
   const beta=createAttendanceBeta({db,user,root,state:()=>({classId:currentClass,iso:currentIso,date:dates.find(x=>x.label===dateSel.value),students,raw:String(reasonCells[dateSel.value]||''),backgrounds:attendanceBackgrounds,setRaw(value){reasonCells[dateSel.value]=value;renderRawReason(dateSel.value);}}),render:()=>{syncVisibleMemos();renderRows(dateSel.value);},showErr:e=>showErr(e),reasonFor,colorState:overviewColorState});
 
   const showErr=e=>{err.innerHTML=e?`<div class="error">${esc(e.message||e)}</div>`:''};
-  async function getReader(cid){const idToken=await user.getIdToken();return post('/api/attendance-reader',{idToken,classId:String(cid)})}
+  async function getReader(cid,allowCache=false){const idToken=await within(user.getIdToken(),8000,'로그인 확인이 지연됩니다. 다시 로그인해 주세요.');return post('/api/attendance-reader',{idToken,classId:String(cid),allowCache})}
   async function getColorsOnce(cid){
-  const idToken=await user.getIdToken();
+  const idToken=await within(user.getIdToken(),8000,'로그인 확인이 지연됩니다. 다시 로그인해 주세요.');
   const d=await post('/api/attendance-colors',{idToken,classId:String(cid)});
   if(Array.isArray(d.attendanceBackgrounds))return d.attendanceBackgrounds;
   if(Array.isArray(d.backgrounds))return d.backgrounds;
   return [];
 }
-async function getColors(cid){
-  let lastError=null;
-  for(let attempt=0;attempt<3;attempt++){
-    try{
-      const bg=await getColorsOnce(cid);
-      if(Array.isArray(bg)&&bg.length)return bg;
-      lastError=new Error('색상 데이터가 비어 있습니다.');
-    }catch(e){lastError=e}
-    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
-  }
-  throw lastError||new Error('색상 데이터를 불러오지 못했습니다.');
-}
+async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArray(bg)||!bg.length)throw Error('색상 데이터가 비어 있습니다.');return bg;}
   async function getColorsCached(cid,force=false){
     const id=String(cid),storageKey=`attendanceOverviewColors_${id}`,ttl=180000;
     if(!force&&colorCache.has(id))return colorCache.get(id);
@@ -120,7 +110,7 @@ async function getColors(cid){
     students=a.slice(1).map((r,rowIndex)=>({rowIndex,name:String(r[0]||'').trim(),all:r.slice(4)})).filter(x=>x.name);
     const g=out.reasons||[],rh=(g[0]||[]).slice(4),rr=(g[1]||[]).slice(4);reasonCells={};rh.forEach((d,i)=>reasonCells[normDate(d)]=rr[i]||'');
   }
-  async function loadMemos(cid,iso){memos={};manualIssue='';manualIssueFollowup=emptyFollowup();try{const snap=await getDoc(doc(db,'settings',memoId(cid,iso)));if(snap.exists()){const data=snap.data()||{};memos=data.memos||{};for(const [key,value] of Object.entries(memos))if(typeof value==='string')legacyTextMemos.set(`${cid}/${iso}/${key}`,value);manualIssue=String(data.manualIssue||'');manualIssueFollowup=normalizeFollowup(data.manualIssueFollowup)}}catch(e){console.warn('memo load failed',e)}manualIssueMemo.value=manualIssue;manualIssueState.textContent=manualIssue?'저장됨':'';renderGeneralFollowup()}
+  async function loadMemos(cid,iso){memos={};manualIssue='';manualIssueFollowup=emptyFollowup();try{const snap=await within(getDoc(doc(db,'settings',memoId(cid,iso))));if(snap.exists()){const data=snap.data()||{};memos=data.memos||{};for(const [key,value] of Object.entries(memos))if(typeof value==='string')legacyTextMemos.set(`${cid}/${iso}/${key}`,value);manualIssue=String(data.manualIssue||'');manualIssueFollowup=normalizeFollowup(data.manualIssueFollowup)}}catch(e){console.warn('memo load failed',e)}manualIssueMemo.value=manualIssue;manualIssueState.textContent=manualIssue?'저장됨':'';renderGeneralFollowup()}
   function keyFor(s){return`${s.rowIndex}_${s.name}`}
   const legacyPatch=(cid,iso,key)=>legacyTextMemos.has(`${cid}/${iso}/${key}`)?{checkhere:legacyTextMemos.get(`${cid}/${iso}/${key}`)}:{};
   async function saveStudentMemo(key,category,value,stateEl,cid,iso){
@@ -257,11 +247,13 @@ async function getColors(cid){
   async function loadSelectedDate(){epoch++;lastLiveSignature='';showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;try{sessionStorage.setItem("hintWorkContext",JSON.stringify({classId:currentClass,date:currentIso}));}catch{}topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await Promise.all([loadMemos(currentClass,currentIso),beta.load(currentClass,currentIso)]);renderRawReason(label);renderRows(label);topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`}
   async function loadClass(cid,keepDate='',forceColors=false){
     epoch++;lastLiveSignature='';
+    const previous={classId:currentClass,iso:currentIso,label:dates.find(d=>d.iso===currentIso)?.label||dateSel.value,colors:attendanceBackgrounds,nodes:[...rows.childNodes],raw:rawReason.textContent,top:topState.textContent,connectDisabled:$('#sheetConnect').disabled};
+    const hadRows=students.length>0;let readerLoaded=false;
     for(const id of ['classSel','dateSel','reload','sheetConnect'])$('#'+id).disabled=true;
     showErr('');currentClass=String(cid);attendanceBackgrounds=[];topState.textContent=`${currentClass}반 시트 읽는 중…`;rows.innerHTML='<div class="empty">Google Sheet를 읽는 중…</div>';rawReason.textContent='Google Sheet를 읽는 중…';
     const colorClass=currentClass;
     try{
-      const out=await getReader(currentClass);parseReader(out);
+      const out=await getReader(currentClass);readerLoaded=true;parseReader(out);
       dateSel.innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');
       const preferred=dates.find(x=>x.label===keepDate)?.label||latestTeachingDate(dates)?.label||dates[0]?.label||'';dateSel.value=preferred;
       await loadSelectedDate();
@@ -273,7 +265,12 @@ async function getColors(cid){
       }else{
         getColorsCached(colorClass,forceColors).then(bg=>{if(currentClass!==colorClass)return;attendanceBackgrounds=bg;renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 출결자동 색상 반영`}).catch(e=>{console.warn('attendance colors failed',e);if(currentClass===colorClass){renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 색상 조회 실패(미제출 기준)`}})
       }
-    }catch(e){showErr(e);rows.innerHTML='<div class="empty">출결 데이터를 불러오지 못했습니다.</div>';topState.textContent='오류';for(const id of ['classSel','dateSel','reload'])$('#'+id).disabled=false;}
+    }catch(e){
+      showErr(e);
+      if(hadRows&&!readerLoaded){currentClass=previous.classId;currentIso=previous.iso;attendanceBackgrounds=previous.colors;classSel.value=currentClass;dateSel.value=previous.label;rows.replaceChildren(...previous.nodes);rawReason.textContent=previous.raw;topState.textContent=previous.top+' · 다시 읽기 실패, 기존 표 유지';$('#sheetConnect').disabled=previous.connectDisabled;}
+      else{rows.innerHTML='<div class="empty">출결 데이터를 불러오지 못했습니다. 잠시 후 다시 읽기를 눌러 주세요.</div>';topState.textContent='조회 실패';}
+      for(const id of ['classSel','reload'])$('#'+id).disabled=false;dateSel.disabled=!dates.length;
+    }
   }
   classSel.onchange=()=>{if(beta.canNavigate())loadClass(classSel.value,dateSel.value);else classSel.value=currentClass;};
   dateSel.onchange=()=>{if(beta.canNavigate())loadSelectedDate();else dateSel.value=dates.find(d=>d.iso===currentIso)?.label||'';};
@@ -295,7 +292,7 @@ async function getColors(cid){
     reading=true;const version=epoch,cid=currentClass,iso=currentIso;
     liveState.textContent='시트 변경 확인 중…';
     try{
-      const [out,linked]=await Promise.all([getReader(cid),beta.readRefresh(cid,iso)]);
+      const [out,linked]=await Promise.all([getReader(cid,true),beta.readRefresh(cid,iso)]);
       if(version!==epoch||cid!==currentClass||iso!==currentIso||!ready())return;
       const signature=JSON.stringify({attendance:out.attendance,reasons:out.reasons,backgrounds:out.attendanceBackgrounds||out.backgrounds,linked});
       if(signature!==lastLiveSignature){
@@ -304,9 +301,9 @@ async function getColors(cid){
         dateSel.innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');dateSel.value=dates.find(d=>d.iso===iso).label;
         beta.applyRefresh(linked,iso);renderRawReason(dateSel.value);renderRows(dateSel.value);lastLiveSignature=signature;
       }
-      liveState.textContent='시트 자동 확인 '+new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())+' · 30초 간격';
-    }catch(e){if(!disposed&&cid===currentClass)liveState.textContent='시트 자동 확인 실패 · '+e.message;}
-    finally{reading=false;if(!disposed&&host.isConnected)liveTimer=setTimeout(refreshLive,30000);}
+      liveFailures=0;liveState.textContent='시트 자동 확인 '+new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date())+' · 30초 간격';
+    }catch(e){liveFailures++;if(!disposed&&cid===currentClass)liveState.textContent='기존 표 유지 · 시트 자동 확인 실패 · '+e.message;}
+    finally{reading=false;if(!disposed&&host.isConnected)liveTimer=setTimeout(refreshLive,Math.min(120000,30000*2**liveFailures));}
   }
   const onVisible=()=>{if(!document.hidden)void refreshLive();};
   window.addEventListener('focus',onVisible);document.addEventListener('visibilitychange',onVisible);liveTimer=setTimeout(refreshLive,30000);

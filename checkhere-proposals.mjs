@@ -1,6 +1,7 @@
 import {canWithdraw,withdrawRequest} from './checkhere-request-actions.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
-import {collection,doc,getDoc,getDocs,query,where,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+import {collection,doc,getDoc,getDocFromServer,getDocs,query,where,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+import {within,readJson} from './attendance-io.mjs';
 import {portalStatus,isoLabel} from './attendance-beta-core.mjs';
 import {APPROVER,cleanRequest} from './checkhere/approval-core.mjs';
 import {judge} from './checkhere/rules.mjs';
@@ -10,15 +11,15 @@ const key=s=>`${s.rowIndex}_${s.name}`;
 const fingerprint=c=>JSON.stringify({status:c.status,reason:c.reason,excursion:!!c.excursion,record:sourceRecord(c.record)});
 const draftId=(cid,date)=>`checkhereProposalDrafts_${cid}_${date}`;
 const contextId=id=>`checkhereProposalRequest_${id}`;
-export async function validateSheetSource(db,user,c,cache=new Map()){
+export async function validateSheetSource(db,user,c,cache=new Map(),{signal,timeout=55000}={}){
   const cacheKey=String(c.classId);
-  if(!cache.has(cacheKey)||Date.now()-cache.get(cacheKey).readAt>10000)cache.set(cacheKey,{readAt:Date.now(),promise:(async()=>{const response=await fetch('/api/attendance-reader',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({classId:c.classId,idToken:await user.getIdToken()}),cache:'no-store'});const data=await response.json();if(!response.ok||data.ok===false)throw Error('현재 시트를 다시 확인하지 못했습니다. 요청·승인을 중단합니다.');return data;})()});
-  const data=await cache.get(cacheKey).promise;
+  if(!cache.has(cacheKey)||Date.now()-cache.get(cacheKey).readAt>10000){const entry={readAt:Date.now()};entry.promise=(async()=>{const data=await readJson('/api/attendance-reader',{classId:c.classId,fresh:true,idToken:await within(user.getIdToken(),8000,'로그인 확인이 지연됩니다. 다시 로그인해 주세요.',signal)},{signal,timeout});entry.readAt=Date.now();return data;})();cache.set(cacheKey,entry);}
+  let data;try{data=await cache.get(cacheKey).promise;}catch(e){cache.delete(cacheKey);throw e;}
   const a=data.attendance||[],dates=(a[0]||[]).map((v,i)=>({iso:isoLabel(v),i})).filter(x=>x.i>=4&&x.iso===c.date),students=a.slice(1).filter(row=>String(row[0]||'').trim()===c.name);
   const reasonDates=(data.reasons?.[0]||[]).map((v,i)=>({iso:isoLabel(v),i})).filter(x=>x.i>=4&&x.iso===c.date);
   if(dates.length!==1||students.length!==1||reasonDates.length!==1)throw Error('시트 학생·날짜 연결이 달라졌습니다. 다시 읽고 검토해 주세요.');
   const raw=String(data.reasons?.[1]?.[reasonDates[0].i]||''),rawStatus=String(students[0][dates[0].i]||'').trim();
-  const meta=(await getDoc(doc(db,'settings',`attendanceBeta_${c.classId}_${c.date}`))).data()?.students?.[c.studentKey]||{};
+  const meta=(await within(getDocFromServer(doc(db,'settings',`attendanceBeta_${c.classId}_${c.date}`)),15000,undefined,signal)).data()?.students?.[c.studentKey]||{};
   const roster=a.slice(1).map(row=>String(row[0]||'').trim());
   const currentReason=meta.reasonEntry&&raw.split(/\r?\n/).includes(meta.reasonEntry)?meta.portalReason:reasonFor(c.name,raw,roster,rawStatus);
   const expectedReason=c.reason??reasonFor(c.name,c.raw,roster,rawStatus);
@@ -26,7 +27,7 @@ export async function validateSheetSource(db,user,c,cache=new Map()){
 }
 export async function validateLinkedRequest(db,user,request,record,cache){
   if(!request.id.startsWith('proposal_'))return;
-  const context=(await getDoc(doc(db,'checkhereProposalSources',contextId(request.id)))).data();
+  const context=(await within(getDocFromServer(doc(db,'checkhereProposalSources',contextId(request.id))))).data();
   if(!context||context.requestId!==request.id)throw Error('자동 제안의 근거 기록을 찾지 못했습니다.');
   if(JSON.stringify(request.changes)!==JSON.stringify(context.changes))throw Error('요청과 보관된 제안이 다릅니다.');
   if(context.sourceScope==='column-v2'&&requestColumn(request)!==context.column)throw Error('요청 항목과 근거가 다릅니다.');
@@ -39,15 +40,21 @@ export async function validateLinkedRequest(db,user,request,record,cache){
     const field=context.column==='entryMemo'&&/지각$/.test(context.status)?'entry':context.column==='exitMemo'&&/조퇴$/.test(context.status)?'exit':null;
     const actual=r=>field==='entry'?(r.rawEntry??r.entry):r.exit;
     if(field&&actual(before)!==actual(record)){
-      const timeRequests=await getDocs(query(collection(db,'checkhereRequests'),where('classId','==',context.classId),where('date','==',context.date)));
+      const timeRequests=await within(getDocs(query(collection(db,'checkhereRequests'),where('classId','==',context.classId),where('date','==',context.date))));
       const verified=timeRequests.docs.map(d=>d.data()).some(r=>r.status==='verified'&&r.approvedBy===APPROVER&&r.approval?.recordId===record.id&&r.changes?.[field]===record[field]&&r.approval.before[field]===before[field]&&r.approval.after[field]===record[field]);
       if(!verified||actual(before)!==before[field]||actual(record)!==record[field])throw Error('사유의 근거인 실제 시간이 바뀌었습니다. 다시 수집하고 검토해 주세요.');
     }
   }
   await validateSheetSource(db,user,context,cache);
 }
-export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason}){
- let saved={},requests=[],loadError='',sequence=0,working=false;
+export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason,timeouts={}}){
+ let saved={},requests=[],loadError='',sequence=0,working=false,loadedClass='',loadedDate='';
+ const limits={source:55000,read:15000,write:20000,...timeouts};
+ const journalKey=`hintProposalReceipts_v1_${user.uid||user.email}`;
+ let journal={};try{journal=JSON.parse(localStorage.getItem(journalKey)||'{}');}catch{}
+ const receiptKey=v=>`${v.c.classId}/${v.c.date}/${v.c.studentKey}/${v.column}`;
+ const remember=(key,value)=>{if(value)journal[key]=value;else delete journal[key];try{localStorage.setItem(journalKey,JSON.stringify(journal));}catch{if(value)throw Error('이 브라우저에 요청 번호를 보관할 수 없습니다. 브라우저 저장 공간을 확인해 주세요.');}};
+ const recordRequest=r=>{if(String(r.classId)!==loadedClass||r.date!==loadedDate)return;requests=requests.filter(x=>x.id!==r.id);requests.push(r);};
  const edits=new Map(),columns=Object.keys(REQUEST_COLUMNS),slot=(s,column)=>`${key(s)}__${column}`;
  const context=s=>({...getContext(s),studentKey:key(s)});
  const current=(c,column)=>column==='times'?{entry:c.record?.entry||'',exit:c.record?.exit||''}:c.record?.[column]||'';
@@ -56,16 +63,18 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   const c=context(s),auto=column==='times'?suggestTimes(c):suggestReason(c),legacy=saved[key(s)],draft=saved[slot(s,column)]||(legacy?.field===column?legacy:null);
   const recommended=column==='times'?auto.value:(auto.fields||[auto.field]).includes(column)?auto.text:'';
   const fallback=column==='times'?auto.value:auto.clear?'':recommended||current(c,column);
-  const edited=edits.get(slot(s,column)),stored=edited||draft,origin=stored?.origin|| (stored?'manual':'auto');
+  const receipt=journal[receiptKey({c,column})];
+  const edited=receipt||edits.get(slot(s,column)),stored=edited||draft,origin=stored?.origin|| (stored?'manual':'auto');
   const sourceChanged=!!stored&&stored.fingerprint!==fingerprint(c);
   const value=origin==='auto'&&sourceChanged?fallback:edited?.value??draft?.value??draft?.text??fallback;
   const stale=origin==='manual'&&sourceChanged;
   const request=activeFor(s,column)||requests.filter(r=>r.name===s.name&&Object.keys(r.changes).some(k=>columnFields(column).includes(k))).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))[0];
-  return {c,column,auto,recommended,value,stale,origin,draft,revision:saved[slot(s,column)]?.revision||0,request};
+  return {c,column,auto,recommended,value,stale,origin,draft,receipt,revision:receipt?.revision??saved[slot(s,column)]?.revision??0,request};
  }
  function disabledReason(v){
   if(v.c.reasonUnsaved)return '시트 저장 전 미리보기 · 사유 저장 후 요청할 수 있습니다.';
   if(working||loadError)return loadError?'추천사유 조회 실패':'요청 처리 중';
+  if(v.receipt&&v.receipt.state!=='retry')return '접수 확인 필요 · 같은 요청을 새로 만들지 않습니다.';
   if(!v.c.record||v.c.record.readState!=='complete'||!v.c.record.id||!v.c.record.version)return '체크히어 상세 저장본을 먼저 수집해 주세요.';
   if(v.request?.status==='verified'&&v.request.approval&&columnFields(v.column).some(k=>(v.c.record[k]||'')!==(v.request.approval.after[k]||'')))return '반영 확인 완료 · 재수집 후 플랫폼에 저장해 주세요.';
   if(v.c.status==='중복')return '중복 출결은 개별 확인 대상입니다.';
@@ -75,39 +84,81 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   return '';
  }
  function html(s,column){
-  const v=view(s,column),active=v.request&&ACTIVE_REQUESTS.includes(v.request.status),disabled=disabledReason(v),ident=esc(slot(s,column));
+  const v=view(s,column),active=v.request&&ACTIVE_REQUESTS.includes(v.request.status),locked=active||!!v.receipt,disabled=disabledReason(v),ident=esc(slot(s,column));
   let changed=false;try{requestChanges(v.c.record||{},column,v.value);changed=true;}catch{}
-  const label=active?PROPOSAL_STATUS[v.request.status]:disabled.startsWith('반영 확인 완료')?'반영 확인 완료':v.stale?'재검토 필요':v.request?.status==='withdrawn'?'철회 · 다시 요청 가능':changed?'변경 필요':'현재 기록과 일치';
+  const label=v.receipt?(v.receipt.state==='retry'?'동일 요청 번호로 재시도 가능':'접수 확인 필요'):active?PROPOSAL_STATUS[v.request.status]:disabled.startsWith('반영 확인 완료')?'반영 확인 완료':v.stale?'재검토 필요':v.request?.status==='withdrawn'?'철회 · 다시 요청 가능':changed?'변경 필요':'현재 기록과 일치';
   const shownValue=active&&column==='times'?{...(v.draft?.value||current(v.c,column)),...v.request.changes}:v.value;
-  const controls=column==='times'?`<div class="proposal-times">${['entry','exit'].map(k=>`<label>${k==='entry'?'입실':'퇴실'}<input type="time" step="1" data-proposal-edit="${ident}" data-time="${k}" aria-label="${esc(s.name)} 추천 ${k==='entry'?'입실':'퇴실'}시간" value="${esc(shownValue[k]||'')}" ${active?'disabled':''}></label>`).join('')}</div>`:`<textarea class="proposal-input" data-proposal-edit="${ident}" maxlength="500" aria-label="${esc(s.name+' '+REQUEST_COLUMNS[column])} 추천사유" placeholder="사유 확인 후 직접 입력" ${active?'disabled':''}>${esc(active?v.request.changes[column]??v.value:v.value)}</textarea>`;
-  return `<div class="proposal-box ${changed||v.stale?'changed':''}" data-proposal-box="${ident}"><strong>${column==='times'?'추천시간':'추천사유'}</strong><small class="proposal-label">${esc(label)}</small>${controls}${v.stale?`<small class="proposal-warning">시트 변경 후 추천: ${esc(column==='times'?`${v.recommended.entry||'공란'} → ${v.recommended.exit||'공란'}`:v.recommended|| (v.auto.clear?'공란(사유 없음)':'자동 생성 불가 · 원문 확인'))}</small>`:''}<small>${esc(disabled||(!v.recommended||column==='times'?v.auto.notes?.[0]||'':'시트 출결·사유와 수집 시간을 기준으로 생성'))}</small><div class="proposal-cell-actions">${column!=='times'?`<button class="btn soft" data-proposal-clear="${ident}" ${active?'disabled':''}>공란으로 변경</button>`:''}<button class="btn soft" data-proposal-reset="${ident}" ${active?'disabled':''}>추천 다시 생성</button><button class="btn dark" data-proposal-send="${ident}" ${disabled||!changed?'disabled':''}>변경요청</button></div>${v.stale?`<button class="btn soft" data-proposal-accept="${ident}">직접 수정값 유지 · 근거 확인</button>`:''}${active&&canWithdraw(v.request,user)?`<button class="btn soft" data-proposal-withdraw="${ident}">요청 철회</button>`:''}${active?'<small>요청 접수 · 체크히어 승인 후 반영</small>':'<small>추천값 편집만으로 체크히어가 변경되지 않습니다.</small>'}</div>`;
+  const controls=column==='times'?`<div class="proposal-times">${['entry','exit'].map(k=>`<label>${k==='entry'?'입실':'퇴실'}<input type="time" step="1" data-proposal-edit="${ident}" data-time="${k}" aria-label="${esc(s.name)} 추천 ${k==='entry'?'입실':'퇴실'}시간" value="${esc(shownValue[k]||'')}" ${locked?'disabled':''}></label>`).join('')}</div>`:`<textarea class="proposal-input" data-proposal-edit="${ident}" maxlength="500" aria-label="${esc(s.name+' '+REQUEST_COLUMNS[column])} 추천사유" placeholder="사유 확인 후 직접 입력" ${locked?'disabled':''}>${esc(active?v.request.changes[column]??v.value:v.value)}</textarea>`;
+  return `<div class="proposal-box ${changed||v.stale?'changed':''}" data-proposal-box="${ident}"><strong>${column==='times'?'추천시간':'추천사유'}</strong><small class="proposal-label">${esc(label)}</small>${controls}${v.stale?`<small class="proposal-warning">시트 변경 후 추천: ${esc(column==='times'?`${v.recommended.entry||'공란'} → ${v.recommended.exit||'공란'}`:v.recommended|| (v.auto.clear?'공란(사유 없음)':'자동 생성 불가 · 원문 확인'))}</small>`:''}<small>${esc(disabled||(!v.recommended||column==='times'?v.auto.notes?.[0]||'':'시트 출결·사유와 수집 시간을 기준으로 생성'))}</small><div class="proposal-cell-actions">${column!=='times'?`<button class="btn soft" data-proposal-clear="${ident}" ${locked?'disabled':''}>공란으로 변경</button>`:''}<button class="btn soft" data-proposal-reset="${ident}" ${locked?'disabled':''}>추천 다시 생성</button><button class="btn dark" data-proposal-send="${ident}" ${disabled||!changed?'disabled':''}>변경요청</button></div>${v.receipt?`<button class="btn soft" data-proposal-receipt="${ident}">접수 확인</button>`:''}${v.stale&&!v.receipt?`<button class="btn soft" data-proposal-accept="${ident}">직접 수정값 유지 · 근거 확인</button>`:''}${active&&canWithdraw(v.request,user)?`<button class="btn soft" data-proposal-withdraw="${ident}">요청 철회</button>`:''}${active?'<small>요청 접수 · 체크히어 승인 후 반영</small>':'<small>추천값 편집만으로 체크히어가 변경되지 않습니다.</small>'}</div>`;
  }
- async function read(classId,iso){const [d,list]=await Promise.all([getDoc(doc(db,'checkhereProposalDrafts',draftId(String(classId),iso))),getDocs(query(collection(db,'checkhereRequests'),where('classId','==',String(classId))))]);return {saved:d.data()?.students||{},requests:list.docs.map(d=>({id:d.id,...d.data()})).filter(r=>r.date===iso)};}
- function applyRead(data){saved=data.saved;requests=data.requests;loadError='';}
+ async function read(classId,iso){const [d,list]=await Promise.all([getDoc(doc(db,'checkhereProposalDrafts',draftId(String(classId),iso))),getDocs(query(collection(db,'checkhereRequests'),where('classId','==',String(classId))))].map(p=>within(p,limits.read)));return {saved:d.data()?.students||{},requests:list.docs.map(d=>({id:d.id,...d.data()})).filter(r=>r.date===iso)};}
+ function applyRead(data){saved=data.saved;requests=data.requests;loadError='';for(const [name,item]of Object.entries(journal)){if(requests.some(r=>r.id===item.id))remember(name,null);}}
  async function load(classId,iso,preserve=false){
-  const n=++sequence;if(!preserve)edits.clear();saved={};requests=[];loadError='';
+  const n=++sequence;loadedClass=String(classId);loadedDate=iso;if(!preserve)edits.clear();saved={};requests=[];loadError='';
   try{const data=await read(classId,iso);if(n!==sequence)return;applyRead(data);}catch(e){if(n===sequence){loadError=e.message;showErr(new Error('체크히어 추천사유 조회 실패: '+e.message));}}
  }
- async function submit(s,v,cache){
+ async function checkReceipt(s,column){
+  const v=view(s,column),name=receiptKey(v),item=journal[name];if(!item)return;
+  const snapshot=await within(getDocFromServer(doc(db,'checkhereRequests',item.id)),limits.read);
+  if(snapshot.exists()){recordRequest({id:item.id,...snapshot.data()});remember(name,null);edits.delete(slot(s,column));}
+  else remember(name,{...item,state:'retry'});
+ }
+ async function submit(s,v,cache,signal,progress){
+  const generation=sequence,discardEdit=()=>{if(generation===sequence)edits.delete(slot(s,v.column));};
   if(hasUnsavedReason())throw Error('시트에 저장하지 않은 사유가 있습니다. 사유 저장 후 요청해 주세요.');
   const block=disabledReason(v);if(block&&block!=='요청 처리 중')throw Error(block);
   const changes=requestChanges(v.c.record,v.column,v.value);
   if(!judge({...v.c.record,source:'live'}).canApply)throw Error('중복·진행중·교시 불일치 등 확인이 필요합니다. 재수집 후 요청해 주세요.');
-  await validateSheetSource(db,user,v.c,cache);
   const input=cleanRequest({classId:v.c.classId,date:v.c.date,name:s.name,phoneLast4:v.c.record.phoneLast4||'',changes,reason:`출결대조 ${REQUEST_COLUMNS[v.column]} · ${v.c.status} · ${v.c.reason||'일반 출결'}${v.c.excursion?' · 견학일 확인':''}`.slice(0,1000)});
-  const id='proposal_'+crypto.randomUUID(),ref=doc(db,'checkhereProposalDrafts',draftId(v.c.classId,v.c.date)),name=slot(s,v.column);
-  await runTransaction(db,async tx=>{
+  const name=slot(s,v.column),receipt=receiptKey(v),previousReceipt=journal[receipt];
+  if(previousReceipt){
+    progress('기존 요청 접수 확인 중…');
+    const found=await within(getDocFromServer(doc(db,'checkhereRequests',previousReceipt.id)),limits.read,undefined,signal);
+    if(found.exists()){recordRequest({id:previousReceipt.id,...found.data()});remember(receipt,null);discardEdit();return previousReceipt.id;}
+  }
+  progress('시트 원본 확인 중… 연결이 늦으면 닫기로 이번 확인을 중단할 수 있습니다.');
+  await validateSheetSource(db,user,v.c,cache,{signal,timeout:limits.source});
+  signal.throwIfAborted();
+  const signature=JSON.stringify({input,fingerprint:fingerprint(v.c)});
+  if(previousReceipt&&previousReceipt.signature!==signature)throw Error('접수 확인 중인 요청의 근거가 바뀌었습니다. 접수 확인 후 다시 검토해 주세요.');
+  const id=previousReceipt?.id||'proposal_'+crypto.randomUUID(),ref=doc(db,'checkhereProposalDrafts',draftId(v.c.classId,v.c.date));
+  const attempt=crypto.randomUUID(),item={id,value:v.value,origin:v.origin,fingerprint:fingerprint(v.c),revision:v.revision,signature,state:'confirming',attempt};
+  // Preserve the operation ID before the first write. Retries read and reuse it.
+  remember(receipt,item);progress('요청 저장 중… 창을 닫아도 진행된 요청의 접수 확인은 계속됩니다.');
+  const deadline=performance.now()+limits.write;
+  const transaction=runTransaction(db,async tx=>{
+   const existing=await tx.get(doc(db,'checkhereRequests',id));
+   if(existing.exists()){
+    const r=existing.data();if(r.createdBy!==user.email||JSON.stringify(r.changes)!==JSON.stringify(input.changes)||r.classId!==input.classId||r.date!==input.date||r.name!==input.name)throw Error('요청 번호의 내용이 다릅니다. 접수 현황을 확인해 주세요.');
+    return {id,...r};
+   }
    const snap=await tx.get(ref),students=snap.data()?.students||{},previous=students[name];
    if((previous?.revision||0)!==v.revision)throw Error('다른 직원이 이 항목을 수정했습니다. 다시 읽어 주세요.');
    const ids=[...new Set([key(s),...columns.map(c=>slot(s,c))].map(k=>students[k]?.activeId).filter(Boolean))];
    const live=await Promise.all(ids.map(id=>tx.get(doc(db,'checkhereRequests',id))));
    if(live.some(d=>{const r=d.data();return r&&ACTIVE_REQUESTS.includes(r.status)&&requestsOverlap(r,input);})||requests.some(r=>ACTIVE_REQUESTS.includes(r.status)&&requestsOverlap(r,input)))throw Error('동일 항목의 진행 중인 요청이 있습니다.');
-   tx.set(doc(db,'checkhereRequests',id),{...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+   if(performance.now()>=deadline)throw Error('요청 저장 대기 시간이 지나 중단했습니다. 다시 요청해 주세요.');
+   const row={...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+   tx.set(doc(db,'checkhereRequests',id),row);
    tx.set(doc(db,'checkhereProposalSources',contextId(id)),{requestId:id,classId:v.c.classId,date:v.c.date,name:s.name,studentKey:key(s),status:v.c.status,reason:v.c.reason,raw:v.c.raw,record:sourceRecord(v.c.record),changes,column:v.column,sourceScope:'column-v2',updatedBy:user.email,updatedAt:serverTimestamp()});
    tx.set(ref,{classId:v.c.classId,date:v.c.date,students:{[name]:{value:v.value,origin:v.origin,field:v.column,fingerprint:fingerprint(v.c),revision:v.revision+1,activeId:id}},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});
-  });
-  requests.push({id,...input,status:'pending',createdBy:user.email});edits.delete(name);return id;
+   return {id,...row};
+  },{maxAttempts:3});
+  transaction.then(r=>{recordRequest(r);if(journal[receipt]?.id===id)remember(receipt,null);discardEdit();if(!working&&root.isConnected)render();},()=>{if(journal[receipt]?.attempt===attempt)remember(receipt,{...item,state:'retry'});if(!working&&root.isConnected)render();});
+  try{await within(transaction,limits.write,'응답 지연으로 접수 여부를 확인하고 있습니다.');}
+  catch(e){
+   if(e.code==='READ_TIMEOUT'){
+    progress('접수 여부 확인 중… 중복 요청은 만들지 않습니다.');
+    try{const found=await within(getDocFromServer(doc(db,'checkhereRequests',id)),limits.read);if(found.exists()){recordRequest({id,...found.data()});remember(receipt,null);discardEdit();return id;}}catch{}
+    if(!journal[receipt]&&requests.some(r=>r.id===id))return id;
+    throw Object.assign(Error('접수 결과 확인 필요 · 셀의 「접수 확인」을 눌러 주세요. 새 요청은 만들지 않습니다.'),{uncertain:true});
+   }
+   // A retry keeps the same ID even if the transport reported a failure.
+   throw e;
+  }
+  return id;
  }
+
  function capture(students){
   for(const s of students)for(const column of columns){const name=slot(s,column),nodes=[...root.querySelectorAll('[data-proposal-edit]')].filter(x=>x.dataset.proposalEdit===name);if(!nodes.length||nodes[0].disabled)continue;const v=view(s,column),value=column==='times'?Object.fromEntries(nodes.map(x=>[x.dataset.time,x.value])):nodes[0].value;if(JSON.stringify(value)!==JSON.stringify(v.value))edits.set(name,{value,origin:'manual',fingerprint:edits.get(name)?.fingerprint??v.draft?.fingerprint??fingerprint(v.c)});}
  }
@@ -118,15 +169,32 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   const dialog=document.createElement('dialog');dialog.className='proposal-dialog';root.append(dialog);
   const display=value=>typeof value==='object'?`${value.entry||'공란'} → ${value.exit||'공란'}`:value||'공란(사유 없음)';
   dialog.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 변경요청 ${pending.length}건</h3><p>실제 변경까지는 시간이 걸립니다. 체크히어 탭에서 지정 관리자가 수집 PC로 승인·반영해야 완료됩니다.</p><table><thead><tr><th>학생</th><th>현재 기록</th><th>요청할 값</th></tr></thead><tbody>${pending.map(({s,v})=>`<tr><th>${esc(s.name)}</th><td>${esc(display(current(v.c,column)))}</td><td>${esc(display(v.value))}</td></tr>`).join('')}</tbody></table>${pending.some(x=>x.v.c.excursion)?'<p class="proposal-warning">견학일입니다. 실제 운영 시간과 사유를 확인해 주세요.</p>':''}${results.length?`<details><summary>제외 ${results.length}건</summary><pre>${esc(results.join('\n'))}</pre></details>`:''}<p role="status" id="requestResult"></p><button id="sendSelected" class="btn dark">${pending.length}건 변경요청</button><button id="closeRequests">닫기</button>`;
-  const close=()=>{if(working)return;dialog.close();dialog.remove();};dialog.querySelector('#closeRequests').onclick=close;dialog.oncancel=e=>{e.preventDefault();close();};
-  dialog.querySelector('#sendSelected').onclick=async()=>{if(working)return;working=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);let count=0;const failed=[],cache=new Map();try{for(const {s,v}of pending){try{await submit(s,v,cache);count++;}catch(e){failed.push(`${s.name}: ${e.message}`);}dialog.querySelector('#requestResult').textContent=`${count}건 접수 · ${failed.length}건 실패 · ${pending.length}건 중 처리 중`;}const c=pending[0].v.c;await load(c.classId,c.date,true);}finally{working=false;dialog.querySelector('#sendSelected').disabled=true;dialog.querySelector('#closeRequests').disabled=false;dialog.querySelector('#requestResult').textContent=`${count}건 요청 접수 · ${failed.length}건 실패. 실제 변경까지는 시간이 걸립니다. 체크히어 탭에서 승인 후 반영됩니다.${failed.length?'\n'+failed.join('\n'):''}`;render();}};
+  let controller;
+  const close=()=>{controller?.abort();dialog.close();dialog.remove();};dialog.querySelector('#closeRequests').onclick=close;dialog.oncancel=e=>{e.preventDefault();close();};
+  dialog.querySelector('#sendSelected').onclick=async()=>{
+   if(working)return;working=true;controller=new AbortController();dialog.querySelector('#sendSelected').disabled=true;
+   let count=0,uncertain=0;const failed=[],cache=new Map(),status=dialog.querySelector('#requestResult');
+   try{
+    for(const {s,v}of pending){
+     if(controller.signal.aborted)break;
+     try{await submit(s,v,cache,controller.signal,message=>{status.textContent=`${s.name} · ${message} (${count+1}/${pending.length})`;});count++;}
+     catch(e){if(e.name==='AbortError')break;if(e.uncertain)uncertain++;else failed.push(`${s.name}: ${e.message}`);}
+    }
+   }finally{
+    working=false;dialog.querySelector('#sendSelected').disabled=true;
+    status.textContent=`${count}건 요청 접수 · ${failed.length}건 실패${uncertain?' · '+uncertain+'건 접수 확인 필요':''}. 체크히어 탭에서 승인 후 반영됩니다.${controller.signal.aborted?' 아직 시작하지 않은 요청은 중단했습니다.':''}${failed.length?'\n'+failed.join('\n'):''}`;
+    if(!dialog.isConnected&&(count||uncertain||failed.length))showErr(new Error(status.textContent));
+    render();
+   }
+  };
+
   dialog.showModal();
  }
  function refresh(students){for(const s of students)for(const column of columns){const el=[...root.querySelectorAll('[data-proposal-box]')].find(e=>e.dataset.proposalBox===slot(s,column));if(el)el.outerHTML=html(s,column);}bind(students);}
  function bind(students){
   const resolve=name=>{for(const s of students)for(const column of columns)if(slot(s,column)===name)return{s,column};};
   root.querySelectorAll('[data-proposal-edit]').forEach(el=>el.oninput=()=>{const {s,column}=resolve(el.dataset.proposalEdit);capture(students);const v=view(s,column),box=el.closest('[data-proposal-box]');let different=false;try{requestChanges(v.c.record||{},column,v.value);different=true;}catch{}box.querySelector('[data-proposal-send]').disabled=!!disabledReason(v)||!different;box.classList.toggle('changed',different);box.querySelector('.proposal-label').textContent=v.stale?'재검토 필요':different?'변경 필요':'현재 기록과 일치';});
-  for(const action of ['send','reset','accept','clear','withdraw'])root.querySelectorAll(`[data-proposal-${action}]`).forEach(el=>el.onclick=async()=>{capture(students);const{s,column}=resolve(el.getAttribute(`data-proposal-${action}`));if(action==='send'){sendMany([s],column);return;}const v=view(s,column);if(action==='withdraw'){if(!confirm(`${s.name}의 승인 대기 요청을 철회할까요?`))return;working=true;el.disabled=true;try{await withdrawRequest(db,user,v.request.id);await load(v.c.classId,v.c.date,true);}catch(e){showErr(e);}finally{working=false;render();}return;}if(action==='clear'){edits.set(slot(s,column),{value:'',origin:'manual',fingerprint:fingerprint(v.c)});render();return;}if(action==='reset'){if(!confirm('현재 시트·체크히어 데이터로 추천값을 다시 만들까요?'))return;edits.set(slot(s,column),{value:column==='times'?v.auto.value:v.auto.clear?'':v.recommended||current(v.c,column),origin:'auto',fingerprint:fingerprint(v.c)});}else edits.set(slot(s,column),{value:v.value,origin:'manual',fingerprint:fingerprint(v.c)});render();});
+  for(const action of ['send','reset','accept','clear','withdraw','receipt'])root.querySelectorAll(`[data-proposal-${action}]`).forEach(el=>el.onclick=async()=>{capture(students);const{s,column}=resolve(el.getAttribute(`data-proposal-${action}`));if(action==='send'){sendMany([s],column);return;}const v=view(s,column);if(action==='receipt'){el.disabled=true;try{await checkReceipt(s,column);}catch(e){showErr(e);}finally{render();}return;}if(action==='withdraw'){if(!confirm(`${s.name}의 승인 대기 요청을 철회할까요?`))return;working=true;el.disabled=true;try{await withdrawRequest(db,user,v.request.id);await load(v.c.classId,v.c.date,true);}catch(e){showErr(e);}finally{working=false;render();}return;}if(action==='clear'){edits.set(slot(s,column),{value:'',origin:'manual',fingerprint:fingerprint(v.c)});render();return;}if(action==='reset'){if(!confirm('현재 시트·체크히어 데이터로 추천값을 다시 만들까요?'))return;edits.set(slot(s,column),{value:column==='times'?v.auto.value:v.auto.clear?'':v.recommended||current(v.c,column),origin:'auto',fingerprint:fingerprint(v.c)});}else edits.set(slot(s,column),{value:v.value,origin:'manual',fingerprint:fingerprint(v.c)});render();});
   root.querySelectorAll('[data-proposal-bulk]').forEach(b=>b.onclick=()=>sendMany(students,b.dataset.proposalBulk));
  }
  return {html,load,read,applyRead,capture,refresh,bind,hasEdits:()=>edits.size>0,isWorking:()=>working,exportFor(s){return columns.flatMap(column=>{const v=view(s,column);return[column==='times'?`${v.value.entry||''} → ${v.value.exit||''}`:v.value,v.request?PROPOSAL_STATUS[v.request.status]:'미요청'];});}};

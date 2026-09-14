@@ -5,22 +5,25 @@ const ATTENDANCE_READER='https://script.google.com/macros/s/AKfycbzNcSYQf3JORsZR
 const COLOR_READER='https://script.google.com/macros/s/AKfycbzQF_ikT0z-dRzvtX0XybbYlbnNgZau7-L-SPGcD2EtO6oR9Dhh45ye1oz8suSfHXkf/exec';
 
 async function verify(idToken){
-  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken})});
+  const {response:r,data:d}=await fetchJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken})});
   if(!r.ok)throw new Error('LOGIN_REQUIRED');
-  const d=await r.json(),u=d.users?.[0];if(!u?.email)throw new Error('LOGIN_REQUIRED');return u.email.toLowerCase();
+  const u=d.users?.[0];if(!u?.email)throw new Error('LOGIN_REQUIRED');return u.email.toLowerCase();
 }
 async function profile(idToken,email){
   if(ADMIN.has(email))return{role:'ADMIN',active:true};
   const url=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/users/${encodeURIComponent(email)}`;
-  const r=await fetch(url,{headers:{authorization:`Bearer ${idToken}`}});if(!r.ok)throw new Error('PROFILE_NOT_FOUND');
-  const f=(await r.json()).fields||{};return{role:f.role?.stringValue||'',active:f.active?.booleanValue===true};
+  const {response:r,data:d}=await fetchJson(url,{headers:{authorization:`Bearer ${idToken}`}});if(!r.ok)throw new Error('PROFILE_NOT_FOUND');
+  const f=d.fields||{};return{role:f.role?.stringValue||'',active:f.active?.booleanValue===true};
 }
-async function readBackgrounds(url,classId,userAgent){
-  const r=await fetch(`${url}?classId=${encodeURIComponent(classId)}`,{redirect:'follow',headers:{'User-Agent':userAgent}});
-  const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{return{backgrounds:[],error:'BAD_RESPONSE'}};
+import {fetchJson,createBridgeReader,readerFailure} from '../lib/attendance-reader-transport.mjs';
+const colorBridge=createBridgeReader({attempts:1});
+async function readBackgrounds(url,classId){
+  try{
+  const d=await colorBridge(url,classId,{colorsOnly:true,allowCache:true});
   const backgrounds=Array.isArray(d?.attendanceBackgrounds)?d.attendanceBackgrounds:(Array.isArray(d?.backgrounds)?d.backgrounds:[]);
-  if(r.ok&&d?.ok&&backgrounds.length)return{backgrounds,error:''};
-  return{backgrounds:[],error:d?.error||(!r.ok?`HTTP_${r.status}`:'EMPTY_BACKGROUNDS')};
+  if(backgrounds.length)return{backgrounds,error:''};
+  return{backgrounds:[],error:'EMPTY_BACKGROUNDS'};
+  }catch(e){return{backgrounds:[],error:e.message};}
 }
 export default async function handler(req,res){
   res.setHeader('cache-control','no-store');
@@ -41,5 +44,5 @@ export default async function handler(req,res){
     }
 
     throw new Error(`COLOR_READER_ERROR:${primary.error||'PRIMARY_EMPTY'}:${fallback.error||'FALLBACK_EMPTY'}`);
-  }catch(e){return res.status(400).json({ok:false,error:String(e.message||e)})}
+  }catch(e){const {status,...failure}=readerFailure(e);return res.status(status).json({ok:false,...failure});}
 }

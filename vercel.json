@@ -1,4 +1,8 @@
 {
+  "functions": {
+    "api/attendance-reader.js": {"maxDuration": 60},
+    "api/attendance-colors.js": {"maxDuration": 60}
+  },
   "redirects": [
     {
       "source": "/scan-guide.jpg",
