@@ -15,7 +15,7 @@ async function profile(idToken,email){
   const {response:r,data:d}=await fetchJson(url,{headers:{authorization:`Bearer ${idToken}`}});if(!r.ok)throw new Error('PROFILE_NOT_FOUND');
   const f=d.fields||{};return{role:f.role?.stringValue||'',active:f.active?.booleanValue===true};
 }
-import {fetchJson,createBridgeReader,readerFailure} from '../lib/attendance-reader-transport.mjs';
+import {fetchJson,createBridgeReader,readerFailure} from '../lib/attendance-reader-transport.cjs';
 const colorBridge=createBridgeReader({attempts:1,timeout:18000});
 async function readBackgrounds(url,classId){
   try{

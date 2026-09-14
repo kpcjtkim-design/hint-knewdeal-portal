@@ -20,7 +20,7 @@ async function profile(idToken,email){
   const f=d.fields||{};
   return{role:f.role?.stringValue,active:f.active?.booleanValue===true};
 }
-import {fetchJson,readBridge,readerFailure} from '../lib/attendance-reader-transport.mjs';
+import {fetchJson,readBridge,readerFailure} from '../lib/attendance-reader-transport.cjs';
 export default async function handler(req,res){
   res.setHeader('cache-control','no-store');
   try{
