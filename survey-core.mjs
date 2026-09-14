@@ -11,7 +11,7 @@ export function eventLessons(event,entries){
 }
 export function eventsForClass(catalog,classId,entries){return catalog.events.filter(e=>e.classId===String(classId)&&!(/추석|한글날|대체휴무/.test(e.title))).map(e=>{const matches=eventLessons(e,entries),dates=[...new Set(matches.map(x=>x.date))].sort();return {...e,originalDate:e.date,date:dates.at(-1)||e.date,lessonIds:matches.map(x=>x.id),scheduleMatched:!!matches.length};});}
 export function sourceCandidates(event,sources,course){
- const title=keyTitle(event.title),mot=/동기부여\s*-?\s*(\d+)/.exec(event.title),courseKey=String(course||'').toLowerCase().replace(/[\s()\-]/g,'');
+ const title=keyTitle(event.title),mot=/동기부여\s*-?\s*(\d+)/.exec(event.title),courseKey=String(course||'').toLowerCase().replace(/\(\s*\d+\s*\)\s*$/,'').replace(/[\s()\-]/g,'');
  return sources.filter(s=>{
   if(mot)return s.module==='동기부여'&&s.title.startsWith(mot[1]+'주차');
   if(title==='분해조립')return /분해조립/.test(s.title);

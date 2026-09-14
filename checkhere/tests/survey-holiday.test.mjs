@@ -20,6 +20,8 @@ test('response headers must be unique and require class identity',()=>{assert.de
 test('survey matching follows lecture shifts and distinguishes courses',()=>{
  const catalog={events:[{classId:'1',date:'2026-09-11',title:'직무특화_SW 테스팅'}]},entries=[entry('a','2026-09-16'),entry('b','2026-09-17')];assert.equal(eventsForClass(catalog,'1',entries)[0].date,'2026-09-17');
  assert.equal(sourceCandidates(catalog.events[0],[{title:'임베디드AI-HW(SW 테스팅)'},{title:'임베디드AI-SW(SW 테스팅)'}],'임베디드 AI(HW)').length,1);
+ const event={title:'AI기반 제조데이터 분석 입문'},sources=[{title:'제조지능화(AI기반 제조데이터 분석 입문)'},{title:'임베디드AI-SW(AI기반 제조데이터 분석 입문)'}];
+ for(const course of ['제조지능화','제조지능화(1)','제조지능화(2)','제조지능화(3)'])assert.deepEqual(sourceCandidates(event,sources,course),[sources[0]]);
 });
 test('modern attendance is pilot-admin only, case insensitive, no teacher rollout',()=>{assert(modernAttendance({email:'HINT.KPC@gmail.com'},{role:'ADMIN',active:true}));assert(modernAttendance({email:'kpc.jtkim@gmail.com'},{role:'ADMIN'}));assert(!modernAttendance({email:'staff@example.com'},{role:'ADMIN'}));assert(!modernAttendance({email:'hint.kpc@gmail.com'},{role:'TEACHER'}));assert(!modernAttendance({email:'hint.kpc@gmail.com'},{role:'ADMIN',active:false}));});
 test('recommendation remains useful without collected data and marks missing facts',()=>{const r=suggestReason({status:'인정지각',reason:'병원',teacher:'담임'});assert.match(r.text,/\(인정지각\)병원_담임:담임/);assert.match(r.text,/시간 확인/);assert(r.incomplete);assert.equal(suggestReason({status:'출석'}).text,'');});
