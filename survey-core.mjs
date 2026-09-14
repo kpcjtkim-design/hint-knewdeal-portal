@@ -2,7 +2,11 @@ import {isoLabel,portalStatus} from './attendance-beta-core.mjs';
 export const SURVEY_OWNER='hint.kpc@gmail.com';
 export const SURVEY_COLLECTION='surveyBetaSummaries';
 export const normalizeName=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').trim();
-export const classNumber=v=>{const m=String(v||'').trim().match(/^(?:제\s*)?(\d{1,2})\s*(?:반|[.\-_]|$)/);return m&&+m[1]>=1&&+m[1]<=17?String(+m[1]):'';};
+// Exact choices verified in the operational factory/workshop survey form.
+const classChoices=['서울대_임베디드AI(HW)','한양대_제조지능화','후인원(A)_임베디드AI(SW)','후인원(B)_제조지능화','충북대 G-테크벤처센터_제조지능화','마이크로웨이브_임베디드AI(HW)','KPC대구지역본부_임베디드AI(SW)','대구상공회의소_제조지능화(1)','경북대_제조지능화(2)','아르피나(A)_임베디드AI(HW)','부산대_임베디드AI(SW)','아르피나(B)_제조지능화(1)','부산경영자총협회_제조지능화(2)','현대차 울산기술교육원_제조지능화','전남대_임베디드AI(SW)','기아 광주교육센터(A)_제조지능화(1)','기아 광주교육센터(B)_제조지능화(2)'];
+const classChoiceKey=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').toLowerCase();
+const classChoiceIds=new Map(classChoices.map((v,i)=>[classChoiceKey(v),String(i+1)]));
+export const classNumber=v=>{const m=String(v||'').trim().match(/^(?:제\s*)?(\d{1,2})\s*(?:반|[.\-_]|$)/);return m&&+m[1]>=1&&+m[1]<=17?String(+m[1]):classChoiceIds.get(classChoiceKey(v))||'';};
 export function lessonToken(value){return String(value||'').normalize('NFKC').toLowerCase().replace(/직무특화|\[실습\]|\(고정\)|\(sw\)|\(hw\)|sw전공자대상|hw전공자대상/g,'').replace(/임베디드시스템의이해/g,'임베디드시스템이해').replace(/[\s_\-+·/,()[\]]/g,'').replace('임베디드시스템의이해','임베디드시스템이해').replace('딥러닝기반영상인식','딥러닝기반영상인식').replace('임베디드리눅스시스템','임베디드리눅스').replace(/(?:sw|hw)(?:전공자대상)?$/g,'').replace('건정성','건전성').replace('제조장비건전성관리시스템설계실습','장비건전성관리시스템설계실습');}
 function keyTitle(v){const t=lessonToken(v);if(/분해조립/.test(t))return '분해조립';if(/공장.*견학|견학.*공장|공장견학생산공정이론교육/.test(t))return '공장견학';return t;}
 export function eventLessons(event,entries){
@@ -34,11 +38,11 @@ export function attendanceTargets(data,date,metadata={},includeRecognized=false)
  }).filter(s=>s.name);
 }
 export function summarizeResponses({classId,targets,responses}){
- const counts=new Map(),unknown=[],invalid=[];
- for(const r of responses){const cid=classNumber(r.classId);if(!cid){invalid.push('반 확인 필요');continue;}if(cid!==String(classId))continue;const name=normalizeName(r.name);if(!name){invalid.push('이름 확인 필요');continue;}counts.set(name,(counts.get(name)||0)+1);}
+ const counts=new Map(),unknown=[],invalid=[],unscopedNames=new Set();
+ for(const r of responses){const cid=classNumber(r.classId);if(!cid){invalid.push('반 확인 필요');if(normalizeName(r.name))unscopedNames.add(normalizeName(r.name));continue;}if(cid!==String(classId))continue;const name=normalizeName(r.name);if(!name){invalid.push('이름 확인 필요');continue;}counts.set(name,(counts.get(name)||0)+1);}
  const rosterCounts=new Map();targets.forEach(s=>rosterCounts.set(normalizeName(s.name),(rosterCounts.get(normalizeName(s.name))||0)+1));
  const answered=[],missing=[],review=[],excluded=[];
- for(const s of targets){const name=normalizeName(s.name),item={id:s.id,name:s.name,status:s.status};if(rosterCounts.get(name)!==1||s.review)review.push({...item,reason:rosterCounts.get(name)!==1?'동명이인 · 자동 연결 제외':'출석 구분 확인 필요'});else if(!s.eligible)excluded.push(item);else if(counts.has(name))answered.push(item);else missing.push(item);}
+ for(const s of targets){const name=normalizeName(s.name),item={id:s.id,name:s.name,status:s.status};if(rosterCounts.get(name)!==1||s.review)review.push({...item,reason:rosterCounts.get(name)!==1?'동명이인 · 자동 연결 제외':'출석 구분 확인 필요'});else if(!s.eligible)excluded.push(item);else if(counts.has(name))answered.push(item);else if(unscopedNames.has(name))review.push({...item,reason:'응답의 반 구분 확인 필요'});else missing.push(item);}
  for(const [name,count]of counts)if(!rosterCounts.has(name))unknown.push({name,count});
  return {answered,missing,review,excluded,unknown,invalidCount:invalid.length,duplicateCount:[...counts.values()].reduce((n,c)=>n+Math.max(0,c-1),0),eligibleCount:answered.length+missing.length};
 }
