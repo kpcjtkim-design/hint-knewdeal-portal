@@ -4,7 +4,6 @@ export const DERIVED_VERSION='20260915-1';
 export const PARTICIPATED=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
 const recognized=new Set(['인정출석','인정지각','인정조퇴','인정외출']);
 const validStatus=new Set([...PARTICIPATED,'인정출석','결석','중복']);
-const holidays=new Set(['2026-08-17','2026-09-24','2026-09-25','2026-09-28','2026-10-05','2026-10-09']);
 export function deriveRecognized(raw,meta={},record=null,{excursion=false}={}){
  const manual=portalStatus(raw,meta);
  if(raw!=='인정출석'){const status=manual.startsWith('중복')?'중복':manual;return {status,review:status==='중복'||(!validStatus.has(status)&&status!=='해당없음'),basis:'시트'};}
@@ -29,7 +28,7 @@ export function deriveRecognized(raw,meta={},record=null,{excursion=false}={}){
  }catch{return review('시간 형식 확인 필요');}
 }
 export function deriveAttendanceClass(data,{classId,metadata={},records=[],entries=[],today=koreaToday()}={}){
- const a=data.attendance||[],holidayDates=new Set([...holidays,...entries.filter(e=>e.kind==='holiday').map(e=>e.date)]);
+ const a=data.attendance||[],holidayDates=new Set(entries.filter(e=>e.kind==='holiday').map(e=>e.date));
  const dates=(a[0]||[]).map((v,i)=>({date:isoLabel(v),col:i})).filter(x=>x.col>=4&&x.date&&x.date<=today&&x.date>='2026-07-27'&&!holidayDates.has(x.date)&&![0,6].includes(new Date(x.date+'T12:00:00Z').getUTCDay())).sort((x,y)=>x.date.localeCompare(y.date));
  if(!dates.length||new Set(dates.map(x=>x.date)).size!==dates.length)throw Error('교육일 열을 확인하지 못했습니다. 기존 통계를 유지합니다.');
  const roster=a.slice(1).map((row,i)=>({id:`${i}_${String(row[0]||'').trim()}`,name:String(row[0]||'').trim(),row})).filter(s=>s.name);

@@ -41,3 +41,10 @@ test('survey ratings exclude identifiers/free text and separate difficulty/NPS f
  const scores=summarizeScores([response('2026. 9. 10. 오전 9:00:00',1,0),response('2026. 9. 10. 오후 1:00:00',5,10),{...response('2026-09-11',1,0),classId:'1반'}],'2',[{name:'가'}]);
  assert.equal(scores.overallAverage,5);assert.equal(scores.overallCount,1);assert.equal(scores.questions.find(q=>q.kind==='recommendation').average,10);assert.equal(scores.questions[0].distribution[4],1);assert(!JSON.stringify(scores).includes('"name"'));
 });
+
+test('explicit sheet teaching dates remain authoritative unless the published timetable marks a holiday',()=>{
+ const data={attendance:[['이름','','','','9/28','9/29'],['예시','','','','출석','출석']]};
+ const options={classId:'2',today:'2026-09-29'};
+ assert.deepEqual(deriveAttendanceClass(data,options).dates,['2026-09-28','2026-09-29']);
+ assert.deepEqual(deriveAttendanceClass(data,{...options,entries:[{kind:'holiday',date:'2026-09-28'}]}).dates,['2026-09-29']);
+});
