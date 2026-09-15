@@ -68,6 +68,7 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   root.querySelector('#saveReasons').onclick=saveReasons;
   return {controls,snapshotCells,bind,displayStatus,displayEvidence,currentReason,draftReason:s=>drafts.get(key(s))??currentReason(s),snapshotFor:s=>matchSnapshot(s,state().students,snapshots).record,
     proposalExport:s=>proposals.exportFor(s),
+    snapshotRows:()=>snapshots,replaceSnapshots(records){snapshots=records;snapshotError='';void refreshTeacher(state().classId);},
     refreshReady:()=>!working&&!loading&&!proposals.isWorking()&&!drafts.size,
     async readRefresh(classId,date){const [meta,records,proposal,published,draft]=await Promise.all([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.read(classId,date),getDoc(doc(db,'timetableBetaPublished',String(classId))),getDoc(doc(db,'timetableBetaDrafts',String(classId)))].map(p=>within(p)));return {metadata:meta.data()?.students||{},snapshots:records,proposal,entries:draft.data()?.entries||published.data()?.entries||[]};},
     applyRefresh(data,date){metadata=data.metadata;snapshots=data.snapshots;snapshotError='';excursionError='';excursions=excursionFor(data.entries,date);lectureEnds=lectureEndsOn(data.entries,date);proposals.applyRead(data.proposal);headerState();void refreshTeacher(state().classId);},

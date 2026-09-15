@@ -1,7 +1,8 @@
 import {syncAttendanceSummary} from './attendance-derived-store.mjs';
+import {watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {within,readJson,readUntilReady} from './attendance-io.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
-import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-teacher1';
+import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-dbsave1';
 import {latestTeachingDate} from './attendance-beta-core.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
@@ -108,6 +109,7 @@ export async function mountAttendanceOverview(host,ctx){
   root.innerHTML=`<style>${STYLE}${BETA_STYLE}${SOURCE_STYLE}${FIT_STYLE}${COMPACT_STYLE}</style><div class="wrap"><div id="err"></div><section class="card toolbar"><div class="field"><label>반</label><select id="classSel">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('')}</select></div><div class="field"><label>교육일자</label><select id="dateSel"><option>불러오는 중…</option></select></div><button id="reload" class="btn soft">↻ 다시 읽기</button><button id="sheetConnect" class="btn soft">내 계정 시트 연결</button><button id="excelExport" class="btn dark">⇩ 엑셀 다운로드</button><span class="autosave-notice">※ 출결·서류 상태는 즉시 저장 / 사유는 열 상단 저장 / 기타 특이사항만 자동저장 · 체크히어는 승인 후 반영</span><strong id="excursionDay" class="excursion-day" hidden></strong><strong id="lectureEndDay" class="excursion-day" hidden></strong><div class="spacer"></div><span id="liveSheetState" class="state" role="status">시트 변경 자동 확인 · 2분 간격</span><span id="topState" class="state">준비 중…</span></section><div class="hint">베타 · 연결한 개인 Google 계정의 시트 편집 권한으로 선택한 학생·날짜 셀만 저장합니다. 좌측은 가-3 원문입니다.</div><section class="workspace"><aside class="left-stack"><article class="card raw-card"><div class="section-head"><div><h3>가-3 원문</h3><p>선택한 교육일의 Google Sheet 원문 내용입니다. · 가공하지 않은 원문 텍스트</p></div></div><pre id="rawReason" class="raw-text">Google Sheet를 불러오는 중…</pre></article><article class="card manual-card"><div class="section-head"><div><h3>수기출석 관련 관리자 메모</h3><p>해당 반·날짜 수기출석 전체에 대한 관리자 메모입니다.</p></div></div><div class="manual-body"><div class="manual-issue"><div class="manual-issue-head"><strong>관리자 메모</strong><span id="manualIssueState" class="manual-issue-state"></span></div><textarea id="manualIssueMemo" placeholder="전반적인 출결 특이사항, 전달사항 등을 입력하세요."></textarea><div class="followup-wrap general-followup"><div class="followup-buttons"><button type="button" id="manualNotifyBtn" class="followup-btn notified">담임 알림</button><button type="button" id="manualDoneBtn" class="followup-btn done">이행 확인</button></div></div></div></div></article></aside><article class="card data-panel"><div class="data-title"><strong>학생별 출결 대조</strong><span>시트 출결 · 서류 상태 · 체크히어 저장본 · 관리자 메모</span></div><div class="table-scroll"><div class="source-groups" aria-label="출결 데이터 출처"><div class="sheet-group">① Google Sheet <small>출결 · 사유 · 서류 상태</small></div><div class="checkhere-group">② 체크히어 <small>현재 저장본 · 반영할 사유 · 승인 요청</small></div><div class="manual-group">③ 수기출석 <small>포털 관리자 메모</small></div></div><div class="table-head"><div>이름</div><div>출석현황</div><div>사유 <button id="saveReasons" class="btn soft" disabled>사유 저장</button></div><div>서류제출 · 메모</div><div>입실 → 퇴실<button type="button" class="btn soft" data-proposal-bulk="times">일괄요청</button></div><div>시간 판정</div><div>입실·교시 사유 · 반영 제안<button type="button" class="btn soft" data-proposal-bulk="entryMemo">일괄요청</button></div><div>퇴실 사유 · 반영 제안<button type="button" class="btn soft" data-proposal-bulk="exitMemo">일괄요청</button></div><div>외출 구간</div><div>수기출석 관련 메모</div></div><div id="rows" class="rows"><div class="empty">불러오는 중…</div></div></div></article></section><dialog id="documentMemoDialog"></dialog></div>`;
   const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),excelExport=$('#excelExport'),rawReason=$('#rawReason'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState'),manualNotifyBtn=$('#manualNotifyBtn'),manualDoneBtn=$('#manualDoneBtn');
   let dates=[],students=[],reasonCells={},memos={},manualIssue='',manualIssueFollowup=emptyFollowup(),attendanceBackgrounds=[],currentIso='',currentClass='1',saveTimers=new Map(),legacyTextMemos=new Map();
+  let stopSnapshots=()=>{},snapshotTimer,pendingSnapshots=null;
   let summaryTimer,summaryStudents={},liveTimer,disposed=false,reading=false,epoch=0,lastLiveSignature='',liveFailures=0,loadAbort=null,liveAbort=null;
   const edited=()=>{epoch++;};root.addEventListener('input',edited);root.addEventListener('change',edited);
   const colorCache=new Map(),colorPromises=new Map();
@@ -275,7 +277,7 @@ async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArra
       XLSX.writeFile(wb,`${currentClass}반_${safeDate}_출결대조.xlsx`,{compression:true});
     }finally{excelExport.disabled=false;excelExport.textContent=before}
   }
-  async function loadSelectedDate(){const dateEpoch=++epoch;lastLiveSignature='';showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;try{sessionStorage.setItem("hintWorkContext",JSON.stringify({classId:currentClass,date:currentIso}));}catch{}topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await Promise.all([loadMemos(currentClass,currentIso),beta.load(currentClass,currentIso)]);if(disposed||dateEpoch!==epoch||!host.isConnected)return false;renderRawReason(label);renderRows(label);topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`;return true;}
+  async function loadSelectedDate(){stopSnapshots();clearTimeout(snapshotTimer);pendingSnapshots=null;const dateEpoch=++epoch;lastLiveSignature='';showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;try{sessionStorage.setItem("hintWorkContext",JSON.stringify({classId:currentClass,date:currentIso}));}catch{}topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await Promise.all([loadMemos(currentClass,currentIso),beta.load(currentClass,currentIso)]);if(disposed||dateEpoch!==epoch||!host.isConnected)return false;renderRawReason(label);renderRows(label);topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`;const cid=currentClass,iso=currentIso;stopSnapshots=watchCheckHereDay(db,cid,iso,records=>{if(disposed||dateEpoch!==epoch)return;pendingSnapshots={records,cid,iso};flushSnapshots();},e=>{if(!disposed&&dateEpoch===epoch)$('#liveSheetState').textContent='체크히어 실시간 확인 실패 · 기존 표 유지 · '+e.message;});return true;}
   async function loadClass(cid,keepDate='',forceColors=false){
     epoch++;lastLiveSignature='';loadAbort?.abort();liveAbort?.abort();const controller=new AbortController();loadAbort=controller;
     const previous={classId:currentClass,iso:currentIso,label:dates.find(d=>d.iso===currentIso)?.label||dateSel.value,colors:attendanceBackgrounds,nodes:[...rows.childNodes],raw:rawReason.textContent,top:topState.textContent,connectDisabled:$('#sheetConnect').disabled};
@@ -336,7 +338,19 @@ async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArra
     }catch(e){if(e.name!=='AbortError'){liveFailures++;if(!disposed&&cid===currentClass)liveState.textContent='기존 표 유지 · 시트 자동 확인 실패 · '+e.message;}}
     finally{reading=false;if(!disposed&&host.isConnected)liveTimer=setTimeout(refreshLive,Math.min(300000,120000*2**liveFailures));}
   }
-  const onVisible=()=>{if(!document.hidden)void refreshLive();};
+  function flushSnapshots(){
+    clearTimeout(snapshotTimer);
+    if(!pendingSnapshots||disposed||!host.isConnected)return;
+    const {records,cid,iso}=pendingSnapshots;
+    if(cid!==currentClass||iso!==currentIso){pendingSnapshots=null;return;}
+    if(document.hidden)return;
+    if(reading||!ready()){liveState.textContent='체크히어 새 저장본 확인 · 입력·저장 완료 후 반영';snapshotTimer=setTimeout(flushSnapshots,1000);return;}
+    pendingSnapshots=null;
+    if(JSON.stringify(records)===JSON.stringify(beta.snapshotRows()))return;
+    syncVisibleMemos();beta.replaceSnapshots(records);renderRows(dateSel.value);queueSummary();
+    liveState.textContent='체크히어 DB 저장본 반영 완료 · 시트 자동 확인 2분 간격';
+  }
+  const onVisible=()=>{if(!document.hidden){flushSnapshots();void refreshLive();}};
   window.addEventListener('focus',onVisible);document.addEventListener('visibilitychange',onVisible);liveTimer=setTimeout(refreshLive,120000);
-  return {canLeave:()=>memosReady()&&beta.canNavigate(),dispose(){disposed=true;epoch++;viewAbort.abort();loadAbort?.abort();liveAbort?.abort();clearTimeout(liveTimer);clearTimeout(summaryTimer);window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);root.removeEventListener('input',edited);root.removeEventListener('change',edited);}};
+  return {canLeave:()=>memosReady()&&beta.canNavigate(),dispose(){disposed=true;epoch++;stopSnapshots();clearTimeout(snapshotTimer);pendingSnapshots=null;viewAbort.abort();loadAbort?.abort();liveAbort?.abort();clearTimeout(liveTimer);clearTimeout(summaryTimer);window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);root.removeEventListener('input',edited);root.removeEventListener('change',edited);}};
 }
