@@ -1,3 +1,4 @@
+import {scoreColumns} from './survey-scores.mjs';
 import {responseColumns,sheetIdFromUrl} from './survey-core.mjs';
 const col=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
 const quote=s=>"'"+s.replace(/'/g,"''")+"'";
@@ -9,9 +10,9 @@ export function createSurveyReader(authorize){
   const base='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(id),meta=await get(base+'?fields=sheets.properties'),sheets=(meta.sheets||[]).filter(s=>!s.properties.hidden),gid=new URL(url).searchParams.get('gid');
   const candidates=gid?sheets.filter(s=>String(s.properties.sheetId)===gid):sheets.filter(s=>/설문.*응답|form responses/i.test(s.properties.title));const chosen=candidates.length===1?candidates[0]:sheets.length===1?sheets[0]:null;
   if(!chosen)throw Error('응답 탭을 하나로 확인하지 못했습니다. 탭 gid가 포함된 응답 시트 주소를 연결해 주세요.');
-  const p=chosen.properties,title=quote(p.title),columns=Math.min(p.gridProperties.columnCount,100),head=await get(base+'/values/'+encodeURIComponent(title+'!A1:'+col(columns-1)+'1')),mapping=responseColumns(head.values?.[0]||[]),rows=p.gridProperties.rowCount;
+  const p=chosen.properties,title=quote(p.title),columns=Math.min(p.gridProperties.columnCount,100),head=await get(base+'/values/'+encodeURIComponent(title+'!A1:'+col(columns-1)+'1')),mapping=responseColumns(head.values?.[0]||[]),scoring=scoreColumns(head.values?.[0]||[]),rows=p.gridProperties.rowCount;
   if(rows>20000)throw Error('응답 시트가 2만 행을 초과했습니다. 전용 범위 설정이 필요합니다.');
-  const out=[];for(let start=2;start<=rows;start+=1000){const end=Math.min(rows,start+999),q=new URLSearchParams({majorDimension:'COLUMNS'});for(const index of Object.values(mapping))q.append('ranges',`${title}!${col(index)}${start}:${col(index)}${end}`);const d=await get(base+'/values:batchGet?'+q),ranges=d.valueRanges||[];if(ranges.length!==3)throw Error('응답 열을 전부 읽지 못했습니다.');const values=ranges.map(r=>r.values?.[0]||[]),length=Math.max(...values.map(v=>v.length));for(let i=0;i<length;i++){const [name,classId,timestamp]=values.map(v=>String(v[i]||''));if(name||classId||timestamp)out.push({name,classId,timestamp});}}
+  const out=[];for(let start=2;start<=rows;start+=1000){const end=Math.min(rows,start+999),q=new URLSearchParams({majorDimension:'COLUMNS'});for(const index of [...Object.values(mapping),...scoring.map(q=>q.index)])q.append('ranges',`${title}!${col(index)}${start}:${col(index)}${end}`);const d=await get(base+'/values:batchGet?'+q),ranges=d.valueRanges||[];if(ranges.length!==3+scoring.length)throw Error('응답 열을 전부 읽지 못했습니다.');const values=ranges.map(r=>r.values?.[0]||[]),length=Math.max(...values.map(v=>v.length));for(let i=0;i<length;i++){const [name,classId,timestamp]=values.slice(0,3).map(v=>String(v[i]||''));if(name||classId||timestamp)out.push({name,classId,timestamp,scores:scoring.map((q,j)=>({...q,value:String(values[j+3][i]??'')}))});}}
   cache.set(id,{at:Date.now(),value:out});return out;
  }
  return {connected:()=>!!token,async connect(){token=await authorize();cache.clear();},responses,clear(){cache.clear();token='';}};

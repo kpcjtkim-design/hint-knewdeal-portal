@@ -1,6 +1,6 @@
 export const COLLECTIONS={draft:'timetableBetaDrafts',published:'timetableBetaPublished',instructors:'timetableBetaInstructors'};
 export const todayKST=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date());
-export const sortEntries=entries=>[...entries].sort((a,b)=>a.date.localeCompare(b.date)||(a.start||'99:99').localeCompare(b.start||'99:99')||a.id.localeCompare(b.id));
+export const sortEntries=entries=>[...entries].sort((a,b)=>a.date.localeCompare(b.date)||(a.start||'99:99').localeCompare(b.start||'99:99')||(a.order??0)-(b.order??0)||a.id.localeCompare(b.id));
 export function weekDays(date){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return Array.from({length:7},(_,i)=>{const x=new Date(d);x.setUTCDate(d.getUTCDate()+i);return x.toISOString().slice(0,10);});}
 export function monthDays(date){const first=date.slice(0,7)+'-01',start=weekDays(first)[0],d=new Date(start+'T12:00:00Z');return Array.from({length:42},(_,i)=>{const x=new Date(d);x.setUTCDate(d.getUTCDate()+i);return x.toISOString().slice(0,10);});}
 export function validateEntry(e){

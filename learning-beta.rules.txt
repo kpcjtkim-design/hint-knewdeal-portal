@@ -1,0 +1,28 @@
+    // Class-scoped portal attendance derivation. Original Sheets remain unchanged.
+    match /attendanceBetaSummaries/{classId}{
+      allow read: if isAdmin() || timetableTeacherOwns(classId);
+      allow create, update: if isAdmin()
+        && classId.matches('([1-9]|1[0-7])')
+        && request.resource.data.classId == classId
+        && request.resource.data.updatedBy == email()
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.keys().hasOnly(['classId','version','asOf','latestDate','latestEntered','dates','students','fingerprint','syncedAt','updatedBy','updatedAt'])
+        && request.resource.data.students is list && request.resource.data.students.size() <= 100
+        && request.resource.data.dates is list && request.resource.data.dates.size() <= 120;
+      allow delete: if false;
+    }
+    // No student/public reads until student authentication is separately released.
+    match /lectureMaterialsBeta/{classId}/items/{itemId}{
+      allow read: if isAdmin() || timetableTeacherOwns(classId);
+      allow create, update: if (isAdmin() || timetableTeacherOwns(classId))
+        && classId.matches('([1-9]|1[0-7])')
+        && request.resource.data.classId == classId
+        && request.resource.data.keys().hasOnly(['classId','lectureKey','lectureTitle','title','url','audience','updatedBy','updatedAt'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 120
+        && request.resource.data.lectureKey is string && request.resource.data.lectureKey.size() <= 500
+        && request.resource.data.url is string && request.resource.data.url.size() <= 3000
+        && request.resource.data.url.matches('https://(drive|docs)[.]google[.]com/.*')
+        && request.resource.data.audience in ['students','staff']
+        && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }

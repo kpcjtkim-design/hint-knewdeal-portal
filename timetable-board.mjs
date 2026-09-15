@@ -4,9 +4,21 @@ const weekday=d=>new Intl.DateTimeFormat('ko-KR',{timeZone:'UTC',weekday:'short'
 export function moveLesson(entries,id,date,swapId=null){
  const source=entries.find(e=>e.id===id),target=swapId&&entries.find(e=>e.id===swapId);
  if(!source||source.kind==='holiday'||(swapId&&!target)||target?.kind==='holiday')throw Error('수업을 선택해 이동해 주세요. 휴일·휴강은 수업 수정에서 변경할 수 있습니다.');
- validateEntry({...source,date});if(source.date===date)return entries;
+ validateEntry({...source,date});if(source.id===target?.id)return entries;
  if(target&&target.date!==date)throw Error('놓을 날짜가 바뀌었습니다. 다시 이동해 주세요.');
- return sortEntries(entries.map(e=>e.id===id?{...e,date}:target&&e.id===swapId?{...e,date:source.date}:e));
+ if(entries.some(e=>e.date===date&&e.kind==='holiday'))throw Error('휴일에는 수업을 넣을 수 없습니다. 휴일 설정을 먼저 확인해 주세요.');
+ const ordered=sortEntries(entries.filter(e=>e.kind!=='holiday'));
+ const destination=target||ordered.find(e=>e.date===date&&e.id!==id);
+ if(!destination)return source.date===date?entries:sortEntries(entries.map(e=>e.id===id?{...e,date}:e));
+ const from=ordered.findIndex(e=>e.id===id),to=ordered.findIndex(e=>e.id===destination.id);
+ if(from===to)return entries;
+ const slots=ordered.map(e=>({date:e.date,start:e.start,end:e.end})),moved=ordered.splice(from,1)[0];ordered.splice(to,0,moved);
+ // Insert into the occupied slot and shift the intervening lessons, retaining all IDs.
+ const changed=new Map(ordered.map((e,i)=>[e.id,{...e,date:slots[i].date,start:slots[i].start||'',end:slots[i].end||'',order:i}]));
+ for(let i=Math.min(from,to);i<=Math.max(from,to);i++){
+  const e=ordered[i],slot=slots[i];if(e.start&&e.end&&slot.start&&slot.end){const duration=v=>Number(v.slice(0,2))*60+Number(v.slice(3));if(duration(e.end)-duration(e.start)!==duration(slot.end)-duration(slot.start))throw Error('수업 길이가 다른 시간칸입니다. 세부 수정에서 시간을 확인해 주세요.');}
+ }
+ return sortEntries(entries.map(e=>changed.get(e.id)||e));
 }
 export function createTimetableBoard({root,classes,data,lesson,instructors,status,onMove,onError}){
  let current={view:'week',date:todayKST(),shown:classes},drag=null,ignoreClickUntil=0;

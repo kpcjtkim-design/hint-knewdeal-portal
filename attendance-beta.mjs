@@ -1,3 +1,4 @@
+import {deriveRecognized} from './attendance-derived-core.mjs';
 import {loadSurveyLinks,surveyLink} from './survey-links.mjs';
 import {within} from './attendance-io.mjs';
 import {lectureEndsOn} from './timetable-core.mjs';
@@ -10,7 +11,7 @@ import {createSheetWriter} from './attendance-beta-sheet.mjs';
 import {loadCheckHereDay} from './checkhere-snapshots.mjs';
 import {judge} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFor,colorState}){
+export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFor,colorState,onStatusSaved=()=>{}}){
   let teacherName='',teacherPromise;const statusPreview=new Map();
   let metadata={},snapshots=[],snapshotError='',excursions=[],lectureEnds=[],excursionError='',working=false,loading=false,sequence=0;
   const drafts=new Map();
@@ -22,14 +23,15 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   const info=s=>metadata[key(s)]||{};
   const currentReason=s=>{const m=info(s);if(m.reasonEntry&&state().raw.split(/\r?\n/).includes(m.reasonEntry))return m.portalReason;return reasonFor(s.name,state().raw,state().students.map(x=>x.name),s.all[state().date.idx]);};
   const rawColor=s=>String(state().backgrounds?.[s.rowIndex+1]?.[state().date.idx+4]||'#ffffff').toLowerCase();
-  function displayStatus(s){if(statusPreview.has(key(s)))return statusPreview.get(key(s));const raw=String(s.all[state().date.idx]||'').trim();try{return portalStatus(raw,info(s));}catch{return raw||'해당없음';}}
+  function displayStatus(s){if(statusPreview.has(key(s)))return statusPreview.get(key(s));const raw=String(s.all[state().date.idx]||'').trim();try{return deriveRecognized(raw,info(s),matchSnapshot(s,state().students,snapshots).record,{excursion:excursions.length>0}).status;}catch{return raw||'해당없음';}}
   function displayEvidence(s){return evidenceStatus(rawColor(s),String(s.all[state().date.idx]||''),info(s),colorState);}
   const proposals=createProposalReview({db,user,root,render,showErr,hasUnsavedReason:()=>drafts.size>0,getContext:s=>({classId:state().classId,date:state().iso,name:s.name,status:displayStatus(s),reason:drafts.get(key(s))??currentReason(s),reasonUnsaved:drafts.has(key(s)),statusSaving:statusPreview.has(key(s)),teacher:matchSnapshot(s,state().students,snapshots).record?.teacher||teacherName,raw:state().raw,excursion:excursions.length>0,record:matchSnapshot(s,state().students,snapshots).record})});
   async function persistMeta(s,patch){const ctx=state(),ref=doc(db,'settings',`attendanceBeta_${ctx.classId}_${ctx.iso}`);metadata={...metadata,[key(s)]:{...info(s),...patch}};try{await setDoc(ref,{classId:ctx.classId,date:ctx.iso,students:{[key(s)]:patch},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});}catch(e){showErr(new Error('시트 저장은 완료됐지만 포털 세부 구분 저장에 실패했습니다. '+e.message));}}
   function controls(s){
     const status=displayStatus(s),evidence=displayEvidence(s),disabled=(!writer.connected()||working||loading)?'disabled':'';
     const options=ATTENDANCE_OPTIONS.includes(status)?ATTENDANCE_OPTIONS:[status,...ATTENDANCE_OPTIONS];
-    return {status:`<select class="beta-status" aria-label="${esc(s.name)} 출결" data-student="${esc(key(s))}" ${disabled}>${options.map(x=>`<option ${x===status?'selected':''}>${esc(x)}</option>`).join('')}</select>`,reason:`<input class="beta-reason" aria-label="${esc(s.name)} 사유" maxlength="500" data-student="${esc(key(s))}" value="${esc(drafts.has(key(s))?drafts.get(key(s)):currentReason(s))}" ${working||loading?'disabled':''}>`,evidence:`<select class="beta-evidence" aria-label="${esc(s.name)} 서류제출" data-student="${esc(key(s))}" ${disabled}>${EVIDENCE_OPTIONS.map(x=>`<option ${x===evidence?'selected':''}>${x}</option>`).join('')}</select>`};
+    const derived=deriveRecognized(String(s.all[state().date.idx]||'').trim(),info(s),matchSnapshot(s,state().students,snapshots).record,{excursion:excursions.length>0});
+    return {status:`<select class="beta-status" aria-label="${esc(s.name)} 출결" data-student="${esc(key(s))}" ${disabled}>${options.map(x=>`<option ${x===status?'selected':''}>${esc(x)}</option>`).join('')}</select>${String(s.all[state().date.idx]||'')==='인정출석'?`<small class="derived-basis">${esc(derived.basis)}${derived.review?' · 확인 필요':''}</small>`:''}`,reason:`<input class="beta-reason" aria-label="${esc(s.name)} 사유" maxlength="500" data-student="${esc(key(s))}" value="${esc(drafts.has(key(s))?drafts.get(key(s)):currentReason(s))}" ${working||loading?'disabled':''}>`,evidence:`<select class="beta-evidence" aria-label="${esc(s.name)} 서류제출" data-student="${esc(key(s))}" ${disabled}>${EVIDENCE_OPTIONS.map(x=>`<option ${x===evidence?'selected':''}>${x}</option>`).join('')}</select>`};
   }
   function snapshotCells(s,memoButton=()=> ''){
     const cell=(value,category,field)=>`<div class="cell beta-source"><div class="source-value ${field?'existing-record':''}">${field?'<strong>현재 체크히어 저장값</strong>':''}${value|| (field?'공란 · 사유 없음':'')}</div>${field?proposals.html(s,field):''}${category?memoButton(category):''}</div>`;
@@ -44,7 +46,7 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   function bind(){
     proposals.bind(state().students);
     const student=id=>state().students.find(s=>key(s)===id);
-    root.querySelectorAll('.beta-status').forEach(el=>el.onchange=()=>{const s=student(el.dataset.student),before=displayStatus(s),after=el.value;el.value=before;if(after===before)return;if(!emptyStatus(before)&&!confirm(`${s.name}의 출결을 변경하시겠습니까?\n${before} → ${after}`))return;statusPreview.set(key(s),after);action(async()=>{try{const ctx=state(),raw=String(s.all[ctx.date.idx]||'').trim();await writer.write({classId:ctx.classId,date:ctx.iso,name:s.name,kind:'status',before:raw,after});s.all[ctx.date.idx]=sheetStatus(after);await persistMeta(s,{portalStatus:after,sheetStatus:sheetStatus(after)});}finally{statusPreview.delete(key(s));}});});
+    root.querySelectorAll('.beta-status').forEach(el=>el.onchange=()=>{const s=student(el.dataset.student),before=displayStatus(s),after=el.value;el.value=before;if(after===before)return;if(!emptyStatus(before)&&!confirm(`${s.name}의 출결을 변경하시겠습니까?\n${before} → ${after}`))return;statusPreview.set(key(s),after);action(async()=>{try{const ctx=state(),raw=String(s.all[ctx.date.idx]||'').trim();await writer.write({classId:ctx.classId,date:ctx.iso,name:s.name,kind:'status',before:raw,after});s.all[ctx.date.idx]=sheetStatus(after);await persistMeta(s,{portalStatus:after,sheetStatus:sheetStatus(after)});onStatusSaved();}finally{statusPreview.delete(key(s));}});});
     root.querySelectorAll('.beta-evidence').forEach(el=>el.onchange=()=>{const s=student(el.dataset.student),before=displayEvidence(s),after=el.value;el.value=before;if(after===before)return;if(!confirm(`${s.name}의 서류제출 상태와 시트 배경색을 변경하시겠습니까?\n${before} → ${after}`))return;action(async()=>{const ctx=state(),color=EVIDENCE_COLORS[after];await writer.write({classId:ctx.classId,date:ctx.iso,name:s.name,kind:'color',before:rawColor(s),after:color});ctx.backgrounds[s.rowIndex+1]??=[];ctx.backgrounds[s.rowIndex+1][ctx.date.idx+4]=color;await persistMeta(s,{evidenceStatus:after,sheetColor:color});});});
     root.querySelectorAll('.beta-reason').forEach(el=>el.oninput=()=>{const s=student(el.dataset.student);if(el.value===currentReason(s))drafts.delete(key(s));else drafts.set(key(s),el.value);proposals.refresh([s]);headerState();});headerState();
   }
