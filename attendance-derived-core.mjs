@@ -45,9 +45,16 @@ export function deriveAttendanceClass(data,{classId,metadata={},records=[],entri
  });
  return {classId:String(classId),version:DERIVED_VERSION,asOf:today,latestDate:latest.date,latestEntered,dates:dates.map(d=>d.date),students};
 }
-export function targetsFromDerived(derived,date){
- if(!derived?.dates?.includes(date))throw Error('해당 교육일의 출결 통계가 없습니다.');
- return derived.students.map(s=>{const h=s.history[date];return {id:s.id,name:s.name,status:s.dropout?'중도포기':h.status,eligible:!s.dropout&&!h.review&&PARTICIPATED.has(h.status),review:!s.dropout&&h.review,basis:s.dropout?`연속 해당없음 ${s.dropoutDays}일`:h.basis};});
+export function targetsFromDerived(derived,dateOrDates){
+ const dates=[...new Set(Array.isArray(dateOrDates)?dateOrDates:[dateOrDates])].sort();
+ if(!dates.length||dates.some(d=>!derived?.dates?.includes(d)))throw Error('강의 전체 교육일의 출결 통계가 없습니다. 교육일 연결을 확인해 주세요.');
+ return derived.students.map(s=>{
+  const days=dates.map(date=>({date,...s.history[date]})),present=days.find(h=>!h.review&&PARTICIPATED.has(h.status));
+  const excluded=days.every(h=>!h.review&&['결석','인정출석'].includes(h.status));
+  return {id:s.id,name:s.name,status:s.dropout?'중도포기':present?.status||days.at(-1).status,
+   eligible:!s.dropout&&!!present,review:!s.dropout&&!present&&!excluded,
+   basis:s.dropout?`연속 해당없음 ${s.dropoutDays}일`:present?`${present.date} 참여 · 강의 ${dates.length}개 교육일 대조`:excluded?'강의 모든 교육일 결석·종일 인정':'강의 기간 출결 확인 필요'};
+ });
 }
 export function attendanceStatistics(derived,{from='',to=derived?.latestDate||'',name=''}={}){
  const dates=(derived?.dates||[]).filter(d=>(!from||d>=from)&&d<=to),counts={},daily=dates.map(date=>({date,counts:{}}));

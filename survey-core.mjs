@@ -1,6 +1,11 @@
 import {isoLabel,portalStatus} from './attendance-beta-core.mjs';
 export const SURVEY_OWNER='hint.kpc@gmail.com';
 export const SURVEY_COLLECTION='surveyBetaSummaries';
+export const SURVEY_ATTENDANCE_VERSION='all-lesson-days-v2:';
+export function surveyAttendanceDates(event,entries,fallbackDate){
+ const dates=[...new Set(entries.filter(e=>e.kind!=='holiday'&&event.lessonIds?.includes(e.id)).map(e=>e.date))].sort();
+ return dates.length?dates:[fallbackDate];
+}
 export const normalizeName=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').trim();
 // Exact choices verified in the operational factory/workshop survey form.
 const classChoices=['서울대_임베디드AI(HW)','한양대_제조지능화','후인원(A)_임베디드AI(SW)','후인원(B)_제조지능화','충북대 G-테크벤처센터_제조지능화','마이크로웨이브_임베디드AI(HW)','KPC대구지역본부_임베디드AI(SW)','대구상공회의소_제조지능화(1)','경북대_제조지능화(2)','아르피나(A)_임베디드AI(HW)','부산대_임베디드AI(SW)','아르피나(B)_제조지능화(1)','부산경영자총협회_제조지능화(2)','현대차 울산기술교육원_제조지능화','전남대_임베디드AI(SW)','기아 광주교육센터(A)_제조지능화(1)','기아 광주교육센터(B)_제조지능화(2)'];

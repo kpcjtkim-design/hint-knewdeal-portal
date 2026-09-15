@@ -181,7 +181,7 @@ async function adminView(user,p,tab='attendanceOverview',selected='1'){try{
  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>adminView(user,p,b.dataset.tab,selected));
  if(tab==='classes')await classAdmin(user,p,selected);if(tab==='urgent')await urgentAdmin(user,p,selected);if(tab==='preview')await adminPreview(user,p,selected);if(tab==='attendanceOverview')await attendanceOverviewAdmin(user,p);if(tab==='timetable')await timetableAdmin(user,p);if(tab==='surveys')await surveysAdmin(user,p);if(tab==='attendanceStats')await statisticsAdmin(user,p);if(tab==='materials')await materialsAdmin(user,p);if(tab==='studentPreview')studentPreviewAdmin();if(tab==='checkhere')await checkhereAdmin(user,p);if(tab==='uploads')await uploadAdmin(user,p);if(tab==='users')await userAdmin(user,p);if(tab==='settings')await settingsAdmin(user,p);if(tab==='overview')overviewAdmin(user,p);
  }catch(e){fatal(user,'관리자 화면을 불러오지 못했습니다.',e)}}
-async function surveysAdmin(user,p){const host=document.getElementById('adminBody'),mod=await import('/survey-view.mjs?v=20260915-1');const work=await mod.mountSurveys(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();}
+async function surveysAdmin(user,p){const host=document.getElementById('adminBody'),mod=await import('/survey-view.mjs?v=20260915-final2');const work=await mod.mountSurveys(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();}
 async function timetableAdmin(user,p){
   const host=document.getElementById('adminBody');host.closest('.page').classList.add('checkhere-page');
   const mod=await import('/timetable.mjs?v=20260915-1');const work=await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();
@@ -204,10 +204,10 @@ async function attendanceAdmin(user,p){
   try{const mod=await import(`/attendance-native.js?v=20260826-native2`);await mod.mountAttendanceAdminNative(document.getElementById('attendanceNativeMount'),{auth,db,user})}catch(e){const mount=document.getElementById('attendanceNativeMount');if(mount)mount.innerHTML=`<div class="fatal">출결 자동검증을 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
 }
 async function attendanceOverviewAdmin(user,p){
-  const modern=modernAttendance(user,p);
-  const host=document.getElementById('adminBody');if(!host)return;
-  host.innerHTML=`<section class="card attendance-native-shell"><div class="attendance-native-head"><h3>출결대조</h3><p>${modern?'베타 · 시트 출결·사유 입력과 체크히어 추천사유를 대조합니다.':'운영총괄 시트와 가-3 사유를 조회하고, 포털 관리자 메모를 남깁니다. 원본 시트는 읽기 전용입니다.'}</p></div><div id="attendanceOverviewMount" class="attendance-native-mount"><div class="empty">출결대조 모듈을 불러오는 중…</div></div></section>`;
-  try{const mod=await import(modern?'/attendance-overview.js?v=20260915-1':'/attendance-legacy.js?v=20260914-pilot1');const mount=document.getElementById('attendanceOverviewMount');const work=await mod.mountAttendanceOverview(mount,{auth,db,user,classes:CLASSES});if(mount.isConnected)adminWork=work;else work?.dispose?.()}catch(e){const mount=document.getElementById('attendanceOverviewMount');if(mount)mount.innerHTML=`<div class="fatal">출결대조를 불러오지 못했습니다.<br>${esc(e.message||e)}</div>`}
+ const host=document.getElementById('adminBody');if(!host)return;
+ const mod=await import('/attendance-version.mjs?v=20260915-final2');if(!host.isConnected)return;
+ const work=await mod.mountAttendanceVersion(host,{auth,db,user,profile:p,classes:CLASSES});
+ if(host.isConnected)adminWork=work;else work?.dispose?.();
 }
 async function urgentAdmin(user,p,selected='1'){
   const sr=await getDoc(doc(db,'settings','global')),settings=sr.exists()?{...DEFAULTS,...sr.data()}:DEFAULTS;

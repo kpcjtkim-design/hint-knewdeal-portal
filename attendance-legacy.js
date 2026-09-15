@@ -103,11 +103,13 @@ export async function mountAttendanceOverview(host,ctx){
   const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),excelExport=$('#excelExport'),rawReason=$('#rawReason'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState'),manualNotifyBtn=$('#manualNotifyBtn'),manualDoneBtn=$('#manualDoneBtn');
   let dates=[],students=[],reasonCells={},memos={},manualIssue='',manualIssueFollowup=emptyFollowup(),attendanceBackgrounds=[],currentIso='',currentClass='1',saveTimers=new Map();
   const colorCache=new Map(),colorPromises=new Map();
+  const viewAbort=new AbortController();
+  function memosReady(){const pending=[...root.querySelectorAll('.memo-state,#manualIssueState')].some(e=>/입력 중|저장 중/.test(e.textContent));if(pending)alert('메모를 저장하고 있습니다. 저장 완료 후 화면을 전환해 주세요.');return !pending;}
   const showErr=e=>{err.innerHTML=e?`<div class="error">${esc(e.message||e)}</div>`:''};
   let readerController,disposed=false;async function getReader(cid){readerController?.abort();readerController=new AbortController();const signal=readerController.signal;return readUntilReady(async()=>readJson('/api/attendance-reader',{idToken:await user.getIdToken(),classId:String(cid),allowCache:true},{signal,timeout:55000}),{signal,isActive:()=>!disposed&&host.isConnected,onState:()=>{topState.textContent='시트 응답 대기 · 잠시 후 자동으로 다시 읽습니다.';}});}
   async function getColorsOnce(cid){
   const idToken=await user.getIdToken();
-  const d=await post('/api/attendance-colors',{idToken,classId:String(cid)});
+  const d=await post('/api/attendance-colors',{idToken,classId:String(cid)},{signal:viewAbort.signal});
   if(Array.isArray(d.attendanceBackgrounds))return d.attendanceBackgrounds;
   if(Array.isArray(d.backgrounds))return d.backgrounds;
   return [];
@@ -115,6 +117,7 @@ export async function mountAttendanceOverview(host,ctx){
 async function getColors(cid){
   let lastError=null;
   for(let attempt=0;attempt<3;attempt++){
+    viewAbort.signal.throwIfAborted();
     try{
       const bg=await getColorsOnce(cid);
       if(Array.isArray(bg)&&bg.length)return bg;
@@ -266,7 +269,7 @@ async function getColors(cid){
         renderRows(dateSel.value);
         topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 출결자동 색상 반영`;
       }else{
-        getColorsCached(colorClass,forceColors).then(bg=>{if(currentClass!==colorClass)return;attendanceBackgrounds=bg;renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 출결자동 색상 반영`}).catch(e=>{console.warn('attendance colors failed',e);if(currentClass===colorClass){renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 색상 조회 실패(미제출 기준)`}})
+        getColorsCached(colorClass,forceColors).then(bg=>{if(disposed||currentClass!==colorClass)return;attendanceBackgrounds=bg;renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 출결자동 색상 반영`}).catch(e=>{console.warn('attendance colors failed',e);if(!disposed&&currentClass===colorClass){renderRows(dateSel.value);topState.textContent=`${currentClass}반 · ${dateSel.value} · ${students.length}명 · 색상 조회 실패(미제출 기준)`}})
       }
     }catch(e){if(disposed||currentClass!==colorClass||e.name==='AbortError')return;showErr(e);rows.innerHTML='<div class="empty">출결 데이터를 불러오지 못했습니다.</div>';topState.textContent='오류'}
   }
@@ -277,6 +280,6 @@ async function getColors(cid){
   manualIssueMemo.oninput=()=>{manualIssueState.textContent='입력 중';const cid=currentClass,iso=currentIso,value=manualIssueMemo.value,key=`manualIssue_${cid}_${iso}`;clearTimeout(saveTimers.get(key));saveTimers.set(key,setTimeout(()=>saveManualIssue(value,manualIssueState,cid,iso).catch(e=>showErr(e)),650))};
   manualNotifyBtn.onclick=()=>toggleGeneralFollowup('notifiedAt').catch(e=>showErr(e));
   manualDoneBtn.onclick=()=>toggleGeneralFollowup('doneAt').catch(e=>showErr(e));
-  void loadClass(classSel.value||'1');return {dispose(){disposed=true;readerController?.abort();}};
+  void loadClass(classSel.value||'1');return {canLeave:memosReady,dispose(){disposed=true;viewAbort.abort();readerController?.abort();}};
 }
 

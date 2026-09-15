@@ -2,7 +2,19 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {deriveRecognized,deriveAttendanceClass,targetsFromDerived,attendanceStatistics} from '../../attendance-derived-core.mjs';
 import {scoreColumns,summarizeScores} from '../../survey-scores.mjs';
 import {moveLesson} from '../../timetable-board.mjs';
+import {surveyAttendanceDates} from '../../survey-core.mjs';
 const record={readState:'complete',schedule:'09:00 ~ 18:00',entry:'08:55',exit:'17:55',outings:[]};
+test('survey eligibility considers every lecture day, excludes only all absent/full recognition or dropout',()=>{
+ const dates=['2026-09-10','2026-09-11','2026-09-14'];
+ const student=(name,statuses,dropout=false)=>({id:name,name,dropout,history:Object.fromEntries(dates.map((d,i)=>[d,{status:statuses[i],review:statuses[i]==='미입력',basis:'시트'}]))});
+ const data={dates,students:[student('앞날출석',['출석','결석','인정출석']),student('인정조퇴',['결석','인정조퇴','결석']),student('전부불참',['결석','인정출석','결석']),student('포기',['출석','출석','출석'],true),student('빈칸',['결석','미입력','결석']),student('뒤날출석',['미입력','인정외출','미입력'])]};
+ const result=targetsFromDerived(data,dates);
+ assert.deepEqual(result.filter(s=>s.eligible).map(s=>s.name),['앞날출석','인정조퇴','뒤날출석']);
+ assert.deepEqual(result.filter(s=>!s.eligible&&!s.review).map(s=>s.name),['전부불참','포기']);
+ assert.deepEqual(result.filter(s=>s.review).map(s=>s.name),['빈칸']);
+ assert.throws(()=>targetsFromDerived(data,[...dates,'2026-09-15']),/전체 교육일/);
+ assert.deepEqual(surveyAttendanceDates({lessonIds:['l1','l2']},[{id:'l2',date:dates[1]},{id:'other',date:dates[2]},{id:'l1',date:dates[0]}],dates[2]),dates.slice(0,2));
+});
 test('recognized subtypes use actual times, complete outings, manual precedence and uncertain boundaries',()=>{
  assert.equal(deriveRecognized('인정출석',{}, {...record,entry:'13:00'}).status,'인정지각');
  assert.equal(deriveRecognized('인정출석',{}, {...record,exit:'15:00'}).status,'인정조퇴');
