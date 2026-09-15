@@ -16,6 +16,7 @@
 <body><div id="app"></div><div id="toast" class="toast"></div>
 <script type="module">
 import {modernAttendance} from '/attendance-rollout.mjs';
+import {within} from '/attendance-io.mjs';
 import {createReadQueue} from "/portal-read-cache.mjs";
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
@@ -73,7 +74,7 @@ function shell(user,body){appEl.innerHTML=`<header class="topbar"><div class="po
 function heroAdmin(){return `<section class="card hero"><p class="eyebrow">OPERATIONS</p><h2>운영총괄 관리자</h2><div class="chips"><span class="chip">1~17반 전체 조회</span><span class="chip">운영자 권한 관리</span></div></section>`}
 function heroTeacher(c,p){return `<section class="card hero"><p class="eyebrow">MY CLASS</p><h2>${esc(c.id)}반 · ${esc(c.course||'')}</h2><div class="chips"><span class="chip">${esc(c.region||'')}</span><span class="chip">${esc(c.venue||'')}</span><span class="chip">${esc(p.name||'담임')}</span></div></section>`}
 function fatal(user,title,e){const msg=`${title}\n${e?.code||''} ${e?.message||e||''}`;shell(user,`<div class="fatal">${esc(msg)}</div>`) }
-async function profileFor(user){const email=(user.email||'').toLowerCase();if(ADMINS.includes(email))return {email,role:'ADMIN',active:true,name:user.displayName||'운영자'};const s=await getDoc(doc(db,'users',email));return s.exists()?{email,...s.data()}:null}
+async function profileFor(user){const email=(user.email||'').toLowerCase();if(ADMINS.includes(email))return {email,role:'ADMIN',active:true,name:user.displayName||'운영자'};const s=await within(getDoc(doc(db,'users',email)),12000,'계정 정보 확인이 지연됩니다. 데이터베이스 사용량 한도 또는 연결 상태를 확인한 뒤 다시 접속해 주세요.');return s.exists()?{email,...s.data()}:null}
 function loginView(status='Firebase 연결 준비됨',isError=false){appEl.innerHTML=`<div class="login-shell"><div class="login-card"><div class="brand">H</div><p class="eyebrow">K-뉴딜 아카데미</p><h1>운영포털</h1><p class="muted">승인된 Google 계정으로 로그인하세요.</p><button id="login" class="btn btn-primary">Google 계정으로 로그인</button><div id="loginStatus" class="status ${isError?'error':''}">${esc(status)}</div></div></div>`;document.getElementById('login').onclick=async()=>{const btn=document.getElementById('login'),st=document.getElementById('loginStatus');btn.disabled=true;st.className='status';st.textContent='Google 로그인 창을 여는 중...';try{await setPersistence(auth,browserLocalPersistence);await signInWithPopup(auth,provider);st.textContent='로그인 성공. 권한 확인 중...'}catch(e){btn.disabled=false;st.className='status error';st.textContent=`로그인 오류: ${e.code||''} ${e.message||e}`}}}
 function denied(user){shell(user,`<div class="card empty"><h2>접근 권한이 없습니다</h2><p>${esc(user.email)}</p><button id="retryLogin" class="btn btn-dark">다른 계정으로 로그인</button></div>`);document.getElementById('retryLogin').onclick=()=>signOut(auth)}
 
