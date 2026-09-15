@@ -58,3 +58,27 @@ test('both reader endpoints authenticate every request and never serve cached da
   }
  }finally{globalThis.fetch=original;}
 });
+
+test('registered legacy administrators can read without an active field; disabled and non-admin profiles remain blocked',async()=>{
+ const original=globalThis.fetch;let fields,status=200,bridgeCalls=0;
+ const call=async handler=>{const res={setHeader(){},status(n){this.code=n;return this;},json(body){this.body=body;return this;}};await handler({method:'POST',body:{idToken:'fixture',classId:'2'}},res);return res;};
+ try{
+  globalThis.fetch=async url=>{
+   if(String(url).includes('accounts:lookup'))return Response.json({users:[{email:'legacy-admin@example.com'}]});
+   if(String(url).includes('firestore.googleapis.com'))return Response.json(status===200?{fields}:{error:{}},{status});
+   bridgeCalls++;return Response.json(valid);
+  };
+  for(const handler of [readerHandler,colorsHandler]){
+   status=200;fields={role:{stringValue:'ADMIN'}};
+   assert.equal((await call(handler)).code,200,'same legacy account semantics as portal login');
+   for(const profile of [
+    {role:{stringValue:'ADMIN'},active:{booleanValue:false}},
+    {role:{stringValue:'ADMIN'},active:{stringValue:'true'}},
+    {role:{stringValue:'TEACHER'}},{}
+   ]){fields=profile;const before=bridgeCalls;assert.equal((await call(handler)).code,403);assert.equal(bridgeCalls,before);}
+   for(const [upstream,expected] of [[401,401],[403,403],[404,403],[500,503]]){
+    status=upstream;const before=bridgeCalls;assert.equal((await call(handler)).code,expected);assert.equal(bridgeCalls,before);
+   }
+  }
+ }finally{globalThis.fetch=original;}
+});
