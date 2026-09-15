@@ -48,3 +48,18 @@
 @media(max-width:1280px){.topbar.has-primary-nav{grid-template-columns:minmax(310px,1fr) auto minmax(88px,1fr)}}
 @media(max-width:960px){.topbar.has-primary-nav{grid-template-columns:minmax(0,1fr) auto}}
 @media(max-width:680px){.portal-title-row{gap:4px 7px}.portal-role{font-size:9px}}
+
+/* Reference HINT navy/cyan identity, limited to the top bar. */
+.topbar{background:linear-gradient(110deg,#06162f 0%,#00344d 100%);border-bottom-color:#194b66}
+.topbar .hint-wordmark{display:flex;flex-direction:column;gap:5px;color:#fff}
+.hint-wordmark small{font-size:7px;font-weight:500;letter-spacing:.01em;line-height:1.2;color:#a8cedf}
+.topbar .portal-brand>div{border-left-color:#416178}
+.topbar .portal-brand .eyebrow{color:#a8cedf}
+.topbar .title{color:#fff}
+.topbar .portal-role,.topbar .user-email{color:#bdd4e1}
+.topbar .admin-major button{color:#d7e7ef}
+.topbar .admin-major button.active{color:#8be0ed;border-bottom-color:#73d6e9}
+.topbar .admin-major button:hover{color:#fff;background:#ffffff0c}
+.topbar .top-actions .btn{color:#e6f5fb;border-color:#688b9f;background:transparent}
+.topbar .top-actions .btn:hover{background:#ffffff12}
+.topbar button:focus-visible{outline-color:#8be0ed}
