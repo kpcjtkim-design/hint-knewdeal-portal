@@ -36,6 +36,7 @@ test('insert shifts every intervening lesson and preserves holiday and all IDs',
 test('survey ratings exclude identifiers/free text and separate difficulty/NPS from overall; latest duplicate wins',()=>{
  const columns=scoreColumns(['이메일 주소','전화번호','[종합 만족도] 과정 전반에 만족하십니까?','본 교육 난이도는 어떠셨습니까?','추천할 의향이 있다 (0~10점)','좋았던 점을 자유롭게 작성해 주세요.']);
  assert.deepEqual(columns.map(q=>q.kind),['overall','difficulty','recommendation']);
+ assert.equal(scoreColumns(['교육생들의 질문이나 참여에 적극적이고 친절하게 응대하였다.','교육 일정, 안내 공지, 사전 준비 등 전반적인 운영 프로세스가 원활하였다.']).length,2);
  const response=(time,overall,nps)=>({name:'가',classId:'2반',timestamp:time,scores:columns.map(q=>({...q,value:q.kind==='overall'?overall:q.kind==='recommendation'?nps:3}))});
  const scores=summarizeScores([response('2026. 9. 10. 오전 9:00:00',1,0),response('2026. 9. 10. 오후 1:00:00',5,10),{...response('2026-09-11',1,0),classId:'1반'}],'2',[{name:'가'}]);
  assert.equal(scores.overallAverage,5);assert.equal(scores.overallCount,1);assert.equal(scores.questions.find(q=>q.kind==='recommendation').average,10);assert.equal(scores.questions[0].distribution[4],1);assert(!JSON.stringify(scores).includes('"name"'));

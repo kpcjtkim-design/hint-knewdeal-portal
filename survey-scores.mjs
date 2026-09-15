@@ -3,7 +3,7 @@ export function scoreColumns(headers){
  return headers.flatMap((raw,index)=>{const title=String(raw||'').trim();
   if(!title||/이름|성함|성명|전화|이메일|타임스탬프|timestamp|분반|소속|자유롭게|좋았던\s*점|건의|개선사항|무엇인가|작성해|입력해/i.test(title))return [];
   const kind=/추천.*의향/.test(title)?'recommendation':/난이도/.test(title)?'difficulty':/종합\s*만족|전반.*만족|전반에.*만족/.test(title)?'overall':'question';
-  if(kind==='question'&&!/있었다|되었다|이루어졌다|만족|도움|적절|전문성|전달 방식|이해할 수|계기가/.test(title))return [];
+  if(kind==='question'&&!/있었다|되었다|이루어졌다|만족|도움|적절|전문성|전달 방식|이해할 수|계기가|응대하였다|원활하였다/.test(title))return [];
   return [{id:'q'+index,index,title,kind,min:kind==='recommendation'?0:1,max:kind==='recommendation'?10:5}];
  });
 }
@@ -25,5 +25,5 @@ export function summarizeScores(responses,classId,answered,{scale=5}={}){
  }
  const items=[...questions.values()].map(q=>({...q,average:q.count?Math.round(q.sum/q.count*100)/100:null}));
  const overall=items.filter(q=>q.kind==='overall'),count=overall.reduce((n,q)=>n+q.count,0),sum=overall.reduce((n,q)=>n+q.sum,0);
- return {version:1,scale,respondents:latest.size,scoredRespondents:[...latest.values()].filter(({r})=>(r.scores||[]).some(q=>q.kind==='overall'&&String(q.value??'').trim()!==''&&Number(q.value)>=1&&Number(q.value)<=scale)).length,overallAverage:count?Math.round(sum/count*100)/100:null,overallCount:count,overallSum:sum,invalid,questions:items};
+ return {version:2,scale,respondents:latest.size,scoredRespondents:[...latest.values()].filter(({r})=>(r.scores||[]).some(q=>q.kind==='overall'&&String(q.value??'').trim()!==''&&Number(q.value)>=1&&Number(q.value)<=scale)).length,overallAverage:count?Math.round(sum/count*100)/100:null,overallCount:count,overallSum:sum,invalid,questions:items};
 }
