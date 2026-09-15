@@ -13,7 +13,7 @@ export async function mountAttendanceVersion(host,ctx){
   selected=version;select.value=version;const n=++epoch;work?.dispose?.();work=null;
   const mount=document.createElement('div');mount.id='attendanceOverviewMount';mount.className='attendance-native-mount';body.replaceChildren(mount);
   hint.textContent=version==='modern'?'시트 입력·체크히어 추천사유 대조 · 현재 선택한 화면만 데이터를 읽습니다.':'시트 조회·포털 관리자 메모 · 현재 선택한 화면만 데이터를 읽습니다.';
-  try{const mod=await import(version==='modern'?'./attendance-overview.js?v=20260915-dbsave2':'./attendance-legacy.js?v=20260915-final2');
+  try{const mod=await import(version==='modern'?'./attendance-overview.js?v=20260915-release1':'./attendance-legacy.js?v=20260915-final2');
    if(disposed||n!==epoch||!mount.isConnected)return;
    const next=await mod.mountAttendanceOverview(mount,ctx);
    if(disposed||n!==epoch||!mount.isConnected)next?.dispose?.();else work=next;
