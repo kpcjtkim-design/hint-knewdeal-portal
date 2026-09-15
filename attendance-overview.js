@@ -1,7 +1,7 @@
 import {syncAttendanceSummary} from './attendance-derived-store.mjs';
 import {within,readJson,readUntilReady} from './attendance-io.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
-import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-1';
+import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-teacher1';
 import {latestTeachingDate} from './attendance-beta-core.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 

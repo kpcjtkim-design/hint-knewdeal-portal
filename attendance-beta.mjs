@@ -4,7 +4,8 @@ import {within} from './attendance-io.mjs';
 import {lectureEndsOn} from './timetable-core.mjs';
 import {excursionFor} from './checkhere-proposal-core.mjs';
 import {createProposalReview} from './checkhere-proposals.mjs';
-import {doc,getDoc,getDocs,collection,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+import {doc,getDoc,getDocs,collection,query,orderBy,limit,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+import {createTeacherResolver} from './attendance-teacher.mjs';
 import {GoogleAuthProvider,reauthenticateWithPopup} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {ATTENDANCE_OPTIONS,EVIDENCE_OPTIONS,EVIDENCE_COLORS,emptyStatus,hasExistingReason,portalStatus,evidenceStatus,rewriteReasons,sheetStatus,matchSnapshot} from './attendance-beta-core.mjs';
 import {createSheetWriter} from './attendance-beta-sheet.mjs';
@@ -12,7 +13,11 @@ import {loadCheckHereDay} from './checkhere-snapshots.mjs';
 import {judge} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFor,colorState,onStatusSaved=()=>{}}){
-  let teacherName='',teacherPromise;const statusPreview=new Map();
+  const teachers=createTeacherResolver({
+    loadUsers:async()=>(await within(getDocs(collection(db,'users')),12000)).docs.map(d=>d.data()),
+    loadHistory:async classId=>(await within(getDocs(query(collection(db,'classes',classId,'checkhereSnapshots'),orderBy('date','desc'),limit(1))),12000)).docs.flatMap(d=>d.data().records||[]),
+  });
+  const statusPreview=new Map();
   let metadata={},snapshots=[],snapshotError='',excursions=[],lectureEnds=[],excursionError='',working=false,loading=false,sequence=0;
   const drafts=new Map();
   const writer=createSheetWriter({
@@ -25,7 +30,11 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   const rawColor=s=>String(state().backgrounds?.[s.rowIndex+1]?.[state().date.idx+4]||'#ffffff').toLowerCase();
   function displayStatus(s){if(statusPreview.has(key(s)))return statusPreview.get(key(s));const raw=String(s.all[state().date.idx]||'').trim();try{return deriveRecognized(raw,info(s),matchSnapshot(s,state().students,snapshots).record,{excursion:excursions.length>0}).status;}catch{return raw||'해당없음';}}
   function displayEvidence(s){return evidenceStatus(rawColor(s),String(s.all[state().date.idx]||''),info(s),colorState);}
-  const proposals=createProposalReview({db,user,root,render,showErr,hasUnsavedReason:()=>drafts.size>0,getContext:s=>({classId:state().classId,date:state().iso,name:s.name,status:displayStatus(s),reason:drafts.get(key(s))??currentReason(s),reasonUnsaved:drafts.has(key(s)),statusSaving:statusPreview.has(key(s)),teacher:matchSnapshot(s,state().students,snapshots).record?.teacher||teacherName,raw:state().raw,excursion:excursions.length>0,record:matchSnapshot(s,state().students,snapshots).record})});
+  const proposals=createProposalReview({db,user,root,render,showErr,hasUnsavedReason:()=>drafts.size>0,getContext:s=>({classId:state().classId,date:state().iso,name:s.name,status:displayStatus(s),reason:drafts.get(key(s))??currentReason(s),reasonUnsaved:drafts.has(key(s)),statusSaving:statusPreview.has(key(s)),teacher:teachers.get(state().classId,snapshots,matchSnapshot(s,state().students,snapshots).record),raw:state().raw,excursion:excursions.length>0,record:matchSnapshot(s,state().students,snapshots).record})});
+  async function refreshTeacher(classId,n=sequence){
+    await teachers.refresh(classId,snapshots);
+    if(n===sequence&&String(state().classId)===String(classId))proposals.refresh(state().students);
+  }
   async function persistMeta(s,patch){const ctx=state(),ref=doc(db,'settings',`attendanceBeta_${ctx.classId}_${ctx.iso}`);metadata={...metadata,[key(s)]:{...info(s),...patch}};try{await setDoc(ref,{classId:ctx.classId,date:ctx.iso,students:{[key(s)]:patch},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});}catch(e){showErr(new Error('시트 저장은 완료됐지만 포털 세부 구분 저장에 실패했습니다. '+e.message));}}
   function controls(s){
     const status=displayStatus(s),evidence=displayEvidence(s),disabled=(!writer.connected()||working||loading)?'disabled':'';
@@ -61,8 +70,8 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
     proposalExport:s=>proposals.exportFor(s),
     refreshReady:()=>!working&&!loading&&!proposals.isWorking()&&!drafts.size,
     async readRefresh(classId,date){const [meta,records,proposal,published,draft]=await Promise.all([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.read(classId,date),getDoc(doc(db,'timetableBetaPublished',String(classId))),getDoc(doc(db,'timetableBetaDrafts',String(classId)))].map(p=>within(p)));return {metadata:meta.data()?.students||{},snapshots:records,proposal,entries:draft.data()?.entries||published.data()?.entries||[]};},
-    applyRefresh(data,date){metadata=data.metadata;snapshots=data.snapshots;snapshotError='';excursionError='';excursions=excursionFor(data.entries,date);lectureEnds=lectureEndsOn(data.entries,date);proposals.applyRead(data.proposal);headerState();},
+    applyRefresh(data,date){metadata=data.metadata;snapshots=data.snapshots;snapshotError='';excursionError='';excursions=excursionFor(data.entries,date);lectureEnds=lectureEndsOn(data.entries,date);proposals.applyRead(data.proposal);headerState();void refreshTeacher(state().classId);},
     canNavigate(){if(working||loading||proposals.isWorking())return false;return (!drafts.size&&!proposals.hasEdits())||confirm('저장하지 않은 사유 또는 체크히어 추천 편집값이 있습니다. 이동하면 입력 중인 사유가 사라집니다. 이동하시겠습니까?');},
-    async load(classId,date){void loadSurveyLinks().then(()=>headerState());const n=++sequence;loading=true;drafts.clear();metadata={};snapshots=[];snapshotError='';excursions=[];lectureEnds=[];excursionError='';headerState();const results=await Promise.allSettled([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.load(classId,date),getDoc(doc(db,'timetableBetaPublished',String(classId))),getDoc(doc(db,'timetableBetaDrafts',String(classId)))].map(p=>within(p)));if(n!==sequence)return;loading=false;teacherName=snapshots[0]?.teacher||'';if(results[0].status==='fulfilled')metadata=results[0].value.data()?.students||{};else showErr(new Error('포털 세부 구분을 불러오지 못했습니다. '+results[0].reason.message));if(results[1].status==='fulfilled')snapshots=results[1].value;else snapshotError='체크히어 저장본 조회 실패 · 다시 읽기 필요';if(results[3].status==='fulfilled'&&results[4].status==='fulfilled'){const published=results[3].value.data(),draft=results[4].value.data();const entries=draft?.entries||published?.entries||[];excursions=excursionFor(entries,date);lectureEnds=lectureEndsOn(entries,date);}else excursionError='견학일 여부 확인 실패 · 시간표를 확인해 주세요.';headerState();if(!teacherPromise)teacherPromise=within(getDocs(collection(db,'users')),12000).then(r=>r.docs.map(d=>d.data())).catch(()=>[]);void teacherPromise.then(users=>{if(n!==sequence)return;const teachers=users.filter(p=>p.active!==false&&p.role==='TEACHER'&&[p.primaryClassId,p.classId,...(p.classIds||[]),...(p.tempClassIds||[])].map(String).includes(String(classId)));teacherName=teachers.length===1?teachers[0].name||'':'';proposals.refresh(state().students);});},
+    async load(classId,date){void loadSurveyLinks().then(()=>headerState());const n=++sequence;loading=true;drafts.clear();metadata={};snapshots=[];snapshotError='';excursions=[];lectureEnds=[];excursionError='';headerState();const results=await Promise.allSettled([getDoc(doc(db,'settings',`attendanceBeta_${classId}_${date}`)),loadCheckHereDay(db,classId,date),proposals.load(classId,date),getDoc(doc(db,'timetableBetaPublished',String(classId))),getDoc(doc(db,'timetableBetaDrafts',String(classId)))].map(p=>within(p)));if(n!==sequence)return;loading=false;if(results[0].status==='fulfilled')metadata=results[0].value.data()?.students||{};else showErr(new Error('포털 세부 구분을 불러오지 못했습니다. '+results[0].reason.message));if(results[1].status==='fulfilled')snapshots=results[1].value;else snapshotError='체크히어 저장본 조회 실패 · 다시 읽기 필요';if(results[3].status==='fulfilled'&&results[4].status==='fulfilled'){const published=results[3].value.data(),draft=results[4].value.data();const entries=draft?.entries||published?.entries||[];excursions=excursionFor(entries,date);lectureEnds=lectureEndsOn(entries,date);}else excursionError='견학일 여부 확인 실패 · 시간표를 확인해 주세요.';headerState();void refreshTeacher(classId,n);},
   };
 }
