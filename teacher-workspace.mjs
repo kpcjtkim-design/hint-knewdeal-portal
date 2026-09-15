@@ -21,7 +21,13 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
  const today=document.createElement('section'),announcements=document.createElement('section');announcements.className='teacher-announcements';announcements.setAttribute('aria-label','공지');
  if(noticeHead){const heading=noticeHead.querySelector('h2');if(heading)heading.textContent='공지';announcements.append(noticeHead);}
  const urgent=parent.querySelector('.urgent-stack');if(urgent)announcements.append(urgent);
- if(notice)announcements.append(notice);
+ if(notice){
+  const checklist=document.createElement('details');checklist.className='card daily-checklist';
+  const summary=document.createElement('summary');summary.textContent='일일 업무 체크리스트';
+  const title=notice.querySelector('.notice-bar strong');if(title)title.hidden=true;
+  const copy=notice.querySelector('#copyNotice');if(copy)copy.textContent='체크리스트 복사';
+  checklist.append(summary,notice);announcements.append(checklist);
+ }
  panels.home.prepend(today,announcements);
  const attendance=document.createElement('section'),surveys=document.createElement('section');attendance.className=surveys.className='card panel';attendance.style.marginTop=surveys.style.marginTop='18px';panels.home.append(attendance,surveys);
  const works=[],loaded=new Set(['home','resources']);let active='home',disposed=false;
