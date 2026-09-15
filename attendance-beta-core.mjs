@@ -70,7 +70,7 @@ export function matchSnapshot(student,students,records){
   const found=records.filter(x=>x.name.trim()===student.name.trim());return found.length===1?{record:found[0]}:{error:found.length?'동명이인 · 연결 확인 필요':'저장본 없음'};
 }
 export function collectionDates(from,to){
-  const today=koreaToday();if(from<'2026-08-27'||to>today||to>'2026-10-22'||from>to)throw Error('수집 기간은 8/27부터 오늘 또는 교육 종료일까지입니다.');
+  const today=koreaToday();if(from<'2026-07-27'||to>today||to>'2026-10-22'||from>to)throw Error('수집 기간은 7/27부터 오늘 또는 교육 종료일까지입니다.');
   if(![from,to].every(x=>/^2026-\d{2}-\d{2}$/.test(x)&&!Number.isNaN(Date.parse(x))&&new Date(x).toISOString().slice(0,10)===x))throw Error('날짜 형식을 확인해 주세요.');
   const days=[];for(let d=new Date(from+'T00:00:00Z');d<=new Date(to+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){if(![0,6].includes(d.getUTCDay()))days.push(d.toISOString().slice(0,10));}return days;
 }
