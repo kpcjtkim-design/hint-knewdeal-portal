@@ -7,7 +7,7 @@ const validStatus=new Set([...PARTICIPATED,'인정출석','결석','중복']);
 const holidays=new Set(['2026-08-17','2026-09-24','2026-09-25','2026-09-28','2026-10-05','2026-10-09']);
 export function deriveRecognized(raw,meta={},record=null,{excursion=false}={}){
  const manual=portalStatus(raw,meta);
- if(raw!=='인정출석')return {status:manual,review:!validStatus.has(manual),basis:'시트'};
+ if(raw!=='인정출석'){const status=manual.startsWith('중복')?'중복':manual;return {status,review:status==='중복'||(!validStatus.has(status)&&status!=='해당없음'),basis:'시트'};}
  if(meta.sheetStatus===raw&&recognized.has(meta.portalStatus))return {status:manual,review:false,basis:'관리자 구분'};
  const review=basis=>({status:'인정출석',review:true,basis});
  if(!record||record.readState!=='complete')return review('체크히어 상세 저장본 필요');

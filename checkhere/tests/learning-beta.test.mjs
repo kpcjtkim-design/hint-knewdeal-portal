@@ -14,6 +14,9 @@ test('recognized subtypes use actual times, complete outings, manual precedence 
  assert.equal(deriveRecognized('인정출석',{},record,{excursion:true}).review,true);
  assert.equal(deriveRecognized('인정출석',{sheetStatus:'인정출석',portalStatus:'인정조퇴'},record).status,'인정조퇴');
  assert.equal(deriveRecognized('인정출석',{},null).review,true);
+ assert.equal(deriveRecognized('해당없음').review,false);
+ assert.equal(deriveRecognized('중복(지각+조퇴)').status,'중복');
+ assert.equal(deriveRecognized('중복(지각+조퇴)').review,true);
 });
 test('dropout needs prior enrollment and trailing explicit statuses; holidays and whole-class missing entry do not expel anyone',()=>{
  const sheet={attendance:[['이름','','','','9/10','9/11','9/12','9/14','9/15','9/16'],['가','','','','출석','출석','해당없음','해당없음','해당없음','해당없음'],['나','','','','해당없음','해당없음','해당없음','해당없음','해당없음','해당없음'],['다','','','','출석','출석','','','출석','해당없음']]};
