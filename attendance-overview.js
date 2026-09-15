@@ -110,7 +110,7 @@ export async function mountAttendanceOverview(host,ctx){
   const $=s=>root.querySelector(s),classSel=$('#classSel'),dateSel=$('#dateSel'),rows=$('#rows'),err=$('#err'),topState=$('#topState'),excelExport=$('#excelExport'),rawReason=$('#rawReason'),manualIssueMemo=$('#manualIssueMemo'),manualIssueState=$('#manualIssueState'),manualNotifyBtn=$('#manualNotifyBtn'),manualDoneBtn=$('#manualDoneBtn');
   let dates=[],students=[],reasonCells={},memos={},manualIssue='',manualIssueFollowup=emptyFollowup(),attendanceBackgrounds=[],currentIso='',currentClass='1',saveTimers=new Map(),legacyTextMemos=new Map();
   let stopSnapshots=()=>{},snapshotTimer,pendingSnapshots=null;
-  let summaryTimer,summaryStudents={},liveTimer,disposed=false,reading=false,epoch=0,lastLiveSignature='',liveFailures=0,loadAbort=null,liveAbort=null;
+  let summaryTimer,summaryStudents={},liveTimer,disposed=false,reading=false,epoch=0,viewEpoch=0,lastLiveSignature='',liveFailures=0,loadAbort=null,liveAbort=null;
   const edited=()=>{epoch++;};root.addEventListener('input',edited);root.addEventListener('change',edited);
   const colorCache=new Map(),colorPromises=new Map();
   const viewAbort=new AbortController();
@@ -277,9 +277,10 @@ async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArra
       XLSX.writeFile(wb,`${currentClass}반_${safeDate}_출결대조.xlsx`,{compression:true});
     }finally{excelExport.disabled=false;excelExport.textContent=before}
   }
-  async function loadSelectedDate(){stopSnapshots();clearTimeout(snapshotTimer);pendingSnapshots=null;const dateEpoch=++epoch;lastLiveSignature='';showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;try{sessionStorage.setItem("hintWorkContext",JSON.stringify({classId:currentClass,date:currentIso}));}catch{}topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await Promise.all([loadMemos(currentClass,currentIso),beta.load(currentClass,currentIso)]);if(disposed||dateEpoch!==epoch||!host.isConnected)return false;renderRawReason(label);renderRows(label);topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`;const cid=currentClass,iso=currentIso;stopSnapshots=watchCheckHereDay(db,cid,iso,records=>{if(disposed||dateEpoch!==epoch)return;pendingSnapshots={records,cid,iso};flushSnapshots();},e=>{if(!disposed&&dateEpoch===epoch)$('#liveSheetState').textContent='체크히어 실시간 확인 실패 · 기존 표 유지 · '+e.message;});return true;}
+  // Edits invalidate an in-flight Sheet refresh, not the selected day or its DB listener.
+  async function loadSelectedDate(){stopSnapshots();clearTimeout(snapshotTimer);pendingSnapshots=null;epoch++;const dateEpoch=++viewEpoch;lastLiveSignature='';showErr('');const label=dateSel.value,d=dates.find(x=>x.label===label);if(!d)return;currentIso=d.iso;try{sessionStorage.setItem("hintWorkContext",JSON.stringify({classId:currentClass,date:currentIso}));}catch{}topState.textContent=`${currentClass}반 · ${label} 불러오는 중…`;await Promise.all([loadMemos(currentClass,currentIso),beta.load(currentClass,currentIso)]);if(disposed||dateEpoch!==viewEpoch||!host.isConnected)return false;renderRawReason(label);renderRows(label);topState.textContent=`${currentClass}반 · ${label} · ${students.length}명`;const cid=currentClass,iso=currentIso;stopSnapshots=watchCheckHereDay(db,cid,iso,records=>{if(disposed||dateEpoch!==viewEpoch)return;pendingSnapshots={records,cid,iso};flushSnapshots();},e=>{if(!disposed&&dateEpoch===viewEpoch)$('#liveSheetState').textContent='체크히어 실시간 확인 실패 · 기존 표 유지 · '+e.message;});return true;}
   async function loadClass(cid,keepDate='',forceColors=false){
-    epoch++;lastLiveSignature='';loadAbort?.abort();liveAbort?.abort();const controller=new AbortController();loadAbort=controller;
+    epoch++;viewEpoch++;lastLiveSignature='';loadAbort?.abort();liveAbort?.abort();const controller=new AbortController();loadAbort=controller;
     const previous={classId:currentClass,iso:currentIso,label:dates.find(d=>d.iso===currentIso)?.label||dateSel.value,colors:attendanceBackgrounds,nodes:[...rows.childNodes],raw:rawReason.textContent,top:topState.textContent,connectDisabled:$('#sheetConnect').disabled};
     const hadRows=students.length>0;let readerLoaded=false;
     for(const id of ['classSel','dateSel','reload','sheetConnect'])$('#'+id).disabled=true;
@@ -352,5 +353,5 @@ async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArra
   }
   const onVisible=()=>{if(!document.hidden){flushSnapshots();void refreshLive();}};
   window.addEventListener('focus',onVisible);document.addEventListener('visibilitychange',onVisible);liveTimer=setTimeout(refreshLive,120000);
-  return {canLeave:()=>memosReady()&&beta.canNavigate(),dispose(){disposed=true;epoch++;stopSnapshots();clearTimeout(snapshotTimer);pendingSnapshots=null;viewAbort.abort();loadAbort?.abort();liveAbort?.abort();clearTimeout(liveTimer);clearTimeout(summaryTimer);window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);root.removeEventListener('input',edited);root.removeEventListener('change',edited);}};
+  return {canLeave:()=>memosReady()&&beta.canNavigate(),dispose(){disposed=true;epoch++;viewEpoch++;stopSnapshots();clearTimeout(snapshotTimer);pendingSnapshots=null;viewAbort.abort();loadAbort?.abort();liveAbort?.abort();clearTimeout(liveTimer);clearTimeout(summaryTimer);window.removeEventListener('focus',onVisible);document.removeEventListener('visibilitychange',onVisible);root.removeEventListener('input',edited);root.removeEventListener('change',edited);}};
 }

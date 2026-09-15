@@ -30,6 +30,13 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     // No teacher or time exists on this student's snapshot; use the primary teacher,
     // not the second account that only has temporary access to this class.
     await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('[aria-label="가상나 입실·교시 사유 추천사유"]').value==='지각_담임:담임([시간 확인])');
+    // A date select's bubbling change event must not invalidate its own load.
+    await page.locator('#dateSel').selectOption('9/10');
+    await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('#topState').textContent==='1반 · 9/10 · 2명',null,{timeout:5000});
+    assert.equal(await page.locator('.source-value').filter({hasText:'수집된 입실 메모'}).count(),0);
+    await page.locator('#dateSel').selectOption('9/11');
+    await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('#topState').textContent==='1반 · 9/11 · 2명',null,{timeout:5000});
+    await page.locator('.source-value').filter({hasText:'수집된 입실 메모'}).waitFor();
     // A committed DB snapshot updates the CheckHere columns without rereading Sheet data.
     await page.evaluate(()=>{
       window.fixtureRecords=[{id:'ch1',version:'v2',classId:'1',date:'2026-09-11',name:'가상가',source:'live',readState:'complete',collectedAt:'2026-09-11T02:00:00Z',schedule:'09:00 ~ 18:00',teacher:'',entry:'13:00:00',exit:'18:00:00',entryMemo:'새 DB 입실 메모',exitMemo:'수집된 퇴실 메모',outings:[]}];
@@ -50,6 +57,13 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     await page.locator('[data-docmemo]').first().click();await page.getByLabel('서류제출 관련 메모',{exact:true}).fill('서류 추가 확인');await page.getByRole('button',{name:'닫기',exact:true}).click();await page.locator('[data-docmemo]').first().getByText('● 기타 특이사항 있음',{exact:true}).waitFor();
     await page.evaluate(()=>{window.docs['settings/attendanceOverviewMemo_1_2026-09-11'].memos['0_가상가'].checkhere='이전 통합 메모';window.docs['settings/attendanceOverviewMemo_1_2026-09-11'].memos['0_가상가'].manual='수기 기존 메모';window.docs['settings/attendanceOverviewMemo_1_2026-09-11'].memos['1_가상나']='초기 문자열 통합 메모';});
     await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.getByRole('button',{name:'가상가 입퇴실 관련 메모',exact:true}).waitFor();
+    // An edit must not permanently disconnect server updates for this date.
+    await page.getByLabel('가상가 입실·교시 사유 추천사유',{exact:true}).fill('검토 중인 추천사유');
+    await page.locator('.data-title').click();
+    await page.evaluate(()=>{window.fixtureRecords[0].exitMemo='편집 후 새 DB 퇴실 메모';window.snapshotNext({metadata:{fromCache:false,hasPendingWrites:false},docs:[{data:()=>({records:window.fixtureRecords})}]});});
+    await page.locator('.source-value').filter({hasText:'편집 후 새 DB 퇴실 메모'}).waitFor({timeout:5000});
+    assert.equal(await page.getByLabel('가상가 입실·교시 사유 추천사유',{exact:true}).inputValue(),'검토 중인 추천사유');
+    await page.locator('[data-proposal-reset="0_가상가__entryMemo"]').click();
     assert.equal(await page.locator('.table-head > div').count(),10);assert.equal(await page.locator('[data-category="checkhere"]').count(),0);
     assert.equal(await page.locator('.student-row').nth(1).locator('[data-column-memo]').count(),4);
     await page.getByRole('button',{name:'가상가 입퇴실 관련 메모',exact:true}).click();await page.getByRole('button',{name:'기존 통합 체크히어 메모 보기',exact:true}).click();assert.equal(await page.getByLabel('기존 통합 체크히어 메모',{exact:true}).inputValue(),'이전 통합 메모');await page.getByRole('button',{name:'닫기',exact:true}).click();
