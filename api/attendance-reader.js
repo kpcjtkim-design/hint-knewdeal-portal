@@ -16,6 +16,7 @@ async function profile(idToken,email){
   if(ADMIN.has(email))return{role:'ADMIN',active:true};
   const url=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/users/${encodeURIComponent(email)}`;
   const {response:r,data:d}=await fetchJson(url,{headers:{authorization:`Bearer ${idToken}`}});
+  if(!r.ok&&(r.status===429||d.error?.status==='RESOURCE_EXHAUSTED'))throw new Error('DATABASE_QUOTA_EXCEEDED');
   if(!r.ok)throw new Error(r.status===401?'LOGIN_REQUIRED':r.status===404?'PROFILE_NOT_FOUND':r.status===403?'PROFILE_READ_FORBIDDEN':'PROFILE_UNAVAILABLE');
   const f=d.fields||{};
   return{role:f.role?.stringValue,active:f.active===undefined||f.active?.booleanValue===true};

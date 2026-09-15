@@ -2,7 +2,7 @@ import {syncAttendanceSummary} from './attendance-derived-store.mjs';
 import {watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {within,readJson,readUntilReady} from './attendance-io.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
-import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-dbsave1';
+import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-admin2';
 import {latestTeachingDate} from './attendance-beta-core.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
@@ -283,11 +283,11 @@ async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArra
     epoch++;viewEpoch++;lastLiveSignature='';loadAbort?.abort();liveAbort?.abort();const controller=new AbortController();loadAbort=controller;
     const previous={classId:currentClass,iso:currentIso,label:dates.find(d=>d.iso===currentIso)?.label||dateSel.value,colors:attendanceBackgrounds,nodes:[...rows.childNodes],raw:rawReason.textContent,top:topState.textContent,connectDisabled:$('#sheetConnect').disabled};
     const hadRows=students.length>0;let readerLoaded=false;
-    for(const id of ['classSel','dateSel','reload','sheetConnect'])$('#'+id).disabled=true;
+    for(const id of ['classSel','dateSel','reload'])$('#'+id).disabled=true;
     showErr('');currentClass=String(cid);attendanceBackgrounds=[];topState.textContent=`${currentClass}반 시트 읽는 중…`;if(hadRows&&previous.classId===currentClass)rows.inert=true;else{rows.innerHTML='<div class="empty">Google Sheet를 읽는 중…</div>';rawReason.textContent='Google Sheet를 읽는 중…';}classSel.disabled=false;
     const colorClass=currentClass;
     try{
-      const out=await readUntilReady(()=>getReader(String(cid),!forceColors,controller.signal),{signal:controller.signal,isActive:()=>!disposed&&host.isConnected&&!document.hidden,onState:info=>{if(controller.signal.aborted)return;topState.textContent=info.paused?'화면으로 돌아오면 시트 확인을 계속합니다.':info.error?`${cid}반 · 시트 연결 대기 · ${Math.ceil(info.delay/1000)}초 후 자동 재시도 (${info.attempt}회)`:`${cid}반 · 시트 읽는 중… 잠시 기다려 주세요.`;}});if(controller.signal.aborted||disposed||!host.isConnected)return;readerLoaded=true;parseReader(out);summaryStudents={};queueSummary(out);
+      const out=await readUntilReady(()=>getReader(String(cid),!forceColors,controller.signal),{signal:controller.signal,isActive:()=>!disposed&&host.isConnected&&!document.hidden,onState:info=>{if(controller.signal.aborted)return;if(info.error)showErr(new Error((info.error.code?'['+info.error.code+'] ':'')+info.error.message));topState.textContent=info.paused?'화면으로 돌아오면 시트 확인을 계속합니다.':info.error?`${cid}반 · 시트 연결 대기 · ${Math.ceil(info.delay/1000)}초 후 자동 재시도 (${info.attempt}회)`:`${cid}반 · 시트 읽는 중… 잠시 기다려 주세요.`;}});if(controller.signal.aborted||disposed||!host.isConnected)return;readerLoaded=true;showErr('');parseReader(out);summaryStudents={};queueSummary(out);
       dateSel.innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');
       const preferred=dates.find(x=>x.label===keepDate)?.label||latestTeachingDate(dates)?.label||dates[0]?.label||'';dateSel.value=preferred;
       if(!(await loadSelectedDate())||controller.signal.aborted)return;

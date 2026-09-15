@@ -9,7 +9,7 @@ export function createSheetWriter({authorize,getClassConfig,fetchImpl=fetch}){
   async function api(url,body){
     if(!token)throw Error('먼저 내 Google 계정의 시트 편집 권한을 연결해 주세요.');
     const res=await fetchImpl(url,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',signal:AbortSignal.timeout(20000)});
-    const data=await res.json();if(!res.ok){if(res.status===401)token='';throw Error(data.error?.message||`Google Sheets 오류 (${res.status})`);}return data;
+    const data=await res.json();if(!res.ok){if(res.status===401)token='';throw Object.assign(Error(data.error?.message||`Google Sheets 오류 (${res.status})`),{status:res.status,retryable:res.status===429||res.status>=500});}return data;
   }
   async function layout(classId){
     const config=await getClassConfig(String(classId)),match=String(config.sheetUrl||'').match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);if(!match)throw Error('반별 운영 시트 주소가 설정되지 않았습니다.');

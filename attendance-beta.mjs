@@ -21,8 +21,8 @@ export function createAttendanceBeta({db,user,root,state,render,showErr,reasonFo
   let metadata={},snapshots=[],snapshotError='',excursions=[],lectureEnds=[],excursionError='',working=false,loading=false,sequence=0;
   const drafts=new Map();
   const writer=createSheetWriter({
-    async authorize(){const provider=new GoogleAuthProvider();provider.addScope('https://www.googleapis.com/auth/spreadsheets');provider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');provider.setCustomParameters({login_hint:user.email,prompt:'consent'});const result=await reauthenticateWithPopup(user,provider),credential=GoogleAuthProvider.credentialFromResult(result);if(!credential?.accessToken)throw Error('Google 시트 편집 인증을 완료하지 못했습니다.');return credential.accessToken;},
-    async getClassConfig(cid){return (await getDoc(doc(db,'classes',cid))).data()||{};}
+    async authorize(){const provider=new GoogleAuthProvider();provider.addScope('https://www.googleapis.com/auth/spreadsheets');provider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');provider.setCustomParameters({login_hint:user.email,prompt:'consent'});const result=await within(reauthenticateWithPopup(user,provider),90000,'Google 인증을 기다리고 있습니다. 열린 로그인 창을 확인한 뒤 다시 연결해 주세요.'),credential=GoogleAuthProvider.credentialFromResult(result);if(!credential?.accessToken)throw Error('Google 시트 편집 인증을 완료하지 못했습니다.');return credential.accessToken;},
+    async getClassConfig(cid){return (await within(getDoc(doc(db,'classes',cid)),15000,'반별 시트 주소 조회가 지연됩니다. 다시 연결해 주세요.')).data()||{};}
   });
   const key=s=>`${s.rowIndex}_${s.name}`;
   const info=s=>metadata[key(s)]||{};

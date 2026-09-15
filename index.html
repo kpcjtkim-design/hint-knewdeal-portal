@@ -182,7 +182,7 @@ async function adminView(user,p,tab='attendanceOverview',selected='1'){try{
  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>adminView(user,p,b.dataset.tab,selected));
  if(tab==='classes')await classAdmin(user,p,selected);if(tab==='urgent')await urgentAdmin(user,p,selected);if(tab==='preview')await adminPreview(user,p,selected);if(tab==='attendanceOverview')await attendanceOverviewAdmin(user,p);if(tab==='timetable')await timetableAdmin(user,p);if(tab==='surveys')await surveysAdmin(user,p);if(tab==='attendanceStats')await statisticsAdmin(user,p);if(tab==='materials')await materialsAdmin(user,p);if(tab==='studentPreview')studentPreviewAdmin();if(tab==='checkhere')await checkhereAdmin(user,p);if(tab==='uploads')await uploadAdmin(user,p);if(tab==='users')await userAdmin(user,p);if(tab==='settings')await settingsAdmin(user,p);if(tab==='overview')overviewAdmin(user,p);
  }catch(e){fatal(user,'관리자 화면을 불러오지 못했습니다.',e)}}
-async function surveysAdmin(user,p){const host=document.getElementById('adminBody'),mod=await import('/survey-view.mjs?v=20260915-release1');const work=await mod.mountSurveys(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();}
+async function surveysAdmin(user,p){const host=document.getElementById('adminBody'),mod=await import('/survey-view.mjs?v=20260915-admin2');const work=await mod.mountSurveys(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();}
 async function timetableAdmin(user,p){
   const host=document.getElementById('adminBody');host.closest('.page').classList.add('checkhere-page');
   const mod=await import('/timetable.mjs?v=20260915-release1');const work=await mod.mountTimetableAdmin(host,{db,user,classes:CLASSES});if(host.isConnected)adminWork=work;else work?.dispose?.();
@@ -206,7 +206,7 @@ async function attendanceAdmin(user,p){
 }
 async function attendanceOverviewAdmin(user,p){
  const host=document.getElementById('adminBody');if(!host)return;
- const mod=await import('/attendance-version.mjs?v=20260915-release1');if(!host.isConnected)return;
+ const mod=await import('/attendance-version.mjs?v=20260915-admin2');if(!host.isConnected)return;
  const work=await mod.mountAttendanceVersion(host,{auth,db,user,profile:p,classes:CLASSES});
  if(host.isConnected)adminWork=work;else work?.dispose?.();
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBridgeReader} from '../../lib/attendance-reader-transport.mjs';
-import {within,readJson} from '../../attendance-io.mjs';
+import {within,readJson,readUntilReady} from '../../attendance-io.mjs';
 import readerHandler from '../../api/attendance-reader.js';
 import colorsHandler from '../../api/attendance-colors.js';
 const valid={ok:true,classId:'2',attendance:[['이름','','','','9/3'],['시험학생','','','','출석']],reasons:[['','','','','9/3'],['','','','','']],attendanceBackgrounds:[[],[]]};
@@ -40,6 +40,15 @@ test('browser reads reject invalid success pages and deadlines cleanly recover',
   const cancel=new AbortController();const pending=within(new Promise(()=>{}),500,undefined,cancel.signal);cancel.abort();await assert.rejects(pending,{name:'AbortError'});
  }finally{globalThis.fetch=original;}
 });
+
+test('database quota exhaustion is shown once without an endless reader retry',async()=>{
+ const original=globalThis.fetch;let reads=0,pauses=0;
+ try{
+  globalThis.fetch=async()=>{reads++;return Response.json({ok:false,error:'DATABASE_QUOTA_EXCEEDED',retryable:false,message:'데이터베이스 일일 한도 초과'},{status:429});};
+  await assert.rejects(readUntilReady(()=>readJson('/reader',{}),{pause:async()=>{pauses++;throw Error('unexpected retry');}}),e=>e.code==='DATABASE_QUOTA_EXCEEDED'&&e.retryable===false);
+  assert.equal(reads,1);assert.equal(pauses,0);
+ }finally{globalThis.fetch=original;}
+});
 test('both reader endpoints authenticate every request and never serve cached data to an unauthorized user',async()=>{
  const original=globalThis.fetch;let role='ADMIN',bridgeCalls=0;
  const call=async(handler,body,method='POST')=>{const res={headers:{},setHeader(k,v){this.headers[k]=v;},status(n){this.code=n;return this;},json(value){this.body=value;return this;}};await handler({method,body},res);return res;};
@@ -76,8 +85,8 @@ test('registered legacy administrators can read without an active field; disable
     {role:{stringValue:'ADMIN'},active:{stringValue:'true'}},
     {role:{stringValue:'TEACHER'}},{}
    ]){fields=profile;const before=bridgeCalls;assert.equal((await call(handler)).code,403);assert.equal(bridgeCalls,before);}
-   for(const [upstream,expected] of [[401,401],[403,403],[404,403],[500,503]]){
-    status=upstream;const before=bridgeCalls;assert.equal((await call(handler)).code,expected);assert.equal(bridgeCalls,before);
+   for(const [upstream,expected] of [[401,401],[403,403],[404,403],[429,429],[500,503]]){
+    status=upstream;const before=bridgeCalls;assert.equal((await call(handler)).code,expected);assert.equal(bridgeCalls,before);if(upstream===429)assert.equal((await call(handler)).body.retryable,false);
    }
   }
  }finally{globalThis.fetch=original;}

@@ -6,7 +6,7 @@ service cloud.firestore {
     function bootstrapAdmin(){return signedIn()&&(email()=='hint.kpc@gmail.com'||email()=='kpc.jtkim@gmail.com');}
     function profileExists(){return signedIn()&&exists(/databases/$(database)/documents/users/$(email()));}
     function profile(){return get(/databases/$(database)/documents/users/$(email())).data;}
-    function isAdmin(){return bootstrapAdmin()||(profileExists()&&profile().active==true&&profile().role=='ADMIN');}
+    function isAdmin(){return bootstrapAdmin()||(profileExists()&&profile().get('active',true)==true&&profile().role=='ADMIN');}
     function isTeacher(){return profileExists()&&profile().active==true&&profile().role=='TEACHER';}
     function checkhereApprover(){return signedIn() && email()=='hint.kpc@gmail.com' && request.auth.token.email_verified==true && request.auth.token.firebase.sign_in_provider=='google.com';}
     function requestTeacherOwns(classId){
@@ -146,12 +146,11 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
       allow update, delete: if false;
     }
-    // Beta survey results: own-class reads, designated sync owner writes.
+    // Survey results: own-class reads, active administrator writes.
     match /surveyBetaSummaries/{classId}/surveys/{eventId}{
       allow read: if isAdmin() || timetableTeacherOwns(classId);
       allow create, update: if isAdmin()
         && request.auth.token.email_verified == true
-        && email() == 'hint.kpc@gmail.com'
         && classId.matches('([1-9]|1[0-7])')
         && request.resource.data.classId == classId
         && request.resource.data.eventId == eventId
