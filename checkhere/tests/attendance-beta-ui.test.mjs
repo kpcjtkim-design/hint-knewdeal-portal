@@ -4,15 +4,15 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
   const names=['가상가','가상나'],statuses=['해당없음','지각'],colors=['#ffffff','#ffffff'],writes=[];let raw='가상나: 시험',dialogs=[],answer=true,readFailure=false;
   const rgb=h=>({red:parseInt(h.slice(1,3),16)/255,green:parseInt(h.slice(3,5),16)/255,blue:parseInt(h.slice(5,7),16)/255});
   page.on('dialog',async d=>{dialogs.push(d.message());if(answer)await d.accept();else await d.dismiss();});
-  await page.addInitScript(()=>{const Original=Date;window.Date=class extends Original{constructor(...args){super(...(args.length?args:['2026-09-11T03:00:00Z']));}static now(){return new Original('2026-09-11T03:00:00Z').getTime();}};});
+  await page.addInitScript(()=>{const originalTimeout=window.setTimeout;window.setTimeout=(fn,ms,...args)=>{if(ms===300000)window.runLivePoll=fn;return originalTimeout(fn,ms,...args);};const Original=Date;window.Date=class extends Original{constructor(...args){super(...(args.length?args:['2026-09-11T03:00:00Z']));}static now(){return new Original('2026-09-11T03:00:00Z').getTime();}};});
   const attendance=()=>[['이름','','','','9/10','9/11','10/22'],...names.map((n,i)=>[n,'','','','출석',statuses[i],'해당없음'])];
   const reasons=()=>[['','','','','9/10','9/11','10/22'],['','','','','',raw,'']];
   try{
     await page.route('**/*',async route=>{
       const request=route.request(),url=new URL(request.url());
       if(url.hostname==='www.gstatic.com'&&url.pathname.endsWith('firebase-auth.js'))return route.fulfill({contentType:'text/javascript',body:`export class GoogleAuthProvider{addScope(){}setCustomParameters(){}static credentialFromResult(){return{accessToken:'fixture-token'}}}export async function reauthenticateWithPopup(){return{};}`});
-      if(url.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`export const getDocsFromServer=(...a)=>getDocs(...a);export const onSnapshot=(ref,options,next)=>{window.snapshotNext=next;return()=>{window.snapshotNext=null;};};window.docs={};export const doc=(...a)=>({path:a.slice(1).join('/')}),collection=(...a)=>a,query=(...a)=>a,where=(...a)=>a,orderBy=(...a)=>a,limit=(...a)=>a,serverTimestamp=()=>({seconds:1});const merge=(a,b)=>{for(const[k,v]of Object.entries(b)){if(v&&typeof v==='object'&&!Array.isArray(v)){if(!a[k]||typeof a[k]!=='object')a[k]={};merge(a[k],v);}else a[k]=v;}return a;};export const getDocFromServer=(...a)=>getDoc(...a);export async function getDoc(ref){if(ref.path.startsWith('timetableBetaDrafts/'))return{data:()=>({entries:[{date:'2026-09-11',title:'공장견학(화성)',module:'공장견학',kind:'lesson'}]})};const value=ref.path.startsWith('classes/')?{sheetUrl:'https://docs.google.com/spreadsheets/d/fixture-sheet/edit'}:window.docs[ref.path];return{exists:()=>!!value,data:()=>value};}export async function setDoc(ref,data){window.docs[ref.path]=merge(window.docs[ref.path]||{},data);}export async function runTransaction(db,fn){return fn({get:getDoc,set:setDoc});}export async function getDocs(ref){if(JSON.stringify(ref).includes('users'))return{docs:[{data:()=>({name:'담임',role:'TEACHER',active:true,primaryClassId:'1',classIds:['1']})},{data:()=>({name:'임시접근자',role:'TEACHER',active:true,primaryClassId:'2',classIds:['2','1'],tempClassIds:['1']})}]};if(JSON.stringify(ref).includes("checkhereRequests"))return{docs:[]};return{docs:[{data:()=>({records:window.fixtureRecords||[{id:'ch1',version:'v1',classId:'1',date:'2026-09-11',name:'가상가',source:'live',readState:'complete',collectedAt:'2026-09-11T01:00:00Z',schedule:'09:00 ~ 18:00',teacher:'',entry:'13:00:00',exit:'18:00:00',entryMemo:'수집된 입실 메모',exitMemo:'수집된 퇴실 메모',outings:[]}]})}]};}`});
-      if(url.pathname==='/attendance-derived-store.mjs')return route.fulfill({contentType:'text/javascript',body:'export async function syncAttendanceSummary(){return{students:[]};}'});
+      if(url.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`export const getDocsFromServer=async(...a)=>{const s=await getDocs(...a);return{...s,docs:s.docs.map(d=>({data:()=>structuredClone(d.data())}))};};export const onSnapshot=(ref,options,next)=>{window.snapshotNext=next;return()=>{window.snapshotNext=null;};};window.docs={};export const doc=(...a)=>({path:a.slice(1).join('/')}),collection=(...a)=>a,query=(...a)=>a,where=(...a)=>a,orderBy=(...a)=>a,limit=(...a)=>a,serverTimestamp=()=>({seconds:1});const merge=(a,b)=>{for(const[k,v]of Object.entries(b)){if(v&&typeof v==='object'&&!Array.isArray(v)){if(!a[k]||typeof a[k]!=='object')a[k]={};merge(a[k],v);}else a[k]=v;}return a;};export const getDocFromServer=(...a)=>getDoc(...a);export async function getDoc(ref){if(ref.path.startsWith('timetableBetaDrafts/'))return{data:()=>({entries:[{date:'2026-09-11',title:'공장견학(화성)',module:'공장견학',kind:'lesson'}]})};if(ref.path.includes('/checkhereCurrent/'))return{exists:()=>false,data:()=>undefined};const value=ref.path.startsWith('classes/')?{sheetUrl:'https://docs.google.com/spreadsheets/d/fixture-sheet/edit'}:window.docs[ref.path];return{exists:()=>!!value,data:()=>value};}export async function setDoc(ref,data){window.docs[ref.path]=merge(window.docs[ref.path]||{},data);}export async function runTransaction(db,fn){return fn({get:getDoc,set:setDoc});}export async function getDocs(ref){if(JSON.stringify(ref).includes('users'))return{docs:[{data:()=>({name:'담임',role:'TEACHER',active:true,primaryClassId:'1',classIds:['1']})},{data:()=>({name:'임시접근자',role:'TEACHER',active:true,primaryClassId:'2',classIds:['2','1'],tempClassIds:['1']})}]};if(JSON.stringify(ref).includes("checkhereRequests"))return{docs:[]};return{docs:[{data:()=>({records:window.fixtureRecords||[{id:'ch1',version:'v1',classId:'1',date:'2026-09-11',name:'가상가',source:'live',readState:'complete',collectedAt:'2026-09-11T01:00:00Z',schedule:'09:00 ~ 18:00',teacher:'',entry:'13:00:00',exit:'18:00:00',entryMemo:'수집된 입실 메모',exitMemo:'수집된 퇴실 메모',outings:[]}]})}]};}`});
+      if(url.pathname==='/attendance-derived-store.mjs')return route.fulfill({contentType:'text/javascript',body:'export async function syncAttendanceSummary(){window.summaryWrites=(window.summaryWrites||0)+1;return{students:[]};}'});
       if(url.hostname==='www.googleapis.com')return route.fulfill({json:{capabilities:{canEdit:true}}});
       if(url.hostname==='sheets.googleapis.com'){
         if(url.pathname.endsWith(':batchUpdate')){const body=request.postDataJSON(),u=body.requests[0].updateCells,v=u.rows[0].values[0];writes.push(u);if(u.range.startRowIndex===50)raw=v.userEnteredValue.stringValue;else if(v.userEnteredValue)statuses[u.range.startRowIndex-18]=v.userEnteredValue.stringValue;else{const c=v.userEnteredFormat.backgroundColorStyle.rgbColor;colors[u.range.startRowIndex-18]='#'+['red','green','blue'].map(k=>Math.round(c[k]*255).toString(16).padStart(2,'0')).join('');}return route.fulfill({json:{}});}
@@ -40,12 +40,12 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     // A committed DB snapshot updates the CheckHere columns without rereading Sheet data.
     await page.evaluate(()=>{
       window.fixtureRecords=[{id:'ch1',version:'v2',classId:'1',date:'2026-09-11',name:'가상가',source:'live',readState:'complete',collectedAt:'2026-09-11T02:00:00Z',schedule:'09:00 ~ 18:00',teacher:'',entry:'13:00:00',exit:'18:00:00',entryMemo:'새 DB 입실 메모',exitMemo:'수집된 퇴실 메모',outings:[]}];
-      window.snapshotNext({metadata:{hasPendingWrites:true},docs:[{data:()=>({records:window.fixtureRecords})}]});
+      window.snapshotNext({metadata:{hasPendingWrites:true},exists:()=>true,data:()=>({records:window.fixtureRecords})});
     });
     assert.equal(await page.locator('.source-value').filter({hasText:'새 DB 입실 메모'}).count(),0);
-    await page.evaluate(()=>window.snapshotNext({metadata:{hasPendingWrites:false,fromCache:false},docs:[{data:()=>({records:window.fixtureRecords})}]}));
+    await page.evaluate(()=>window.snapshotNext({metadata:{hasPendingWrites:false,fromCache:false},exists:()=>true,data:()=>({records:window.fixtureRecords})}));
     await page.locator('.source-value').filter({hasText:'새 DB 입실 메모'}).waitFor();
-    await page.getByRole('button',{name:'내 계정 시트 연결',exact:true}).click();await page.getByRole('button',{name:'내 계정 연결됨',exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>window.summaryWrites||0),0,'initial/date/snapshot reads must not save statistics');await page.getByRole('button',{name:'내 계정 시트 연결',exact:true}).click();await page.getByRole('button',{name:'내 계정 연결됨',exact:true}).waitFor();
     await page.getByLabel('가상가 출결').selectOption('출석');await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('.beta-status').disabled===false);assert.equal(statuses[0],'출석');assert.equal(dialogs.length,0);
     answer=false;await page.getByLabel('가상가 출결').selectOption('결석');assert.equal(statuses[0],'출석');assert.equal(dialogs.length,1);
     answer=true;await page.getByLabel('가상가 출결').selectOption('인정지각');await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('.beta-status').disabled===false);assert.equal(statuses[0],'인정출석');assert.equal(await page.getByLabel('가상가 출결').inputValue(),'인정지각');
@@ -60,7 +60,7 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     // An edit must not permanently disconnect server updates for this date.
     await page.getByLabel('가상가 입실·교시 사유 추천사유',{exact:true}).fill('검토 중인 추천사유');
     await page.locator('.data-title').click();
-    await page.evaluate(()=>{window.fixtureRecords[0].exitMemo='편집 후 새 DB 퇴실 메모';window.snapshotNext({metadata:{fromCache:false,hasPendingWrites:false},docs:[{data:()=>({records:window.fixtureRecords})}]});});
+    await page.evaluate(()=>{window.fixtureRecords[0].exitMemo='편집 후 새 DB 퇴실 메모';window.snapshotNext({metadata:{fromCache:false,hasPendingWrites:false},exists:()=>true,data:()=>({records:window.fixtureRecords})});});
     await page.locator('.source-value').filter({hasText:'편집 후 새 DB 퇴실 메모'}).waitFor({timeout:5000});
     assert.equal(await page.getByLabel('가상가 입실·교시 사유 추천사유',{exact:true}).inputValue(),'검토 중인 추천사유');
     await page.locator('[data-proposal-reset="0_가상가__entryMemo"]').click();
@@ -96,25 +96,25 @@ test('beta UI separates initial entry, corrections, reason save and evidence con
     assert(await page.locator('[data-proposal-send="0_가상가__entryMemo"]').isDisabled());
     await page.getByRole('button',{name:/^사유 저장/}).click();await page.getByRole('button',{name:'사유 저장',exact:true}).waitFor();
     assert(await page.locator('[data-proposal-send="0_가상가__entryMemo"]').isEnabled());
-    // Another administrator changing the source Sheet is reflected on focus return.
+    // External Sheet edits are picked up by the five-minute Sheet-only poll.
     raw='가상가: 면접\n가상나: 시험';
-    await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await page.locator('.data-title').click();await page.evaluate(()=>window.runLivePoll());
     await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('[aria-label="가상가 사유"]').value==='면접');
     assert.equal(await recommended.inputValue(),'(인정지각)면접_담임:담임(13:00)');
     // Manual proposals survive external refresh but are blocked until their source is re-reviewed.
     await recommended.fill('직원이 직접 확인한 사유');raw='가상가: 시험\n가상나: 시험';
-    await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await page.locator('.data-title').click();await page.evaluate(()=>window.runLivePoll());
     await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('[aria-label="가상가 사유"]').value==='시험');
     assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');assert(await page.locator('[data-proposal-send="0_가상가__entryMemo"]').isDisabled());
     // Temporary reader failure retains both the current table and manual proposals.
-    readFailure=true;await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    readFailure=true;await page.locator('.data-title').click();await page.evaluate(()=>window.runLivePoll());
     await page.getByText(/기존 표 유지 · 시트 자동 확인 실패/).waitFor();assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');assert.equal(await page.getByLabel('가상가 사유').inputValue(),'시험');
     await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).click();await page.getByText(/초 후 자동 재시도/).waitFor();assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');assert(await page.getByRole('button',{name:'↻ 다시 읽기',exact:true}).isDisabled());
-    readFailure=false;raw='가상가: 면접\n가상나: 시험';await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    readFailure=false;raw='가상가: 면접\n가상나: 시험';await page.locator('.data-title').click();await page.evaluate(()=>window.runLivePoll());
     await page.waitForFunction(()=>document.querySelector('#host').shadowRoot.querySelector('[aria-label="가상가 사유"]').value==='면접');assert.equal(await recommended.inputValue(),'직원이 직접 확인한 사유');
     // Unsubmitted Sheet reason text is never overwritten by polling.
     await page.getByLabel('가상가 사유').fill('입력 중 사유');raw='가상가: 병원\n가상나: 시험';
-    await page.locator('.data-title').click();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await page.locator('.data-title').click();await page.evaluate(()=>window.runLivePoll());
     await page.getByText('시트 자동 확인 대기 · 입력·저장 완료 후 재개',{exact:true}).waitFor();assert.equal(await page.getByLabel('가상가 사유').inputValue(),'입력 중 사유');
     await page.getByRole('link',{name:'공장견학(화성) · 모듈 종료일, 만족도조사 필요 ↗',exact:true}).waitFor();
     await page.evaluate(()=>window.mounted.dispose());
