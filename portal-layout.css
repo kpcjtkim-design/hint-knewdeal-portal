@@ -15,10 +15,6 @@
 .admin-major button.active{background:transparent;color:var(--portal-navy);border-bottom-color:var(--portal-navy)}
 .admin-major button:hover{color:var(--portal-navy);background:#f5f8fa}
 .page,.page.checkhere-page{width:calc(100% - 48px);max-width:2560px;margin:24px auto 48px}
-.admin-intro{min-height:88px;margin:0 0 14px;padding:20px 24px;background:var(--portal-navy);border-radius:6px;color:#fff;gap:18px;border-left:4px solid #56bfd3}
-.admin-intro h2{font-size:25px;font-weight:750;letter-spacing:-.04em}
-.admin-intro h2 span{font-size:11px;letter-spacing:.1em;color:#a6dce6;margin-left:8px}
-.admin-intro>span{font-size:12px;color:#d1dfe6}
 .admin-tabs{gap:24px;padding:0 6px;margin:0 0 14px;background:transparent;border-bottom:1px solid #cfd9df;border-radius:0;flex-wrap:wrap;overflow:visible}
 .admin-tabs .tab{background:transparent;color:#65727d;border-radius:0;padding:13px 2px 12px;border-bottom:3px solid transparent;font-size:13px}
 .admin-tabs .tab.active{background:transparent;color:var(--portal-navy);border-bottom-color:var(--portal-navy)}
@@ -45,5 +41,10 @@
 .login-card .brand,.login-card .btn-primary{background:var(--portal-navy)}
 .topbar button:focus-visible,.admin-tabs button:focus-visible{outline:2px solid #26829f;outline-offset:3px}
 @media(max-width:1280px){.topbar{gap:18px;padding:0 22px}.topbar.has-primary-nav{grid-template-columns:minmax(220px,1fr) auto minmax(88px,1fr)}.admin-major{gap:18px}.user-email{display:none}.hint-wordmark{font-size:26px}.portal-brand{gap:12px}.portal-brand>div{padding-left:12px}}
-@media(max-width:960px){.topbar.has-primary-nav{grid-template-columns:minmax(0,1fr) auto;gap:0 16px}.topbar .admin-major{grid-column:1/-1;grid-row:2;gap:24px;min-height:46px;overflow-x:auto}.topbar .top-actions{grid-column:2;grid-row:1}.admin-major button{min-height:44px;padding:0 2px}.admin-intro>span{display:none}.admin-tabs{gap:18px}}
-@media(max-width:680px){.topbar{padding:0 14px;min-height:66px}.portal-brand{padding:12px 0;gap:10px}.hint-wordmark{font-size:22px}.portal-brand>div{padding-left:10px}.portal-brand .eyebrow{font-size:9px}.topbar .title{font-size:13px}.top-actions .btn{padding:7px 9px;font-size:11px}.topbar .admin-major{gap:22px}.admin-major button{font-size:12px}.page,.page.checkhere-page{width:calc(100% - 20px);margin:14px auto 32px}.admin-intro{min-height:72px;padding:15px 16px}.admin-intro h2{font-size:21px}.admin-intro h2 span{display:inline;font-size:10px}.admin-tabs{gap:16px;flex-wrap:nowrap;overflow-x:auto;padding:0 2px}.admin-tabs .tab{font-size:12px;white-space:nowrap;flex-shrink:0}.admin-crumb{font-size:10px;margin-bottom:14px}.page .hero{padding:18px}.page .section-head h2{font-size:19px}}
+@media(max-width:960px){.topbar.has-primary-nav{grid-template-columns:minmax(0,1fr) auto;gap:0 16px}.topbar .admin-major{grid-column:1/-1;grid-row:2;gap:24px;min-height:46px;overflow-x:auto}.topbar .top-actions{grid-column:2;grid-row:1}.admin-major button{min-height:44px;padding:0 2px}.admin-tabs{gap:18px}}
+@media(max-width:680px){.topbar{padding:0 14px;min-height:66px}.portal-brand{padding:12px 0;gap:10px}.hint-wordmark{font-size:22px}.portal-brand>div{padding-left:10px}.portal-brand .eyebrow{font-size:9px}.topbar .title{font-size:13px}.top-actions .btn{padding:7px 9px;font-size:11px}.topbar .admin-major{gap:22px}.admin-major button{font-size:12px}.page,.page.checkhere-page{width:calc(100% - 20px);margin:14px auto 32px}.admin-tabs{gap:16px;flex-wrap:nowrap;overflow-x:auto;padding:0 2px}.admin-tabs .tab{font-size:12px;white-space:nowrap;flex-shrink:0}.admin-crumb{font-size:10px;margin-bottom:14px}.page .hero{padding:18px}.page .section-head h2{font-size:19px}}
+
+.portal-title-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.portal-role{font-size:11px;font-weight:500;color:#657782;white-space:nowrap}.topbar.has-primary-nav{grid-template-columns:minmax(320px,1fr) auto minmax(180px,1fr)}
+@media(max-width:1280px){.topbar.has-primary-nav{grid-template-columns:minmax(310px,1fr) auto minmax(88px,1fr)}}
+@media(max-width:960px){.topbar.has-primary-nav{grid-template-columns:minmax(0,1fr) auto}}
+@media(max-width:680px){.portal-title-row{gap:4px 7px}.portal-role{font-size:9px}}
