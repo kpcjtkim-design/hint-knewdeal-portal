@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/attendance-reader.js": {"maxDuration": 60},
-    "api/attendance-colors.js": {"maxDuration": 60}
+    "api/attendance-colors.js": {"maxDuration": 60},
+    "api/survey-sync.js": {"maxDuration": 60}
   },
   "redirects": [
     {

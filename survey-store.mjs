@@ -1,13 +1,15 @@
 import {collection,doc,getDoc,getDocs,setDoc,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {SURVEY_COLLECTION} from './survey-core.mjs';
 import {within} from './attendance-io.mjs';
+import {stableSurveyPayload} from './survey-sync-core.mjs';
 export function createSurveyStore(db,user,{canManage=false}={}){
  const owner=()=>canManage;
- const payload=data=>JSON.stringify(data, (k,v)=>['syncedAt','updatedAt','updatedBy','classId','eventId'].includes(k)?undefined:v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
+ const payload=stableSurveyPayload;
 
  return {
   async read(classId){const s=await within(getDocs(collection(db,SURVEY_COLLECTION,String(classId),'surveys')),15000);return Object.fromEntries(s.docs.map(d=>[d.id,d.data()]));},
   async configuration(){return (await within(getDoc(doc(db,'settings','surveyBetaConfig')),15000)).data()||{};},
+  async syncStatus(){return (await within(getDoc(doc(db,'settings','surveyAutoSync')),15000)).data()||null;},
   async saveConfig(eventId,config){if(!owner())throw Error('응답 연결은 관리자만 가능합니다.');await within(setDoc(doc(db,'settings','surveyBetaConfig'),{events:{[eventId]:config},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true}));},
   async save(classId,eventId,data){
    if(!owner())throw Error('응답 동기화는 관리자만 가능합니다.');
