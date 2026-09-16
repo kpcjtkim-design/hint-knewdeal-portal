@@ -47,6 +47,12 @@ test('unreadable Google source preserves old survey results and reports partial 
  const f=fixture();await syncClassWorker(f.input);const old=f.documents.get('surveyBetaSummaries/1/surveys/e1');f.writes.length=0;f.input.reader.responses=async()=>{throw Error('denied');};
  const result=await syncClassWorker(f.input);assert.equal(result.failed,1);assert.equal(result.done,0);assert.equal(f.writes.length,0);assert.deepEqual(f.documents.get('surveyBetaSummaries/1/surveys/e1'),old);
 });
+test('missing lecture attendance is reported before reading response sheets',async()=>{
+ const f=fixture();let calls=0;f.documents.set('settings/surveyBetaConfig',{events:{e1:{date:'2026-09-13'}}});
+ f.documents.set('timetableBetaPublished/1',{entries:[{id:'d1',title:'SW 테스팅',date:'2026-09-13',day:1,module:'직무특화'}]});
+ f.input.reader.responses=async()=>{calls++;return[];};
+ const result=await syncClassWorker(f.input);assert.equal(result.failures[0].code,'ATTENDANCE_DATES_REQUIRED');assert.equal(calls,0);assert(!f.documents.has('surveyBetaSummaries/1/surveys/e1'));
+});
 test('deployed CommonJS bundle executes shared worker and rejects invalid tokens',async()=>{
  const f=fixture();assert.equal((await runtime.syncClassWorker(f.input)).done,1);
  let status;const res={setHeader(){},status(n){status=n;return this;},json(data){return data;}};
