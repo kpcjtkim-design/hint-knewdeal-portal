@@ -1,13 +1,11 @@
-// Vercel's existing project emits API .js as CommonJS. Keep ESM helpers dynamic.
+// Generated runtime bundles the shared portal rules for the existing CommonJS API.
 module.exports=async function handler(req,res){
  res.setHeader('cache-control','no-store');
  if(req.method!=='POST')return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
  try{
   const {googleAccessToken,action,classId,slot,results=[]}=req.body||{};
   if(!googleAccessToken)throw Error('LOGIN_REQUIRED');
-  const {authenticateScheduler,syncClassWorker,probeSheets}=await import('../lib/survey-sync-worker.mjs');
-  const {createSyncStore}=await import('../lib/survey-sync-store.mjs');
-  const {surveySlot,SURVEY_SYNC_TIMES}=await import('../survey-sync-core.mjs');
+  const {authenticateScheduler,syncClassWorker,probeSheets,createSyncStore,surveySlot,SURVEY_SYNC_TIMES}=require('../lib/survey-sync-runtime.cjs');
   const idToken=await authenticateScheduler(googleAccessToken),store=createSyncStore(idToken);
   if(action==='probe'){await store.get('settings/surveyBetaConfig');await probeSheets(googleAccessToken);return res.json({ok:true,ownerVerified:true,schedule:SURVEY_SYNC_TIMES});}
   if(typeof slot!=='string'||!Number.isFinite(Date.parse(slot))||surveySlot(new Date(slot))!==slot||Math.abs(Date.now()-Date.parse(slot))>(action==='finish'?172800000:3600000))throw Error('BAD_SLOT');

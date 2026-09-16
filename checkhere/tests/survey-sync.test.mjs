@@ -4,6 +4,7 @@ import {surveySlot,stableSurveyPayload} from '../../survey-sync-core.mjs';
 import {encodeFields,decodeFields,createSyncStore} from '../../lib/survey-sync-store.mjs';
 import {syncClassWorker,authenticateScheduler} from '../../lib/survey-sync-worker.mjs';
 import handler from '../../api/survey-sync.js';
+import runtime from '../../lib/survey-sync-runtime.cjs';
 test('KST hourly and required evening slots, timezone boundary and delayed minute',()=>{
  for(const minute of [0,10,20,30])assert.equal(surveySlot(new Date(`2026-09-16T09:${String(minute).padStart(2,'0')}:00Z`)),`2026-09-16T18:${String(minute).padStart(2,'0')}+09:00`);
  assert.equal(surveySlot(new Date('2026-09-16T09:19:30Z')),'2026-09-16T18:10+09:00');
@@ -42,6 +43,11 @@ test('central worker reuses participation rules; changed-only writes; fresh resp
 test('unreadable Google source preserves old survey results and reports partial failure',async()=>{
  const f=fixture();await syncClassWorker(f.input);const old=f.documents.get('surveyBetaSummaries/1/surveys/e1');f.writes.length=0;f.input.reader.responses=async()=>{throw Error('denied');};
  const result=await syncClassWorker(f.input);assert.equal(result.failed,1);assert.equal(result.done,0);assert.equal(f.writes.length,0);assert.deepEqual(f.documents.get('surveyBetaSummaries/1/surveys/e1'),old);
+});
+test('deployed CommonJS bundle executes shared worker and rejects invalid tokens',async()=>{
+ const f=fixture();assert.equal((await runtime.syncClassWorker(f.input)).done,1);
+ let status;const res={setHeader(){},status(n){status=n;return this;},json(data){return data;}};
+ const out=await handler({method:'POST',body:{googleAccessToken:'invalid'}},res);assert.equal(status,403);assert.equal(out.error,'LOGIN_REQUIRED');
 });
 test('REST writes use compare-and-swap and server timestamp; concurrent update is never overwritten',async()=>{
  let body;const store=createSyncStore('test',async(url,options)=>{body=JSON.parse(options.body);return new Response(JSON.stringify({error:{status:'FAILED_PRECONDITION'}}),{status:409});});
