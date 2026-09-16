@@ -5,10 +5,13 @@ import {encodeFields,decodeFields,createSyncStore} from '../../lib/survey-sync-s
 import {syncClassWorker,authenticateScheduler} from '../../lib/survey-sync-worker.mjs';
 import handler from '../../api/survey-sync.js';
 import runtime from '../../lib/survey-sync-runtime.cjs';
-test('KST hourly and required evening slots, timezone boundary and delayed minute',()=>{
+test('KST business hours and required evening slots, overnight idle and delayed minute',()=>{
  for(const minute of [0,10,20,30])assert.equal(surveySlot(new Date(`2026-09-16T09:${String(minute).padStart(2,'0')}:00Z`)),`2026-09-16T18:${String(minute).padStart(2,'0')}+09:00`);
  assert.equal(surveySlot(new Date('2026-09-16T09:19:30Z')),'2026-09-16T18:10+09:00');
- assert.equal(surveySlot(new Date('2026-09-16T15:04:00Z')),'2026-09-17T00:00+09:00');
+ assert.equal(surveySlot(new Date('2026-09-16T15:04:00Z')),null);
+ assert.equal(surveySlot(new Date('2026-09-15T23:59:00Z')),null);
+ assert.equal(surveySlot(new Date('2026-09-16T10:00:00Z')),null);
+ assert.equal(surveySlot(new Date('2026-09-16T00:00:00Z')),'2026-09-16T09:00+09:00');
  assert.equal(surveySlot(new Date('2026-09-16T08:59:00Z')),'2026-09-16T17:00+09:00');
 });
 test('unchanged content ignores only bookkeeping; edited responses remain changes',()=>{

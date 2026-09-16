@@ -1,7 +1,8 @@
 // One central scheduler owns these slots. Browsers never start scheduled runs.
-export const SURVEY_SYNC_TIMES='매시간 정각 + 매일 18:10 · 18:20 · 18:30 (한국시간)';
+export const SURVEY_SYNC_TIMES='09~18시 매시간 정각 + 매일 18:10 · 18:20 · 18:30 (한국시간)';
 export function surveySlot(now=new Date()){
  const k=new Date(now.getTime()+9*3600000),date=k.toISOString().slice(0,10),hour=k.getUTCHours(),minute=k.getUTCMinutes();
+ if(hour<9||hour>18)return null;
  const m=hour===18?[0,10,20,30].filter(x=>x<=minute).at(-1):0;
  return `${date}T${String(hour).padStart(2,'0')}:${String(m).padStart(2,'0')}+09:00`;
 }

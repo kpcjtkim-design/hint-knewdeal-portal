@@ -1,9 +1,10 @@
 # 만족도 중앙 자동 동기화
 
 - 실행 소유자: 기존 HINT 관리 계정. 다른 운영자의 페이지에서는 예약 작업을 시작하지 않는다.
-- 한국시간 매시간 정각과 18:10, 18:20, 18:30. 18:00은 매시간 실행에 포함된다.
+- 한국시간 09~18시 정각과 18:10, 18:20, 18:30, 하루 13회. 18:00은 정각 실행에 포함된다. 새벽/야간에는 응답과 Firebase를 읽지 않는다.
 - Apps Script 시간 기반 트리거가 매분 예정 슬롯을 확인한다. Google 실행 지연 및 수집 시간이 있어 예정 시각과 실제 완료 시각은 다를 수 있다.
 - 설치: 전용 비공개 Apps Script 프로젝트에 `survey-scheduler.gs`와 `survey-scheduler.appsscript.json`의 매니페스트를 적용한다. Google Sheets 고급 서비스를 활성화하면 기본 프로젝트의 Sheets API를 사용할 수 있다.
+- Apps Script가 별도 기본 Google Cloud 프로젝트를 쓰면 Firebase Authentication → Google → 외부 프로젝트의 클라이언트 ID 허용 목록에 해당 스크립트의 OAuth 클라이언트 ID를 등록한다. 기존 웹 SDK 클라이언트나 보안 규칙을 바꾸지 않는다. `INVALID_IDP_RESPONSE`는 이 연결 설정을 먼저 확인한다.
 - `verifySurveyConnection`은 계정/Firestore 읽기/Sheets 읽기를 검사한다. `installSurveyScheduler`는 중복 설치 없이 타이머 하나를 만들고 시작한다. `pauseSurveyScheduler`로 중지한다.
 - 웹 앱 공개 배포나 외부 계정 공유가 필요하지 않다. Google 토큰은 실행 중에만 전달하며 Firestore·스크립트 속성에 저장하지 않는다.
 
@@ -18,6 +19,12 @@ Google 원본은 GET만 사용한다. Firebase의 기존 보안 규칙을 사용
 프로젝트 속성에는 슬롯·진행한 반·건수·제한된 오류 코드만 기록한다. 3분마다 반 단위로 이어 실행하며, 새 슬롯까지 완료하지 못한 이전 실행은 일부 실패로 기록한다. 실행 잠금으로 같은 중앙 프로젝트의 중복 처리를 막는다.
 
 무료 한도는 다른 포털 기능과 공유한다. 최초 운영 후 상태 문서의 반별 읽기/쓰기 건수 및 Firebase 사용량으로 주기를 조정한다. Firebase 보안 규칙에 의한 추가 조회는 코드 계수에 포함되지 않을 수 있다.
+
+## 운영 연결
+
+2026-09-16 기준 비공개 실행 프로젝트: `HINT 만족도조사 중앙 자동 동기화`. 실행 계정은 기존 HINT 관리 계정이며 `Asia/Seoul`, V8, 읽기 전용 Sheets 고급 서비스를 사용한다. Firebase Google 제공업체에는 이 스크립트의 외부 OAuth 클라이언트 하나를 등록했다. `verifySurveyConnection`으로 Google/Firestore 접근 성공을 확인한 후 `installSurveyScheduler`를 실행했다.
+
+실행기는 Apps Script에서 동작하므로 관리자 PC나 포털 브라우저를 켜 둘 필요가 없다. 트리거의 소유 계정을 비활성화하거나 Google 권한을 철회하면 예약도 작동하지 않으므로, 포털의 마지막 실제 완료 시각을 확인한다.
 
 ## RAW 다운로드
 
