@@ -70,6 +70,16 @@ test('inline recommendations, manual edits, three independent requests, column b
   await page.locator('[data-proposal-withdraw="1_다른학생__entryMemo"]').click();
   await page.waitForFunction(()=>window.problem?.includes('취소할 수 없습니다'));
   assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.name==='다른학생'&&v.changes)?.status),'approved');
+  // Overlapping late arrival and early leave must permit a reviewed memo-only request.
+  await page.evaluate(async()=>{for(const v of Object.values(window.docs))if(v.status==='pending'||v.status==='approved')v.status='rejected';window.students=[window.s];Object.assign(window.context,{status:'인정조퇴',reason:'병원',raw:'가상학생: 병원'});window.sheetRaw=window.context.raw;Object.assign(window.record,{entry:'09:25:55',exit:'15:39:59',entryMemo:'',exitMemo:''});window.docs['settings/attendanceBeta_2_2026-09-03'].students['0_가상학생'].portalStatus='인정조퇴';await window.reload();});
+  await page.locator('[data-proposal-reset="0_가상학생__exitMemo"]').click();
+  await page.getByLabel('가상학생 퇴실 사유 추천사유',{exact:true}).fill('(인정조퇴)병원_담임:홍길동(15:39)');
+  await page.locator('[data-proposal-send="0_가상학생__exitMemo"]').click();
+  assert.match(await page.locator('.proposal-dialog').innerText(),/사유만 요청하며 입퇴실 시간은 유지/);
+  await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+  assert.deepEqual(await page.evaluate(()=>Object.values(window.docs).find(v=>v.status==='pending').changes),{exitMemo:'(인정조퇴)병원_담임:홍길동(15:39)'});
+  await page.locator('[data-proposal-reset="0_가상학생__times"]').click();await open('times');await page.locator('#sendSelected').click();
+  await page.locator('#requestResult').filter({hasText:'0건 요청 접수 · 1건 실패'}).waitFor();assert.match(await page.locator('#requestResult').innerText(),/시간을 자동 변경할 수 없습니다/);await close();
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });

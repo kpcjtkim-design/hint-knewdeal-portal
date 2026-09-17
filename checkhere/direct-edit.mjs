@@ -1,5 +1,5 @@
 import {APPROVER,cleanRequest,matchRequest,prepareApproval} from './approval-core.mjs';
-import {judge} from './rules.mjs';
+import {assertChangeAllowed} from './rules.mjs';
 const requestKey=r=>{const clean=cleanRequest(r);return JSON.stringify({...clean,changes:Object.fromEntries(Object.entries(clean.changes).sort(([a],[b])=>a.localeCompare(b)))});};
 
 export async function canEditCheckHere(user){
@@ -31,7 +31,7 @@ export function createDirectEditor({user,controller,store}){
     if(!request||request.status==='pending'){
       const record=matchRequest(clean,c.state().records);
       if(record.id!==shownRecord.id||record.version!==shownRecord.version)throw Error('검토 중 출결 기록이 변경됐습니다. 다시 열어 변경 전후를 확인해 주세요.');
-      if(!judge(record).canApply)throw Error('중복·진행중·교시 불일치 등 확인이 필요하여 수정할 수 없습니다.');
+      assertChangeAllowed(record,clean.changes,{capabilities:c.state().capabilities});
       const approval=prepareApproval(clean,record);
       if(!request)await store.create(operationId,clean);
       await store.approve(operationId,approval);

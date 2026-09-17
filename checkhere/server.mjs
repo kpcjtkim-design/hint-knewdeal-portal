@@ -35,12 +35,12 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260910.5',capabilities:['approved-requests-v1'],pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260917.1',capabilities:['approved-requests-v1','memo-only-requests-v1'],pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
         if(origin&&!localOrigin(origin)){if(!origin.startsWith('https://'))return send(res,403,{error:'HTTPS 플랫폼에서 연결해 주세요.'});res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
-        if(req.method==='GET'&&url.pathname==='/api/state')return send(res,200,{rules:RULES,capabilities:['approved-requests-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected:await adapter.loggedIn(),records:latest().map(r=>({...r,audit:judge(r)}))});
+        if(req.method==='GET'&&url.pathname==='/api/state')return send(res,200,{rules:RULES,capabilities:['approved-requests-v1','memo-only-requests-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected:await adapter.loggedIn(),records:latest().map(r=>({...r,audit:judge(r)}))});
         if(req.method==='GET'&&url.pathname==='/api/history'){const id=url.searchParams.get('id');return send(res,200,{snapshots:db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 20').all(id).map(x=>JSON.parse(x.payload))});}
         if(req.method!=='POST')return send(res,405,{error:'지원하지 않는 요청입니다.'});const input=await body(req);
         if(url.pathname==='/api/cancel'){if(busy&&jobs.get(busy)?.kind==='sync')adapter.cancelled=true;return send(res,200,{ok:true});}

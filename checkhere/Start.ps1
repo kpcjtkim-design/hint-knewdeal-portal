@@ -8,7 +8,7 @@ $bridgeRunning = $false
 try { $page = Invoke-WebRequest -Uri $bridgeUrl -TimeoutSec 2 -UseBasicParsing; $bridgeRunning = $page.Content.Contains('checkhereApp') } catch {}
 if ($bridgeRunning) {
     $health = Invoke-RestMethod -Uri ($bridgeUrl + '/api/session') -TimeoutSec 2
-    if ($health.build -ne '20260910.5') {
+    if ($health.build -ne '20260917.1') {
         $listener = netstat.exe -ano | Select-String '127.0.0.1:8765\s+0.0.0.0:0\s+LISTENING\s+(\d+)'
         if ($listener -and $listener.Matches.Count -eq 1) {
             $oldBridgeId = [int]$listener.Matches[0].Groups[1].Value

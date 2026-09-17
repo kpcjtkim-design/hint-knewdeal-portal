@@ -70,5 +70,19 @@ export function judge(r,rules=RULES,now=new Date()){
   }
   if(!labels.length)labels.push(issues.length?'출석 · 확인 필요':'출석');
   if(!recognized&&r.reference?.status&&r.reference.status!=='결석'&&!r.reference.historical&&r.reference.status!=='출석'&&!labels.includes(r.reference.status))add('SHEET_CONFLICT','시트 상태와 체크히어 시간 판정이 다릅니다.');
-  return{labels,issues,suggestions,ongoing,periodMismatch,exception:r.exception||null,minutes:minutes===null?null:Math.round(minutes*100)/100,canApply:r.source==='live'&&r.readState==='complete'&&!!teacher&&!ongoing&&!periodMismatch&&!multiple&&!r.exception&&!issues.some(i=>['SCHEDULE','INVALID_TIME','OUTING_REVERSED','REVERSED_TIME'].includes(i.code)),ruleVersion:rules.version};
+  const canApplyMemo=r.source==='live'&&r.readState==='complete'&&!!teacher&&!ongoing&&!periodMismatch&&!r.exception&&!issues.some(i=>['SCHEDULE','INVALID_TIME','OUTING_REVERSED','REVERSED_TIME'].includes(i.code));
+  return{labels,issues,suggestions,ongoing,periodMismatch,exception:r.exception||null,minutes:minutes===null?null:Math.round(minutes*100)/100,canApply:canApplyMemo&&!multiple,canApplyMemo,ruleVersion:rules.version};
+}
+// Human-reviewed memo edits may describe overlapping attendance without changing its times.
+export function assertChangeAllowed(record,changes,{capabilities}={}){
+  const fields=Object.keys(changes||{}),memoOnly=fields.length>0&&fields.every(k=>['entryMemo','exitMemo'].includes(k));
+  if(!fields.length||fields.some(k=>!['entry','exit','entryMemo','exitMemo'].includes(k)))throw Error('변경할 항목을 확인해 주세요.');
+  const judgement=judge(record);
+  if(!(memoOnly?judgement.canApplyMemo:judgement.canApply)){
+    if(!memoOnly&&judgement.canApplyMemo)throw Error('지각·조퇴·외출이 겹친 기록은 시간을 자동 변경할 수 없습니다. 사유만 변경요청할 수 있습니다.');
+    throw Error('진행중·교시 불일치 또는 수집 정보 확인이 필요합니다. 재수집 후 요청해 주세요.');
+  }
+  const warning=memoOnly&&!judgement.canApply?'지각·조퇴·외출이 겹친 기록입니다. 사유만 변경하며 입퇴실 시간은 유지합니다.':'';
+  if(warning&&capabilities&&!capabilities.includes('memo-only-requests-v1'))throw Error('수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요. 중복 출결의 사유 변경 지원이 필요합니다.');
+  return{...judgement,memoOnly,warning};
 }

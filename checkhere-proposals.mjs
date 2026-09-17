@@ -4,7 +4,7 @@ import {collection,doc,getDoc,getDocFromServer,getDocs,query,where,runTransactio
 import {within,readJson} from './attendance-io.mjs';
 import {portalStatus,isoLabel} from './attendance-beta-core.mjs';
 import {APPROVER,cleanRequest} from './checkhere/approval-core.mjs';
-import {judge} from './checkhere/rules.mjs';
+import {judge,assertChangeAllowed} from './checkhere/rules.mjs';
 import {ACTIVE_REQUESTS,PROPOSAL_STATUS,suggestReason,sourceRecord,assertColumnSource,requestChanges,suggestTimes,REQUEST_COLUMNS,columnFields,requestsOverlap,requestColumn} from './checkhere-proposal-core.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key=s=>`${s.rowIndex}_${s.name}`;
@@ -110,7 +110,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   if(hasUnsavedReason())throw Error('시트에 저장하지 않은 사유가 있습니다. 사유 저장 후 요청해 주세요.');
   const block=disabledReason(v);if(block&&block!=='요청 처리 중')throw Error(block);
   const changes=requestChanges(v.c.record,v.column,v.value);
-  if(!judge({...v.c.record,source:'live'}).canApply)throw Error('중복·진행중·교시 불일치 등 확인이 필요합니다. 재수집 후 요청해 주세요.');
+  assertChangeAllowed({...v.c.record,source:'live'},changes);
   const input=cleanRequest({classId:v.c.classId,date:v.c.date,name:s.name,phoneLast4:v.c.record.phoneLast4||'',changes,reason:`출결대조 ${REQUEST_COLUMNS[v.column]} · ${v.c.status} · ${v.c.reason||'일반 출결'}${v.c.excursion?' · 견학일 확인':''}`.slice(0,1000)});
   const name=slot(s,v.column),receipt=receiptKey(v);let previousReceipt=journal[receipt];
   if(previousReceipt){
@@ -172,7 +172,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   if(!pending.length){alert('요청 가능한 변경이 없습니다.\n'+results.join('\n'));return;}
   const dialog=document.createElement('dialog');dialog.className='proposal-dialog';root.append(dialog);
   const display=value=>typeof value==='object'?`${value.entry||'공란'} → ${value.exit||'공란'}`:value||'공란(사유 없음)';
-  dialog.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 변경요청 ${pending.length}건</h3><p>실제 변경까지는 시간이 걸립니다. 체크히어 탭에서 지정 관리자가 수집 PC로 승인·반영해야 완료됩니다.</p><table><thead><tr><th>학생</th><th>현재 기록</th><th>요청할 값</th></tr></thead><tbody>${pending.map(({s,v})=>`<tr><th>${esc(s.name)}</th><td>${esc(display(current(v.c,column)))}</td><td>${esc(display(v.value))}</td></tr>`).join('')}</tbody></table>${pending.some(x=>x.v.c.excursion)?'<p class="proposal-warning">견학일입니다. 실제 운영 시간과 사유를 확인해 주세요.</p>':''}${results.length?`<details><summary>제외 ${results.length}건</summary><pre>${esc(results.join('\n'))}</pre></details>`:''}<p role="status" id="requestResult"></p><button id="sendSelected" class="btn dark">${pending.length}건 변경요청</button><button id="closeRequests">닫기</button>`;
+  dialog.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 변경요청 ${pending.length}건</h3><p>실제 변경까지는 시간이 걸립니다. 체크히어 탭에서 지정 관리자가 수집 PC로 승인·반영해야 완료됩니다.</p><table><thead><tr><th>학생</th><th>현재 기록</th><th>요청할 값</th></tr></thead><tbody>${pending.map(({s,v})=>`<tr><th>${esc(s.name)}</th><td>${esc(display(current(v.c,column)))}</td><td>${esc(display(v.value))}</td></tr>`).join('')}</tbody></table>${column!=='times'&&pending.some(x=>judge({...x.v.c.record,source:'live'}).issues.some(i=>i.code==='MULTIPLE'))?'<p class="proposal-warning">지각·조퇴·외출이 겹친 기록이 포함되어 있습니다. 사유만 요청하며 입퇴실 시간은 유지합니다.</p>':''}${pending.some(x=>x.v.c.excursion)?'<p class="proposal-warning">견학일입니다. 실제 운영 시간과 사유를 확인해 주세요.</p>':''}${results.length?`<details><summary>제외 ${results.length}건</summary><pre>${esc(results.join('\n'))}</pre></details>`:''}<p role="status" id="requestResult"></p><button id="sendSelected" class="btn dark">${pending.length}건 변경요청</button><button id="closeRequests">닫기</button>`;
   let controller;
   const close=()=>{controller?.abort();dialog.close();dialog.remove();};dialog.querySelector('#closeRequests').onclick=close;dialog.oncancel=e=>{e.preventDefault();close();};
   dialog.querySelector('#sendSelected').onclick=async()=>{

@@ -1,13 +1,14 @@
 import {editable,version} from './identity.mjs';
-import {judge,normalizeTime} from './rules.mjs';
+import {assertChangeAllowed,normalizeTime} from './rules.mjs';
 export function validateProposal(record,input){
-  if(!judge(record).canApply)throw new Error('재수집 또는 중복 출결 확인이 필요하여 반영할 수 없습니다.');
   if(input.version!==record.version)throw new Error('검수 화면이 오래되었습니다. 다시 조회해 주세요.');
   if(typeof input.reason!=='string'||!input.reason.trim())throw new Error('수정 근거를 입력해 주세요.');
   const next={};for(const k of ['entry','exit']){next[k]=normalizeTime(input[k]);if(!next[k])throw new Error('시간을 비우는 변경은 지원하지 않습니다.');}
   if(next.exit<next.entry)throw new Error('퇴실이 입실보다 빠릅니다.');
   for(const k of ['entryMemo','exitMemo']){if(typeof input[k]!=='string'||input[k].length>500)throw new Error('메모는 500자 이내로 입력해 주세요.');next[k]=input[k];}
-  if(JSON.stringify(next)===JSON.stringify(editable(record)))throw new Error('변경한 값이 없습니다.');return next;
+  const changes=Object.fromEntries(Object.entries(next).filter(([k,v])=>v!==record[k]));
+  if(!Object.keys(changes).length)throw new Error('변경한 값이 없습니다.');
+  assertChangeAllowed(record,changes);return next;
 }
 // Each field is a separate CheckHere transaction; never report atomic success.
 export async function applyVerified(adapter,record,input,journal){
