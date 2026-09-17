@@ -10,14 +10,15 @@ test('already-applied endpoint verifies live values, preserves cancellation and 
  const id='auto-request-fixture-001',call=async(path,token='hint-fixture')=>(await fetch('http://127.0.0.1:18766/api/'+path,{method:'POST',headers:{'content-type':'application/json','connection':'close','x-hint-key':app.key},body:JSON.stringify({approvalId:id,idToken:token})})).json();
  try{
   app.put(current);assert.match((await call('confirm-existing','other')).error,/권한/);assert.equal(reads,0);
+  const preview=await call('preview-request');assert.equal(preview.record.entryMemo,'');assert.equal(req.status,'pending');assert.equal(writes,0);
   current.entryMemo='아직 다름';current.version=version(current);assert.equal((await call('confirm-existing')).status,'pending');assert.equal(req.status,'pending');assert.equal(writes,0);
-  current.entryMemo='';current.version=version(current);req.status='withdrawn';assert.equal((await call('confirm-existing')).status,'withdrawn');assert.equal(reads,1);
+  current.entryMemo='';current.version=version(current);req.status='withdrawn';assert.equal((await call('confirm-existing')).status,'withdrawn');assert.equal(reads,2);
   req.status='pending';await call('confirm-existing');
   for(let i=0;i<50;i++){const j=JSON.parse(app.db.prepare('SELECT payload FROM jobs WHERE id=?').get(id)?.payload||'{}');if(j.cloudSaved===false)break;await new Promise(r=>setTimeout(r,10));}
   let j=JSON.parse(app.db.prepare('SELECT payload FROM jobs WHERE id=?').get(id).payload);assert.equal(j.status,'verified');assert.equal(j.platformSaved,false);assert.equal(req.status,'applying');assert.equal(j.current.entryMemo,'');assert.equal(writes,0);
   // Reopen the persisted collector job: retry only cloud completion, not remote input.
   app.close();app=createBridge({dataDir,collector:adapter,port:18766,approvalCloud:cloud});await new Promise(r=>app.server.listen(18766,'127.0.0.1',r));failSave=false;
-  j=await call('reconcile');assert.equal(j.platformSaved,true);assert.equal(req.status,'verified');assert.equal(writes,0);assert.equal(reads,2);assert.equal(finishes,2);
+  j=await call('reconcile');assert.equal(j.platformSaved,true);assert.equal(req.status,'verified');assert.equal(writes,0);assert.equal(reads,3);assert.equal(finishes,2);
   assert.equal((await call('confirm-existing')).id,id);assert.equal(writes,0);assert.equal(finishes,2);
  }finally{app.close();}
 });

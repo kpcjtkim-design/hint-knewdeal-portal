@@ -41,6 +41,11 @@ test('automatic recognized types share display and request validation, including
   await page.locator('[data-proposal-send]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await page.locator('#closeRequests').click();
   assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok','saved evidence preserves absent rawEntry and works at approval');
   assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.sourceScope).record.rawEntry),'12:56:01');
+  // Historical values are not a lock: approve against a fresh preview instead.
+  await page.evaluate(()=>{record.entryMemo='다른 직원이 수정한 기존 사유';record.entry='13:15:00';record.outings=[{start:'14:00',end:'14:20'}];});
+  assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok','changed current time, memo and outings do not invalidate the immutable target');
+  await page.evaluate(()=>{record.id='different-student';});assert.match(await page.evaluate(()=>window.approvalCheck()),/식별정보/,'student identity remains protected');
+  await page.evaluate(()=>{record.id='fixture-record';record.entryMemo='';record.entry='12:56:01';record.outings=[];});
   // An earlier verified time request may normalize the entry time before this memo is approved.
   await page.evaluate(()=>{window.docs['checkhereRequests/verified-times']={status:'verified',approvedBy:'hint.kpc@gmail.com',changes:{entry:'09:00:00'},approval:{recordId:record.id,before:{entry:'12:56:01'},after:{entry:'09:00:00'}}};record.entry='09:00:00';});
   assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok');

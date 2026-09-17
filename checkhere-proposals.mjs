@@ -4,7 +4,7 @@ import {collection,doc,getDoc,getDocFromServer,getDocs,query,where,runTransactio
 import {within,readJson} from './attendance-io.mjs';
 import {isoLabel} from './attendance-beta-core.mjs';
 import {deriveRecognized} from './attendance-derived-core.mjs';
-import {APPROVER,cleanRequest} from './checkhere/approval-core.mjs';
+import {APPROVER,cleanRequest,matchRequest} from './checkhere/approval-core.mjs';
 import {judge,assertChangeAllowed} from './checkhere/rules.mjs';
 import {ACTIVE_REQUESTS,PROPOSAL_STATUS,suggestReason,sourceRecord,assertColumnSource,requestChanges,suggestTimes,REQUEST_COLUMNS,columnFields,requestsOverlap,requestColumn} from './checkhere-proposal-core.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -36,20 +36,10 @@ export async function validateLinkedRequest(db,user,request,record,cache){
   if(!context||context.requestId!==request.id)throw Error('자동 제안의 근거 기록을 찾지 못했습니다.');
   if(JSON.stringify(request.changes)!==JSON.stringify(context.changes))throw Error('요청과 보관된 제안이 다릅니다.');
   if(context.sourceScope==='column-v2'&&requestColumn(request)!==context.column)throw Error('요청 항목과 근거가 다릅니다.');
-  assertColumnSource(context,record);
-  // Memo times must still describe the same evidence. Only our verified time
-  // correction may normalize that evidence while the memo is waiting to apply.
-  if(context.sourceScope==='column-v2'&&context.column!=='times'){
-    const before=context.record;
-    if(context.column==='entryMemo'&&/외출$/.test(context.status)&&JSON.stringify(before.outings||[])!==JSON.stringify(record.outings||[]))throw Error('사유의 근거인 외출 구간이 바뀌었습니다. 다시 수집하고 검토해 주세요.');
-    const field=context.column==='entryMemo'&&/지각$/.test(context.status)?'entry':context.column==='exitMemo'&&/조퇴$/.test(context.status)?'exit':null;
-    const actual=r=>field==='entry'?(r.rawEntry??r.entry):r.exit;
-    if(field&&actual(before)!==actual(record)){
-      const timeRequests=await within(getDocs(query(collection(db,'checkhereRequests'),where('classId','==',context.classId),where('date','==',context.date))));
-      const verified=timeRequests.docs.map(d=>d.data()).some(r=>r.status==='verified'&&r.approvedBy===APPROVER&&r.approval?.recordId===record.id&&r.changes?.[field]===record[field]&&r.approval.before[field]===before[field]&&r.approval.after[field]===record[field]);
-      if(!verified||actual(before)!==before[field]||actual(record)!==record[field])throw Error('사유의 근거인 실제 시간이 바뀌었습니다. 다시 수집하고 검토해 주세요.');
-    }
-  }
+  // Requests describe the desired value, not a lock on the historical snapshot.
+  // Approval previews the live record; execution still detects changes after approval.
+  matchRequest(request,[record]);
+  if(context.record?.id!==record.id)throw Error('요청과 현재 학생 식별정보가 다릅니다.');
   await validateSheetSource(db,user,context,cache);
 }
 export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason,timeouts={}}){
