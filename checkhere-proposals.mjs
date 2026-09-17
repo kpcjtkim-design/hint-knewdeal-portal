@@ -2,7 +2,8 @@ import {canWithdraw,withdrawRequest} from './checkhere-request-actions.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
 import {collection,doc,getDoc,getDocFromServer,getDocs,query,where,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {within,readJson} from './attendance-io.mjs';
-import {portalStatus,isoLabel} from './attendance-beta-core.mjs';
+import {isoLabel} from './attendance-beta-core.mjs';
+import {deriveRecognized} from './attendance-derived-core.mjs';
 import {APPROVER,cleanRequest} from './checkhere/approval-core.mjs';
 import {judge,assertChangeAllowed} from './checkhere/rules.mjs';
 import {ACTIVE_REQUESTS,PROPOSAL_STATUS,suggestReason,sourceRecord,assertColumnSource,requestChanges,suggestTimes,REQUEST_COLUMNS,columnFields,requestsOverlap,requestColumn} from './checkhere-proposal-core.mjs';
@@ -23,7 +24,11 @@ export async function validateSheetSource(db,user,c,cache=new Map(),{signal,time
   const roster=a.slice(1).map(row=>String(row[0]||'').trim());
   const currentReason=meta.reasonEntry&&raw.split(/\r?\n/).includes(meta.reasonEntry)?meta.portalReason:reasonFor(c.name,raw,roster,rawStatus);
   const expectedReason=c.reason??reasonFor(c.name,c.raw,roster,rawStatus);
-  if(currentReason!==expectedReason||portalStatus(rawStatus,meta)!==c.status)throw Error('요청의 기준인 시트 출결·사유가 바뀌었습니다. 출결대조에서 다시 읽고 검토해 주세요.');
+  // Use the same interpretation as the attendance screen: the Sheet stores all
+  // recognized types as 인정출석, while the portal also uses the collected times.
+  const currentStatus=deriveRecognized(rawStatus,meta,c.record,{excursion:!!c.excursion}).status;
+  if(currentReason!==expectedReason)throw Error('요청의 기준인 시트 사유가 바뀌었습니다. 출결대조에서 다시 읽고 검토해 주세요.');
+  if(currentStatus!==c.status)throw Error(`요청의 기준인 출결 구분이 바뀌었습니다 (${c.status} → ${currentStatus}). 출결대조에서 다시 읽고 검토해 주세요.`);
 }
 export async function validateLinkedRequest(db,user,request,record,cache){
   if(!request.id.startsWith('proposal_'))return;
@@ -142,7 +147,10 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
    if(performance.now()>=deadline)throw Error('요청 저장 대기 시간이 지나 중단했습니다. 다시 요청해 주세요.');
    const row={...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
    tx.set(doc(db,'checkhereRequests',id),row);
-   tx.set(doc(db,'checkhereProposalSources',contextId(id)),{requestId:id,classId:v.c.classId,date:v.c.date,name:s.name,studentKey:key(s),status:v.c.status,reason:v.c.reason,raw:v.c.raw,record:sourceRecord(v.c.record),changes,column:v.column,sourceScope:'column-v2',updatedBy:user.email,updatedAt:serverTimestamp()});
+   // Preserve the inputs used to distinguish recognized types at approval too.
+   // For legacy records without rawEntry, entry is the physical arrival value.
+   const record={...sourceRecord(v.c.record),rawEntry:(Object.hasOwn(v.c.record,'rawEntry')?v.c.record.rawEntry:v.c.record.entry)??null,outingCount:v.c.record.outingCount??v.c.record.outings?.length??0,exception:v.c.record.exception||null};
+   tx.set(doc(db,'checkhereProposalSources',contextId(id)),{requestId:id,classId:v.c.classId,date:v.c.date,name:s.name,studentKey:key(s),status:v.c.status,reason:v.c.reason,raw:v.c.raw,record,excursion:!!v.c.excursion,changes,column:v.column,sourceScope:'column-v2',updatedBy:user.email,updatedAt:serverTimestamp()});
    tx.set(ref,{classId:v.c.classId,date:v.c.date,students:{[name]:{value:v.value,origin:v.origin,field:v.column,fingerprint:fingerprint(v.c),revision:v.revision+1,activeId:id}},updatedBy:user.email,updatedAt:serverTimestamp()},{merge:true});
    return {id,...row};
   },{maxAttempts:3});
