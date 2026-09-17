@@ -196,7 +196,7 @@ async function materialsAdmin(user,p){const host=document.getElementById('adminB
 function studentPreviewAdmin(){document.getElementById('adminBody').innerHTML='<section class="card panel"><h2>학생 화면 초안</h2><p>예시 데이터로 출결·설문·시간표·강의자료를 살펴봅니다. 실제 학생 로그인과 전화 인증은 아직 연결하지 않았습니다.</p><a class="btn btn-primary" href="/student-beta.html" target="_blank" rel="noopener">학생용 초안 열기 ↗</a><iframe title="학생용 포털 초안" src="/student-beta.html" style="width:100%;height:1050px;border:1px solid #dce5ef;border-radius:14px;margin-top:18px"></iframe></section>';}
 async function checkhereAdmin(user,p){
   const host=document.getElementById('adminBody');
-  const mod=await import('/checkhere-portal.mjs?v=20260917-approvalsync1');
+  const mod=await import('/checkhere-portal.mjs?v=20260917-requesttarget1');
   host.closest('.page').classList.add('checkhere-page');
   adminWork=await mod.mountCheckHerePortal(host,{db,user,classes:CLASSES,showRequests:true});
 }

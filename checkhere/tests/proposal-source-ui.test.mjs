@@ -11,8 +11,8 @@ test('automatic recognized types share display and request validation, including
   await page.route('**/*',async route=>{
    const u=new URL(route.request().url());
    if(u.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`
-    window.docs={};window.metaReads=0;export const doc=(...x)=>({path:x.slice(1).join('/')}),collection=(...x)=>x,query=(...x)=>x,where=(...x)=>x,serverTimestamp=()=>({seconds:1});
-    export async function getDoc(r){if(r.path.startsWith('settings/'))window.metaReads++;const v=window.docs[r.path];return{data:()=>v,exists:()=>!!v};}export const getDocFromServer=getDoc;
+    window.docs={};window.metaReads=0;window.docReads=0;export const doc=(...x)=>({path:x.slice(1).join('/')}),collection=(...x)=>x,query=(...x)=>x,where=(...x)=>x,serverTimestamp=()=>({seconds:1});
+    export async function getDoc(r){window.docReads++;if(r.path.startsWith('settings/'))window.metaReads++;const v=window.docs[r.path];return{data:()=>v,exists:()=>!!v};}export const getDocFromServer=getDoc;
     export async function getDocs(){return{docs:Object.entries(window.docs).filter(([k])=>k.startsWith('checkhereRequests/')).map(([k,v])=>({id:k.split('/')[1],data:()=>v}))};}
     export async function runTransaction(db,fn){return fn({get:getDoc,set:(r,v)=>{window.docs[r.path]=v;},update:(r,v)=>Object.assign(window.docs[r.path],v)});}
    `});
@@ -44,8 +44,8 @@ test('automatic recognized types share display and request validation, including
   // Historical values are not a lock: approve against a fresh preview instead.
   await page.evaluate(()=>{record.entryMemo='다른 직원이 수정한 기존 사유';record.entry='13:15:00';record.outings=[{start:'14:00',end:'14:20'}];});
   assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok','changed current time, memo and outings do not invalidate the immutable target');
-  await page.evaluate(()=>{record.id='different-student';});assert.match(await page.evaluate(()=>window.approvalCheck()),/식별정보/,'student identity remains protected');
-  await page.evaluate(()=>{record.id='fixture-record';record.entryMemo='';record.entry='12:56:01';record.outings=[];});
+  await page.evaluate(()=>{record.name='다른학생';});assert.match(await page.evaluate(()=>window.approvalCheck()),/학생 이름/,'student identity remains protected');
+  await page.evaluate(()=>{record.name='가상학생';record.entryMemo='';record.entry='12:56:01';record.outings=[];});
   // An earlier verified time request may normalize the entry time before this memo is approved.
   await page.evaluate(()=>{window.docs['checkhereRequests/verified-times']={status:'verified',approvedBy:'hint.kpc@gmail.com',changes:{entry:'09:00:00'},approval:{recordId:record.id,before:{entry:'12:56:01'},after:{entry:'09:00:00'}}};record.entry='09:00:00';});
   assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok');
@@ -54,6 +54,13 @@ test('automatic recognized types share display and request validation, including
   await page.evaluate(()=>{window.sheetStatus='인정출석';window.sheetRaw='가상학생: 면접';});
   assert.match(await page.evaluate(()=>window.validate()),/사유가 바뀌었습니다/);
   await page.evaluate(()=>{window.sheetRaw='가상학생: 병원\n다른학생: 시험';});assert.equal(await page.evaluate(()=>window.validate()),'ok','unrelated student edits do not block');
+  const readsBefore=await page.evaluate(()=>window.docReads);
+  await page.evaluate(()=>{for(const [k,v]of Object.entries(docs))if(k.startsWith('checkhereProposalSources/')){v.status='인정출석';v.reason='오래된 사유';v.changes={exit:'16:00:00',entry:'09:00:00'};}sheetStatus='결석';sheetRaw='가상학생: 변경된 시트 사유';});
+  assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok','archived proposal and changed Sheet are not approval locks');
+  await page.evaluate(()=>{for(const k of Object.keys(docs))if(k.startsWith('checkhereProposalSources/'))delete docs[k];});
+  assert.equal(await page.evaluate(()=>window.approvalCheck()),'ok','missing archived proposal does not block an existing request');
+  assert.equal(await page.evaluate(()=>window.docReads),readsBefore,'approval must not read archived proposals or Sheet metadata');
+  await page.evaluate(()=>{sheetRaw='가상학생: 병원';});
   // Use the display algorithm as the oracle, including manual decisions and excursion exceptions.
   for(const scenario of [
    {status:'인정조퇴',record:{entry:'09:00:00',exit:'15:39:59'}},

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {APPROVER,cleanRequest,matchRequest,prepareApproval,proposalFromApproval} from '../approval-core.mjs';
+import {APPROVER,cleanRequest,sameRequestTarget,matchRequest,prepareApproval,proposalFromApproval} from '../approval-core.mjs';
 import {createApprovalCloud} from '../cloud-approval.mjs';
 import {PROJECT} from '../firebase-public.mjs';
 const record=()=>({id:'record-id',version:'version',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',source:'live',readState:'complete',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'기존 퇴실 사유'});
@@ -23,4 +23,12 @@ test('cloud claim uses update-time precondition and server timestamp; concurrent
   await cloud.claim({id:'request-id-0123456',updateTime:'2026-09-10T00:00:00Z',data:{status:'approved'}},'fixture-token','attempt-0123456789');
   assert(captured.url.endsWith('/documents:commit'));assert.equal(captured.body.writes[0].currentDocument.updateTime,'2026-09-10T00:00:00Z');assert.equal(captured.body.writes[0].updateTransforms[0].setToServerValue,'REQUEST_TIME');
   const conflict=createApprovalCloud({fetchImpl:async()=>new Response('{}',{status:412})});await assert.rejects(()=>conflict.claim({id:'request-id-0123456',updateTime:'old',data:{status:'approved'}},'fixture-token','attempt-0123456789'));
+});
+
+
+test('request comparison ignores stored map order but preserves identity and explicit blank fields',()=>{
+ const a={...request(),changes:{entry:'09:00:00',exit:'18:00:00',entryMemo:''}};
+ assert(sameRequestTarget(a,{...a,changes:{entryMemo:'',exit:'18:00:00',entry:'09:00'}}));
+ for(const patch of [{classId:'3'},{date:'2026-09-14'},{name:'다른학생'},{phoneLast4:'9999'},{reason:'다른 근거'},{changes:{entry:'09:00:00',exit:'18:00:00'}},{changes:{...a.changes,exit:'17:00:00'}}])assert.equal(sameRequestTarget(a,{...a,...patch}),false);
+ assert.equal(sameRequestTarget(a,null),false);
 });

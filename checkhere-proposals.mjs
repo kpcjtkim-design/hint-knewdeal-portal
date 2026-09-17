@@ -4,7 +4,7 @@ import {collection,doc,getDoc,getDocFromServer,getDocs,query,where,runTransactio
 import {within,readJson} from './attendance-io.mjs';
 import {isoLabel} from './attendance-beta-core.mjs';
 import {deriveRecognized} from './attendance-derived-core.mjs';
-import {APPROVER,cleanRequest,matchRequest} from './checkhere/approval-core.mjs';
+import {APPROVER,cleanRequest,matchRequest,sameRequestTarget} from './checkhere/approval-core.mjs';
 import {judge,assertChangeAllowed} from './checkhere/rules.mjs';
 import {ACTIVE_REQUESTS,PROPOSAL_STATUS,suggestReason,sourceRecord,assertColumnSource,requestChanges,suggestTimes,REQUEST_COLUMNS,columnFields,requestsOverlap,requestColumn} from './checkhere-proposal-core.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -31,16 +31,10 @@ export async function validateSheetSource(db,user,c,cache=new Map(),{signal,time
   if(currentStatus!==c.status)throw Error(`요청의 기준인 출결 구분이 바뀌었습니다 (${c.status} → ${currentStatus}). 출결대조에서 다시 읽고 검토해 주세요.`);
 }
 export async function validateLinkedRequest(db,user,request,record,cache){
-  if(!request.id.startsWith('proposal_'))return;
-  const context=(await within(getDocFromServer(doc(db,'checkhereProposalSources',contextId(request.id))))).data();
-  if(!context||context.requestId!==request.id)throw Error('자동 제안의 근거 기록을 찾지 못했습니다.');
-  if(JSON.stringify(request.changes)!==JSON.stringify(context.changes))throw Error('요청과 보관된 제안이 다릅니다.');
-  if(context.sourceScope==='column-v2'&&requestColumn(request)!==context.column)throw Error('요청 항목과 근거가 다릅니다.');
-  // Requests describe the desired value, not a lock on the historical snapshot.
-  // Approval previews the live record; execution still detects changes after approval.
+  // Approval applies the submitted target reviewed against the live student record.
+  // Archived suggestions and later Sheet edits are provenance, not approval locks.
+  // The approval transaction separately checks that the request itself is unchanged.
   matchRequest(request,[record]);
-  if(context.record?.id!==record.id)throw Error('요청과 현재 학생 식별정보가 다릅니다.');
-  await validateSheetSource(db,user,context,cache);
 }
 export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason,timeouts={}}){
  let saved={},requests=[],loadError='',sequence=0,working=false,loadedClass='',loadedDate='';
@@ -126,7 +120,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   const transaction=runTransaction(db,async tx=>{
    const existing=await tx.get(doc(db,'checkhereRequests',id));
    if(existing.exists()){
-    const r=existing.data();if(r.createdBy!==user.email||JSON.stringify(r.changes)!==JSON.stringify(input.changes)||r.classId!==input.classId||r.date!==input.date||r.name!==input.name)throw Error('요청 번호의 내용이 다릅니다. 접수 현황을 확인해 주세요.');
+    const r=existing.data();if(r.createdBy!==user.email||!sameRequestTarget(r,input))throw Error('요청 번호의 내용이 다릅니다. 접수 현황을 확인해 주세요.');
     return {id,...r};
    }
    const snap=await tx.get(ref),students=snap.data()?.students||{},previous=students[name];
@@ -137,7 +131,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
    if(performance.now()>=deadline)throw Error('요청 저장 대기 시간이 지나 중단했습니다. 다시 요청해 주세요.');
    const row={...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
    tx.set(doc(db,'checkhereRequests',id),row);
-   // Preserve the inputs used to distinguish recognized types at approval too.
+   // Preserve the inputs as request provenance, not an approval-time lock.
    // For legacy records without rawEntry, entry is the physical arrival value.
    const record={...sourceRecord(v.c.record),rawEntry:(Object.hasOwn(v.c.record,'rawEntry')?v.c.record.rawEntry:v.c.record.entry)??null,outingCount:v.c.record.outingCount??v.c.record.outings?.length??0,exception:v.c.record.exception||null};
    tx.set(doc(db,'checkhereProposalSources',contextId(id)),{requestId:id,classId:v.c.classId,date:v.c.date,name:s.name,studentKey:key(s),status:v.c.status,reason:v.c.reason,raw:v.c.raw,record,excursion:!!v.c.excursion,changes,column:v.column,sourceScope:'column-v2',updatedBy:user.email,updatedAt:serverTimestamp()});

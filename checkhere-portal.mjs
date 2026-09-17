@@ -4,7 +4,7 @@ import {collection,doc,getDoc,getDocFromServer,getDocs,setDoc,query,orderBy,limi
 import {createCurrentSaver,mergeCurrentRecords} from './checkhere-current-core.mjs';
 import {within} from './attendance-io.mjs';
 import {mountCheckHere} from './checkhere-ui.mjs?v=20260917-approvalsync2';
-import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs?v=20260917-approvalsync2';
+import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs?v=20260917-requesttarget1';
 import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
   if(!user)throw new Error('관리자 로그인이 필요합니다.');

@@ -4,7 +4,7 @@ import {REQUEST_COLUMNS,requestColumn,requestsOverlap} from './checkhere-proposa
 const ACTIVE_STATUSES=['pending','approved','applying'];
 import {validateLinkedRequest} from './checkhere-proposals.mjs';
 import {collection,doc,getDocs,setDoc,query,where,orderBy,limit,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {APPROVER,FIELDS,STATUS,cleanRequest,matchRequest,prepareApproval,requestMatchesRecord} from './checkhere/approval-core.mjs';
+import {APPROVER,FIELDS,STATUS,cleanRequest,matchRequest,prepareApproval,requestMatchesRecord,sameRequestTarget} from './checkhere/approval-core.mjs';
 import {assertChangeAllowed} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateNow=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -69,7 +69,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
     await validateLinkedRequest(db,user,r,record,cache);
     const approval=prepareApproval(r,record);
     if(preview&&Object.keys(r.changes).some(k=>approval.before[k]!==preview.before[k]||approval.after[k]!==preview.after[k]))throw Error('검토한 이후 해당 항목이 바뀌었습니다. 다시 확인해 주세요.');
-    await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',r.id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||JSON.stringify(fresh.data().changes)!==JSON.stringify(r.changes))throw Error('요청이 이미 처리되었거나 변경됐습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});});
+    await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',r.id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 변경됐습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});});
     r.status='approved';r.approval=approval;return c;
   }
   async function waitApplied(c,r){
@@ -94,7 +94,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
       const record=await previewCurrent(c,r),already=requestMatchesRecord(r,record),judgement=already?{}:assertChangeAllowed(record,r.changes,{capabilities:c.state().capabilities});
       prepared.push({r,approval:prepareApproval(r,record,{allowAlreadyApplied:true}),warning:already?'이미 반영 여부를 원본에서 재확인합니다.':judgement.warning});
     }catch(e){excluded.push(`${r.classId}반 ${r.date} ${r.name}: ${e.message}`);}}
-    const modal=$('#review');modal.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 일괄승인</h3><p>승인 가능 ${prepared.length}건 · 제외 ${excluded.length}건. 현재 PC의 수집본과 시트를 확인한 요청만 순서대로 반영합니다.</p><table><thead><tr><th>반·날짜·학생</th><th>현재 → 요청값</th></tr></thead><tbody>${prepared.map(({r,approval,warning})=>`<tr><th>${esc(r.classId)}반 ${esc(r.date)} ${esc(r.name)}${warning?`<p class="note">${esc(warning)}</p>`:''}</th><td>${Object.keys(r.changes).map(k=>`${esc(FIELDS[k])}: ${esc(approval.before[k]||'공란')} → ${esc(approval.after[k])}`).join('<br>')}</td></tr>`).join('')}</tbody></table>${excluded.length?`<details open><summary>제외 사유</summary><p class="reason">${esc(excluded.join('\n'))}</p></details>`:''}<p id="batchResult" role="status"></p><div class="line"><button id="bulkApproveNow" class="primary" ${prepared.length?'':'disabled'}>${prepared.length}건 승인하고 반영</button><button id="batchClose">닫기</button></div>`;
+    const modal=$('#review');modal.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 일괄승인</h3><p>승인 가능 ${prepared.length}건 · 제외 ${excluded.length}건. 아래 요청값을 순서대로 입력하고, 실제 저장값과 플랫폼 DB 반영까지 확인합니다.</p><table><thead><tr><th>반·날짜·학생</th><th>현재 → 요청값</th></tr></thead><tbody>${prepared.map(({r,approval,warning})=>`<tr><th>${esc(r.classId)}반 ${esc(r.date)} ${esc(r.name)}${warning?`<p class="note">${esc(warning)}</p>`:''}</th><td>${Object.keys(r.changes).map(k=>`${esc(FIELDS[k])}: ${esc(approval.before[k]||'공란')} → ${esc(approval.after[k])}`).join('<br>')}</td></tr>`).join('')}</tbody></table>${excluded.length?`<details open><summary>제외 사유</summary><p class="reason">${esc(excluded.join('\n'))}</p></details>`:''}<p id="batchResult" role="status"></p><div class="line"><button id="bulkApproveNow" class="primary" ${prepared.length?'':'disabled'}>${prepared.length}건 승인하고 반영</button><button id="batchClose">닫기</button></div>`;
     modal.showModal();$('#batchClose').onclick=()=>{if(!working)modal.close();};modal.oncancel=e=>{if(working)e.preventDefault();};
     $('#bulkApproveNow').onclick=async()=>{if(working)return;working=true;clearTimeout(timer);$('#bulkApproveNow').disabled=true;$('#batchClose').disabled=true;let count=0;const failures=[],approvalCache=new Map();try{
       for(const {r,approval}of prepared){if(disposed)break;$('#batchResult').textContent=`${count}/${prepared.length}건 완료 · ${r.classId}반 ${r.name} 반영 중`;

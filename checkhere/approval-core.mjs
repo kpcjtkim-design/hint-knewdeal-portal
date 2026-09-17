@@ -21,6 +21,14 @@ export function cleanRequest(input){
   if(changes.entry&&changes.exit&&changes.exit<changes.entry)throw Error('퇴실이 입실보다 빠릅니다.');
   return {classId,date,name,phoneLast4,reason,changes};
 }
+export function sameRequestTarget(left,right){
+  try{
+    const a=cleanRequest(left),b=cleanRequest(right);
+    return ['classId','date','name','phoneLast4','reason'].every(k=>a[k]===b[k])&&
+      Object.keys(a.changes).length===Object.keys(b.changes).length&&
+      Object.keys(a.changes).every(k=>own(b.changes,k)&&a.changes[k]===b.changes[k]);
+  }catch{return false;}
+}
 export function matchRequest(request,records){
   const r=cleanRequest(request);
   const found=records.filter(x=>String(x.classId)===r.classId&&x.date===r.date&&x.name.trim()===r.name&&(!r.phoneLast4||x.phoneLast4===r.phoneLast4));
