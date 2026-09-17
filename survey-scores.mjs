@@ -1,3 +1,4 @@
+import {createSurveyIdentityMatcher} from './survey-identity.mjs';
 import {classNumber,normalizeName} from './survey-core.mjs';
 export function scoreColumns(headers){
  return headers.flatMap((raw,index)=>{const title=String(raw||'').trim();
@@ -12,9 +13,9 @@ export function responseTime(value,fallback=0){
  if(m){let h=Number(m[5]||0);if(m[4])h=h%12+(m[4]==='오후'?12:0);return Date.UTC(+m[1],+m[2]-1,+m[3],h-9,+m[6],+(m[7]||0));}
  const n=Date.parse(text);return Number.isFinite(n)?n:fallback;
 }
-export function summarizeScores(responses,classId,answered,{scale=5}={}){
- const allowed=new Set(answered.map(s=>normalizeName(s.name))),latest=new Map();
- responses.forEach((r,i)=>{const key=normalizeName(r.name);if(classNumber(r.classId)!==String(classId)||!allowed.has(key))return;const time=responseTime(r.timestamp,i);if(!latest.has(key)||time>=latest.get(key).time)latest.set(key,{r,time});});
+export function summarizeScores(responses,classId,answered,{scale=5,targets=answered,identities=[]}={}){
+ const allowed=new Set(answered.map(s=>s.id??normalizeName(s.name))),latest=new Map(),match=createSurveyIdentityMatcher(targets,identities);
+ responses.forEach((r,i)=>{if(classNumber(r.classId)!==String(classId))return;const {target}=match(r);if(!target)return;const key=target.id??normalizeName(target.name);if(!allowed.has(key))return;const time=responseTime(r.timestamp,i);if(!latest.has(key)||time>=latest.get(key).time)latest.set(key,{r,time});});
  const questions=new Map();let invalid=0;
  for(const {r}of latest.values())for(const q of r.scores||[]){
   const max=q.kind==='recommendation'?10:scale,min=q.kind==='recommendation'?0:1,key=q.id;

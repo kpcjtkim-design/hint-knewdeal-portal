@@ -1,3 +1,4 @@
+import {createSurveyIdentityMatcher,surveyBaseName} from './survey-identity.mjs';
 import {isoLabel,portalStatus} from './attendance-beta-core.mjs';
 export const SURVEY_OWNER='hint.kpc@gmail.com';
 export const SURVEY_COLLECTION='surveyBetaSummaries';
@@ -31,7 +32,9 @@ export function sourceCandidates(event,sources,course){
 }
 export function responseColumns(headers){
  const choose=(pattern,label)=>{const found=headers.map((x,i)=>pattern.test(String(x))?i:-1).filter(i=>i>=0);if(found.length!==1)throw Error(label+' 열을 하나로 확인하지 못했습니다. 응답 시트 연결을 확인해 주세요.');return found[0];};
- return {name:choose(/성함|성명|이름/,'이름'),classId:choose(/소속반|분반|소속\s*반|몇\s*반/,'반'),timestamp:choose(/타임스탬프|timestamp/i,'응답 시간')};
+ const mapping={name:choose(/성함|성명|이름/,'이름'),classId:choose(/소속반|분반|소속\s*반|몇\s*반/,'반'),timestamp:choose(/타임스탬프|timestamp/i,'응답 시간')};
+ const phones=headers.map((h,i)=>/전화|핸드폰|휴대폰|휴대전화|연락처|mobile|phone/i.test(String(h))?i:-1).filter(i=>i>=0);
+ if(phones.length===1)mapping.phone=phones[0];return mapping;
 }
 const participated=new Set(['출석','인정지각','인정조퇴','인정외출','지각','조퇴','외출']);
 export function attendanceTargets(data,date,metadata={},includeRecognized=false){
@@ -42,13 +45,26 @@ export function attendanceTargets(data,date,metadata={},includeRecognized=false)
   return {id:`${i}_${name}`,name,status,eligible:participated.has(status)||(includeRecognized&&status==='인정출석'),review:!name||['','해당없음','미입력','중복'].includes(status)||unresolved&&!includeRecognized};
  }).filter(s=>s.name);
 }
-export function summarizeResponses({classId,targets,responses}){
- const counts=new Map(),unknown=[],invalid=[],unscopedNames=new Set();
- for(const r of responses){const cid=classNumber(r.classId);if(!cid){invalid.push('반 확인 필요');if(normalizeName(r.name))unscopedNames.add(normalizeName(r.name));continue;}if(cid!==String(classId))continue;const name=normalizeName(r.name);if(!name){invalid.push('이름 확인 필요');continue;}counts.set(name,(counts.get(name)||0)+1);}
+export function summarizeResponses({classId,targets,responses,identities=[]}){
+ const match=createSurveyIdentityMatcher(targets,identities),counts=new Map(),unknownCounts=new Map(),unresolved=new Set(),unscopedNames=new Set();let invalidCount=0;
+ for(const r of responses){
+  const cid=classNumber(r.classId);if(!cid){invalidCount++;if(normalizeName(r.name))unscopedNames.add(surveyBaseName(r.name));continue;}if(cid!==String(classId))continue;
+  if(!normalizeName(r.name)){invalidCount++;continue;}
+  const {target,candidates}=match(r);
+  if(target)counts.set(target.id,(counts.get(target.id)||0)+1);
+  else if(candidates.length)candidates.forEach(s=>unresolved.add(s.id));
+  else {const name=normalizeName(r.name);unknownCounts.set(name,(unknownCounts.get(name)||0)+1);}
+ }
  const rosterCounts=new Map();targets.forEach(s=>rosterCounts.set(normalizeName(s.name),(rosterCounts.get(normalizeName(s.name))||0)+1));
  const answered=[],missing=[],review=[],excluded=[];
- for(const s of targets){const name=normalizeName(s.name),item={id:s.id,name:s.name,status:s.status};if(rosterCounts.get(name)!==1||s.review)review.push({...item,reason:rosterCounts.get(name)!==1?'동명이인 · 자동 연결 제외':'출석 구분 확인 필요'});else if(!s.eligible)excluded.push(item);else if(counts.has(name))answered.push(item);else if(unscopedNames.has(name))review.push({...item,reason:'응답의 반 구분 확인 필요'});else missing.push(item);}
- for(const [name,count]of counts)if(!rosterCounts.has(name))unknown.push({name,count});
- return {answered,missing,review,excluded,unknown,invalidCount:invalid.length,duplicateCount:[...counts.values()].reduce((n,c)=>n+Math.max(0,c-1),0),eligibleCount:answered.length+missing.length};
+ for(const s of targets){const item={id:s.id,name:s.name,status:s.status};
+  if(rosterCounts.get(normalizeName(s.name))!==1||s.review)review.push({...item,reason:rosterCounts.get(normalizeName(s.name))!==1?'동명이인 · 시트 이름 구분 필요':'출석 구분 확인 필요'});
+  else if(!s.eligible)excluded.push(item);
+  else if(counts.has(s.id))answered.push(item);
+  else if(unresolved.has(s.id))review.push({...item,reason:'동명이인 · 응답 전화번호 확인 필요'});
+  else if(unscopedNames.has(surveyBaseName(s.name)))review.push({...item,reason:'응답의 반 구분 확인 필요'});
+  else missing.push(item);
+ }
+ return {answered,missing,review,excluded,unknown:[...unknownCounts].map(([name,count])=>({name,count})),invalidCount,duplicateCount:[...counts.values()].reduce((n,c)=>n+Math.max(0,c-1),0),eligibleCount:answered.length+missing.length};
 }
 export function sheetIdFromUrl(url){const u=new URL(url);const m=u.hostname==='docs.google.com'&&u.pathname.match(/^\/spreadsheets\/d\/([\w-]+)/);if(!m)throw Error('Google 응답 스프레드시트 주소를 확인해 주세요.');return m[1];}

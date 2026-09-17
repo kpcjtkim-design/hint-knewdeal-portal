@@ -43,6 +43,18 @@ test('central worker reuses participation rules; changed-only writes; fresh resp
  f.writes.length=0;r=await syncClassWorker({...f.input,now:new Date('2026-09-16T09:10:00Z')});assert.equal(r.changed,0);assert.equal(f.writes.length,0);
  f.setResponses([]);r=await syncClassWorker(f.input);assert.equal(r.changed,1);assert.equal(f.documents.get('surveyBetaSummaries/1/surveys/e1').missing.length,1);
 });
+
+test('manual core and deployed scheduler resolve duplicate names from class settings without extra reads',async()=>{
+ for(const worker of [syncClassWorker,runtime.syncClassWorker]){
+  const f=fixture();f.documents.get('classes/1').surveyDuplicateIdentities=[{name:'동명(98년생)',phoneLast4:'0012'},{name:'동명(01년생)',phoneLast4:'0034'}];
+  f.input.readSheet=async()=>({attendance:[['성명','','','','09/14','09/15'],['동명(98년생)','','','','출석','출석'],['동명(01년생)','','','','출석','출석']]});
+  f.setResponses([{name:'동명',classId:'1반',phoneLast4:'0012',timestamp:'2026-09-16',scores:[{id:'q1',kind:'overall',title:'만족도',value:5}]}]);
+  const result=await worker(f.input),summary=f.documents.get('surveyBetaSummaries/1/surveys/e1');
+  assert.equal(result.reads,4);assert.equal(summary.answered[0].name,'동명(98년생)');assert.equal(summary.missing[0].name,'동명(01년생)');assert.equal(summary.scores.overallAverage,5);
+  assert(!JSON.stringify(summary).includes('0012'));assert(!JSON.stringify(summary).includes('phoneLast4'));
+  assert.equal((await worker(f.input)).changed,0);
+ }
+});
 test('unreadable Google source preserves old survey results and reports partial failure',async()=>{
  const f=fixture();await syncClassWorker(f.input);const old=f.documents.get('surveyBetaSummaries/1/surveys/e1');f.writes.length=0;f.input.reader.responses=async()=>{throw Error('denied');};
  const result=await syncClassWorker(f.input);assert.equal(result.failed,1);assert.equal(result.done,0);assert.equal(f.writes.length,0);assert.deepEqual(f.documents.get('surveyBetaSummaries/1/surveys/e1'),old);

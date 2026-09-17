@@ -1,3 +1,4 @@
+import {phoneLast4} from './survey-identity.mjs';
 import {scoreColumns} from './survey-scores.mjs';
 import {responseColumns,sheetIdFromUrl} from './survey-core.mjs';
 const col=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
@@ -56,7 +57,7 @@ export function createSurveyReader(authorize,{requestGate=browserRequestGate,onW
   if(!chosen)throw Error('응답 탭을 하나로 확인하지 못했습니다. 탭 gid가 포함된 응답 시트 주소를 연결해 주세요.');
   const p=chosen.properties,title=quote(p.title),columns=Math.min(p.gridProperties.columnCount,100),head=await get(base+'/values/'+encodeURIComponent(title+'!A1:'+col(columns-1)+'1')),mapping=responseColumns(head.values?.[0]||[]),scoring=scoreColumns(head.values?.[0]||[]),rows=p.gridProperties.rowCount;
   if(rows>20000)throw Error('응답 시트가 2만 행을 초과했습니다. 전용 범위 설정이 필요합니다.');
-  const out=[];for(let start=2;start<=rows;start+=1000){const end=Math.min(rows,start+999),q=new URLSearchParams({majorDimension:'COLUMNS'});for(const index of [...Object.values(mapping),...scoring.map(q=>q.index)])q.append('ranges',`${title}!${col(index)}${start}:${col(index)}${end}`);const d=await get(base+'/values:batchGet?'+q),ranges=d.valueRanges||[];if(ranges.length!==3+scoring.length)throw Error('응답 열을 전부 읽지 못했습니다.');const values=ranges.map(r=>r.values?.[0]||[]),length=Math.max(...values.map(v=>v.length));for(let i=0;i<length;i++){const [name,classId,timestamp]=values.slice(0,3).map(v=>String(v[i]||''));if(name||classId||timestamp)out.push({name,classId,timestamp,scores:scoring.map((q,j)=>({...q,value:String(values[j+3][i]??'')}))});}}
+  const out=[];for(let start=2;start<=rows;start+=1000){const end=Math.min(rows,start+999),q=new URLSearchParams({majorDimension:'COLUMNS'});for(const index of [...Object.values(mapping),...scoring.map(q=>q.index)])q.append('ranges',`${title}!${col(index)}${start}:${col(index)}${end}`);const d=await get(base+'/values:batchGet?'+q),ranges=d.valueRanges||[];if(ranges.length!==Object.keys(mapping).length+scoring.length)throw Error('응답 열을 전부 읽지 못했습니다.');const values=ranges.map(r=>r.values?.[0]||[]),length=Math.max(...values.map(v=>v.length));for(let i=0;i<length;i++){const [name,classId,timestamp]=values.slice(0,3).map(v=>String(v[i]||'')),offset=Object.keys(mapping).length;if(name||classId||timestamp)out.push({name,classId,timestamp,...(mapping.phone!==undefined?{phoneLast4:phoneLast4(values[3][i])|| (String(values[3][i]??'').trim()?'invalid':'')}:{}),scores:scoring.map((q,j)=>({...q,value:String(values[j+offset][i]??'')}))});}}
   cache.set(cacheKey,{at:Date.now(),value:out});return out;
  }
  // Export reads all original columns afresh, separately from cached statistics.
