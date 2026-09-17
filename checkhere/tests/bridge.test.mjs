@@ -5,7 +5,7 @@ test('loopback API authentication, idempotency and snapshot persistence',async()
   let writes=0,r={id:'fake',classId:'2',date:'2026-09-03',name:'가상학생',studentKey:'fake',teacher:'최유정',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]};r.version=version(r);
   const adapter={loggedIn:async()=>true,requireLogin:async()=>{},read:async()=>structuredClone(r),write:async(_,f,v)=>{writes++;r[f+'Memo']=v.memo;}};
   const request={classId:'2',date:r.date,name:r.name,phoneLast4:'',changes:{entryMemo:'시험'},reason:'가상 시험 근거',status:'approved',approvedBy:APPROVER};request.approval=prepareApproval(request,r);
-  let finishes=0;const approvalCloud={verify:async token=>{if(token!=='fixture-admin')throw Error('관리자 권한 없음');},get:async()=>({data:structuredClone(request)}),claim:async()=>{},finish:async()=>{finishes++;}};
+  let finishes=0;const approvalCloud={verify:async token=>{if(token!=='fixture-admin')throw Error('관리자 권한 없음');},get:async()=>({data:structuredClone(request)}),claim:async()=>{},finish:async(id,token,attempt,job)=>{finishes++;assert.equal(job.current.entryMemo,'시험');return{platformSaved:true};}};
   const app=createBridge({dataDir,collector:adapter,port:18765,approvalCloud});await new Promise(resolve=>app.server.listen(18765,'127.0.0.1',resolve));
   const url='http://127.0.0.1:18765',headers={'x-hint-key':app.key,'content-type':'application/json'};
   try{
@@ -17,7 +17,7 @@ test('loopback API authentication, idempotency and snapshot persistence',async()
     const first=await(await fetch(url+'/api/apply',{method:'POST',headers,body:JSON.stringify(input)})).json();
     await new Promise(resolve=>setTimeout(resolve,100));
     const repeated=await(await fetch(url+'/api/apply',{method:'POST',headers,body:JSON.stringify(input)})).json();
-    assert.equal(first.id,repeated.id);assert.equal(repeated.status,'verified');assert.equal(writes,1);assert.equal(r.entryMemo,'시험');assert.equal(finishes,1);
+    assert.equal(first.id,repeated.id);assert.equal(repeated.status,'verified');assert.equal(writes,1);assert.equal(r.entryMemo,'시험');assert.equal(finishes,1);assert.equal(repeated.platformSaved,true);assert.equal(repeated.current.entryMemo,'시험');
     assert.equal(app.db.prepare('SELECT count(*) AS n FROM snapshots').get().n,2);
     assert.equal((await fetch(url+'/api/remove',{method:'POST',headers,body:'{}'})).status,404);
   }finally{app.close();}

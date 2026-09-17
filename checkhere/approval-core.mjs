@@ -28,19 +28,27 @@ export function matchRequest(request,records){
   if(found[0].source!=='live'||found[0].readState!=='complete')throw Error('현재 PC에서 해당 학생의 상세 기록을 다시 수집해 주세요.');
   return found[0];
 }
-export function prepareApproval(request,record){
+export function requestMatchesRecord(request,record){
+  const clean=cleanRequest(request);matchRequest(clean,[record]);
+  return Object.entries(clean.changes).every(([k,v])=>typeof record[k]==='string'&&record[k]===v);
+}
+export function prepareApproval(request,record,{allowAlreadyApplied=false}={}){
   const clean=cleanRequest(request);
   matchRequest(clean,[record]);
   const before=Object.fromEntries(Object.keys(FIELDS).map(k=>[k,record[k]??'']));
   const after={...before,...clean.changes};
-  if(![after.entry,after.exit].every(v=>typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(v))||after.exit<after.entry)throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 시간이 없는 기록은 필요한 시간도 함께 요청해야 합니다.');
-  if(Object.keys(FIELDS).every(k=>before[k]===after[k]))throw Error('요청한 값이 이미 체크히어 기록과 같습니다. 변경 없이 확인 후 반려할 수 있습니다.');
+  const already=Object.keys(FIELDS).every(k=>before[k]===after[k]);
+  if(already&&allowAlreadyApplied){for(const k of ['entry','exit'])if(!after[k])delete after[k];}
+  else {
+    if(![after.entry,after.exit].every(v=>typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(v))||after.exit<after.entry)throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 시간이 없는 기록은 필요한 시간도 함께 요청해야 합니다.');
+    if(already)throw Error('요청한 값이 이미 체크히어 기록과 같습니다. 원본 확인 후 이미 반영으로 처리해 주세요.');
+  }
   return {recordId:record.id,version:record.version,before,after,reason:clean.reason};
 }
 export function proposalFromApproval(request){
   if(request.approvedBy!==APPROVER||!['approved','applying'].includes(request.status))throw Error('지정된 관리자의 승인이 필요합니다.');
   const a=request.approval;if(!a||!a.recordId||!a.version)throw Error('승인된 변경 내용을 찾지 못했습니다.');
   const clean=cleanRequest(request),expected={...a.before,...clean.changes};
-  if(Object.keys(FIELDS).some(k=>a.after?.[k]!==expected[k])||a.reason!==clean.reason)throw Error('요청 내용과 승인 내용이 일치하지 않습니다.');
-  return {id:a.recordId,version:a.version,...a.after,reason:a.reason};
+  if(Object.keys(FIELDS).some(k=>(a.after?.[k]??'')!==expected[k])||a.reason!==clean.reason)throw Error('요청 내용과 승인 내용이 일치하지 않습니다.');
+  return {id:a.recordId,version:a.version,...a.before,...a.after,reason:a.reason};
 }

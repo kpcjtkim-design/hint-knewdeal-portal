@@ -16,7 +16,7 @@ export function createDirectEditor({user,controller,store}){
     if(!/^[a-f0-9-]{36}$/i.test(operationId||''))throw Error('변경 식별정보가 없습니다. 검수 화면을 다시 열어 주세요.');
     const clean=cleanRequest(input),c=controller();
     await c.refresh();
-    if(!c.state().capabilities?.includes('approved-requests-v1'))throw Error('수집 PC에서 최신 체크히어 시작 프로그램을 실행해 주세요.');
+    if(!c.state().capabilities?.includes('approval-current-sync-v1'))throw Error('수집 PC에서 최신 체크히어 시작 프로그램을 실행해 주세요.');
     let request=await store.get(operationId);
     if(request){
       if(requestKey(request)!==requestKey(clean)||request.createdBy!==user.email)throw Error('저장된 변경 내용이 다릅니다. 다시 검토해 주세요.');
@@ -40,7 +40,7 @@ export function createDirectEditor({user,controller,store}){
     catch(e){throw Error('반영 요청 결과를 확인하지 못했습니다. 같은 창에서 다시 누르면 기존 처리 상태를 확인합니다. '+e.message);}
     await c.refresh();
     const job=c.state().jobs?.find(j=>j.id===operationId);
-    if(job&&job.status!=='running')return {status:job.status,message:job.message+(job.cloudError?' '+job.cloudError:'')};
+    if(job&&job.status!=='running')return {status:job.status==='verified'&&!job.platformSaved?'unknown':job.status,message:job.message+(job.cloudError?' '+job.cloudError:'')};
     return {status:'running',message:'체크히어 반영을 시작했습니다. 저장된 시간과 메모를 다시 읽어 결과를 표시합니다.'};
   };
 }

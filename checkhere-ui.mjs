@@ -20,7 +20,7 @@ export async function mountCheckHere(host,ctx={}){
   function alertMessage(title,message){$('#alerts').innerHTML=`<div class="alert" role="alertdialog" aria-modal="true" aria-label="${esc(title)}"><div><h2>${esc(title)}</h2><p>${esc(message)}</p><div class="actions"><button id="alertClose" class="primary">확인</button></div></div></div>`;$('#alertClose').onclick=()=>{$('#alerts').innerHTML='';};$('#alertClose').focus();}
   async function api(path,data){
     if(!key)throw new Error('로컬 연결 키를 먼저 입력해 주세요.');
-    let r;try{r=await fetch(`http://127.0.0.1:8765/api/${path}`,{method:data?'POST':'GET',headers:{'x-hint-key':key,...(data?{'content-type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(30000)});}catch{throw new Error('수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.');}
+    let r;try{r=await fetch(`http://127.0.0.1:8765/api/${path}`,{method:data?'POST':'GET',headers:{'x-hint-key':key,...(data?{'content-type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(path==='confirm-existing'?90000:30000)});}catch{throw new Error('수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.');}
     const d=await r.json();if(!r.ok)throw new Error(d.error||'요청에 실패했습니다.');return d;
   }
   const selected=()=>state.records.filter(r=>($('#class').value==='all'||String(r.classId)===$('#class').value)&&r.date>=$('#from').value&&r.date<=$('#to').value);
@@ -29,7 +29,7 @@ export async function mountCheckHere(host,ctx={}){
     $('#connectionStatus').textContent=state.connected?'체크히어 연결됨':key?'로컬 연결됨 · 로그인 확인':'연결 대기';$('#connectionStatus').className=`badge ${state.connected?'good':''}`;
     const busy=state.jobs.find(j=>j.id===state.busy),records=selected().map(r=>{const fingerprint=JSON.stringify([r.version,r.source,r.readState,r.reference,r.exception]);let cached=auditCache.get(r.id);if(!cached||cached.fingerprint!==fingerprint){cached={fingerprint,audit:judge(r)};auditCache.set(r.id,cached);}return {...r,audit:cached.audit};});
     $('#sync').disabled=!!state.busy||batchRunning||cloudSaves>0;$('#connect').disabled=!!state.busy||batchRunning||cloudSaves>0;$('#refresh').disabled=cloudSaves>0;$('#cancel').hidden=!(busy?.kind==='sync')&&!batchRunning;for(const id of ['class','from','to','bulkPreset','loadCloud','saveCloud'])if($('#'+id))$('#'+id).disabled=batchRunning||cloudSaves>0;$('#saveCloud')&&($('#saveCloud').disabled ||= !!state.busy);
-    $('#jobStatus').innerHTML=busy?`<div class="status"><span class="spinner"></span>${esc(busy.kind==='apply'?'체크히어 변경값 확인 중':busy.message)} ${busy.progress?`· ${esc(busy.progress.date)} ${busy.progress.index}/${busy.progress.total} ${esc(busy.progress.name)}`:''}</div>`:state.jobs[0]?`<div class="status">${esc(state.jobs[0].message)} <span class="muted">${esc(state.jobs[0].finishedAt?.replace('T',' ').slice(0,19)||'')}</span></div>`:'';
+    $('#jobStatus').innerHTML=busy?`<div class="status"><span class="spinner"></span>${esc(busy.kind==='apply'?'체크히어 변경값 확인 중':busy.message)} ${busy.progress?`· ${esc(busy.progress.date)} ${busy.progress.index}/${busy.progress.total} ${esc(busy.progress.name)}`:''}</div>`:state.jobs[0]?`<div class="status">${esc(state.jobs[0].cloudError||state.jobs[0].message)} <span class="muted">${esc(state.jobs[0].finishedAt?.replace('T',' ').slice(0,19)||'')}</span></div>`:'';
     const review=records.filter(r=>r.audit.issues.length),missing=records.filter(r=>r.readState!=='complete'||r.source!=='live');
     $('#stats').innerHTML=[['전체 학생·날짜',records.length,''],['확인 필요',review.length,'warn'],['사유 확인',records.filter(r=>r.audit.issues.some(i=>i.code.startsWith('MEMO')||i.code==='RECOGNIZED_MEMO')).length,'warn'],['재수집 필요',missing.length,'bad']].map(([label,n,c])=>`<div class="stat ${c}"><small>${label}</small><strong>${n}</strong></div>`).join('');
     const filter=$('#filter').value,search=$('#search').value.trim();
@@ -40,7 +40,7 @@ export async function mountCheckHere(host,ctx={}){
     root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditor(state.records.find(r=>r.id===b.dataset.edit)));
     if($('#pagePrevious'))$('#pagePrevious').onclick=()=>{page--;render();};if($('#pageNext'))$('#pageNext').onclick=()=>{page++;render();};
     }
-    $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':'반영')} · ${esc(({verified:'검증 완료',complete:'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
+    $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':'반영')} · ${esc(({verified:j.cloudError?'DB 저장 재확인':j.platformSaved?(j.alreadyApplied?'이미 반영 · DB 저장 완료':'반영·DB 저장 완료'):'DB 저장 확인 중',complete:'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.cloudError||j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
   }
   function saveCloud(records,job){
     cloudSaves++;render();
@@ -60,9 +60,9 @@ export async function mountCheckHere(host,ctx={}){
     if(refreshPromise)return refreshPromise;refreshPromise=(async()=>{
     clearTimeout(pollTimer);state=await api('state');cloudShown=false;render();
     for(const j of state.jobs){
-      if(j.status==='running'||shownJobs.has(j.id))continue;shownJobs.add(j.id);
-      if(j.kind==='apply'&&Date.now()-Date.parse(j.finishedAt||0)<120000)alertMessage(j.status==='verified'?'체크히어 반영 확인':'체크히어 반영 확인 필요',j.message+(j.cloudError?'\n'+j.cloudError:'')+(j.results?.length?'\n'+j.results.map(x=>`${x.field==='entry'?'입실·교시':'퇴실'}: ${x.state==='verified'?'확인 완료':x.state==='unknown'?'결과 미확인':'실패 또는 충돌'}`).join('\n'):''));
-      if(ctx.save&&['complete','partial','verified'].includes(j.status)&&j.finishedAt){
+      if(j.status==='running'||j.kind==='apply'&&j.cloudSaved===undefined||shownJobs.has(j.id))continue;shownJobs.add(j.id);
+      if(j.kind==='apply'&&Date.now()-Date.parse(j.finishedAt||0)<120000)alertMessage(j.status==='verified'&&j.platformSaved?'체크히어 반영·DB 저장 완료':'체크히어 반영 확인 필요',j.message+(j.cloudError?'\n'+j.cloudError:'')+(j.results?.length?'\n'+j.results.map(x=>`${x.field==='entry'?'입실·교시':'퇴실'}: ${x.state==='verified'?'확인 완료':x.state==='unknown'?'결과 미확인':'실패 또는 충돌'}`).join('\n'):''));
+      if(ctx.save&&(j.kind!=='apply'||!state.capabilities?.includes('approval-current-sync-v1'))&&['complete','partial','verified'].includes(j.status)&&j.finishedAt){
         const batch=state.records.filter(r=>(j.kind==='sync'?r.classId===j.classId&&j.dates.includes(r.date):r.id===j.recordId)&&r.source==='live'&&r.collectedAt>=j.startedAt&&r.collectedAt<=j.finishedAt);
         if(batch.length)try{await saveCloud(batch,j);}catch(e){alertMessage('수집 완료 · 플랫폼 저장 실패',`PC에는 수집 결과가 남아 있습니다. 플랫폼 저장을 다시 시도해 주세요.\n${e.message}`);}
       }

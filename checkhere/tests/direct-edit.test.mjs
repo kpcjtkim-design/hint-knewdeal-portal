@@ -6,7 +6,7 @@ const user={email:'hint.kpc@gmail.com',getIdTokenResult:async()=>({claims:{email
 const record={id:'student-id',version:'v1',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',teacher:'최유정',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'퇴실 사유',outings:[]};
 const input={classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',reason:'수기 대조',changes:{entryMemo:'정정 사유'}};
 function setup(account=user){
-  const rows=new Map(),calls=[],state={records:[{...record}],jobs:[],capabilities:['approved-requests-v1']};
+  const rows=new Map(),calls=[],state={records:[{...record}],jobs:[],capabilities:['approved-requests-v1','approval-current-sync-v1']};
   const c={refresh:async()=>{},state:()=>state,api:async(path,payload)=>{calls.push({path,payload});return{status:'verified'};}};
   const store={get:async id=>rows.get(id),create:async(id,value)=>{assert(!rows.has(id));rows.set(id,{...value,status:'pending',createdBy:account.email});},approve:async(id,approval)=>Object.assign(rows.get(id),{status:'approved',approval,approvedBy:account.email})};
   return {apply:createDirectEditor({user:account,controller:()=>c,store}),rows,calls,state,c};

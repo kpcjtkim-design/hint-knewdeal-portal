@@ -8,7 +8,9 @@ $bridgeRunning = $false
 try { $page = Invoke-WebRequest -Uri $bridgeUrl -TimeoutSec 2 -UseBasicParsing; $bridgeRunning = $page.Content.Contains('checkhereApp') } catch {}
 if ($bridgeRunning) {
     $health = Invoke-RestMethod -Uri ($bridgeUrl + '/api/session') -TimeoutSec 2
-    if ($health.build -ne '20260917.1') {
+    if ($health.build -ne '20260917.2') {
+        $bridgeState = Invoke-RestMethod -Uri ($bridgeUrl + '/api/state') -Headers @{'x-hint-key'=$health.key} -TimeoutSec 5
+        if ($bridgeState.busy) { throw '수집 또는 반영 작업이 진행 중입니다. 작업이 끝난 후 다시 실행해 주세요.' }
         $listener = netstat.exe -ano | Select-String '127.0.0.1:8765\s+0.0.0.0:0\s+LISTENING\s+(\d+)'
         if ($listener -and $listener.Matches.Count -eq 1) {
             $oldBridgeId = [int]$listener.Matches[0].Groups[1].Value
