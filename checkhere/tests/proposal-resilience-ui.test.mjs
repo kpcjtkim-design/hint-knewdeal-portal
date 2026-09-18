@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {rea
 test('request dialog survives delayed reads, closure, unknown commits and reload without duplicate submissions',async()=>{
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),base=join(import.meta.dirname,'../..');
  try{for(const mode of ['cancel-read','bad-reader','committed-response-lost','unconfirmed-reload','late-transaction']){
-  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let readerMode=mode;
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let readerMode=mode,readerCalls=0;
   await page.route('**/*',async route=>{
    const u=new URL(route.request().url());
    if(u.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`
@@ -16,7 +16,7 @@ test('request dialog survives delayed reads, closure, unknown commits and reload
      if(window.txMode==='unconfirmed-reload'||window.txMode==='late-transaction')return new Promise((resolve,reject)=>{window.finishTransaction=()=>fn(tx).then(resolve,reject);});
      const out=await fn(tx);if(window.txMode==='committed-response-lost')return new Promise(()=>{});return out;
     }`});
-   if(u.pathname==='/api/attendance-reader'){
+   if(u.pathname==='/api/attendance-reader'){readerCalls++;
     assert.equal(route.request().postDataJSON().fresh,true,'approval source checks bypass display cache');
     if(readerMode==='cancel-read'){await new Promise(r=>setTimeout(r,1000));return route.fulfill({json:{ok:false}}).catch(()=>{});}
     if(readerMode==='bad-reader')return route.fulfill({status:502,contentType:'text/html',body:'<html>upstream</html>'});
@@ -32,11 +32,8 @@ test('request dialog survives delayed reads, closure, unknown commits and reload
   });
   await page.goto('https://fixture.test/');await page.locator('[data-proposal-send]').click();await page.locator('#sendSelected').click();
   const count=()=>page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('checkhereRequests/')).length);
-  if(mode==='cancel-read'){
-   await page.getByText(/시트 원본 확인 중/).waitFor();assert(await page.locator('#closeRequests').isEnabled());await page.locator('#closeRequests').click();await page.waitForFunction(()=>!window.review.isWorking());assert.equal(await count(),0);assert(await page.locator('[data-proposal-send]').isEnabled());
-  }else if(mode==='bad-reader'){
-   await page.getByText(/0건 요청 접수 · 1건 실패/).waitFor();assert(await page.locator('#closeRequests').isEnabled());assert.equal(await count(),0);await page.locator('#closeRequests').click();
-   readerMode='ok';await page.evaluate(()=>window.txMode='ok');await page.locator('[data-proposal-send]').click();await page.locator('#sendSelected').click();await page.getByText(/1건 요청 접수 · 0건 실패/).waitFor();assert.equal(await count(),1);
+  if(mode==='cancel-read'||mode==='bad-reader'){
+   await page.getByText(/1건 요청 접수 · 0건 실패/).waitFor();assert.equal(await count(),1);assert.equal(readerCalls,0,'requests never wait on the Sheet reader');await page.locator('#closeRequests').click();
   }else if(mode==='committed-response-lost'){
    await page.getByText(/1건 요청 접수 · 0건 실패/).waitFor();assert.equal(await count(),1);await page.locator('#closeRequests').click();assert(await page.locator('[data-proposal-send]').isDisabled());assert.equal(await page.evaluate(()=>Object.keys(JSON.parse(localStorage.getItem('hintProposalReceipts_v1_fixture@example.com'))).length),0);
   }else{

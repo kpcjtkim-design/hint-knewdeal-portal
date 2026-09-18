@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
-test('inline recommendations, manual edits, three independent requests, column bulk requests and source conflicts',async()=>{
+test('administrators submit explicit targets independently of Sheet and collector diagnostics',async()=>{
  const base=join(import.meta.dirname,'../..'),{chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  try{
@@ -20,8 +20,8 @@ test('inline recommendations, manual edits, three independent requests, column b
   const close=()=>page.locator('#closeRequests').click();
   await memo.fill('(인정지각)병원_담임:홍길동(13:01)');assert.equal(await count(),0,'editing never writes CheckHere requests');
   await page.evaluate(()=>window.unsaved=true);await open('entryMemo');assert.equal(await count(),0,'preview only');
-  await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'0건 요청 접수 · 1건 실패'}).waitFor();assert.match(await page.locator('#requestResult').innerText(),/시트에 저장하지 않은 사유/);await close();
-  await page.evaluate(()=>window.unsaved=false);await open('entryMemo');await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+  await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+  await page.evaluate(()=>window.unsaved=false);
   assert.equal(await count(),1);assert(await memo.isDisabled());
   assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.changes?.entryMemo)?.changes.entryMemo),'(인정지각)병원_담임:홍길동(13:01)');
   await open('times');await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),2,'entry reason does not block time request');
@@ -29,14 +29,13 @@ test('inline recommendations, manual edits, three independent requests, column b
   await page.locator('[data-proposal-send="0_가상학생__exitMemo"]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();assert.equal(await count(),3,'third column can be requested independently');
   await page.evaluate(()=>window.record.entry='14:00:00');assert.equal(await page.evaluate(()=>window.validate()),'ok');await page.evaluate(()=>window.record.entry='13:00:00');
   await page.evaluate(async()=>{const r=Object.values(window.docs).find(v=>v.changes?.entry);r.status='verified';r.approvedBy='hint.kpc@gmail.com';r.approval={recordId:'record-id',before:{entry:'13:00:00',exit:'18:00:00'},after:{entry:'09:00:00',exit:'18:00:00'}};await window.reload();});
-  assert(await page.locator('[data-proposal-send="0_가상학생__times"]').isDisabled(),'verified writes must not be requested again from an old platform snapshot');
-  await page.getByText('반영 확인 완료 · 재수집 후 플랫폼에 저장해 주세요.',{exact:true}).waitFor();
+  assert(await page.locator('[data-proposal-send="0_가상학생__times"]').isEnabled(),'old snapshot cannot block a new reviewed request');
   assert.equal(await page.evaluate(()=>window.validate()),'ok');
   await page.evaluate(()=>{window.sheetRaw+='\n다른학생: 시험';window.record.version='v2';window.record.entry='09:00:00';});assert.equal(await page.evaluate(()=>window.validate()),'ok','earlier time approval and other student reason do not invalidate memo request');
   await page.evaluate(()=>window.record.entryMemo='다른 직원의 수정');assert.equal(await page.evaluate(()=>window.validate()),'ok');
   await page.evaluate(()=>{window.record.entryMemo='';window.sheetRaw='가상학생: 면접\n다른학생: 시험';});assert.equal(await page.evaluate(()=>window.validate()),'ok');
   await page.evaluate(async()=>{for(const[k,v]of Object.entries(window.docs))if(k.startsWith('checkhereRequests/'))v.status='rejected';window.context.reason='면접';window.context.raw=window.sheetRaw;window.record.entry='13:00:00';await window.reload();});
-  assert.equal(await memo.inputValue(),'(인정지각)병원_담임:홍길동(13:01)');assert(await page.locator('[data-proposal-send="0_가상학생__entryMemo"]').isDisabled());
+  assert.equal(await memo.inputValue(),'(인정지각)병원_담임:홍길동(13:01)');assert(await page.locator('[data-proposal-send="0_가상학생__entryMemo"]').isEnabled());
   await page.locator('[data-proposal-reset="0_가상학생__entryMemo"]').click();assert.equal(await memo.inputValue(),'(인정지각)면접_담임:홍길동(13:00)');
   // Add a second row, retaining the first row's saved draft. Both must be reviewed before the bulk write.
   await page.evaluate(async()=>{window.students.push({name:'다른학생',rowIndex:1});await window.reload();});
@@ -59,7 +58,7 @@ test('inline recommendations, manual edits, three independent requests, column b
   await memo.fill('직접 검토한 사유');
   await page.evaluate(()=>{window.context.reason='병원';window.refreshProposals();});
   assert.equal(await memo.inputValue(),'직접 검토한 사유');
-  assert(await page.locator('[data-proposal-send="0_가상학생__entryMemo"]').isDisabled());
+  assert(await page.locator('[data-proposal-send="0_가상학생__entryMemo"]').isEnabled());
   await page.locator('[data-proposal-reset="0_가상학생__entryMemo"]').click();
   await page.evaluate(()=>{window.context.status='출석';window.record.entryMemo='지각으로 잘못 남은 사유';window.refreshProposals();});
   assert.equal(await memo.inputValue(),'','normal attendance recommends an intentional empty memo');
@@ -79,7 +78,14 @@ test('inline recommendations, manual edits, three independent requests, column b
   await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
   assert.deepEqual(await page.evaluate(()=>Object.values(window.docs).find(v=>v.status==='pending').changes),{exitMemo:'(인정조퇴)병원_담임:홍길동(15:39)'});
   await page.locator('[data-proposal-reset="0_가상학생__times"]').click();await open('times');await page.locator('#sendSelected').click();
-  await page.locator('#requestResult').filter({hasText:'0건 요청 접수 · 1건 실패'}).waitFor();assert.match(await page.locator('#requestResult').innerText(),/시간을 자동 변경할 수 없습니다/);await close();
+  await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+  // A normal administrator can request without a complete snapshot or unchanged shared draft.
+  for(const patch of [{rawEntry:'09:03:00',entry:'09:15:00'}, {teacher:'',schedule:'10:00 ~ 19:00',readState:'partial'}, null]){
+   await page.evaluate(async patch=>{for(const v of Object.values(window.docs))if(v.status==='pending')v.status='rejected';window.context.record=patch?{...window.record,...patch}:null;window.context.reasonUnsaved=true;window.context.statusSaving=true;await window.reload();const draft=Object.values(window.docs).find(x=>x.students&&Object.keys(x.students).some(k=>k.includes('__exitMemo')));if(draft)draft.students['0_가상학생__exitMemo'].revision+=4;},patch);
+   await page.getByLabel('가상학생 퇴실 사유 추천사유',{exact:true}).fill('직원이 확인한 변경값');
+   await page.locator('[data-proposal-send="0_가상학생__exitMemo"]').click();await page.locator('#sendSelected').click();await page.locator('#requestResult').filter({hasText:'1건 요청 접수 · 0건 실패'}).waitFor();await close();
+   assert.equal(await page.evaluate(()=>Object.values(window.docs).find(v=>v.status==='pending').createdBy),'staff@example.com');
+  }
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });
