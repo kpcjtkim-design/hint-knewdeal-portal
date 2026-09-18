@@ -1,10 +1,11 @@
+import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 import {canWithdraw,withdrawRequest} from './checkhere-request-actions.mjs';
 import {within} from './attendance-io.mjs';
 import {REQUEST_COLUMNS,requestColumn,requestsOverlap} from './checkhere-proposal-core.mjs';
 const ACTIVE_STATUSES=['pending','approved','applying'];
 import {validateLinkedRequest} from './checkhere-proposals.mjs';
 import {collection,doc,getDocs,setDoc,query,where,orderBy,limit,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {APPROVER,FIELDS,STATUS,cleanRequest,matchRequest,prepareApproval,requestMatchesRecord,sameRequestTarget} from './checkhere/approval-core.mjs';
+import {APPROVER,FIELDS,STATUS,cleanRequest,matchRequest as matchRequestCore,prepareApproval as prepareApprovalCore,requestMatchesRecord as requestMatchesRecordCore,sameRequestTarget} from './checkhere/approval-core.mjs';
 import {assertChangeAllowed} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateNow=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -16,7 +17,12 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   const root=host.attachShadow({mode:'open'}),$=s=>root.querySelector(s);
   const identity=await user.getIdTokenResult(),approver=admin&&user.email?.toLowerCase()===APPROVER&&identity.claims.firebase?.sign_in_provider==='google.com';
   let rows=[],timer,disposed=false,working=false,reading=false;
-  const checkedExisting=new Set();
+  const checkedExisting=new Set(),identityMaps=new Map();
+  const identityFor=r=>identityMaps.get(String(r.classId))||[];
+  const matchRequest=(r,records)=>matchRequestCore(r,records,identityFor(r));
+  const requestMatchesRecord=(r,record)=>requestMatchesRecordCore(r,record,identityFor(r));
+  const prepareApproval=(r,record,options={})=>prepareApprovalCore(r,record,{...options,identities:identityFor(r)});
+  async function readIdentities(){for(const classId of new Set(rows.filter(r=>ACTIVE_STATUSES.includes(r.status)).map(r=>String(r.classId))))identityMaps.set(classId,await loadCheckHereIdentities(db,classId,rows.filter(r=>String(r.classId)===classId)));}
   const active=()=>host.isConnected&&!host.hidden&&host.style.display!=='none'&&!document.hidden;
   root.innerHTML=`<style>:host{display:block;font-family:inherit;color:#172033;margin:12px 0}*{box-sizing:border-box}button,input,select,textarea{font:inherit}section{background:white;border:1px solid #dbe3ee;border-radius:12px;padding:16px}h3{margin:0 0 8px}p,small{color:#64748b;line-height:1.5}button{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;background:#f8fafc}button.primary{background:#1d4ed8;color:white;border-color:#1d4ed8}button:disabled{opacity:.5;cursor:not-allowed}.line{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}label{display:block;font-size:12px;font-weight:700}input:not([type=checkbox]),select,textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin:5px 0}textarea{min-height:75px;resize:vertical}.request{border-top:1px solid #e2e8f0;padding:12px 0}.needs-change{background:#fff8e8;border-left:4px solid #d59a2b;padding-left:12px}.badge{border-radius:8px;padding:4px 8px;background:#eef2ff;font-size:12px}.reason{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:#334155}.error{color:#b91c1c}.success{color:#166534}dialog{border:1px solid #cbd5e1;border-radius:14px;max-width:720px;width:95%;max-height:90vh;overflow:auto}dialog::backdrop{background:#0f172a88}table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}td,th{padding:9px;border:1px solid #e2e8f0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left}.note{background:#f1f5f9;padding:10px;border-radius:8px}summary{cursor:pointer;font-weight:800}@media(max-width:600px){.grid{grid-template-columns:1fr}}</style>
   <section><h3>체크히어 수정 요청${approver?' · 승인':''}</h3><p>요청 등록만으로 체크히어가 변경되지는 않습니다. 지정된 관리자가 수집 PC에서 승인한 뒤 반영 결과를 확인합니다.</p>
@@ -34,7 +40,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
       if(admin){const [active,recent]=await within(Promise.all([getDocs(query(ref,where('status','in',['pending','approved','applying']))),getDocs(query(ref,orderBy('updatedAt','desc'),limit(50)))]));docs=[...new Map([...active.docs,...recent.docs].map(d=>[d.id,d])).values()];}
       else docs=(await within(getDocs(query(ref,where('createdBy','==',user.email),where('classId','==',String(classes[0].id)),limit(200))))).docs;
       if(disposed||!host.isConnected)return;
-      rows=docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(['pending','approved','applying'].includes(b.status)?1:0)-(['pending','approved','applying'].includes(a.status)?1:0)||(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));render();
+      rows=docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(['pending','approved','applying'].includes(b.status)?1:0)-(['pending','approved','applying'].includes(a.status)?1:0)||(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));if(approver)await readIdentities();render();
     }catch(e){message(e.code==='permission-denied'?'수정 요청 저장 권한을 확인하지 못했습니다. 기존 출결대조 기능은 계속 사용할 수 있습니다.':e.message,true);}
     reading=false;await autoConfirmExisting();if(host.isConnected&&!disposed)timer=setTimeout(refresh,60000);
   }
@@ -55,10 +61,10 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
     if(requestMatchesRecord(r,record)){working=true;try{await confirmExisting(c,r);}finally{working=false;await refresh();}return;}
     const judgement=assertChangeAllowed(record,r.changes,{capabilities:c.state().capabilities});
     const approval=prepareApproval(r,record),modal=$('#review');
-    modal.innerHTML=`<h3>${esc(r.classId)}반 · ${esc(r.date)} · ${esc(r.name)}</h3>${judgement.warning?`<p class="note" role="note">${esc(judgement.warning)}</p>`:''}<p class="reason">요청 근거: ${esc(r.reason)}</p><table><thead><tr><th>항목</th><th>현재 체크히어 값</th><th>승인할 값</th></tr></thead><tbody>${Object.keys(r.changes).map(k=>`<tr><th>${esc(FIELDS[k])}</th><td>${esc(approval.before[k]||'공란')}</td><td>${esc(approval.after[k]||'공란')}</td></tr>`).join('')}</tbody></table><p class="note">승인 후 체크히어 원본을 다시 읽습니다. 원본이 달라졌으면 중단하며, 저장된 값까지 일치해야 검증 완료로 표시합니다.</p><div class="line"><button id="approve" class="primary">승인하고 체크히어에 반영</button><button id="close">닫기</button></div>`;modal.showModal();$('#close').onclick=()=>modal.close();
+    modal.innerHTML=`<h3>${esc(r.classId)}반 · ${esc(r.date)} · ${esc(r.name)}</h3>${judgement.warning?`<p class="note" role="note">${esc(judgement.warning)}</p>`:''}<p class="reason">요청 근거: ${esc(r.reason)}</p><table><thead><tr><th>항목</th><th>현재 체크히어 값</th><th>승인할 값</th></tr></thead><tbody>${Object.keys(r.changes).map(k=>`<tr><th>${esc(FIELDS[k])}</th><td>${esc(approval.before[k]||'공란')}</td><td>${esc(approval.after[k]||'공란')}</td></tr>`).join('')}</tbody></table><p class="note">수집본이 없으면 자동으로 수집합니다. 승인한 항목을 체크히어에 입력하고, 실제 저장값과 플랫폼 DB 저장까지 확인합니다.</p><div class="line"><button id="approve" class="primary">승인하고 체크히어에 반영</button><button id="close">닫기</button></div>`;modal.showModal();$('#close').onclick=()=>modal.close();
     $('#approve').onclick=action(async()=>{if(working)return;working=true;try{message('승인된 내용을 체크히어에 자동 입력하고 저장 결과를 확인합니다.');const connection=await approveOne(r,approval);modal.close();await run(r,connection);}finally{working=false;await refresh();}});
   }
-  async function run(r,connection=null){const c=connection||await connected();if(!connection&&!requestMatchesRecord(r,matchRequest(r,c.state().records)))await validateLinkedRequest(db,user,r,matchRequest(r,c.state().records));await c.api('apply',{approvalId:r.id,idToken:await user.getIdToken()});message('체크히어 자동 입력 중 · 저장된 결과까지 확인하고 있습니다.');const result=await waitApplied(c,r);await refresh();message(result.message||'체크히어 반영·플랫폼 DB 저장 완료');}
+  async function run(r,connection=null){const c=connection||await connected();if(!connection){const record=await previewCurrent(c,r);if(!requestMatchesRecord(r,record))await validateLinkedRequest(db,user,r,record,undefined,identityFor(r));}await c.api('apply',{approvalId:r.id,idToken:await user.getIdToken()});message('체크히어 자동 입력 중 · 저장된 결과까지 확인하고 있습니다.');const result=await waitApplied(c,r);await refresh();message(result.message||'체크히어 반영·플랫폼 DB 저장 완료');}
   async function reconcile(r){const c=await connected(),result=await c.api('reconcile',{approvalId:r.id,idToken:await user.getIdToken(true)});await refresh();message(result.status==='running'?'아직 반영 중입니다.':result.status==='verified'&&result.platformSaved===true?'체크히어 반영·플랫폼 DB 저장 완료':'처리 현황과 체크히어 원본을 확인해 주세요.',!(result.status==='running'||result.status==='verified'&&result.platformSaved===true));}
   async function reject(r){const modal=$('#review');modal.innerHTML=`<h3>수정 요청 반려</h3><p>${esc(r.classId)}반 · ${esc(r.date)} · ${esc(r.name)}</p><label>반려 사유<textarea id="rejectReason" maxlength="1000"></textarea></label><div class="line"><button id="rejectNow">반려 처리</button><button id="close">닫기</button></div>`;modal.showModal();$('#close').onclick=()=>modal.close();$('#rejectNow').onclick=action(async()=>{const note=$('#rejectReason').value.trim();if(!note)throw Error('반려 사유를 입력해 주세요.');await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',r.id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending')throw Error('이미 처리된 요청입니다.');tx.update(ref,{status:'rejected',reviewNote:note,reviewedBy:user.email,updatedAt:serverTimestamp()});});modal.close();await refresh();message('요청을 반려했습니다. 체크히어는 변경되지 않았습니다.');});}
   const visibleRows=()=>rows.filter(r=>(!$('#requestClass').value||r.classId===$('#requestClass').value)&&(!$('#requestDate').value||r.date===$('#requestDate').value));
@@ -66,7 +72,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
     const c=await connected(),record=matchRequest(r,c.state().records);
     if(rows.some(x=>x.id!==r.id&&ACTIVE_STATUSES.includes(x.status)&&requestsOverlap(x,r)))throw Error('동일 항목의 중복 요청이 있습니다. 먼저 반려·정리해 주세요.');
     assertChangeAllowed(record,r.changes,{capabilities:c.state().capabilities});
-    await validateLinkedRequest(db,user,r,record,cache);
+    await validateLinkedRequest(db,user,r,record,cache,identityFor(r));
     const approval=prepareApproval(r,record);
     if(preview&&Object.keys(r.changes).some(k=>approval.before[k]!==preview.before[k]||approval.after[k]!==preview.after[k]))throw Error('검토한 이후 해당 항목이 바뀌었습니다. 다시 확인해 주세요.');
     await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',r.id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 변경됐습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});});
@@ -105,7 +111,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   }
 
   async function previewCurrent(c,r){
-    message(`${r.classId}반 ${r.name} · 현재 체크히어 값을 읽고 있습니다.`);
+    message(`${r.classId}반 ${r.name} · 현재 체크히어 값을 확인하고 있습니다. 수집본이 없으면 자동 수집합니다.`);
     const wasWorking=working;working=true;try{
       const result=await c.api('preview-request',{approvalId:r.id,idToken:await user.getIdToken()});
       if(!result.record)throw Error('현재 체크히어 기록을 확인하지 못했습니다.');

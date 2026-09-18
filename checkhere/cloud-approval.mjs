@@ -1,4 +1,5 @@
 import {APPROVER,proposalFromApproval,matchRequest,prepareApproval,requestMatchesRecord} from './approval-core.mjs';
+import {hasBirthYearName} from '../checkhere-name-core.mjs';
 import {mergeCurrentRecords,containsSavedRecords} from '../checkhere-current-core.mjs';
 import {FIREBASE_KEY,PROJECT} from './firebase-public.mjs';
 function decode(v){if('stringValue'in v)return v.stringValue;if('booleanValue'in v)return v.booleanValue;if('integerValue'in v)return Number(v.integerValue);if('doubleValue'in v)return v.doubleValue;if('timestampValue'in v)return v.timestampValue;if('nullValue'in v)return null;if(v.arrayValue)return(v.arrayValue.values||[]).map(decode);if(v.mapValue)return unpack(v.mapValue.fields||{});return null;}
@@ -21,16 +22,24 @@ export function createApprovalCloud({fetchImpl=fetch}={}){
     if(user?.email?.toLowerCase()!==APPROVER||user.emailVerified!==true||claims.aud!==PROJECT||claims.iss!==`https://securetoken.google.com/${PROJECT}`||claims.exp*1000<=Date.now()||claims.firebase?.sign_in_provider!=='google.com')throw Error('체크히어 수정은 지정된 Google 관리자 계정만 승인·반영할 수 있습니다.');
     return APPROVER;
   }
+  const identityCache=new Map();
+  async function identitiesFor(data,token){
+    if(!hasBirthYearName(data.name))return [];
+    const key=String(data.classId);if(!/^(?:[1-9]|1[0-7])$/.test(key))throw Error('반을 확인해 주세요.');
+    const old=identityCache.get(key);if(old&&Date.now()-old.at<300000)return old.value;
+    const raw=await call(`${documents}/classes/${key}`,token),value=unpack(raw.fields||{}).surveyDuplicateIdentities||[];
+    identityCache.set(key,{at:Date.now(),value});return value;
+  }
   async function get(id,token){
     if(typeof id!=='string'||!/^[-\w]{16,80}$/.test(id))throw Error('수정 요청 번호를 확인해 주세요.');
-    const raw=await call(`${base}/${encodeURIComponent(id)}`,token);return{id,data:unpack(raw.fields||{}),updateTime:raw.updateTime};
+    const raw=await call(`${base}/${encodeURIComponent(id)}`,token);const data=unpack(raw.fields||{});return{id,data,identities:await identitiesFor(data,token),updateTime:raw.updateTime};
   }
   const commit=(token,writes)=>call(documents+':commit',token,{method:'POST',body:JSON.stringify({writes})});
   const requestWrite=(doc,changes,transforms=[])=>({update:{name:`${documentName}/checkhereRequests/${doc.id}`,fields:pack(changes)},updateMask:{fieldPaths:Object.keys(changes)},updateTransforms:[{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'},...transforms],currentDocument:{updateTime:doc.updateTime}});
   const patch=(doc,token,changes,transforms=[])=>commit(token,[requestWrite(doc,changes,transforms)]);
-  async function currentWrite(request,job,token){
+  async function currentWrite(request,job,token,identities=[]){
     const {audit,...raw}=job.current||{},record=JSON.parse(JSON.stringify(raw));record.classId=String(record.classId);
-    matchRequest(request,[record]);
+    matchRequest(request,[record],identities);
     if(record.id!==request.approval?.recordId||!record.version||!Number.isFinite(Date.parse(record.collectedAt)))throw Error('플랫폼에 저장할 원본 확인 기록이 없습니다. 수집 PC에서 다시 확인해 주세요.');
     const path=`classes/${record.classId}/checkhereCurrent/${record.date}`;let old;
     try{old=await call(`${documents}/${path}`,token);}catch(e){if(e.status!==404)throw e;}
@@ -47,8 +56,8 @@ export function createApprovalCloud({fetchImpl=fetch}={}){
   }
   return {verify,get,async approved(id,token){await verify(token);const doc=await get(id,token);proposalFromApproval(doc.data);return doc;},
     async approveExisting(doc,token,record){
-      if(doc.data.status!=='pending'||!requestMatchesRecord(doc.data,record))throw Error('승인 대기 요청과 체크히어 원본이 일치하지 않습니다.');
-      const approval=prepareApproval(doc.data,record,{allowAlreadyApplied:true});
+      if(doc.data.status!=='pending'||!requestMatchesRecord(doc.data,record,doc.identities))throw Error('승인 대기 요청과 체크히어 원본이 일치하지 않습니다.');
+      const approval=prepareApproval(doc.data,record,{allowAlreadyApplied:true,identities:doc.identities});
       await patch(doc,token,{status:'approved',approval,approvedBy:APPROVER},[{fieldPath:'approvedAt',setToServerValue:'REQUEST_TIME'}]);
       return get(doc.id,token);
     },
@@ -61,9 +70,9 @@ export function createApprovalCloud({fetchImpl=fetch}={}){
         if(doc.data.status!=='applying'||doc.data.attemptId!==attemptId)throw Error('서버 작업 상태가 달라 결과를 저장하지 못했습니다.');
         const result={message:job.message||'결과를 다시 확인해 주세요.',jobId:job.id,results:job.results||[],finishedAt:job.finishedAt||new Date().toISOString(),alreadyApplied:job.alreadyApplied===true,platformSaved:false};
         const writes=[];
-        if(status==='verified'&&(!job.current||!requestMatchesRecord(doc.data,job.current)))throw Error('원본 재확인 결과가 요청과 달라 완료 처리하지 않았습니다.');
+        if(status==='verified'&&(!job.current||!requestMatchesRecord(doc.data,job.current,doc.identities)))throw Error('원본 재확인 결과가 요청과 달라 완료 처리하지 않았습니다.');
         if(job.current?.readState==='complete'&&job.current.source==='live'){
-          const snapshot=await currentWrite(doc.data,job,token);if(snapshot)writes.push(snapshot);
+          const snapshot=await currentWrite(doc.data,job,token,doc.identities);if(snapshot)writes.push(snapshot);
           result.platformSaved=true;
           if(status==='verified')result.message=job.alreadyApplied?'이미 반영 · 원본 확인 및 플랫폼 DB 저장 완료':'체크히어 반영·원본 확인·플랫폼 DB 저장 완료';
         }

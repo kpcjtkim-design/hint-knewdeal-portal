@@ -3,6 +3,7 @@ import {isoLabel,koreaToday} from './attendance-beta-core.mjs';
 import {loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
 import {deriveAttendanceClass} from './attendance-derived-core.mjs';
 import {within,readJson} from './attendance-io.mjs';
+import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 const flightsByDb=new WeakMap();
 function flightMap(db,user){let users=flightsByDb.get(db);if(!users){users=new Map();flightsByDb.set(db,users);}const uid=user.uid||user.email;if(!users.has(uid))users.set(uid,new Map());return users.get(uid);}
 async function recognitionRecords(db,classId,sheet){
@@ -21,12 +22,12 @@ export function syncAttendanceSummary(db,user,classId,data=null){
  const pending=inFlight.get(key);if(pending){if(pending.signature===signature)return pending.work;return pending.work.catch(()=>{}).then(()=>syncAttendanceSummary(db,user,classId,data));}
  const work=(async()=>{
   const sheet=data||await readJson('/api/attendance-reader',{classId:key,idToken:await within(user.getIdToken()),allowCache:true},{timeout:55000});
-  const [metas,snaps,tt,old]=await Promise.all([
+  const [metas,snaps,tt,old,identities]=await Promise.all([
    within(getDocs(query(collection(db,'settings'),where(documentId(),'>=',`attendanceBeta_${key}_`),where(documentId(),'<',`attendanceBeta_${key}_\uf8ff`))),30000),
-   recognitionRecords(db,key,sheet),within(getDoc(doc(db,'timetableBetaPublished',key)),30000),readAttendanceSummary(db,key)
+   recognitionRecords(db,key,sheet),within(getDoc(doc(db,'timetableBetaPublished',key)),30000),readAttendanceSummary(db,key),loadCheckHereIdentities(db,key,(sheet.attendance||[]).slice(1).map(r=>({name:r[0]})))
   ]);
   const metadata=Object.fromEntries(metas.docs.map(d=>[d.id.slice(-10),d.data().students||{}]));
-  const result=deriveAttendanceClass(sheet,{classId:key,metadata,records:snaps,entries:tt.data()?.entries||[]});
+  const result=deriveAttendanceClass(sheet,{classId:key,metadata,records:snaps,identities,entries:tt.data()?.entries||[]});
   const bytes=new TextEncoder().encode(JSON.stringify(result));let hash=2166136261;for(const n of bytes)hash=Math.imul(hash^n,16777619);const fingerprint=(hash>>>0).toString(16)+':'+bytes.length;
   if(old?.fingerprint===fingerprint)return old;
   const next={...result,fingerprint,syncedAt:new Date().toISOString(),updatedBy:user.email,updatedAt:serverTimestamp()};

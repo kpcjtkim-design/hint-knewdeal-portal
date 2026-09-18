@@ -30,11 +30,11 @@ export async function validateSheetSource(db,user,c,cache=new Map(),{signal,time
   if(currentReason!==expectedReason)throw Error('요청의 기준인 시트 사유가 바뀌었습니다. 출결대조에서 다시 읽고 검토해 주세요.');
   if(currentStatus!==c.status)throw Error(`요청의 기준인 출결 구분이 바뀌었습니다 (${c.status} → ${currentStatus}). 출결대조에서 다시 읽고 검토해 주세요.`);
 }
-export async function validateLinkedRequest(db,user,request,record,cache){
+export async function validateLinkedRequest(db,user,request,record,cache,identities=[]){
   // Approval applies the submitted target reviewed against the live student record.
   // Archived suggestions and later Sheet edits are provenance, not approval locks.
   // The approval transaction separately checks that the request itself is unchanged.
-  matchRequest(request,[record]);
+  matchRequest(request,[record],identities);
 }
 export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason,timeouts={}}){
  let saved={},requests=[],loadError='',sequence=0,working=false,loadedClass='',loadedDate='';
@@ -91,7 +91,7 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   const generation=sequence,discardEdit=()=>{if(generation===sequence)edits.delete(slot(s,v.column));};
   const block=disabledReason(v);if(block&&block!=='요청 처리 중')throw Error(block);
   const changes=requestChanges(v.c.record||{},v.column,v.value);
-  const input=cleanRequest({classId:v.c.classId,date:v.c.date,name:s.name,phoneLast4:v.c.record?.phoneLast4||'',changes,reason:`출결대조 ${REQUEST_COLUMNS[v.column]} · ${v.c.status} · ${v.c.reason||'일반 출결'}${v.c.excursion?' · 견학일 확인':''}`.slice(0,1000)});
+  const input=cleanRequest({classId:v.c.classId,date:v.c.date,name:s.name,phoneLast4:v.c.record?.phoneLast4||v.c.phoneLast4||'',changes,reason:`출결대조 ${REQUEST_COLUMNS[v.column]} · ${v.c.status} · ${v.c.reason||'일반 출결'}${v.c.excursion?' · 견학일 확인':''}`.slice(0,1000)});
   const name=slot(s,v.column),receipt=receiptKey(v);let previousReceipt=journal[receipt];
   if(previousReceipt){
     progress('기존 요청 접수 확인 중…');

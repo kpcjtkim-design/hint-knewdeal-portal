@@ -1,3 +1,4 @@
+import {matchingCheckHereRecords,hasBirthYearName} from '../checkhere-name-core.mjs';
 export const APPROVER = 'hint.kpc@gmail.com';
 export const FIELDS = {entry:'입실·교시 시간',exit:'퇴실 시간',entryMemo:'입실·교시 관리자 사유',exitMemo:'퇴실 관리자 사유'};
 export const STATUS = {pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'검증 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
@@ -29,20 +30,20 @@ export function sameRequestTarget(left,right){
       Object.keys(a.changes).every(k=>own(b.changes,k)&&a.changes[k]===b.changes[k]);
   }catch{return false;}
 }
-export function matchRequest(request,records){
+export function matchRequest(request,records,identities=[]){
   const r=cleanRequest(request);
-  const found=records.filter(x=>String(x.classId)===r.classId&&x.date===r.date&&x.name.trim()===r.name&&(!r.phoneLast4||x.phoneLast4===r.phoneLast4));
-  if(found.length!==1)throw Error(found.length?'동명이인이 있습니다. 요청자의 학생 식별정보를 확인해 주세요.':'해당 반·날짜를 먼저 수집하고 학생 이름을 확인해 주세요.');
+  const found=matchingCheckHereRecords(r,records,identities);
+  if(found.length!==1)throw Error(found.length?'동명이인이 있습니다. 요청자의 학생 식별정보를 확인해 주세요.':hasBirthYearName(r.name)?'동명이인 구분 정보와 체크히어 전화번호 끝 4자리를 확인해 주세요.':'해당 반·날짜를 먼저 수집하고 학생 이름을 확인해 주세요.');
   if(found[0].source!=='live'||found[0].readState!=='complete')throw Error('현재 PC에서 해당 학생의 상세 기록을 다시 수집해 주세요.');
   return found[0];
 }
-export function requestMatchesRecord(request,record){
-  const clean=cleanRequest(request);matchRequest(clean,[record]);
+export function requestMatchesRecord(request,record,identities=[]){
+  const clean=cleanRequest(request);matchRequest(clean,[record],identities);
   return Object.entries(clean.changes).every(([k,v])=>typeof record[k]==='string'&&record[k]===v);
 }
-export function prepareApproval(request,record,{allowAlreadyApplied=false}={}){
+export function prepareApproval(request,record,{allowAlreadyApplied=false,identities=[]}={}){
   const clean=cleanRequest(request);
-  matchRequest(clean,[record]);
+  matchRequest(clean,[record],identities);
   const before=Object.fromEntries(Object.keys(FIELDS).map(k=>[k,record[k]??'']));
   const after={...before,...clean.changes};
   const already=Object.keys(FIELDS).every(k=>before[k]===after[k]);

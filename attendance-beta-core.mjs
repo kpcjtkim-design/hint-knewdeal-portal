@@ -1,3 +1,5 @@
+import {matchingCheckHereRecords} from './checkhere-name-core.mjs';
+import {surveyBaseName} from './survey-identity.mjs';
 export const ATTENDANCE_OPTIONS=['해당없음','출석','결석','지각','조퇴','외출','중복','인정출석','인정지각','인정조퇴','인정외출'];
 export const EVIDENCE_OPTIONS=['미해당','미제출','반려','확인'];
 export const EVIDENCE_COLORS={미해당:'#ffffff',미제출:'#ff0000',반려:'#ff0000',확인:'#ffff00'};
@@ -75,9 +77,9 @@ export function rewriteReasons(raw,changes,roster){
 export function latestSnapshots(records,classId,date){
   const byId=new Map();for(const r of records){if(String(r.classId)!==String(classId)||r.date!==date||!r.id)continue;const prev=byId.get(r.id);if(!prev||String(r.collectedAt||'')>String(prev.collectedAt||''))byId.set(r.id,r);}return [...byId.values()];
 }
-export function matchSnapshot(student,students,records){
+export function matchSnapshot(student,students,records,identities=[]){
   if(students.filter(x=>x.name===student.name).length!==1)return {error:'동명이인 · 연결 확인 필요'};
-  const found=records.filter(x=>x.name.trim()===student.name.trim());return found.length===1?{record:found[0]}:{error:found.length?'동명이인 · 연결 확인 필요':'저장본 없음'};
+  const found=matchingCheckHereRecords(student,records,identities);return found.length===1?{record:found[0]}:{error:found.length?'동명이인 · 연결 확인 필요':records.some(x=>surveyBaseName(x.name)===surveyBaseName(student.name))?'동명이인 · 구분 정보 확인 필요':'저장본 없음'};
 }
 export function collectionDates(from,to){
   const today=koreaToday();if(from<'2026-07-27'||to>today||to>'2026-10-22'||from>to)throw Error('수집 기간은 7/27부터 오늘 또는 교육 종료일까지입니다.');

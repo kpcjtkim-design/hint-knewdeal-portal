@@ -20,7 +20,7 @@ export async function mountCheckHere(host,ctx={}){
   function alertMessage(title,message){$('#alerts').innerHTML=`<div class="alert" role="alertdialog" aria-modal="true" aria-label="${esc(title)}"><div><h2>${esc(title)}</h2><p>${esc(message)}</p><div class="actions"><button id="alertClose" class="primary">확인</button></div></div></div>`;$('#alertClose').onclick=()=>{$('#alerts').innerHTML='';};$('#alertClose').focus();}
   async function api(path,data){
     if(!key)throw new Error('로컬 연결 키를 먼저 입력해 주세요.');
-    let r;try{r=await fetch(`http://127.0.0.1:8765/api/${path}`,{method:data?'POST':'GET',headers:{'x-hint-key':key,...(data?{'content-type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(['confirm-existing','preview-request'].includes(path)?90000:30000)});}catch{throw new Error('수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.');}
+    let r;try{r=await fetch(`http://127.0.0.1:8765/api/${path}`,{method:data?'POST':'GET',headers:{'x-hint-key':key,...(data?{'content-type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(['apply','confirm-existing','preview-request'].includes(path)?90000:30000)});}catch{throw new Error('수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.');}
     const d=await r.json();if(!r.ok)throw new Error(d.error||'요청에 실패했습니다.');return d;
   }
   const selected=()=>state.records.filter(r=>($('#class').value==='all'||String(r.classId)===$('#class').value)&&r.date>=$('#from').value&&r.date<=$('#to').value);

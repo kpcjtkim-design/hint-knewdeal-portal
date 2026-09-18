@@ -8,7 +8,8 @@ import {CheckHereCollector} from './collector.mjs';
 import {judge,RULES} from './rules.mjs';
 import {applyVerified,confirmAlreadyApplied} from './writeback.mjs';
 import {createApprovalCloud} from './cloud-approval.mjs';
-import {proposalFromApproval,matchRequest} from './approval-core.mjs';
+import {readRequestRecord} from './request-record.mjs';
+import {proposalFromApproval,prepareApproval} from './approval-core.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
 export function createBridge({dataDir=join(here,'data'),collector=null,port=8765,approvalCloud=createApprovalCloud()}={}){
   mkdirSync(dataDir,{recursive:true});const db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
@@ -25,7 +26,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
   const localOrigin=o=>!o||o===`http://127.0.0.1:${port}`||o===`http://localhost:${port}`;
   const send=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(body));};
   async function body(req){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>1000000)throw new Error('요청이 너무 큽니다.');}return raw?JSON.parse(raw):{};}
-  const publicFiles={'/attendance-beta-core.mjs':'attendance-beta-core.mjs','/checkhere/bulk-collect.mjs':'checkhere/bulk-collect.mjs','/':'checkhere.html','/checkhere.html':'checkhere.html','/checkhere-ui.mjs':'checkhere-ui.mjs','/checkhere/ui.css':'checkhere/ui.css','/checkhere/rules.mjs':'checkhere/rules.mjs'};
+  const publicFiles={'/checkhere-name-core.mjs':'checkhere-name-core.mjs','/survey-identity.mjs':'survey-identity.mjs','/attendance-beta-core.mjs':'attendance-beta-core.mjs','/checkhere/bulk-collect.mjs':'checkhere/bulk-collect.mjs','/':'checkhere.html','/checkhere.html':'checkhere.html','/checkhere-ui.mjs':'checkhere-ui.mjs','/checkhere/ui.css':'checkhere/ui.css','/checkhere/rules.mjs':'checkhere/rules.mjs'};
   const server=http.createServer(async(req,res)=>{
     try{
       if(![`127.0.0.1:${port}`,`localhost:${port}`].includes(req.headers.host))return send(res,403,{error:'허용하지 않는 주소입니다.'});
@@ -35,12 +36,12 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260917.3',capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1'],pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260918.1',capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1'],pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
         if(origin&&!localOrigin(origin)){if(!origin.startsWith('https://'))return send(res,403,{error:'HTTPS 플랫폼에서 연결해 주세요.'});res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
-        if(req.method==='GET'&&url.pathname==='/api/state')return send(res,200,{rules:RULES,capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected:await adapter.loggedIn(),records:latest().map(r=>({...r,audit:judge(r)}))});
+        if(req.method==='GET'&&url.pathname==='/api/state')return send(res,200,{rules:RULES,capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected:await adapter.loggedIn(),records:latest().map(r=>({...r,audit:judge(r)}))});
         if(req.method==='GET'&&url.pathname==='/api/history'){const id=url.searchParams.get('id');return send(res,200,{snapshots:db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 20').all(id).map(x=>JSON.parse(x.payload))});}
         if(req.method!=='POST')return send(res,405,{error:'지원하지 않는 요청입니다.'});const input=await body(req);
         if(url.pathname==='/api/cancel'){if(busy&&jobs.get(busy)?.kind==='sync')adapter.cancelled=true;return send(res,200,{ok:true});}
@@ -63,10 +64,8 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           busy='preview';try{
             const request=await approvalCloud.get(input.approvalId,input.idToken);
             if(!['pending','approved'].includes(request.data.status))throw Error('이미 처리된 요청입니다.');
-            const previous=matchRequest(request.data,latest());await adapter.requireLogin();
-            const current=await adapter.read(previous);matchRequest(request.data,[current]);
-            if(current.id!==previous.id||current.studentKey!==previous.studentKey)throw Error('다른 학생 기록이 열려 중단했습니다.');
-            put(current);return send(res,200,{record:current});
+            const current=await readRequestRecord(adapter,request.data,latest(),request.identities,put);
+            return send(res,200,{record:current});
           }finally{busy=null;}
         }
         if(url.pathname==='/api/apply'||url.pathname==='/api/confirm-existing'){
@@ -75,23 +74,26 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           if(jobs.get(approvalId)?.approvalId===approvalId)return send(res,200,jobs.get(approvalId));
           if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
           busy=approvalId;
-          let j,record,proposal,request,confirmed;
+          let j,record,proposal,request,confirmed,identities;
           try{
             let approved=await approvalCloud.get(approvalId,input.idToken);
             await adapter.requireLogin();
             if(url.pathname==='/api/confirm-existing'){
               if(approved.data.status!=='pending'){busy=null;return send(res,200,{status:approved.data.status,...approved.data.result});}
-              record=matchRequest(approved.data,latest());confirmed=await adapter.read(record);
-              if(!confirmAlreadyApplied(approved.data,record,confirmed)){if(confirmed?.id===record.id)put(confirmed);busy=null;return send(res,200,{status:'pending',message:'현재 원본은 요청값과 다릅니다. 승인 대기를 유지합니다.'});}
+              record=await readRequestRecord(adapter,approved.data,latest(),approved.identities,put);confirmed=record;
+              if(!confirmAlreadyApplied(approved.data,record,confirmed,approved.identities)){if(confirmed?.id===record.id)put(confirmed);busy=null;return send(res,200,{status:'pending',message:'현재 원본은 요청값과 다릅니다. 승인 대기를 유지합니다.'});}
               put(confirmed);record=confirmed;approved=await approvalCloud.approveExisting(approved,input.idToken,confirmed);
             }
-            request=approved.data;proposal=proposalFromApproval(request);
-            record=record||get(proposal.id);if(!record)throw Error('해당 반·날짜를 이 PC에서 먼저 수집해 주세요.');
+            request=approved.data;identities=approved.identities;proposal=proposalFromApproval(request);
+            record=record||await readRequestRecord(adapter,request,latest(),identities,put);
+            if(record.id!==proposal.id)throw Error('승인된 학생과 수집된 학생의 식별정보가 다릅니다.');
+            const live=prepareApproval(request,record,{allowAlreadyApplied:true,identities});
+            proposal={id:record.id,version:record.version,...live.after,reason:live.reason};
             const attemptId=randomUUID();await approvalCloud.claim(approved,input.idToken,attemptId);
             j={id:approvalId,approvalId,attemptId,approvedBy:approved.data.approvedBy,kind:'apply',recordId:record.id,status:'running',startedAt:new Date().toISOString(),message:'승인된 변경 전 값을 다시 확인하고 있습니다.'};saveJob(j);
           }catch(e){busy=null;throw e;}
           const idToken=input.idToken;
-          void(async()=>{try{const result=confirmed?{status:'verified',alreadyApplied:true,message:'이미 반영 · 원본 확인 완료',results:[],current:confirmed}:await applyVerified(adapter,record,proposal,async e=>journal(j.id,e),request);Object.assign(j,result);if(result.current&&!confirmed)put(result.current);}catch(e){j.status='failed';j.message=e.message;}finally{
+          void(async()=>{try{const result=confirmed?{status:'verified',alreadyApplied:true,message:'이미 반영 · 원본 확인 완료',results:[],current:confirmed}:await applyVerified(adapter,record,proposal,async e=>journal(j.id,e),request,identities);Object.assign(j,result);if(result.current&&!confirmed)put(result.current);}catch(e){j.status='failed';j.message=e.message;}finally{
             j.finishedAt=new Date().toISOString();saveJob(j);
             try{const result=await approvalCloud.finish(approvalId,idToken,j.attemptId,j);j.cloudSaved=true;j.platformSaved=result?.platformSaved===true;if(result?.message)j.message=result.message;delete j.cloudError;}catch(e){j.cloudSaved=false;j.platformSaved=false;j.cloudError='체크히어 원본 확인 후 플랫폼 DB 저장을 완료하지 못했습니다. 결과 확인을 누르면 재입력 없이 저장을 다시 확인합니다. '+e.message;}
             saveJob(j);busy=null;
