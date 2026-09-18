@@ -10,6 +10,7 @@ export async function mountCheckHere(host,ctx={}){
   let cloudSaves=0,cloudTail=Promise.resolve();
   let batchRunning=false,batchStopped=false,page=1,lastTableSignature='',refreshPromise=null,disposed=false;const auditCache=new Map();
   let key='',state={records:[],jobs:[]},pollTimer=null,shownJobs=new Set(),editing=false,cloudShown=false;
+  let collectorCursor='';const collectorRecords=new Map();
   root.innerHTML=`<style>${css}</style><div class="app"><header class="top"><div><div class="brand">HINT / ATTENDANCE REVIEW</div><h1>체크히어 검수</h1><div class="muted">입·퇴실, 관리자 메모, 외출 구간을 한 번에 확인합니다.</div></div><div class="line"><span id="connectionStatus" class="badge">연결 대기</span><button id="connect">체크히어 로그인</button></div></header>
     <details id="pairing" class="card connection"><summary>수집 연결 프로그램 설정</summary><p class="muted">Windows에서는 ‘체크히어 시작.cmd’, macOS에서는 ‘체크히어 시작.command’를 실행하세요. 플랫폼에서는 로컬 화면에 표시된 연결 키를 아래에 입력하면 됩니다. 프로그램을 재시작하면 키가 바뀝니다.</p><div class="line"><input id="keyInput" type="password" autocomplete="off" aria-label="로컬 연결 키" placeholder="연결 키"><button id="pair">연결</button></div><div id="localKey"></div></details>
     <section class="toolbar"><div><label for="class">반</label><select id="class"><option value="all">전체 17개 반</option>${Array.from({length:17},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}반</option>`).join('')}</select></div><div><label for="from">시작 날짜</label><input id="from" type="date" min="2026-07-27" value="2026-09-03"></div><div><label for="to">종료 날짜</label><input id="to" type="date" min="2026-07-27" value="2026-09-03"></div><button id="bulkPreset">전체반 · 7/27~오늘</button><button id="sync" class="primary">체크히어에서 수집</button><button id="refresh">저장된 기록 조회</button><button id="cancel" hidden>수집 중단</button>${ctx.load?'<button id="loadCloud">플랫폼 저장본 조회</button><button id="saveCloud">플랫폼에 저장</button>':''}</section>
@@ -58,7 +59,12 @@ export async function mountCheckHere(host,ctx={}){
   }
   async function refresh(){
     if(refreshPromise)return refreshPromise;refreshPromise=(async()=>{
-    clearTimeout(pollTimer);state=await api('state');cloudShown=false;render();
+    clearTimeout(pollTimer);const update=await api('state?delta=1'+(collectorCursor?'&cursor='+encodeURIComponent(collectorCursor):''));
+    if(!Array.isArray(update.records))throw new Error('수집 기록을 읽지 못했습니다. 다시 조회해 주세요.');
+    if(update.recordsMode==='merge'&&!collectorCursor)throw new Error('수집 연결을 다시 확인해 주세요.');
+    if(update.recordsMode!=='merge'){collectorRecords.clear();auditCache.clear();}
+    for(const record of update.records)collectorRecords.set(record.id,record);
+    collectorCursor=update.cursor||'';state={...update,records:[...collectorRecords.values()]};cloudShown=false;render();
     for(const j of state.jobs){
       if(j.status==='running'||j.kind==='apply'&&j.cloudSaved===undefined||shownJobs.has(j.id))continue;shownJobs.add(j.id);
       if(j.kind==='apply'&&Date.now()-Date.parse(j.finishedAt||0)<120000)alertMessage(j.status==='verified'&&j.platformSaved?'체크히어 반영·DB 저장 완료':'체크히어 반영 확인 필요',j.message+(j.cloudError?'\n'+j.cloudError:'')+(j.results?.length?'\n'+j.results.map(x=>`${x.field==='entry'?'입실·교시':'퇴실'}: ${x.state==='verified'?'확인 완료':x.state==='unknown'?'결과 미확인':'실패 또는 충돌'}`).join('\n'):''));
@@ -89,7 +95,7 @@ export async function mountCheckHere(host,ctx={}){
     $('#closeEdit').focus();
   }
   const handle=fn=>async()=>{try{await fn();}catch(e){alertMessage('확인 필요',e.message);}};
-  $('#pair').onclick=handle(async()=>{key=$('#keyInput').value.trim();await refresh();$('#pairing').open=false;});
+  $('#pair').onclick=handle(async()=>{const nextKey=$('#keyInput').value.trim();if(refreshPromise)await refreshPromise.catch(()=>{});if(key!==nextKey){collectorCursor='';collectorRecords.clear();shownJobs.clear();}key=nextKey;await refresh();$('#pairing').open=false;});
   $('#connect').onclick=handle(async()=>{
     const b=$('#connect');b.disabled=true;b.textContent='로그인 창 여는 중…';
     try{const result=await api('connect',{});await refresh();alertMessage(result.connected?'로그인 확인 완료':'체크히어 로그인 창 확인',result.connected?'체크히어에서 수집 버튼을 누르면 됩니다.':result.message+'\n새 창이 보이지 않으면 제공한 ‘체크히어 시작.cmd’를 직접 실행해 주세요.');}

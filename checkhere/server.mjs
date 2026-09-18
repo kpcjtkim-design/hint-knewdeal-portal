@@ -15,8 +15,20 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
   mkdirSync(dataDir,{recursive:true});const db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS snapshot_id ON snapshots(id,seq); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS journal(seq INTEGER PRIMARY KEY, job TEXT, payload TEXT);');
   const key=randomBytes(32).toString('hex'),adapter=collector||new CheckHereCollector(dataDir),jobs=new Map();let busy=null,connecting=false;
-  const put=r=>db.prepare('INSERT INTO snapshots(id,payload) VALUES(?,?)').run(r.id,JSON.stringify(r));
-  const latest=()=>db.prepare('SELECT payload FROM snapshots WHERE seq IN (SELECT MAX(seq) FROM snapshots GROUP BY id)').all().map(x=>JSON.parse(x.payload));
+  // SQLite remains the source of truth. Publish a new cursor only after its
+  // snapshot is persisted; polling must not re-judge the entire history.
+  const instance=randomUUID(),snapshots=new Map();let revision=0;
+  for(const row of db.prepare('SELECT seq,id,payload FROM snapshots WHERE seq IN (SELECT MAX(seq) FROM snapshots GROUP BY id)').all()){
+    snapshots.set(row.id,{seq:row.seq,record:JSON.parse(row.payload)});revision=Math.max(revision,row.seq);
+  }
+  const insertSnapshot=db.prepare('INSERT INTO snapshots(id,payload) VALUES(?,?)');
+  const put=r=>{const payload=JSON.stringify(r),saved=insertSnapshot.run(r.id,payload),seq=Number(saved.lastInsertRowid);snapshots.set(r.id,{seq,record:JSON.parse(payload)});revision=seq;return saved;};
+  const latest=()=>[...snapshots.values()].map(x=>x.record);
+  const delta=cursor=>{
+    const prefix=instance+':',raw=typeof cursor==='string'&&cursor.startsWith(prefix)?cursor.slice(prefix.length):'',since=/^\d+$/.test(raw)?Number(raw):-1;
+    const merge=Number.isSafeInteger(since)&&since>=0&&since<=revision;
+    return{recordsMode:merge?'merge':'replace',cursor:prefix+revision,records:[...snapshots.values()].filter(x=>!merge||x.seq>since).map(x=>x.record)};
+  };
   const get=id=>{const r=db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 1').get(id);return r?JSON.parse(r.payload):null;};
   const saveJob=j=>{db.prepare('INSERT INTO jobs(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(j.id,JSON.stringify(j));jobs.set(j.id,j);};
   for(const row of db.prepare('SELECT payload FROM jobs').all()){const j=JSON.parse(row.payload);if(j.status==='running'){j.status=j.kind==='apply'?'unknown':'interrupted';j.message='프로그램이 중단되었습니다. 다시 수집해 결과를 확인해 주세요.';saveJob(j);}jobs.set(j.id,j);}
@@ -36,12 +48,16 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260918.1',capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1'],pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260918.2',capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1'],pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
         if(origin&&!localOrigin(origin)){if(!origin.startsWith('https://'))return send(res,403,{error:'HTTPS 플랫폼에서 연결해 주세요.'});res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
-        if(req.method==='GET'&&url.pathname==='/api/state')return send(res,200,{rules:RULES,capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected:await adapter.loggedIn(),records:latest().map(r=>({...r,audit:judge(r)}))});
+        if(req.method==='GET'&&url.pathname==='/api/state'){
+          const connected=await adapter.loggedIn();
+          // Take records, cursor and job progress together, after the await.
+          return send(res,200,{rules:RULES,capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
+        }
         if(req.method==='GET'&&url.pathname==='/api/history'){const id=url.searchParams.get('id');return send(res,200,{snapshots:db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 20').all(id).map(x=>JSON.parse(x.payload))});}
         if(req.method!=='POST')return send(res,405,{error:'지원하지 않는 요청입니다.'});const input=await body(req);
         if(url.pathname==='/api/cancel'){if(busy&&jobs.get(busy)?.kind==='sync')adapter.cancelled=true;return send(res,200,{ok:true});}

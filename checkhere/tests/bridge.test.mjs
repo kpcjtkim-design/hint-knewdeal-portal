@@ -18,7 +18,7 @@ test('loopback API authentication, idempotency and snapshot persistence',async()
     await new Promise(resolve=>setTimeout(resolve,100));
     const repeated=await(await fetch(url+'/api/apply',{method:'POST',headers,body:JSON.stringify(input)})).json();
     assert.equal(first.id,repeated.id);assert.equal(repeated.status,'verified');assert.equal(writes,1);assert.equal(r.entryMemo,'시험');assert.equal(finishes,1);assert.equal(repeated.platformSaved,true);assert.equal(repeated.current.entryMemo,'시험');
-    assert.equal(app.db.prepare('SELECT count(*) AS n FROM snapshots').get().n,2);
+    assert.equal(app.db.prepare('SELECT count(*) AS n FROM snapshots').get().n,3,'initial, pre-approval live collection and verified result are retained');
     assert.equal((await fetch(url+'/api/remove',{method:'POST',headers,body:'{}'})).status,404);
   }finally{app.close();}
 });

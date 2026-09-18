@@ -118,7 +118,14 @@ export class CheckHereCollector{
       for(let i=0;i<rows.length;i++){if(this.cancelled)break;await onProgress({date,index:i+1,total:rows.length,name:rows[i].name});await onRecord(await this.readDetails(rows[i]));}
     }
   }
-  async read(record){const rows=await this.openDay(record.classId,record.date,record.url);const row=rows.find(r=>r.studentKey===record.studentKey);if(!row)throw new Error('해당 학생을 다시 찾지 못했습니다.');return this.readDetails({...row,reference:record.reference,exception:record.exception});}
+  async readOpened(record){
+    const url=record.url||this.day?.url;
+    if(String(this.day?.classId)!==String(record.classId)||this.day?.date!==record.date||this.day?.url!==url||this.page.url()!==url)throw new Error('선택한 반·날짜 화면이 달라 다시 수집해야 합니다.');
+    const rows=(await this.tableRecords()).filter(r=>r.studentKey===record.studentKey);
+    if(rows.length!==1||rows[0].name!==record.name)throw new Error('해당 학생을 다시 찾지 못했습니다.');
+    return this.readDetails({...rows[0],reference:record.reference,exception:record.exception});
+  }
+  async read(record){await this.openDay(record.classId,record.date,record.url);return this.readOpened(record);}
   async write(record,field,change){
     const before=await this.modal(record,field);
     if(before.time!==record[field]||before.memo!==record[`${field}Memo`]){await this.closeModal();throw new Error('반영 직전 값이 달라졌습니다.');}
