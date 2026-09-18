@@ -4,7 +4,7 @@ import {watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {within,readJson,readUntilReady} from './attendance-io.mjs';
 import {reasonFor} from './attendance-reason-parser.mjs';
 import {createAttendanceBeta} from './attendance-beta.mjs?v=20260915-efficient1';
-import {latestTeachingDate} from './attendance-beta-core.mjs';
+import {latestTeachingDate,overviewColorState} from './attendance-beta-core.mjs';
 import {doc,getDoc,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 const STYLE=`
@@ -70,16 +70,7 @@ function formatFollowupAt(v){
 }
 function followupButtonText(kind,v){const t=formatFollowupAt(v);if(!t)return kind==='notifiedAt'?'담임 알림':'이행 확인';return kind==='notifiedAt'?`✓ 알림 (${t})`:`✓ 이행 (${t})`}
 function followupExport(v){const t=formatFollowupAt(v);return t?`완료 (${t})`:'미확인'}
-function overviewColorState(bg){
-  let x=String(bg||'').trim().toLowerCase();
-  if(/^#[0-9a-f]{3}$/.test(x))x='#'+x.slice(1).split('').map(c=>c+c).join('');
-  if(!/^#[0-9a-f]{6}$/.test(x))return'미제출';
-  const r=parseInt(x.slice(1,3),16),g=parseInt(x.slice(3,5),16),b=parseInt(x.slice(5,7),16);
-  if(r>=242&&g>=242&&b>=242)return'미제출';
-  if(r>=180&&g>=135&&b<=190&&Math.abs(r-g)<=110&&g>b+20)return'확인';
-  if(r>=175&&g<=185&&b<=185&&r>g+25&&r>b+25)return'보완필요';
-  return'미제출';
-}
+
 function sheetEvidenceState(student,dateObj,backgrounds,fallback='미제출'){
   if(!student||!dateObj||!Array.isArray(backgrounds)||!backgrounds.length)return fallback;
   const bg=String(backgrounds?.[Number(student.rowIndex)+1]?.[Number(dateObj.idx)+4]||'');
@@ -137,7 +128,7 @@ async function getColors(cid){const bg=await getColorsOnce(cid);if(!Array.isArra
     colorPromises.set(id,promise);return promise;
   }
   function queueSummary(out=null,persist=false){
-    const cid=currentClass,source=out||{attendance:[['이름','','','',...dates.map(d=>d.iso)],...students.map(s=>[s.name,'','','',...s.all])]};
+    const cid=currentClass,source=out||{attendance:[['이름','','','',...dates.map(d=>d.iso)],...students.map(s=>[s.name,'','','',...s.all])],attendanceBackgrounds};
     // Dropout display is a pure calculation from the Sheet already in memory.
     try{const data=deriveAttendanceClass(source,{classId:cid,entries:beta.timetableEntries()});summaryStudents=Object.fromEntries(data.students.map(s=>[s.id,s]));}catch{}
     if(!persist)return;

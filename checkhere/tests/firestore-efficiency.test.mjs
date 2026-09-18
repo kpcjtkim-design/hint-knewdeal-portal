@@ -42,3 +42,12 @@ test('identical survey results skip writes even when sync timestamp changes; act
  await store.save('2','lesson',{...data,scores:{mean:5}});assert.equal(db.writes,2);
  await assert.rejects(createSurveyStore(db,user).save('2','lesson',data),/관리자/);
 });
+
+test('concurrent color-only changes update the class summary, while unchanged evidence skips writes',async()=>{
+ const {syncAttendanceSummary}=await moduleWithMock('attendance-derived-store.mjs'),db=fixture();
+ db.values['classes/2/checkhereCurrent/2026-08-27']={date:'2026-08-27',records:[]};
+ const sheet=color=>({attendance:[['이름','','','','8/27'],['가상','','','','인정출석']],attendanceBackgrounds:[[],['','','','',color]]});
+ await Promise.all([syncAttendanceSummary(db,user,'2',sheet('#ffffff')),syncAttendanceSummary(db,user,'2',sheet('#ffff00'))]);
+ assert.equal(db.values['attendanceBetaSummaries/2'].students[0].history['2026-08-27'].evidenceStatus,'확인');assert.equal(db.writes,2);
+ await syncAttendanceSummary(db,user,'2',sheet('#ffff00'));assert.equal(db.writes,2);
+});

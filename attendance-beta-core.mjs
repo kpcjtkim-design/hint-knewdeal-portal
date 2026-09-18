@@ -14,6 +14,16 @@ export function latestTeachingDate(dates,today=koreaToday()){
   return sorted.filter(x=>x.iso<=today).at(-1)||sorted[0]||null;
 }
 export function portalStatus(raw,meta){return meta?.sheetStatus===raw&&ATTENDANCE_OPTIONS.includes(meta.portalStatus)&&sheetStatus(meta.portalStatus)===raw?meta.portalStatus:raw||'해당없음';}
+export function overviewColorState(bg){
+  let x=String(bg||'').trim().toLowerCase();
+  if(/^#[0-9a-f]{3}$/.test(x))x='#'+x.slice(1).split('').map(c=>c+c).join('');
+  if(!/^#[0-9a-f]{6}$/.test(x))return'미제출';
+  const r=parseInt(x.slice(1,3),16),g=parseInt(x.slice(3,5),16),b=parseInt(x.slice(5,7),16);
+  if(r>=242&&g>=242&&b>=242)return'미제출';
+  if(r>=180&&g>=135&&b<=190&&Math.abs(r-g)<=110&&g>b+20)return'확인';
+  if(r>=175&&g<=185&&b<=185&&r>g+25&&r>b+25)return'보완필요';
+  return'미제출';
+}
 export function evidenceStatus(rawColor,rawStatus,meta,colorState){
   if(meta?.sheetColor?.toLowerCase()===String(rawColor).toLowerCase()&&EVIDENCE_OPTIONS.includes(meta.evidenceStatus))return meta.evidenceStatus;
   const kind=colorState(rawColor);if(kind==='확인')return'확인';if(kind==='보완필요')return'반려';return recognized(rawStatus)?'미제출':'미해당';

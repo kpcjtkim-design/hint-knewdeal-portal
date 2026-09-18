@@ -1,6 +1,6 @@
 import {readAttendanceSummary,syncAttendanceSummary} from './attendance-derived-store.mjs';
 import {attendanceStatistics} from './attendance-derived-core.mjs';
-import {koreaToday} from './attendance-beta-core.mjs';
+import {koreaToday,recognized,EVIDENCE_OPTIONS} from './attendance-beta-core.mjs';
 import {esc,pct,bars,cards} from './metrics-ui.mjs';
 export async function mountAttendanceStatistics(host,{db,user,classes,teacherClass=null,compact=false,onMore=null}){
  const root=host.shadowRoot||host.attachShadow({mode:'open'});root.innerHTML='<link rel="stylesheet" href="/metrics.css"><div id="content"></div><dialog></dialog>';
@@ -13,7 +13,12 @@ export async function mountAttendanceStatistics(host,{db,user,classes,teacherCla
   if($('#statSync'))$('#statSync').onclick=()=>void run(async()=>{for(const c of scope()){if(disposed)return;notice=c.id+'반 출결을 동기화하는 중…';render();data[c.id]=await syncAttendanceSummary(db,user,c.id);}notice='출결·인정 세부 구분·중도포기 분류를 저장했습니다.';});
   root.querySelectorAll('[data-student]').forEach(b=>b.onclick=()=>detail(data[b.dataset.cid].students.find(s=>s.id===b.dataset.student),b.dataset.cid));if(busy)root.querySelectorAll('button,input,select').forEach(b=>b.disabled=true);
  }
- function detail(s,cid){const d=root.querySelector('dialog');d.innerHTML=`<h3>${cid}반 · ${esc(s.name)}</h3><p>${s.dropout?'중도포기 자동 분류 · '+s.dropoutFrom+'부터 '+s.dropoutDays+'개 교육일 연속 해당없음. 시트 기록을 정정하고 동기화하면 다시 계산합니다.':'첫 출결 기록 '+(s.firstDate||'없음')}</p><table class="metric-table"><thead><tr><th>교육일</th><th>시트</th><th>포털 구분</th><th>판정 근거</th></tr></thead><tbody>${Object.entries(s.history).filter(([date])=>(!from||date>=from)&&date<=to).map(([date,h])=>`<tr><td>${date}</td><td>${esc(h.raw)||'공란'}</td><td>${esc(h.status)}${h.review?' · 확인 필요':''}</td><td>${esc(h.basis)}</td></tr>`).join('')}</tbody></table><button id="statClose">닫기</button>`;d.querySelector('button').onclick=()=>d.close();d.showModal();}
+ function evidenceCell(h){
+  if(!recognized(h.raw)&&!recognized(h.status))return '<span class="muted">—</span>';
+  const value=EVIDENCE_OPTIONS.includes(h.evidenceStatus)?h.evidenceStatus:h.evidenceStatus==='미확인'?'미확인':'동기화 필요',tone=value==='확인'?'confirmed':['반려','미제출'].includes(value)?'required':'neutral';
+  return `<span class="metric-evidence ${tone}">${esc(value==='미해당'?'해당없음':value)}</span>`;
+ }
+ function detail(s,cid){const d=root.querySelector('dialog');d.innerHTML=`<h3>${cid}반 · ${esc(s.name)}</h3><p>${s.dropout?'중도포기 자동 분류 · '+s.dropoutFrom+'부터 '+s.dropoutDays+'개 교육일 연속 해당없음. 시트 기록을 정정하고 동기화하면 다시 계산합니다.':'첫 출결 기록 '+(s.firstDate||'없음')}</p><p class="muted">서류제출은 마지막 출결 동기화 기준입니다. 미확인·동기화 필요는 서류 상태를 아직 읽지 못했다는 뜻입니다.</p><table class="metric-table"><thead><tr><th>교육일</th><th>시트</th><th>포털 구분</th><th>판정 근거</th><th>서류제출</th></tr></thead><tbody>${Object.entries(s.history).sort(([a],[b])=>a.localeCompare(b)).filter(([date])=>(!from||date>=from)&&date<=to).map(([date,h])=>`<tr><td>${date}</td><td>${esc(h.raw)||'공란'}</td><td>${esc(h.status)}${h.review?' · 확인 필요':''}</td><td>${esc(h.basis)}</td><td>${evidenceCell(h)}</td></tr>`).join('')}</tbody></table><button id="statClose">닫기</button>`;d.querySelector('button').onclick=()=>d.close();d.showModal();}
  async function run(fn){if(busy)return;busy=true;render();try{await fn();}catch(e){notice='처리 실패 · '+e.message;}finally{busy=false;render();}}
  async function read(){await run(async()=>{for(const c of scope()){if(disposed)return;data[c.id]=await readAttendanceSummary(db,c.id);}notice='저장 결과를 읽었습니다. 최신 시트 반영은 출결 동기화 시점 기준입니다.';});}
  await read();return {canLeave:()=>!busy,dispose(){disposed=true;}};

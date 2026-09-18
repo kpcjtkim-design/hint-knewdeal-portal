@@ -1,6 +1,6 @@
-import {isoLabel,portalStatus,matchSnapshot,latestSnapshots,koreaToday} from './attendance-beta-core.mjs';
+import {isoLabel,portalStatus,matchSnapshot,latestSnapshots,koreaToday,evidenceStatus,overviewColorState} from './attendance-beta-core.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
-export const DERIVED_VERSION='20260915-1';
+export const DERIVED_VERSION='20260918-evidence1';
 export const PARTICIPATED=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
 const recognized=new Set(['인정출석','인정지각','인정조퇴','인정외출']);
 const validStatus=new Set([...PARTICIPATED,'인정출석','결석','중복']);
@@ -31,12 +31,14 @@ export function deriveAttendanceClass(data,{classId,metadata={},records=[],entri
  const a=data.attendance||[],holidayDates=new Set(entries.filter(e=>e.kind==='holiday').map(e=>e.date));
  const dates=(a[0]||[]).map((v,i)=>({date:isoLabel(v),col:i})).filter(x=>x.col>=4&&x.date&&x.date<=today&&x.date>='2026-07-27'&&!holidayDates.has(x.date)&&![0,6].includes(new Date(x.date+'T12:00:00Z').getUTCDay())).sort((x,y)=>x.date.localeCompare(y.date));
  if(!dates.length||new Set(dates.map(x=>x.date)).size!==dates.length)throw Error('교육일 열을 확인하지 못했습니다. 기존 통계를 유지합니다.');
- const roster=a.slice(1).map((row,i)=>({id:`${i}_${String(row[0]||'').trim()}`,name:String(row[0]||'').trim(),row})).filter(s=>s.name);
+ const backgrounds=data.attendanceBackgrounds||data.backgrounds||[];
+ const roster=a.slice(1).map((row,i)=>({rowIndex:i,id:`${i}_${String(row[0]||'').trim()}`,name:String(row[0]||'').trim(),row})).filter(s=>s.name);
  const recordDays=new Map(dates.map(d=>[d.date,latestSnapshots(records,classId,d.date)]));
  const latest=dates.at(-1),evaluation=dates.findLast(d=>roster.some(s=>validStatus.has(String(s.row[d.col]||'').trim()))),latestEntered=evaluation?.date===latest.date;
  const students=roster.map(s=>{
   const history={};for(const d of dates){const raw=String(s.row[d.col]||'').trim(),record=matchSnapshot(s,roster,recordDays.get(d.date)).record,excursion=entries.some(e=>e.date===d.date&&/공장견학|분해조립|실차체험/.test(e.module+' '+e.title));
-   history[d.date]={raw,...deriveRecognized(raw,metadata[d.date]?.[s.id],record,{excursion})};
+   const meta=metadata[d.date]?.[s.id],derived=deriveRecognized(raw,meta,record,{excursion}),color=backgrounds[s.rowIndex+1]?.[d.col];
+   history[d.date]={raw,...derived,...(recognized.has(raw)||recognized.has(derived.status)?{evidenceStatus:typeof color==='string'&&color.trim()?evidenceStatus(color,raw,meta,overviewColorState):'미확인'}:{})};
   }
   const first=dates.find(d=>validStatus.has(history[d.date].raw))?.date||'';
   let trailing=[];for(let i=dates.findIndex(d=>d.date===evaluation?.date);i>=0;i--){if(history[dates[i].date].raw!=='해당없음')break;trailing.unshift(dates[i].date);}

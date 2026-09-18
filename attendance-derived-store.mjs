@@ -17,7 +17,7 @@ async function recognitionRecords(db,classId,sheet){
 }
 export const readAttendanceSummary=async(db,classId)=>(await within(getDoc(doc(db,'attendanceBetaSummaries',String(classId))),20000)).data()||null;
 export function syncAttendanceSummary(db,user,classId,data=null){
- const inFlight=flightMap(db,user),key=String(classId),signature=data?JSON.stringify(data.attendance):'refresh';
+ const inFlight=flightMap(db,user),key=String(classId),signature=data?JSON.stringify([data.attendance,data.attendanceBackgrounds||data.backgrounds]):'refresh';
  const pending=inFlight.get(key);if(pending){if(pending.signature===signature)return pending.work;return pending.work.catch(()=>{}).then(()=>syncAttendanceSummary(db,user,classId,data));}
  const work=(async()=>{
   const sheet=data||await readJson('/api/attendance-reader',{classId:key,idToken:await within(user.getIdToken()),allowCache:true},{timeout:55000});
