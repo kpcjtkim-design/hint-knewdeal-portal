@@ -48,7 +48,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260918.2',capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1'],pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260921.1',capabilities:['approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1'],pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});

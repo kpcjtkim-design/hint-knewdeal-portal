@@ -126,11 +126,12 @@ export class CheckHereCollector{
     return this.readDetails({...rows[0],reference:record.reference,exception:record.exception});
   }
   async read(record){await this.openDay(record.classId,record.date,record.url);return this.readOpened(record);}
-  async write(record,field,change){
+  async write(record,field,change,{requestedFields}={}){
     const before=await this.modal(record,field);
-    if(before.time!==record[field]||before.memo!==record[`${field}Memo`]){await this.closeModal();throw new Error('반영 직전 값이 달라졌습니다.');}
+    if(requestedFields){change={time:requestedFields.includes(field)?change.time:before.time,memo:requestedFields.includes(field+'Memo')?change.memo:before.memo};}
+    else if(before.time!==record[field]||before.memo!==record[`${field}Memo`]){await this.closeModal();throw new Error('반영 직전 값이 달라졌습니다.');}
     await this.page.locator('#modifyTime').fill(change.time);await this.page.locator('#memoByAdmin').fill(change.memo);
     this.saving=true;
-    try{await this.page.getByRole('button',{name:'변경',exact:true}).click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});}finally{this.saving=false;await this.closeModal();}
+    try{await this.page.getByRole('button',{name:'변경',exact:true}).click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});return change;}finally{this.saving=false;await this.closeModal();}
   }
 }

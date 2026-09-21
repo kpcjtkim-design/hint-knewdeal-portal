@@ -37,3 +37,19 @@ test('approval with no local snapshot collects the right homonym, writes only re
   await call();assert.equal(writes.length,1,'repeated clicks do not execute again');
  }finally{app.close();}
 });
+
+test('existing pending time request with blank lesson times keeps its ID and history through approval and verified DB save',async()=>{
+ let current={id:'old-record',studentKey:'student-key',classId:'9',date:'2026-09-10',name:'가상학생',teacher:'',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:null,rawEntry:'09:05:00',exit:null,entryMemo:'기존 사유',exitMemo:'',outings:[],outingCount:0};current.version=version(current);
+ const id='existing-time-request-20260910',original={classId:'9',date:current.date,name:current.name,reason:'기존 요청 근거',changes:{entry:'09:00:00',exit:'18:00:00'},createdBy:'fixture-admin',createdAt:{seconds:123}};
+ let request={...original,status:'approved',approvedBy:APPROVER,approval:prepareApproval(original,current)},saved=null;const writes=[];
+ const cloud={verify:async()=>{},get:async()=>({data:structuredClone(request)}),claim:async()=>{request.status='applying';},finish:async(requestId,token,attempt,job)=>{assert.equal(requestId,id);assert.equal(job.status,'verified');saved=structuredClone(job.current);request={...request,status:'verified',result:{platformSaved:true}};return{platformSaved:true};}};
+ const adapter={loggedIn:async()=>true,requireLogin:async()=>{},openDay:async()=>[current],read:async()=>structuredClone(current),write:async(_,field,value)=>{writes.push(field);current[field]=value.time;current[field+'Memo']=value.memo;current.version=version(current);}};
+ const app=createBridge({dataDir:mkdtempSync(join(import.meta.dirname,'../test-results/existing-time-')),collector:adapter,port:18773,approvalCloud:cloud});await new Promise(r=>app.server.listen(18773,'127.0.0.1',r));app.put(current);
+ try{
+  const result=await fetch('http://127.0.0.1:18773/api/apply',{method:'POST',headers:{'content-type':'application/json','x-hint-key':app.key,connection:'close'},body:JSON.stringify({approvalId:id,idToken:'fixture'})});assert.equal(result.status,202);
+  for(let i=0;i<100&&!saved;i++)await new Promise(r=>setTimeout(r,10));
+  assert.equal(request.status,'verified');assert.equal(saved.entry,'09:00:00');assert.equal(saved.exit,'18:00:00');assert.equal(saved.entryMemo,'기존 사유');assert.deepEqual(writes,['entry','exit']);
+  for(const k of ['createdBy','createdAt','reason','changes'])assert.deepEqual(request[k],original[k]);
+  const history=app.db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq').all(current.id).map(x=>JSON.parse(x.payload));assert.equal(history[0].entry,null);assert.equal(history.at(-1).entry,'09:00:00');assert(history.length>=3);
+ }finally{app.close();}
+});

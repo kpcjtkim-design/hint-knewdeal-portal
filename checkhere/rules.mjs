@@ -74,10 +74,16 @@ export function judge(r,rules=RULES,now=new Date()){
   return{labels,issues,suggestions,ongoing,periodMismatch,exception:r.exception||null,minutes:minutes===null?null:Math.round(minutes*100)/100,canApply:canApplyMemo&&!multiple,canApplyMemo,ruleVersion:rules.version};
 }
 // Human-reviewed memo edits may describe overlapping attendance without changing its times.
-export function assertChangeAllowed(record,changes,{capabilities}={}){
+export function assertChangeAllowed(record,changes,{capabilities,requested=false}={}){
   const fields=Object.keys(changes||{}),memoOnly=fields.length>0&&fields.every(k=>['entryMemo','exitMemo'].includes(k));
   if(!fields.length||fields.some(k=>!['entry','exit','entryMemo','exitMemo'].includes(k)))throw Error('변경할 항목을 확인해 주세요.');
   const judgement=judge(record);
+  if(requested){
+    if(record.source!=='live'||record.readState!=='complete')throw Error('학생의 현재 기록을 읽지 못했습니다. 연결 상태를 확인해 주세요.');
+    const target={...record,...changes},entry=normalizeTime(target.entry),exit=normalizeTime(target.exit);
+    if(!entry||!exit||exit<entry)throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 시간이 없는 기록은 필요한 시간도 함께 요청해야 합니다.');
+    return{...judgement,memoOnly,warning:memoOnly?'사유만 변경하며 입퇴실 시간은 유지합니다.':''};
+  }
   if(!(memoOnly?judgement.canApplyMemo:judgement.canApply)){
     if(!memoOnly&&judgement.canApplyMemo)throw Error('지각·조퇴·외출이 겹친 기록은 시간을 자동 변경할 수 없습니다. 사유만 변경요청할 수 있습니다.');
     throw Error('진행중·교시 불일치 또는 수집 정보 확인이 필요합니다. 재수집 후 요청해 주세요.');

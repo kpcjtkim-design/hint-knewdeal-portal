@@ -57,11 +57,11 @@ test('fresh already-matching requested fields complete without writing, preservi
  const result=await applyVerified({read:async()=>current,write:async()=>{writes++;}},before,input,async()=>{},req);
  assert.equal(result.alreadyApplied,true);assert.equal(result.current.exit,'17:00:00');assert.equal(result.current.exitMemo,'다른 직원의 최신 메모');assert.equal(writes,0);
 });
-test('partial match, wrong identity and incomplete reads never auto-complete',async()=>{
+test('partial match attempts remaining targets; wrong identity and incomplete reads never write',async()=>{
  const before=record(),req=request({entryMemo:'',exitMemo:'requested'}),input=proposalFromApproval({...req,status:'approved',approvedBy:APPROVER,approval:prepareApproval(req,before)});
  for(const current of [record({entryMemo:''}),record({id:'other',entryMemo:'',exitMemo:'requested'}),record({entryMemo:'',exitMemo:'requested',readState:'partial'})]){
   let writes=0,result;try{result=await applyVerified({read:async()=>current,write:async()=>{writes++;}},before,input,async()=>{},req);}catch{}
-  assert.notEqual(result?.status,'verified');assert.equal(writes,0);
+  assert.notEqual(result?.status,'verified');assert.equal(writes,current.id===before.id&&current.readState==='complete'?1:0);
  }
 });
 test('already-empty memo can be approved without inventing missing attendance times',()=>{
