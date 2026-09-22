@@ -81,7 +81,7 @@ export async function mountAttendanceOverview(host,ctx){
   const viewAbort=new AbortController();
   function memosReady(){const pending=[...root.querySelectorAll('.memo-state,#manualIssueState')].some(e=>/입력 중|저장 중/.test(e.textContent));if(pending)alert('메모를 저장하고 있습니다. 저장 완료 후 화면을 전환해 주세요.');return !pending;}
   const showErr=e=>{err.innerHTML=e?`<div class="error">${esc(e.message||e)}</div>`:''};
-  let readerController,disposed=false;async function getReader(cid){readerController?.abort();readerController=new AbortController();const signal=readerController.signal;return readUntilReady(async()=>readJson('/api/attendance-reader',{idToken:await within(user.getIdToken(),8000,'로그인 확인이 지연됩니다. 다시 로그인해 주세요.',signal),classId:String(cid),allowCache:true},{signal,timeout:55000}),{signal,isActive:()=>!disposed&&host.isConnected,onState:info=>{if(info.error)showErr(new Error((info.error.code?'['+info.error.code+'] ':'')+info.error.message));topState.textContent=info.error?'시트 응답 대기 · '+Math.ceil(info.delay/1000)+'초 후 재시도 ('+info.attempt+'회)':'시트 읽는 중…';}});}
+  let readerController,disposed=false;async function getReader(cid,fresh=false){readerController?.abort();readerController=new AbortController();const signal=readerController.signal;return readUntilReady(async()=>readJson('/api/attendance-reader',{idToken:await within(user.getIdToken(),8000,'로그인 확인이 지연됩니다. 다시 로그인해 주세요.',signal),classId:String(cid),allowCache:!fresh},{signal,timeout:55000}),{signal,isActive:()=>!disposed&&host.isConnected,onState:info=>{if(info.error)showErr(new Error((info.error.code?'['+info.error.code+'] ':'')+info.error.message));topState.textContent=info.error?'시트 응답 대기 · '+Math.ceil(info.delay/1000)+'초 후 재시도 ('+info.attempt+'회)':'시트 읽는 중…';}});}
   async function getColorsOnce(cid){
   const idToken=await user.getIdToken();
   const d=await post('/api/attendance-colors',{idToken,classId:String(cid)},{signal:viewAbort.signal});
@@ -234,7 +234,7 @@ async function getColors(cid){
     showErr('');currentClass=String(cid);attendanceBackgrounds=[];topState.textContent=`${currentClass}반 시트 읽는 중…`;rows.innerHTML='<div class="empty">Google Sheet를 읽는 중…</div>';rawReason.textContent='Google Sheet를 읽는 중…';
     const colorClass=currentClass;
     try{
-      const out=await getReader(currentClass);if(disposed||currentClass!==colorClass)return;showErr('');parseReader(out);
+      const out=await getReader(currentClass,forceColors);if(disposed||currentClass!==colorClass)return;showErr('');parseReader(out);
       dateSel.innerHTML=dates.map(d=>`<option value="${esc(d.label)}">${esc(d.label)}</option>`).join('');
       const preferred=dates.find(x=>x.label===keepDate)?.label||latestTeachingDate(dates)?.label||dates[0]?.label||'';dateSel.value=preferred;
       await loadSelectedDate();

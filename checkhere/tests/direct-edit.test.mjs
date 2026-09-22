@@ -33,3 +33,10 @@ test('terminal failure never repeats; a completed job returns its actual result'
   const s=setup();await s.apply(input,record,op);s.rows.get(op).status='partial';await assert.rejects(()=>s.apply(input,record,op),/이미 처리/);assert.equal(s.calls.length,1);
   const t=setup();t.state.jobs=[{id:op,status:'failed',message:'저장 실패'}];assert.deepEqual(await t.apply(input,record,op),{status:'failed',message:'저장 실패'});
 });
+
+test('missing memo time uses configured default only on a capable collector',async()=>{
+ const empty={...record,entry:null,exit:null};
+ const old=setup();old.state.records=[empty];await assert.rejects(()=>old.apply(input,empty,op),/누락 시간/);assert.equal(old.rows.size,0);
+ const next=setup();next.state.capabilities.push('memo-default-time-v1');next.state.records=[empty];await next.apply(input,empty,op);
+ const approval=next.rows.get(op).approval;assert.equal(approval.after.entry,'09:00:00');assert(!Object.hasOwn(approval.after,'exit'));assert.equal(approval.after.entryMemo,'정정 사유');
+});

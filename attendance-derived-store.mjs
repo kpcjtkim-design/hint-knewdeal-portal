@@ -4,6 +4,7 @@ import {loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
 import {deriveAttendanceClass} from './attendance-derived-core.mjs';
 import {within,readJson} from './attendance-io.mjs';
 import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
+import {cachedRead,invalidateRead} from './session-read-cache.mjs';
 const flightsByDb=new WeakMap();
 function flightMap(db,user){let users=flightsByDb.get(db);if(!users){users=new Map();flightsByDb.set(db,users);}const uid=user.uid||user.email;if(!users.has(uid))users.set(uid,new Map());return users.get(uid);}
 async function recognitionRecords(db,classId,sheet){
@@ -16,7 +17,8 @@ async function recognitionRecords(db,classId,sheet){
  }
  return rows;
 }
-export const readAttendanceSummary=async(db,classId)=>(await within(getDoc(doc(db,'attendanceBetaSummaries',String(classId))),20000)).data()||null;
+const summaryKey=classId=>'attendance-summary:'+String(classId);
+export const readAttendanceSummary=(db,classId,{user=null,fresh=false}={})=>cachedRead(db,user,summaryKey(classId),async()=>(await within(getDoc(doc(db,'attendanceBetaSummaries',String(classId))),20000)).data()||null,{fresh});
 export function syncAttendanceSummary(db,user,classId,data=null){
  const inFlight=flightMap(db,user),key=String(classId),signature=data?JSON.stringify([data.attendance,data.attendanceBackgrounds||data.backgrounds]):'refresh';
  const pending=inFlight.get(key);if(pending){if(pending.signature===signature)return pending.work;return pending.work.catch(()=>{}).then(()=>syncAttendanceSummary(db,user,classId,data));}
@@ -24,7 +26,7 @@ export function syncAttendanceSummary(db,user,classId,data=null){
   const sheet=data||await readJson('/api/attendance-reader',{classId:key,idToken:await within(user.getIdToken()),allowCache:true},{timeout:55000});
   const [metas,snaps,tt,old,identities]=await Promise.all([
    within(getDocs(query(collection(db,'settings'),where(documentId(),'>=',`attendanceBeta_${key}_`),where(documentId(),'<',`attendanceBeta_${key}_\uf8ff`))),30000),
-   recognitionRecords(db,key,sheet),within(getDoc(doc(db,'timetableBetaPublished',key)),30000),readAttendanceSummary(db,key),loadCheckHereIdentities(db,key,(sheet.attendance||[]).slice(1).map(r=>({name:r[0]})))
+   recognitionRecords(db,key,sheet),within(getDoc(doc(db,'timetableBetaPublished',key)),30000),readAttendanceSummary(db,key,{user,fresh:true}),loadCheckHereIdentities(db,key,(sheet.attendance||[]).slice(1).map(r=>({name:r[0]})))
   ]);
   const metadata=Object.fromEntries(metas.docs.map(d=>[d.id.slice(-10),d.data().students||{}]));
   const result=deriveAttendanceClass(sheet,{classId:key,metadata,records:snaps,identities,entries:tt.data()?.entries||[]});
@@ -33,6 +35,6 @@ export function syncAttendanceSummary(db,user,classId,data=null){
   const next={...result,fingerprint,syncedAt:new Date().toISOString(),updatedBy:user.email,updatedAt:serverTimestamp()};
   // One scoped summary holds statuses and evidence codes, never phone numbers or medical reasons.
   if(new TextEncoder().encode(JSON.stringify(next)).length>850000)throw Error('출결 통계가 저장 한도를 초과했습니다. 기간 분할이 필요합니다.');
-  await within(setDoc(doc(db,'attendanceBetaSummaries',key),next),25000);return next;
+  try{await within(setDoc(doc(db,'attendanceBetaSummaries',key),next),25000);}finally{invalidateRead(db,user,summaryKey(key));}return next;
  })().finally(()=>inFlight.delete(key));inFlight.set(key,{signature,work});return work;
 }

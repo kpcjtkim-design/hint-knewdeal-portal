@@ -1,10 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createBridgeReader} from '../../lib/attendance-reader-transport.mjs';
+import {createBridgeReader,readerFailure} from '../../lib/attendance-reader-transport.mjs';
 import {within,readJson,readUntilReady} from '../../attendance-io.mjs';
 import readerHandler from '../../api/attendance-reader.js';
 import colorsHandler from '../../api/attendance-colors.js';
 const valid={ok:true,classId:'2',attendance:[['이름','','','','9/3'],['시험학생','','','','출석']],reasons:[['','','','','9/3'],['','','','','']],attendanceBackgrounds:[[],[]]};
+
+test('nonretryable bridge failures survive API serialization and stop browser retries',async t=>{
+ let calls=0,pauses=0;
+ const invalid=readerFailure(Object.assign(Error('READER_INVALID_DATA'),{retryable:false}));
+ assert.equal(invalid.retryable,false);
+ t.mock.method(globalThis,'fetch',async()=>{calls++;const {status,...body}=invalid;return Response.json({ok:false,...body},{status});});
+ await assert.rejects(readUntilReady(()=>readJson('/reader',{}),{pause:async()=>{pauses++;throw Error('unexpected retry');}}),e=>e.code==='READER_INVALID_DATA'&&e.retryable===false);
+ assert.equal(calls,1);assert.equal(pauses,0);
+ assert.equal(readerFailure(Object.assign(Error('READER_TIMEOUT'),{retryable:true})).retryable,true);
+});
 test('reader retries temporary HTML/429 errors, validates shape, and keeps fresh approval reads out of cache',async t=>{
  const original=globalThis.fetch;let calls=0;const diagnostics=[];
  try{

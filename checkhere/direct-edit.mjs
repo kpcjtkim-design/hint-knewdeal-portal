@@ -1,4 +1,4 @@
-import {APPROVER,cleanRequest,matchRequest,prepareApproval} from './approval-core.mjs';
+import {APPROVER,cleanRequest,matchRequest,prepareApproval,memoDefaultTimes} from './approval-core.mjs';
 import {assertChangeAllowed} from './rules.mjs';
 const requestKey=r=>{const clean=cleanRequest(r);return JSON.stringify({...clean,changes:Object.fromEntries(Object.entries(clean.changes).sort(([a],[b])=>a.localeCompare(b)))});};
 
@@ -31,7 +31,9 @@ export function createDirectEditor({user,controller,store}){
     if(!request||request.status==='pending'){
       const record=matchRequest(clean,c.state().records);
       if(record.id!==shownRecord.id||record.version!==shownRecord.version)throw Error('검토 중 출결 기록이 변경됐습니다. 다시 열어 변경 전후를 확인해 주세요.');
-      assertChangeAllowed(record,clean.changes,{capabilities:c.state().capabilities});
+      const defaults=memoDefaultTimes(clean.changes,record),needsDefault=Object.keys(defaults).length>0;
+      if(needsDefault&&!c.state().capabilities?.includes('memo-default-time-v1'))throw Error('수집 PC에서 체크히어 시작.cmd를 다시 실행해 주세요. 누락 시간 자동 입력 지원이 필요합니다.');
+      assertChangeAllowed(record,{...clean.changes,...defaults},{capabilities:c.state().capabilities,requested:needsDefault});
       const approval=prepareApproval(clean,record);
       if(!request)await store.create(operationId,clean);
       await store.approve(operationId,approval);

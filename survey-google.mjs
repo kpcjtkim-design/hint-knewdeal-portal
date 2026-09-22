@@ -29,7 +29,7 @@ export function createSurveyRequestGate({intervalMs=2500,now=Date.now,sleep=surv
 const browserRequestGate=typeof window!=='undefined'?createSurveyRequestGate():null;
 // Read only. The token exists only in this module's memory, never Firestore/storage.
 export function createSurveyReader(authorize,{requestGate=browserRequestGate,onWait=()=>{}}={}){
- let token='',rawLastRequest=0,lifetime=new AbortController();const cache=new Map();
+ let token='',rawLastRequest=0,lifetime=new AbortController(),responseRunDepth=0,sessionEpoch=0;const cache=new Map(),pendingResponses=new Map();
  async function get(url,signal){
   signal=signal?AbortSignal.any([signal,lifetime.signal]):lifetime.signal;
   let last;const attempts=requestGate?4:3;
@@ -51,14 +51,21 @@ export function createSurveyReader(authorize,{requestGate=browserRequestGate,onW
   if(last?.quota&&requestGate)throw Error('Google 시트 읽기 한도가 계속 초과되고 있습니다. 같은 계정의 다른 수집 작업이 끝난 뒤 다시 시도해 주세요. 기존 저장 결과는 유지됩니다.');
   throw last;
  }
- async function responses(url){if(!token)throw Error('담당 계정으로 응답 시트를 연결해 주세요.');const id=sheetIdFromUrl(url),u=new URL(url),gid=u.searchParams.get('gid')??new URLSearchParams(u.hash.slice(1)).get('gid'),cacheKey=id+':'+(gid??'auto'),old=cache.get(cacheKey);if(old&&Date.now()-old.at<120000)return old.value;
+ async function responses(url){if(!token)throw Error('담당 계정으로 응답 시트를 연결해 주세요.');const id=sheetIdFromUrl(url),u=new URL(url),gid=u.searchParams.get('gid')??new URLSearchParams(u.hash.slice(1)).get('gid'),cacheKey=id+':'+(gid??'auto'),old=cache.get(cacheKey);if(old&&(responseRunDepth>0||Date.now()-old.at<120000))return old.value;
+  if(pendingResponses.has(cacheKey))return pendingResponses.get(cacheKey);
+  const epoch=sessionEpoch,task=loadResponses(id,gid).then(value=>{if(epoch===sessionEpoch)cache.set(cacheKey,{at:Date.now(),value});return value;});
+  pendingResponses.set(cacheKey,task);try{return await task;}finally{if(pendingResponses.get(cacheKey)===task)pendingResponses.delete(cacheKey);}
+ }
+ async function loadResponses(id,gid){
   const base='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(id),meta=await get(base+'?fields=sheets.properties'),sheets=(meta.sheets||[]).filter(s=>!s.properties.hidden);
   const candidates=gid!==null?sheets.filter(s=>String(s.properties.sheetId)===gid):sheets.filter(s=>/설문.*응답|form responses/i.test(s.properties.title));const chosen=candidates.length===1?candidates[0]:gid===null&&sheets.length===1?sheets[0]:null;
   if(!chosen)throw Error('응답 탭을 하나로 확인하지 못했습니다. 탭 gid가 포함된 응답 시트 주소를 연결해 주세요.');
   const p=chosen.properties,title=quote(p.title),columns=Math.min(p.gridProperties.columnCount,100),head=await get(base+'/values/'+encodeURIComponent(title+'!A1:'+col(columns-1)+'1')),mapping=responseColumns(head.values?.[0]||[]),scoring=scoreColumns(head.values?.[0]||[]),rows=p.gridProperties.rowCount;
-  if(rows>20000)throw Error('응답 시트가 2만 행을 초과했습니다. 전용 범위 설정이 필요합니다.');
-  const out=[];for(let start=2;start<=rows;start+=1000){const end=Math.min(rows,start+999),q=new URLSearchParams({majorDimension:'COLUMNS'});for(const index of [...Object.values(mapping),...scoring.map(q=>q.index)])q.append('ranges',`${title}!${col(index)}${start}:${col(index)}${end}`);const d=await get(base+'/values:batchGet?'+q),ranges=d.valueRanges||[];if(ranges.length!==Object.keys(mapping).length+scoring.length)throw Error('응답 열을 전부 읽지 못했습니다.');const values=ranges.map(r=>r.values?.[0]||[]),length=Math.max(...values.map(v=>v.length));for(let i=0;i<length;i++){const [name,classId,timestamp]=values.slice(0,3).map(v=>String(v[i]||'')),offset=Object.keys(mapping).length;if(name||classId||timestamp)out.push({name,classId,timestamp,...(mapping.phone!==undefined?{phoneLast4:phoneLast4(values[3][i])|| (String(values[3][i]??'').trim()?'invalid':'')}:{}),scores:scoring.map((q,j)=>({...q,value:String(values[j+offset][i]??'')}))});}}
-  cache.set(cacheKey,{at:Date.now(),value:out});return out;
+  if(!Number.isInteger(rows)||rows<1||rows>20000)throw Error('응답 시트가 2만 행을 초과했거나 크기를 확인할 수 없습니다. 전용 범위 설정이 필요합니다.');
+  // Sheets omits trailing empty values; one bounded read preserves gaps without
+  // sending one request for every allocated, but unused, thousand rows.
+  const out=[];if(rows>1){const q=new URLSearchParams({majorDimension:'COLUMNS'});for(const index of [...Object.values(mapping),...scoring.map(q=>q.index)])q.append('ranges',`${title}!${col(index)}2:${col(index)}${rows}`);const d=await get(base+'/values:batchGet?'+q),ranges=d.valueRanges||[];if(ranges.length!==Object.keys(mapping).length+scoring.length)throw Error('응답 열을 전부 읽지 못했습니다.');const values=ranges.map(r=>r.values?.[0]||[]),length=Math.max(...values.map(v=>v.length));for(let i=0;i<length;i++){const [name,classId,timestamp]=values.slice(0,3).map(v=>String(v[i]||'')),offset=Object.keys(mapping).length;if(name||classId||timestamp)out.push({name,classId,timestamp,...(mapping.phone!==undefined?{phoneLast4:phoneLast4(values[3][i])|| (String(values[3][i]??'').trim()?'invalid':'')}:{}),scores:scoring.map((q,j)=>({...q,value:String(values[j+offset][i]??'')}))});}}
+  return out;
  }
  // Export reads all original columns afresh, separately from cached statistics.
  // Raw answers and Google tokens are never persisted by this reader.
@@ -74,12 +81,11 @@ export function createSurveyReader(authorize,{requestGate=browserRequestGate,onW
   if(!Number.isInteger(columns)||!Number.isInteger(rows)||columns<1||columns>300||rows>20000)throw Error('응답 시트 크기를 확인해야 합니다. 일부 열이나 행을 잘라서 내려받지 않습니다.');
   const title=quote(p.title),params='?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
   let headers=[];const out=[];
-  for(let start=1;start<=rows;start+=500){
-   const data=await rawGet(base+'/values/'+encodeURIComponent(`${title}!A${start}:${col(columns-1)}${Math.min(rows,start+499)}`)+params);
-   if(!Array.isArray(data.values)&&data.values!==undefined)throw Error('응답 원본 형식이 올바르지 않습니다.');
-   (data.values||[]).forEach((values,i)=>{if(start===1&&i===0){headers=values;return;}if(values.some(v=>v!==''&&v!==null))out.push({rowNumber:start+i,values});});
-  }
+  const data=await rawGet(base+'/values/'+encodeURIComponent(`${title}!A1:${col(columns-1)}${rows}`)+params);
+  if(!Array.isArray(data.values)&&data.values!==undefined)throw Error('응답 원본 형식이 올바르지 않습니다.');
+  (data.values||[]).forEach((values,i)=>{if(i===0){headers=values;return;}if(values.some(v=>v!==''&&v!==null))out.push({rowNumber:i+1,values});});
   return {spreadsheetId:id,gid:p.sheetId,title:p.title,headers,rows:out,fetchedAt:new Date().toISOString()};
  }
- return {connected:()=>!!token,async connect(){token=await authorize();cache.clear();if(lifetime.signal.aborted)lifetime=new AbortController();},responses,raw,clear(){lifetime.abort();cache.clear();token='';}};
+ function beginResponseRun(){if(responseRunDepth===0)cache.clear();responseRunDepth++;let ended=false;return()=>{if(ended)return;ended=true;responseRunDepth=Math.max(0,responseRunDepth-1);if(responseRunDepth===0)cache.clear();};}
+ return {connected:()=>!!token,async connect(){token=await authorize();sessionEpoch++;cache.clear();pendingResponses.clear();if(lifetime.signal.aborted)lifetime=new AbortController();},responses,raw,beginResponseRun,clear(){sessionEpoch++;lifetime.abort();cache.clear();pendingResponses.clear();responseRunDepth=0;token='';}};
 }

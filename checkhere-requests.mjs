@@ -5,9 +5,13 @@ import {REQUEST_COLUMNS,requestColumn,requestsOverlap} from './checkhere-proposa
 const ACTIVE_STATUSES=['pending','approved','applying'];
 import {validateLinkedRequest} from './checkhere-proposals.mjs';
 import {collection,doc,getDocs,setDoc,query,where,orderBy,limit,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {APPROVER,FIELDS,STATUS,cleanRequest,matchRequest as matchRequestCore,prepareApproval as prepareApprovalCore,requestMatchesRecord as requestMatchesRecordCore,sameRequestTarget} from './checkhere/approval-core.mjs';
+import {APPROVER,FIELDS,STATUS,cleanRequest,matchRequest as matchRequestCore,prepareApproval as prepareApprovalCore,requestMatchesRecord as requestMatchesRecordCore,sameRequestTarget,memoDefaultTimes} from './checkhere/approval-core.mjs';
 import {assertChangeAllowed} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const automaticFields=(r,a)=>['entry','exit'].filter(k=>!Object.hasOwn(r.changes,k)&&!a.before[k]&&a.after[k]);
+const approvalFields=(r,a)=>[...new Set([...Object.keys(r.changes),...automaticFields(r,a)])];
+const approvalLabel=(r,a,k)=>FIELDS[k]+(automaticFields(r,a).includes(k)?' · 기본시간 자동 입력':'');
+function requireMemoDefaults(c,r,a){if(automaticFields(r,a).length&&!c.state().capabilities?.includes('memo-default-time-v1'))throw Error('빈 시간 자동 입력을 사용하려면 수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요.');}
 const dateNow=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export async function createRequest(db,user,input){
   const data=cleanRequest(input),id=crypto.randomUUID();
@@ -22,6 +26,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   const matchRequest=(r,records)=>matchRequestCore(r,records,identityFor(r));
   const requestMatchesRecord=(r,record)=>requestMatchesRecordCore(r,record,identityFor(r));
   const prepareApproval=(r,record,options={})=>prepareApprovalCore(r,record,{...options,identities:identityFor(r)});
+  const judgeRequest=(r,record,c)=>{const defaults=memoDefaultTimes(r.changes,record),judgement=assertChangeAllowed(record,{...r.changes,...defaults},{capabilities:c.state().capabilities,requested:true});if(Object.keys(defaults).length)judgement.warning='메모 저장에 필요한 빈 시간만 기본 설정으로 자동 입력합니다. 기존 시간은 유지합니다.';return judgement;};
   async function readIdentities(){for(const classId of new Set(rows.filter(r=>ACTIVE_STATUSES.includes(r.status)).map(r=>String(r.classId))))identityMaps.set(classId,await loadCheckHereIdentities(db,classId,rows.filter(r=>String(r.classId)===classId)));}
   const active=()=>host.isConnected&&!host.hidden&&host.style.display!=='none'&&!document.hidden;
   root.innerHTML=`<style>:host{display:block;font-family:inherit;color:#172033;margin:12px 0}*{box-sizing:border-box}button,input,select,textarea{font:inherit}section{background:white;border:1px solid #dbe3ee;border-radius:12px;padding:16px}h3{margin:0 0 8px}p,small{color:#64748b;line-height:1.5}button{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;background:#f8fafc}button.primary{background:#1d4ed8;color:white;border-color:#1d4ed8}button:disabled{opacity:.5;cursor:not-allowed}.line{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}label{display:block;font-size:12px;font-weight:700}input:not([type=checkbox]),select,textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin:5px 0}textarea{min-height:75px;resize:vertical}.request{border-top:1px solid #e2e8f0;padding:12px 0}.needs-change{background:#fff8e8;border-left:4px solid #d59a2b;padding-left:12px}.badge{border-radius:8px;padding:4px 8px;background:#eef2ff;font-size:12px}.reason{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:#334155}.error{color:#b91c1c}.success{color:#166534}dialog{border:1px solid #cbd5e1;border-radius:14px;max-width:720px;width:95%;max-height:90vh;overflow:auto}dialog::backdrop{background:#0f172a88}table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}td,th{padding:9px;border:1px solid #e2e8f0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left}.note{background:#f1f5f9;padding:10px;border-radius:8px}summary{cursor:pointer;font-weight:800}@media(max-width:600px){.grid{grid-template-columns:1fr}}</style>
@@ -59,9 +64,9 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
     if(rows.some(x=>x.id!==r.id&&requestsOverlap(x,r)&&['pending','approved','applying'].includes(x.status)))throw Error('동일 항목의 진행 중인 요청이 여러 개 있습니다. 중복 요청을 먼저 정리해 주세요.');
     const c=await connected(),record=await previewCurrent(c,r);
     if(requestMatchesRecord(r,record)){working=true;try{await confirmExisting(c,r);}finally{working=false;await refresh();}return;}
-    const judgement=assertChangeAllowed(record,r.changes,{capabilities:c.state().capabilities,requested:true});
-    const approval=prepareApproval(r,record),modal=$('#review');
-    modal.innerHTML=`<h3>${esc(r.classId)}반 · ${esc(r.date)} · ${esc(r.name)}</h3>${judgement.warning?`<p class="note" role="note">${esc(judgement.warning)}</p>`:''}<p class="reason">요청 근거: ${esc(r.reason)}</p><table><thead><tr><th>항목</th><th>현재 체크히어 값</th><th>승인할 값</th></tr></thead><tbody>${Object.keys(r.changes).map(k=>`<tr><th>${esc(FIELDS[k])}</th><td>${esc(approval.before[k]||'공란')}</td><td>${esc(approval.after[k]||'공란')}</td></tr>`).join('')}</tbody></table><p class="note">수집본이 없으면 자동으로 수집합니다. 승인한 항목을 체크히어에 입력하고, 실제 저장값과 플랫폼 DB 저장까지 확인합니다.</p><div class="line"><button id="approve" class="primary">승인하고 체크히어에 반영</button><button id="close">닫기</button></div>`;modal.showModal();$('#close').onclick=()=>modal.close();
+    const judgement=judgeRequest(r,record,c);
+    const approval=prepareApproval(r,record),modal=$('#review');requireMemoDefaults(c,r,approval);
+    modal.innerHTML=`<h3>${esc(r.classId)}반 · ${esc(r.date)} · ${esc(r.name)}</h3>${judgement.warning?`<p class="note" role="note">${esc(judgement.warning)}</p>`:''}<p class="reason">요청 근거: ${esc(r.reason)}</p><table><thead><tr><th>항목</th><th>현재 체크히어 값</th><th>승인할 값</th></tr></thead><tbody>${approvalFields(r,approval).map(k=>`<tr><th>${esc(approvalLabel(r,approval,k))}</th><td>${esc(approval.before[k]||'공란')}</td><td>${esc(approval.after[k]||'공란')}</td></tr>`).join('')}</tbody></table><p class="note">수집본이 없으면 자동으로 수집합니다. 승인한 항목을 체크히어에 입력하고, 실제 저장값과 플랫폼 DB 저장까지 확인합니다.</p><div class="line"><button id="approve" class="primary">승인하고 체크히어에 반영</button><button id="close">닫기</button></div>`;modal.showModal();$('#close').onclick=()=>modal.close();
     $('#approve').onclick=action(async()=>{if(working)return;working=true;try{message('승인된 내용을 체크히어에 자동 입력하고 저장 결과를 확인합니다.');const connection=await approveOne(r,approval);modal.close();await run(r,connection);}finally{working=false;await refresh();}});
   }
   async function run(r,connection=null){const c=connection||await connected();if(!connection){const record=await previewCurrent(c,r);if(!requestMatchesRecord(r,record))await validateLinkedRequest(db,user,r,record,undefined,identityFor(r));}await c.api('apply',{approvalId:r.id,idToken:await user.getIdToken()});message('체크히어 자동 입력 중 · 저장된 결과까지 확인하고 있습니다.');const result=await waitApplied(c,r);await refresh();message(result.message||'체크히어 반영·플랫폼 DB 저장 완료');}
@@ -71,9 +76,9 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   async function approveOne(r,preview,cache=new Map()){
     const c=await connected(),record=matchRequest(r,c.state().records);
     if(rows.some(x=>x.id!==r.id&&ACTIVE_STATUSES.includes(x.status)&&requestsOverlap(x,r)))throw Error('동일 항목의 중복 요청이 있습니다. 먼저 반려·정리해 주세요.');
-    assertChangeAllowed(record,r.changes,{capabilities:c.state().capabilities,requested:true});
+    judgeRequest(r,record,c);
     await validateLinkedRequest(db,user,r,record,cache,identityFor(r));
-    const approval=prepareApproval(r,record);
+    const approval=prepareApproval(r,record);requireMemoDefaults(c,r,approval);
     await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',r.id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 변경됐습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});});
     r.status='approved';r.approval=approval;return c;
   }
@@ -96,10 +101,11 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
     const c=await connected(),prepared=[],excluded=[],cache=new Map();
     for(const r of candidates){try{
       if(rows.some(x=>x.id!==r.id&&ACTIVE_STATUSES.includes(x.status)&&requestsOverlap(x,r)))throw Error('동일 항목 중복 요청');
-      const record=await previewCurrent(c,r),already=requestMatchesRecord(r,record),judgement=already?{}:assertChangeAllowed(record,r.changes,{capabilities:c.state().capabilities,requested:true});
-      prepared.push({r,approval:prepareApproval(r,record,{allowAlreadyApplied:true}),warning:already?'이미 반영 여부를 원본에서 재확인합니다.':judgement.warning});
+      const record=await previewCurrent(c,r),already=requestMatchesRecord(r,record),judgement=already?{}:judgeRequest(r,record,c);
+      const approval=prepareApproval(r,record,{allowAlreadyApplied:true});requireMemoDefaults(c,r,approval);
+      prepared.push({r,approval,warning:already?'이미 반영 여부를 원본에서 재확인합니다.':judgement.warning});
     }catch(e){excluded.push(`${r.classId}반 ${r.date} ${r.name}: ${e.message}`);}}
-    const modal=$('#review');modal.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 일괄승인</h3><p>승인 가능 ${prepared.length}건 · 제외 ${excluded.length}건. 아래 요청값을 순서대로 입력하고, 실제 저장값과 플랫폼 DB 반영까지 확인합니다.</p><table><thead><tr><th>반·날짜·학생</th><th>현재 → 요청값</th></tr></thead><tbody>${prepared.map(({r,approval,warning})=>`<tr><th>${esc(r.classId)}반 ${esc(r.date)} ${esc(r.name)}${warning?`<p class="note">${esc(warning)}</p>`:''}</th><td>${Object.keys(r.changes).map(k=>`${esc(FIELDS[k])}: ${esc(approval.before[k]||'공란')} → ${esc(approval.after[k])}`).join('<br>')}</td></tr>`).join('')}</tbody></table>${excluded.length?`<details open><summary>제외 사유</summary><p class="reason">${esc(excluded.join('\n'))}</p></details>`:''}<p id="batchResult" role="status"></p><div class="line"><button id="bulkApproveNow" class="primary" ${prepared.length?'':'disabled'}>${prepared.length}건 승인하고 반영</button><button id="batchClose">닫기</button></div>`;
+    const modal=$('#review');modal.innerHTML=`<h3>${esc(REQUEST_COLUMNS[column])} · 일괄승인</h3><p>승인 가능 ${prepared.length}건 · 제외 ${excluded.length}건. 아래 요청값을 순서대로 입력하고, 실제 저장값과 플랫폼 DB 반영까지 확인합니다.</p><table><thead><tr><th>반·날짜·학생</th><th>현재 → 요청값</th></tr></thead><tbody>${prepared.map(({r,approval,warning})=>`<tr><th>${esc(r.classId)}반 ${esc(r.date)} ${esc(r.name)}${warning?`<p class="note">${esc(warning)}</p>`:''}</th><td>${approvalFields(r,approval).map(k=>`${esc(approvalLabel(r,approval,k))}: ${esc(approval.before[k]||'공란')} → ${esc(approval.after[k])}`).join('<br>')}</td></tr>`).join('')}</tbody></table>${excluded.length?`<details open><summary>제외 사유</summary><p class="reason">${esc(excluded.join('\n'))}</p></details>`:''}<p id="batchResult" role="status"></p><div class="line"><button id="bulkApproveNow" class="primary" ${prepared.length?'':'disabled'}>${prepared.length}건 승인하고 반영</button><button id="batchClose">닫기</button></div>`;
     modal.showModal();$('#batchClose').onclick=()=>{if(!working)modal.close();};modal.oncancel=e=>{if(working)e.preventDefault();};
     $('#bulkApproveNow').onclick=async()=>{if(working)return;working=true;clearTimeout(timer);$('#bulkApproveNow').disabled=true;$('#batchClose').disabled=true;let count=0;const failures=[],approvalCache=new Map();try{
       for(const {r,approval}of prepared){if(disposed)break;$('#batchResult').textContent=`${count}/${prepared.length}건 완료 · ${r.classId}반 ${r.name} 반영 중`;

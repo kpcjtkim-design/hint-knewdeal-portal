@@ -20,7 +20,8 @@ test('requested fields win over stale snapshots while unrelated later edits rema
  assert.equal(result.status,'verified');assert.deepEqual(writes,['entry']);assert.equal(result.current.exit,'17:00:00');assert.equal(result.current.exitMemo,'나중에 입력된 메모');
 });
 test('missing requested times and incomplete or wrong student data still cannot be applied',async()=>{
- assert.throws(()=>assertChangeAllowed({...base(),entry:null},{exitMemo:'사유'},{requested:true}),/시간/);
+ assert.throws(()=>assertChangeAllowed({...base(),entry:null},{entryMemo:'사유'},{requested:true}),/시간/);
+ assert.doesNotThrow(()=>assertChangeAllowed({...base(),entry:null},{exitMemo:'사유'},{requested:true}));
  assert.throws(()=>assertChangeAllowed({...base(),readState:'partial'},{entry:'09:00:00',exit:'18:00:00'},{requested:true}),/기록/);
  const r=base();r.version=version(r);const request={classId:'9',date:r.date,name:r.name,reason:'가상',changes:{entry:'10:00:00'}};let writes=0;
  const result=await applyVerified({read:async()=>({...r,studentKey:'other'}),write:async()=>writes++},r,{...r,reason:'가상'},async()=>{},request);assert.equal(writes,0);assert.equal(result.status,'conflict');

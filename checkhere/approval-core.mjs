@@ -1,4 +1,5 @@
 import {matchingCheckHereRecords,hasBirthYearName} from '../checkhere-name-core.mjs';
+import {RULES,normalizeTime} from './rules.mjs';
 export const APPROVER = 'hint.kpc@gmail.com';
 export const FIELDS = {entry:'입실·교시 시간',exit:'퇴실 시간',entryMemo:'입실·교시 관리자 사유',exitMemo:'퇴실 관리자 사유'};
 export const STATUS = {pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'검증 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
@@ -41,23 +42,33 @@ export function requestMatchesRecord(request,record,identities=[]){
   const clean=cleanRequest(request);matchRequest(clean,[record],identities);
   return Object.entries(clean.changes).every(([k,v])=>typeof record[k]==='string'&&record[k]===v);
 }
+// CheckHere requires a time in the same editor when saving a changed memo.
+// Never synthesize a time for reads, an already-matching memo, or the other side.
+export function memoDefaultTimes(changes,record){
+  const times={};
+  for(const [field,setting]of [['entry','start'],['exit','end']]){
+    if(own(changes,field+'Memo')&&changes[field+'Memo']!==(record[field+'Memo']??'')&&!own(changes,field)&&!normalizeTime(record[field]))times[field]=normalizeTime(RULES[setting]);
+  }
+  return times;
+}
 export function prepareApproval(request,record,{allowAlreadyApplied=false,identities=[]}={}){
   const clean=cleanRequest(request);
   matchRequest(clean,[record],identities);
   const before=Object.fromEntries(Object.keys(FIELDS).map(k=>[k,record[k]??'']));
-  const after={...before,...clean.changes};
+  const after={...before,...memoDefaultTimes(clean.changes,before),...clean.changes};
   const already=Object.keys(FIELDS).every(k=>before[k]===after[k]);
-  if(already&&allowAlreadyApplied){for(const k of ['entry','exit'])if(!after[k])delete after[k];}
-  else {
-    if(![after.entry,after.exit].every(v=>typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(v))||after.exit<after.entry)throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 시간이 없는 기록은 필요한 시간도 함께 요청해야 합니다.');
+  if(!(already&&allowAlreadyApplied)){
+    if(['entry','exit'].some(k=>after[k]&&!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(after[k]))||after.entry&&after.exit&&after.exit<after.entry)throw Error('반영할 입실·퇴실 시간을 확인해 주세요.');
     if(already)throw Error('요청한 값이 이미 체크히어 기록과 같습니다. 원본 확인 후 이미 반영으로 처리해 주세요.');
   }
+  // Omitted untouched blanks keep the existing approval schema valid.
+  for(const k of ['entry','exit'])if(!after[k])delete after[k];
   return {recordId:record.id,version:record.version,before,after,reason:clean.reason};
 }
 export function proposalFromApproval(request){
   if(request.approvedBy!==APPROVER||!['approved','applying'].includes(request.status))throw Error('지정된 관리자의 승인이 필요합니다.');
   const a=request.approval;if(!a||!a.recordId||!a.version)throw Error('승인된 변경 내용을 찾지 못했습니다.');
-  const clean=cleanRequest(request),expected={...a.before,...clean.changes};
+  const clean=cleanRequest(request),expected={...a.before,...memoDefaultTimes(clean.changes,a.before),...clean.changes};
   if(Object.keys(FIELDS).some(k=>(a.after?.[k]??'')!==expected[k])||a.reason!==clean.reason)throw Error('요청 내용과 승인 내용이 일치하지 않습니다.');
   return {id:a.recordId,version:a.version,...a.before,...a.after,reason:a.reason};
 }

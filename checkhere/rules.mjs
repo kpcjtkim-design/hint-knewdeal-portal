@@ -81,7 +81,7 @@ export function assertChangeAllowed(record,changes,{capabilities,requested=false
   if(requested){
     if(record.source!=='live'||record.readState!=='complete')throw Error('학생의 현재 기록을 읽지 못했습니다. 연결 상태를 확인해 주세요.');
     const target={...record,...changes},entry=normalizeTime(target.entry),exit=normalizeTime(target.exit);
-    if(!entry||!exit||exit<entry)throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 시간이 없는 기록은 필요한 시간도 함께 요청해야 합니다.');
+    if((fields.some(k=>k==='entry'||k==='entryMemo')&&!entry)||(fields.some(k=>k==='exit'||k==='exitMemo')&&!exit)||(entry&&exit&&exit<entry))throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 변경하는 항목에는 시간이 필요합니다.');
     return{...judgement,memoOnly,warning:memoOnly?'사유만 변경하며 입퇴실 시간은 유지합니다.':''};
   }
   if(!(memoOnly?judgement.canApplyMemo:judgement.canApply)){

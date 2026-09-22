@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
 test('request dialog survives delayed reads, closure, unknown commits and reload without duplicate submissions',async()=>{
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),base=join(import.meta.dirname,'../..');
  try{for(const mode of ['cancel-read','bad-reader','committed-response-lost','unconfirmed-reload','late-transaction']){
@@ -28,7 +28,7 @@ test('request dialog survives delayed reads, closure, unknown commits and reload
     function render(){root.querySelector('#rows').innerHTML=review.html(s,'entryMemo');review.bind([s]);}
     const review=createProposalReview({db:{},user:{email:'fixture@example.com',getIdToken:async()=>'fixture'},root,getContext:()=>({classId:'2',date:'2026-09-03',name:s.name,status:'출석',reason:'',raw:'',record}),render,showErr:e=>{window.problem=e.message},hasUnsavedReason:()=>false,timeouts:{source:400,read:150,write:200}});window.review=review;await review.load('2','2026-09-03');render();
    </script>`});
-   const file=u.pathname.slice(1);if(['checkhere-name-core.mjs','checkhere-name-store.mjs','survey-identity.mjs','attendance-derived-core.mjs','survey-links.mjs','survey-core.mjs','survey-catalog.json','timetable-holiday.mjs','survey-view.mjs','survey-store.mjs','survey-google.mjs','survey.css','attendance-beta-core.mjs','attendance-rollout.mjs','attendance-io.mjs','attendance-io.mjs','checkhere-proposals.mjs','checkhere-request-actions.mjs','attendance-reason-parser.mjs','attendance-beta-core.mjs','checkhere/approval-core.mjs','checkhere/rules.mjs','checkhere-proposal-core.mjs','timetable-core.mjs'].includes(file))return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,file),'utf8')});return route.abort();
+   const file=u.pathname.slice(1);if(u.hostname==='fixture.test'&&/^(?:[\w.-]+\/)*[\w.-]+\.(?:mjs|css|json)$/.test(file)&&!file.split('/').includes('..')&&existsSync(join(base,file)))return route.fulfill({contentType:file.endsWith('.css')?'text/css':file.endsWith('.json')?'application/json':'text/javascript',body:readFileSync(join(base,file),'utf8')});return route.abort();
   });
   await page.goto('https://fixture.test/');await page.locator('[data-proposal-send]').click();await page.locator('#sendSelected').click();
   const count=()=>page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('checkhereRequests/')).length);

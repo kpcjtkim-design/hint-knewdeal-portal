@@ -2,7 +2,7 @@ import {createRequire} from 'node:module';
 import {join} from 'node:path';
 import {homedir} from 'node:os';
 import {studentKey,recordId,version} from './identity.mjs';
-import {normalizeTime} from './rules.mjs';
+import {normalizeTime,RULES} from './rules.mjs';
 const require=createRequire(import.meta.url);
 export function loadPlaywright(){
   try{return require('playwright');}catch{return require(join(homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));}
@@ -14,7 +14,7 @@ const SCHEDULES={
  '2026-08-31':'29A17CA5-27EB-4EF5-AAFC-366488BA2F70','2026-09-01':'E9897B32-14C7-48B9-925C-39FB949F1E9A',
  '2026-09-02':'30225A67-2191-4028-AED0-F674D97B5D0E','2026-09-03':'5872F188-21FE-4781-9A7D-13D2F208822F','2026-09-04':'EC306A74-D30D-4298-861A-49E4E9351DE2'};
 export class CheckHereCollector{
-  constructor(dataDir,{page=null}={}){this.dataDir=dataDir;this.page=page;this.context=null;this.urls=new Map();this.cancelled=false;}
+  constructor(dataDir,{page=null}={}){this.dataDir=dataDir;this.page=page;this.context=null;this.urls=new Map();this.lectureUrls=new Map();this.cancelled=false;}
   async connect(){
     if(!this.page||this.page.isClosed()){
       const {chromium}=loadPlaywright();
@@ -58,18 +58,27 @@ export class CheckHereCollector{
   async discover(classId,date){
     const key=`${classId}|${date}`;if(this.urls.has(key))return this.urls.get(key);
     if(String(classId)==='2'&&SCHEDULES[date]){const url=`${HOME}/modify?tab=STUDENT&academyId=ACADEMY-HNGV&lectureId=${CLASS2}&scheduleId=${SCHEDULES[date]}&scheduleDate=${date}`;this.urls.set(key,url);return url;}
-    await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
-    const row=await this.findPagedRow(t=>t.includes(`[${classId}반]`));if(!row)throw new Error(`${classId}반 강의를 찾지 못했습니다.`);
-    await row.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname!==new URL(HOME).pathname);
+    const lecture=this.lectureUrls.get(String(classId));
+    if(lecture){await this.page.goto(lecture);await this.requireLogin();}
+    else{
+      await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
+      const row=await this.findPagedRow(t=>t.includes(`[${classId}반]`));if(!row)throw new Error(`${classId}반 강의를 찾지 못했습니다.`);
+      await row.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname!==new URL(HOME).pathname);
+      const observed=new URL(this.page.url());if(observed.origin!==new URL(HOME).origin||!observed.pathname.startsWith('/history/lecture/'))throw new Error('반별 강의 주소를 확인하지 못했습니다.');
+      this.lectureUrls.set(String(classId),observed.href);
+    }
     this.pageNumbers=new Set(['1']);const target=await this.findPagedRow(t=>t.includes(date)||t.includes(date.replaceAll('-','.')));
     if(!target)throw new Error(`${date} 강의가 없습니다. 휴강 여부를 확인해 주세요.`);
     await target.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname.endsWith('/modify'));
     const url=this.page.url(),parsed=new URL(url);if(parsed.searchParams.get('scheduleDate')!==date)throw new Error('선택한 날짜와 화면이 다릅니다.');this.urls.set(key,url);return url;
   }
   async openDay(classId,date,url){
-    await this.requireLogin();url=url||await this.discover(classId,date);
+    await this.requireLogin();const beforeDiscovery=this.page.url(),suppliedUrl=!!url;url=url||await this.discover(classId,date);
     const u=new URL(url);if(u.origin!=='https://check.ihereapp.com'||u.pathname!=='/history/lecture/modify'||u.searchParams.get('scheduleDate')!==date)throw new Error('출결상세 주소를 확인해 주세요.');
-    await this.page.goto(url);await this.requireLogin();await this.page.getByRole('table').nth(1).waitFor({state:'visible'});
+    // Discovery has already loaded a new day. Explicit verification reads still
+    // reload it, so a modal's stale local value can never serve as save evidence.
+    if(suppliedUrl||beforeDiscovery===this.page.url()||this.page.url()!==url)await this.page.goto(url);
+    await this.requireLogin();await this.page.getByRole('table').nth(1).waitFor({state:'visible'});
     await this.page.getByText('실제 시간 기반',{exact:true}).click();await this.page.getByText('초',{exact:true}).click();await this.page.getByText('표시',{exact:true}).click();
     await this.page.getByRole('table').nth(0).getByRole('row').nth(2).getByRole('cell').nth(2).waitFor({state:'visible',timeout:15000});
     const title=await this.page.getByText(new RegExp(`\\[${classId}반\\].*${date}.*출석부`)).innerText();
@@ -89,12 +98,31 @@ export class CheckHereCollector{
       const r={...this.day,name,studentKey:key,phoneLast4:phone.slice(-4),rowIndex:i+2,schedule:tables[1][1][1],entry:normalizeTime(t[1]),rawEntry:normalizeTime(t[0]),exit:normalizeTime(t[2]),outingCount:count?+count[1]:0,outings:[],entryMemo:null,exitMemo:null,source:'live',readState:'partial',collectedAt:new Date().toISOString()};r.id=recordId(r);return r;
     });
   }
-  async locate(record){const list=await this.tableRecords(),found=list.filter(r=>r.studentKey===record.studentKey);if(found.length!==1||found[0].name!==record.name)throw new Error('학생 일치 확인 실패');return found[0];}
+  async locate(record){
+    if(String(this.day?.classId)!==String(record.classId)||this.day?.date!==record.date||(this.day.url&&this.page.url()!==this.day.url))throw new Error('학생 일치 확인 실패: 반·날짜 화면이 다릅니다.');
+    // Read just the target row; still verify its full phone-derived identity and
+    // uniqueness before every click. Row moves fall back to the full safe scan.
+    if(Number.isInteger(record.rowIndex)&&record.rowIndex>=2){
+      const candidate=await this.page.locator('table').evaluateAll((tables,index)=>{
+        const [roster,times]=tables,r=roster?.rows[index],header=roster?.rows[1],timeHeader=times?.rows[1];
+        if(!r||roster.rows.length!==times?.rows.length||header?.cells[2]?.innerText.trim()!=='성명'||header?.cells[3]?.innerText.trim()!=='전화번호'||timeHeader?.cells.length!==5||timeHeader.cells[0].innerText.trim()!=='입실'||timeHeader.cells[2].innerText.trim()!=='퇴실')return null;
+        const name=r.cells[2]?.innerText.trim(),phone=r.cells[3]?.innerText.replace(/\D/g,'');
+        const matches=[...roster.rows].slice(2,-1).filter(row=>row.cells[2]?.innerText.trim()===name&&row.cells[3]?.innerText.replace(/\D/g,'')===phone).length;
+        return {name,phone,matches};
+      },record.rowIndex);
+      if(candidate?.phone?.length>=9&&candidate.name===record.name&&studentKey(candidate.name,candidate.phone)===record.studentKey){
+        if(candidate.matches!==1)throw new Error('중복된 학생 식별정보가 있습니다.');return record;
+      }
+    }
+    const list=await this.tableRecords(),found=list.filter(r=>r.studentKey===record.studentKey);if(found.length!==1||found[0].name!==record.name)throw new Error('학생 일치 확인 실패');return found[0];
+  }
   async modal(record,field){
     const row=await this.locate(record);await this.page.getByRole('table').nth(1).getByRole('row').nth(row.rowIndex).getByRole('cell').nth(field==='entry'?1:2).click();
     await this.page.locator('#modifyTime').waitFor({state:'visible'});
-    if(await this.page.locator('#name').inputValue()!==record.name){await this.closeModal();throw new Error('수정 창의 학생이 다릅니다.');}
-    return{time:normalizeTime(await this.page.locator('#prevTime').inputValue()),memo:await this.page.locator('#memoByAdmin').inputValue()};
+    const data=await this.page.locator('#modifyTime').evaluate(()=>({name:document.querySelector('#name')?.value,time:document.querySelector('#prevTime')?.value,memo:document.querySelector('#memoByAdmin')?.value}));
+    if(data.name!==record.name){await this.closeModal();throw new Error('수정 창의 학생이 다릅니다.');}
+    if(typeof data.time!=='string'||typeof data.memo!=='string'){await this.closeModal();throw new Error('시간·메모 입력창 구조를 확인하지 못했습니다.');}
+    return{time:normalizeTime(data.time),memo:data.memo};
   }
   async closeModal(){const b=this.page.getByRole('button',{name:'취소',exact:true});if(await b.count())await b.click();}
   async readDetails(record){
@@ -118,20 +146,26 @@ export class CheckHereCollector{
       for(let i=0;i<rows.length;i++){if(this.cancelled)break;await onProgress({date,index:i+1,total:rows.length,name:rows[i].name});await onRecord(await this.readDetails(rows[i]));}
     }
   }
-  async readOpened(record){
+  async readOpened(record,openedRows=null){
     const url=record.url||this.day?.url;
     if(String(this.day?.classId)!==String(record.classId)||this.day?.date!==record.date||this.day?.url!==url||this.page.url()!==url)throw new Error('선택한 반·날짜 화면이 달라 다시 수집해야 합니다.');
-    const rows=(await this.tableRecords()).filter(r=>r.studentKey===record.studentKey);
+    const rows=(openedRows||await this.tableRecords()).filter(r=>r.studentKey===record.studentKey);
     if(rows.length!==1||rows[0].name!==record.name)throw new Error('해당 학생을 다시 찾지 못했습니다.');
     return this.readDetails({...rows[0],reference:record.reference,exception:record.exception});
   }
-  async read(record){await this.openDay(record.classId,record.date,record.url);return this.readOpened(record);}
+  async read(record){const rows=await this.openDay(record.classId,record.date,record.url);return this.readOpened(record,rows);}
   async write(record,field,change,{requestedFields}={}){
     const before=await this.modal(record,field);
-    if(requestedFields){change={time:requestedFields.includes(field)?change.time:before.time,memo:requestedFields.includes(field+'Memo')?change.memo:before.memo};}
+    let automaticTime;
+    if(requestedFields){
+      const requestedMemo=requestedFields.includes(field+'Memo');
+      if(!requestedFields.includes(field)&&requestedMemo&&!before.time&&change.memo!==before.memo)automaticTime=normalizeTime(RULES[field==='entry'?'start':'end']);
+      change={time:requestedFields.includes(field)?change.time:before.time||automaticTime,memo:requestedMemo?change.memo:before.memo};
+    }
     else if(before.time!==record[field]||before.memo!==record[`${field}Memo`]){await this.closeModal();throw new Error('반영 직전 값이 달라졌습니다.');}
+    if(!normalizeTime(change.time)){await this.closeModal();throw new Error('메모를 저장할 시간을 확인하지 못했습니다.');}
     await this.page.locator('#modifyTime').fill(change.time);await this.page.locator('#memoByAdmin').fill(change.memo);
     this.saving=true;
-    try{await this.page.getByRole('button',{name:'변경',exact:true}).click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});return change;}finally{this.saving=false;await this.closeModal();}
+    try{await this.page.getByRole('button',{name:'변경',exact:true}).click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});return {...change,...(automaticTime?{automaticTime}:{})};}finally{this.saving=false;await this.closeModal();}
   }
 }

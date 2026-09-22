@@ -70,11 +70,15 @@ export function createApprovalCloud({fetchImpl=fetch}={}){
         if(doc.data.status!=='applying'||doc.data.attemptId!==attemptId)throw Error('서버 작업 상태가 달라 결과를 저장하지 못했습니다.');
         const result={message:job.message||'결과를 다시 확인해 주세요.',jobId:job.id,results:job.results||[],finishedAt:job.finishedAt||new Date().toISOString(),alreadyApplied:job.alreadyApplied===true,platformSaved:false};
         const writes=[];
-        if(status==='verified'&&(!job.current||!requestMatchesRecord(doc.data,job.current,doc.identities)))throw Error('원본 재확인 결과가 요청과 달라 완료 처리하지 않았습니다.');
+        if(status==='verified'&&(!job.current||!requestMatchesRecord(doc.data,job.current,doc.identities)||(job.results||[]).some(r=>r.automaticTime&&(r.state!=='verified'||!['entry','exit'].includes(r.field)||job.current[r.field]!==r.automaticTime))))throw Error('원본 재확인 결과가 요청 또는 자동 입력 시간과 달라 완료 처리하지 않았습니다.');
         if(job.current?.readState==='complete'&&job.current.source==='live'){
           const snapshot=await currentWrite(doc.data,job,token,doc.identities);if(snapshot)writes.push(snapshot);
           result.platformSaved=true;
-          if(status==='verified')result.message=job.alreadyApplied?'이미 반영 · 원본 확인 및 플랫폼 DB 저장 완료':'체크히어 반영·원본 확인·플랫폼 DB 저장 완료';
+          if(status==='verified'){
+            result.message=job.alreadyApplied?'이미 반영 · 원본 확인 및 플랫폼 DB 저장 완료':'체크히어 반영·원본 확인·플랫폼 DB 저장 완료';
+            const automatic=(job.results||[]).filter(r=>r.state==='verified'&&r.automaticTime).map(r=>`${r.field==='entry'?'입실':'퇴실'} ${r.automaticTime}`).join(' · ');
+            if(automatic)result.message+=' · 누락 시간 자동 입력: '+automatic;
+          }
         }
         writes.push(requestWrite(doc,{status,result}));
         try{await commit(token,writes);return result;}catch(e){if(![409,412].includes(e.status)||attempt===2)throw e;}

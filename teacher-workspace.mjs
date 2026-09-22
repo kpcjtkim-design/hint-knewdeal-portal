@@ -30,22 +30,28 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
  }
  panels.home.prepend(today,announcements);
  const attendance=document.createElement('section'),surveys=document.createElement('section');attendance.className=surveys.className='card panel';attendance.style.marginTop=surveys.style.marginTop='18px';panels.home.append(attendance,surveys);
- const works=[],loaded=new Set(['home','resources']);let active='home',disposed=false;
- async function show(id){if(disposed)return;active=id;Object.entries(panels).forEach(([key,p])=>{p.hidden=key!==id;p.style.display=key===id?'':'none';});nav.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.teacherTab===id));if(loaded.has(id))return;loaded.add(id);const host=panels[id];host.textContent='불러오는 중…';try{
+ const works=new Map(),loaded=new Set(['home','resources']);let active='home',disposed=false;
+ const alive=()=>!disposed&&parent.isConnected&&nav.isConnected;
+ const disposeWork=w=>{if(typeof w==='function')w();else w?.dispose?.();};
+ const retain=(id,w)=>{if(!w)return;if(!alive())disposeWork(w);else works.set(id,[...(works.get(id)||[]),w]);};
+ const canLeave=()=>[...(works.get(active)||[])].every(w=>!w.canLeave||w.canLeave());
+ const dispose=()=>{if(disposed)return;disposed=true;observer.disconnect();for(const list of works.values())list.forEach(disposeWork);works.clear();};
+ const observer=new MutationObserver(()=>{if(!alive())dispose();});observer.observe(document.body,{childList:true,subtree:true});
+ async function show(id){if(!alive()||!panels[id]||(id!==active&&!canLeave()))return;active=id;Object.entries(panels).forEach(([key,p])=>{p.hidden=key!==id;p.style.display=key===id?'':'none';});nav.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.teacherTab===id));if(loaded.has(id))return;loaded.add(id);const host=panels[id];host.textContent='불러오는 중…';try{
   let work;const options={db,user,classes:[classInfo],teacherClass:classInfo};
-  if(id==='timetable'){const m=await import('./timetable.mjs');host.textContent='';work=await m.mountTeacherTimetable(host,{db,user,classInfo,includeSurveys:false});}
-  if(id==='attendance'){const m=await import('./attendance-statistics.mjs');host.textContent='';work=await m.mountAttendanceStatistics(host,options);}
-  if(id==='evidence'){const m=await import('./attendance-evidence.mjs');host.textContent='';work=await m.mountAttendanceEvidence(host,options);}
-  if(id==='surveys'){const m=await import('./survey-view.mjs');host.textContent='';work=await m.mountSurveys(host,options);}
-  if(id==='materials'){const m=await import('./lecture-materials.mjs');host.textContent='';work=await m.mountLectureMaterials(host,{...options,readOnly:preview});}
-  if(work){if(disposed)work.dispose?.();else works.push(work);}
- }catch(e){host.textContent='화면을 불러오지 못했습니다. '+e.message;loaded.delete(id);}}
+  if(id==='timetable'){const m=await import('./timetable.mjs');if(!alive())return;host.textContent='';work=await m.mountTeacherTimetable(host,{db,user,classInfo,includeSurveys:false});}
+  if(id==='attendance'){const m=await import('./attendance-statistics.mjs');if(!alive())return;host.textContent='';work=await m.mountAttendanceStatistics(host,options);}
+  if(id==='evidence'){const m=await import('./attendance-evidence.mjs');if(!alive())return;host.textContent='';work=await m.mountAttendanceEvidence(host,options);}
+  if(id==='surveys'){const m=await import('./survey-view.mjs');if(!alive())return;host.textContent='';work=await m.mountSurveys(host,options);}
+  if(id==='materials'){const m=await import('./lecture-materials.mjs');if(!alive())return;host.textContent='';work=await m.mountLectureMaterials(host,{...options,readOnly:preview});}
+  retain(id,work);
+ }catch(e){if(alive()){host.textContent='화면을 불러오지 못했습니다. '+e.message;loaded.delete(id);}}}
  nav.querySelectorAll('button').forEach(b=>b.onclick=()=>void show(b.dataset.teacherTab));void show('home');
  const options={db,user,classes:[classInfo],teacherClass:classInfo,compact:true};
  await Promise.allSettled([
-  import('./timetable.mjs').then(m=>m.mountTeacherTimetable(today,{db,user,classInfo,compact:true,includeSurveys:false})),
-  import('./attendance-statistics.mjs').then(m=>m.mountAttendanceStatistics(attendance,{...options,onMore:()=>show('attendance'),onEvidence:()=>show('evidence')})),
-  import('./survey-view.mjs').then(m=>m.mountSurveys(surveys,{...options,onMore:()=>show('surveys')}))
- ].map(p=>p.then(w=>{if(w)works.push(w);}))).then(results=>{results.forEach((r,i)=>{if(r.status==='rejected')[today,attendance,surveys][i].textContent='요약 조회 실패 · '+r.reason.message;});});
- const dispose=()=>{disposed=true;works.forEach(w=>w.dispose?.());observer.disconnect();};const observer=new MutationObserver(()=>{if(!parent.isConnected||!nav.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});return{dispose};
+  import('./timetable.mjs').then(m=>alive()?m.mountTeacherTimetable(today,{db,user,classInfo,compact:true,includeSurveys:false}):null),
+  import('./attendance-statistics.mjs').then(m=>alive()?m.mountAttendanceStatistics(attendance,{...options,onMore:()=>show('attendance'),onEvidence:()=>show('evidence')}):null),
+  import('./survey-view.mjs').then(m=>alive()?m.mountSurveys(surveys,{...options,onMore:()=>show('surveys')}):null)
+ ].map(p=>p.then(w=>retain('home',w)))).then(results=>{if(alive())results.forEach((r,i)=>{if(r.status==='rejected')[today,attendance,surveys][i].textContent='요약 조회 실패 · '+r.reason.message;});});
+ if(!alive())dispose();return{canLeave,dispose};
 }

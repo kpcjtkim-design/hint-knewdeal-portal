@@ -10,10 +10,11 @@ export async function getDocs(ref){ref.db.queries.push(ref);return{docs:Object.e
 export async function setDoc(ref,value){ref.db.writes++;ref.db.values[ref.path]=value;}
 export async function runTransaction(db,fn){return fn({get:getDoc,set:setDoc});}
 export async function loadLegacyCheckHereDay(db,c,date){db.legacy.push(date);return [];}
+export async function loadCheckHereIdentities(){return [];}
 `);
 async function moduleWithMock(file){
  const base=new URL('../../',import.meta.url),source=await readFile(new URL(file,base),'utf8');
- return import(url(source.replace(/from '([^']+)'/g,(match,path)=>`from '${path.startsWith('https:')||path==='./checkhere-snapshots.mjs'?firebase:new URL(path,base).href}'`)));
+ return import(url(source.replace(/from '([^']+)'/g,(match,path)=>`from '${path.startsWith('https:')||['./checkhere-snapshots.mjs','./checkhere-name-store.mjs'].includes(path)?firebase:new URL(path,base).href}'`)));
 }
 const fixture=()=>({reads:0,writes:0,queries:[],legacy:[],values:{}});
 const user={email:'admin@example.com'};
