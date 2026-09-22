@@ -2,7 +2,7 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
  const hero=parent.querySelector('.hero');if(!hero)return;
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
  const nav=document.createElement('nav');nav.className='admin-tabs teacher-tabs';nav.setAttribute('aria-label','담임 업무 메뉴');
- const labels={home:'우리 반 홈',timetable:'전체 시간표',attendance:'출결 통계',surveys:'만족도조사',materials:'강의자료',resources:'자료·바로가기'};
+ const labels={home:'우리 반 홈',timetable:'전체 시간표',attendance:'출결 통계',evidence:'증빙서류',surveys:'만족도조사',materials:'강의자료',resources:'자료·바로가기'};
  nav.innerHTML=Object.entries(labels).map(([id,label])=>`<button class="tab" data-teacher-tab="${id}">${label}</button>`).join('');hero.after(nav);
  // Move existing nodes, including the class selector, so their handlers stay attached.
  let classHeader=!preview&&parent.querySelector('.topbar');
@@ -35,6 +35,7 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
   let work;const options={db,user,classes:[classInfo],teacherClass:classInfo};
   if(id==='timetable'){const m=await import('./timetable.mjs');host.textContent='';work=await m.mountTeacherTimetable(host,{db,user,classInfo,includeSurveys:false});}
   if(id==='attendance'){const m=await import('./attendance-statistics.mjs');host.textContent='';work=await m.mountAttendanceStatistics(host,options);}
+  if(id==='evidence'){const m=await import('./attendance-evidence.mjs');host.textContent='';work=await m.mountAttendanceEvidence(host,options);}
   if(id==='surveys'){const m=await import('./survey-view.mjs');host.textContent='';work=await m.mountSurveys(host,options);}
   if(id==='materials'){const m=await import('./lecture-materials.mjs');host.textContent='';work=await m.mountLectureMaterials(host,{...options,readOnly:preview});}
   if(work){if(disposed)work.dispose?.();else works.push(work);}
@@ -43,7 +44,7 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
  const options={db,user,classes:[classInfo],teacherClass:classInfo,compact:true};
  await Promise.allSettled([
   import('./timetable.mjs').then(m=>m.mountTeacherTimetable(today,{db,user,classInfo,compact:true,includeSurveys:false})),
-  import('./attendance-statistics.mjs').then(m=>m.mountAttendanceStatistics(attendance,{...options,onMore:()=>show('attendance')})),
+  import('./attendance-statistics.mjs').then(m=>m.mountAttendanceStatistics(attendance,{...options,onMore:()=>show('attendance'),onEvidence:()=>show('evidence')})),
   import('./survey-view.mjs').then(m=>m.mountSurveys(surveys,{...options,onMore:()=>show('surveys')}))
  ].map(p=>p.then(w=>{if(w)works.push(w);}))).then(results=>{results.forEach((r,i)=>{if(r.status==='rejected')[today,attendance,surveys][i].textContent='요약 조회 실패 · '+r.reason.message;});});
  const dispose=()=>{disposed=true;works.forEach(w=>w.dispose?.());observer.disconnect();};const observer=new MutationObserver(()=>{if(!parent.isConnected||!nav.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});return{dispose};
