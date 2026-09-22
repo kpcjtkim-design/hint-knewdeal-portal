@@ -255,6 +255,7 @@ async function getColors(cid){
   manualIssueMemo.oninput=()=>{manualIssueState.textContent='입력 중';const cid=currentClass,iso=currentIso,value=manualIssueMemo.value,key=`manualIssue_${cid}_${iso}`;clearTimeout(saveTimers.get(key));saveTimers.set(key,setTimeout(()=>saveManualIssue(value,manualIssueState,cid,iso).catch(e=>showErr(e)),650))};
   manualNotifyBtn.onclick=()=>toggleGeneralFollowup('notifiedAt').catch(e=>showErr(e));
   manualDoneBtn.onclick=()=>toggleGeneralFollowup('doneAt').catch(e=>showErr(e));
-  void loadClass(classSel.value||'1');return {canLeave:memosReady,dispose(){disposed=true;viewAbort.abort();readerController?.abort();}};
+  const initial=ctx.initialContext||{};if(classes.some(c=>String(c.id)===String(initial.classId)))classSel.value=String(initial.classId);
+  void loadClass(classSel.value||'1',initial.date?`${Number(initial.date.slice(5,7))}/${Number(initial.date.slice(8,10))}`:'');return {canLeave:memosReady,dispose(){disposed=true;viewAbort.abort();readerController?.abort();}};
 }
 

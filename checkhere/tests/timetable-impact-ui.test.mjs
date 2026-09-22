@@ -1,0 +1,34 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
+test('inline schedule impacts preserve draft/public separation, fixed survey dates, and transactional protection',async()=>{
+ const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),base=join(import.meta.dirname,'../..'),errors=[];
+ const lecture={id:'testing',title:'SW 테스팅',course:'임베디드 AI(HW)',module:'직무특화',days:2};
+ const entries=['2026-09-21','2026-09-22'].map((date,i)=>({...lecture,id:'day'+(i+1),lectureId:lecture.id,day:i+1,date,kind:'class',hours:8,start:'09:00',end:'18:00',instructorId:'',venue:'시험 교육장',note:'',online:false}));
+ const seed={courses:[lecture.course],modules:[lecture.module],lectures:[lecture],end:'2026-10-22',classes:{'1':{classId:'1',entries}}},catalog={events:[{id:'survey1',classId:'1',title:'직무특화_SW 테스팅',date:'2026-09-22'}]},config={events:{survey1:{date:'2026-09-30'}}};
+ const docs={'timetableBetaDrafts/1':{classId:'1',entries,revision:1},'timetableBetaPublished/1':{classId:'1',entries,revision:1,sourceRevision:1},'settings/surveyBetaConfig':config};
+ page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+ try{
+  await page.route('**/*',route=>{const u=new URL(route.request().url()),name=u.pathname.slice(1);
+   if(u.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`window.docs=${JSON.stringify(docs)};window.writes=[];window.readCounts={};export const doc=(db,...p)=>({path:p.join('/')}),collection=doc,serverTimestamp=()=>({seconds:1});export async function getDoc(r){window.readCounts[r.path]=(window.readCounts[r.path]||0)+1;const d=window.docs[r.path];return{exists:()=>!!d,data:()=>structuredClone(d)};}export async function getDocs(r){return{docs:Object.entries(window.docs).filter(([k])=>k.startsWith(r.path+'/')).map(([k,v])=>({id:k.split('/').pop(),data:()=>structuredClone(v)}))};}export async function setDoc(){throw Error('Unexpected survey write');}export async function runTransaction(db,fn){const pending=[];const value=await fn({get:getDoc,set:(r,v)=>pending.push([r.path,v])});for(const[k,v]of pending){window.writes.push(k);window.docs[k]=structuredClone(v);}return value;}`});
+   if(!name)return route.fulfill({contentType:'text/html;charset=utf-8',body:`<div id="host"></div><script type="module">import{mountTimetableAdmin}from'/timetable.mjs';window.work=await mountTimetableAdmin(document.querySelector('#host'),{db:{},user:{email:'admin@example.test'},classes:[{id:'1',course:'임베디드 AI(HW)',venue:'시험 교육장'}]});</script>`});
+   if(name==='timetable-seed.json')return route.fulfill({json:seed});
+   if(name==='survey-catalog.json')return route.fulfill({json:catalog});
+   if(name==='timetable-reference.json')return route.fulfill({json:{patches:[],additions:[],facilities:[],courses:{},sources:[],version:'fixture'}});
+   if(u.hostname==='fixture.test'&&/^(?:[\w.-]+\/)*[\w.-]+\.(?:mjs|css|json)$/.test(name)&&!name.split('/').includes('..')&&existsSync(join(base,name)))return route.fulfill({contentType:name.endsWith('.css')?'text/css':name.endsWith('.json')?'application/json':'text/javascript',body:readFileSync(join(base,name),'utf8')});return route.abort();
+  });
+  await page.goto('https://fixture.test/');await page.locator('#classFilter').selectOption('1');await page.locator('#date').fill('2026-09-21');await page.locator('#date').dispatchEvent('change');
+  await page.locator('[data-edit="day2"]').click();await page.locator('#entryForm [name="date"]').fill('2026-09-24');
+  await page.locator('#entryImpact').getByText('별도 지정일 유지 · 자동 변경하지 않음',{exact:true}).waitFor();
+  assert.match(await page.locator('#entryImpact').innerText(),/2026-09-24/);assert.match(await page.locator('#entryImpact').innerText(),/2026-09-30 → 2026-09-30/);assert.equal(await page.evaluate(()=>window.writes.length),0);
+  await page.getByRole('button',{name:'편집본 저장',exact:true}).click();await page.getByRole('status').getByText(/편집본을 저장/).waitFor();
+  assert.equal(await page.evaluate(()=>window.docs['timetableBetaDrafts/1'].entries.find(e=>e.id==='day2').date),'2026-09-24');assert.equal(await page.evaluate(()=>window.docs['timetableBetaPublished/1'].entries.find(e=>e.id==='day2').date),'2026-09-22');
+  await page.getByRole('button',{name:'선택 반 담임에게 공개',exact:true}).click();await page.locator('#publishImpact').getByText('별도 지정일 유지 · 자동 변경하지 않음',{exact:true}).waitFor();await page.locator('#publishCancel').click();assert.equal(await page.evaluate(()=>window.writes.length),1,'cancel publication writes nothing');
+  await page.locator('[data-edit="day1"]').dragTo(page.locator('[data-drop-date="2026-09-25"]'),{targetPosition:{x:20,y:15}});await page.locator('#boardImpact').getByRole('heading',{name:'시간표 변경 확인',exact:true}).waitFor();assert.match(await page.locator('#boardImpact').innerText(),/공개하기 전까지 그대로 유지/);assert.match(await page.locator('#boardImpact').innerText(),/2026-09-25/);
+  await page.getByRole('button',{name:/^시간표 저장/}).click();await page.getByRole('status').getByText(/시간표 저장 완료/).waitFor();
+  await page.getByRole('button',{name:'대체휴일 · 일정 순연',exact:true}).click();await page.locator('#holidayDate').fill('2026-09-22');await page.getByRole('button',{name:'이동 미리보기',exact:true}).click();await page.locator('#holidayImpact').getByText('별도 지정일 유지 · 자동 변경하지 않음',{exact:true}).waitFor();assert.match(await page.locator('#holidayImpact').innerText(),/2026-09-28/);
+  const beforeHoliday=await page.evaluate(()=>window.writes.length);await page.getByRole('button',{name:'편집본에 적용',exact:true}).click();assert.equal(await page.evaluate(()=>window.writes.length),beforeHoliday);await page.getByRole('button',{name:'이동 되돌리기',exact:true}).click();
+  await page.getByRole('button',{name:'선택 반 담임에게 공개',exact:true}).click();await page.locator('#publishConfirm').click();await page.getByRole('status').getByText('1/1개 반 공개 완료',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>window.docs['timetableBetaPublished/1'].entries.find(e=>e.id==='day1').date),'2026-09-25');assert.deepEqual(await page.evaluate(()=>window.docs['settings/surveyBetaConfig']),config);assert.equal(await page.evaluate(()=>window.readCounts['settings/surveyBetaConfig']),1,'previews reuse one session config read');
+  await page.locator('[data-edit="day2"]').click();await page.locator('#entryForm [name="date"]').fill('2026-09-23');await page.evaluate(()=>window.docs['timetableBetaDrafts/1'].revision++);await page.getByRole('button',{name:'편집본 저장',exact:true}).click();await page.getByRole('alert').getByText(/다른 관리자/).waitFor();
+  assert.equal(await page.evaluate(()=>window.docs['timetableBetaDrafts/1'].entries.find(e=>e.id==='day2').date),'2026-09-24');assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});

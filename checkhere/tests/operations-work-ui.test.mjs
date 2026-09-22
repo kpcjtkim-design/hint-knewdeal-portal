@@ -1,0 +1,22 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync,existsSync,mkdirSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
+const base=join(import.meta.dirname,'../..');
+test('work dashboard filters locally, edits/copies teacher text, opens scoped detail and stops detached reads',async()=>{
+ const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),context=await browser.newContext({permissions:['clipboard-read','clipboard-write'],viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ try{
+ await page.route('**/*',async route=>{const u=new URL(route.request().url()),name=u.pathname.slice(1);
+  if(u.pathname==='/')return route.fulfill({contentType:'text/html',body:`<div id="host"></div><script type="module">import{mountOperationsWork}from'/operations-work.mjs';window.reads=[];window.globals=0;window.classes=[{id:'1',course:'임베디드 AI(HW)'},{id:'2',course:'제조지능화'}];window.mount=async()=>window.work=await mountOperationsWork(document.querySelector('#host'),{db:{},user:{uid:'admin'},classes:window.classes,mode:'handoff',canApprove:true,onOpen:(tab,ctx)=>window.opened={tab,ctx}});await window.mount();</script>`});
+  if(name==='operations-work-store.mjs')return route.fulfill({contentType:'text/javascript',body:`export function createWorkStore(){return{async config(){window.globals++;return{};},async requests(){return[{id:'p',classId:'1',date:'2026-09-22',status:'pending'}];},async readClass(cid,options){window.reads.push({cid,options});if(window.hold)await new Promise(r=>window.release=r);return{summary:cid==='1'?{asOf:'2026-09-22',dates:['2026-09-22'],syncedAt:'2026-09-22T01:00:00Z',students:[{id:'0_학생',name:'학생',firstDate:'2026-07-27',history:{'2026-09-22':{status:'해당없음'}}}]}:null,timetable:{entries:[{id:'l',date:'2026-09-22',title:'수업'}]},surveys:{},errors:{}};}}}`});
+  if(name==='survey-catalog.json')return route.fulfill({json:{events:[],responseSources:[]}});
+  if(u.hostname==='fixture.test'&&/^[\w.-]+\.(mjs|css)$/.test(name)&&existsSync(join(base,name)))return route.fulfill({contentType:name.endsWith('css')?'text/css':'text/javascript',body:readFileSync(join(base,name),'utf8')});return route.abort();
+ });
+ await page.clock.install({time:new Date('2026-09-22T03:00:00Z')});await page.goto('https://fixture.test/');await page.getByRole('status').filter({hasText:'2개 반 확인'}).waitFor();
+ assert.equal(await page.locator('.class-card').count(),2);assert.equal(await page.evaluate(()=>window.reads.length),2);
+ await page.getByRole('button',{name:'선택 해제',exact:true}).click();await page.locator('[data-class="1"]').check();await page.locator('#period').selectOption('1');assert.equal(await page.evaluate(()=>window.reads.length),2,'filters do not read');
+ await page.locator('.class-card summary').click();assert.match(await page.locator('.source').innerText(),/출결 확인 교육일 2026-09-22/);await page.getByRole('button',{name:'출결대조 열기'}).click();assert.deepEqual(await page.evaluate(()=>window.opened),{tab:'attendanceOverview',ctx:{classId:'1',date:'2026-09-22'}});
+ await page.locator('#period').selectOption('all');await page.getByLabel('담임 전달사항 편집').fill('검토한 전달문');await page.getByRole('button',{name:'전달사항 복사'}).click();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'검토한 전달문');
+ const out=join(base,'checkhere/test-results');mkdirSync(out,{recursive:true});await page.screenshot({path:join(out,'operations-work-desktop.png'),fullPage:true});
+ await page.getByRole('button',{name:'현황 새로 읽기'}).click();await page.waitForFunction(()=>window.reads.length===4);assert.equal(await page.evaluate(()=>window.reads.slice(-2).every(r=>r.options.fresh)),true);
+ await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+ await page.evaluate(()=>{window.work.dispose();document.querySelector('#host').remove();document.body.innerHTML='<div id="host"></div>';window.reads=[];window.hold=true;window.mount();});await page.waitForFunction(()=>window.reads.length===1);await page.evaluate(()=>{window.work.dispose();document.querySelector('#host').remove();window.release();});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.reads.length),1,'leaving cancels the next class');assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});

@@ -6,7 +6,7 @@ import {within} from './attendance-io.mjs';
 import {mountCheckHere} from './checkhere-ui.mjs?v=20260917-approvalsync2';
 import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs?v=20260917-requesttarget1';
 import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
-export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false}){
+export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false,initialView='collect'}){
   if(!user)throw new Error('관리자 로그인이 필요합니다.');
   const canEdit=await canEditCheckHere(user);
   host.innerHTML=(showRequests?'<nav class="admin-tabs" aria-label="체크히어 업무"><button class="tab active" data-ch-view="collect">수집·검수</button><button class="tab" data-ch-view="requests">반영 요청·승인</button></nav>':'')+'<div data-collector-host></div>'+(showRequests?'<div data-requests hidden style="display:none"></div>':'');
@@ -48,6 +48,7 @@ export async function mountCheckHerePortal(host,{db,user,classes,showRequests=fa
     }
   });
   async function openRequests(){if(requests)return requests.refresh();if(requestMount)return requestMount;requestMount=mountCheckHereRequests(host.querySelector('[data-requests]'),{db,user,classes,admin:true,controller:()=>controller,onCount(n){host.querySelector('[data-ch-view=requests]').textContent=`반영 요청·승인${n?' ('+n+')':''}`;},openCollector(){host.querySelector('[data-ch-view=collect]')?.click();host.querySelector('[data-collector-host]').scrollIntoView({block:'start'});}}).then(work=>{if(host.isConnected)requests=work;else work.dispose();}).catch(e=>{const box=host.querySelector('[data-requests]');if(box)box.textContent='요청 현황을 불러오지 못했습니다. '+e.message;}).finally(()=>{requestMount=null;});return requestMount;}
+  if(showRequests&&initialView==='requests')host.querySelector('[data-ch-view=requests]')?.click();
   const dispose=()=>{stop();requests?.dispose();};dispose.canLeave=()=>stop.canLeave?.()??true;return dispose;
 }
 

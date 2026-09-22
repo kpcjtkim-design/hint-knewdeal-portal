@@ -12,10 +12,10 @@ import {syncStateText} from './survey-sync-core.mjs';
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const validLink=url=>{try{const u=new URL(url);return u.protocol==='https:'&&['docs.google.com','forms.gle'].includes(u.hostname)?u.href:'';}catch{return '';}};
-export async function mountSurveys(host,{db,user,classes,teacherClass=null,compact=false,onMore=null}){
+export async function mountSurveys(host,{db,user,classes,teacherClass=null,compact=false,onMore=null,initialClassId=null}){
  const root=host.shadowRoot||host.attachShadow({mode:'open'}),store=createSurveyStore(db,user,{canManage:!teacherClass}),timetables=createTimetableStore(db,user),owner=!teacherClass;
  root.innerHTML='<link rel="stylesheet" href="/survey.css"><link rel="stylesheet" href="/metrics.css"><div id="surveyContent">만족도조사 일정을 불러오는 중…</div><dialog id="surveyDialog"></dialog>';
- const $=s=>root.querySelector(s),content=$('#surveyContent'),syncLifetime=new AbortController();let catalog,config={},selected=String(teacherClass?.id||classes[0]?.id||'1'),entries=[],results={},busy=false,classLoading=false,disposed=false,notice='',error='',filter='due',epoch=0,chartWork=null,rawExportController=null,autoSync=null,quotaNotice='';
+ const $=s=>root.querySelector(s),content=$('#surveyContent'),syncLifetime=new AbortController();let catalog,config={},selected=String(teacherClass?.id||classes.find(c=>String(c.id)===String(initialClassId))?.id||classes[0]?.id||'1'),entries=[],results={},busy=false,classLoading=false,disposed=false,notice='',error='',filter='due',epoch=0,chartWork=null,rawExportController=null,autoSync=null,quotaNotice='';
  let chartEpoch=0,chartPanel=null;
  const active=()=>!disposed&&host.isConnected&&content.isConnected&&$('#surveyContent')===content;
  const reader=createSurveyReader(async()=>{const {GoogleAuthProvider,reauthenticateWithPopup}=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js');const p=new GoogleAuthProvider();p.addScope('https://www.googleapis.com/auth/spreadsheets.readonly');p.setCustomParameters({login_hint:user.email,prompt:'consent'});const r=await reauthenticateWithPopup(user,p),c=GoogleAuthProvider.credentialFromResult(r);if(!c?.accessToken)throw Error('응답 시트 연결을 완료하지 못했습니다.');return c.accessToken;},{onWait({kind,seconds}){quotaNotice=kind==='quota'?`${selected}반 · Google 읽기 한도 대기 중 · 약 ${seconds}초 후 이어서 수집합니다.`:'';render();}});

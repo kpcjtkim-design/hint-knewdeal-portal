@@ -1,0 +1,9 @@
+// Synthetic Firestore implementation shared by retry tests. No production access.
+export const firestore=`
+ export const collection=(db,...p)=>({path:p.join('/')}),doc=collection,where=(field,op,value)=>({field,op,value}),documentId=()=>'__name__',orderBy=(field,dir)=>({order:field,dir}),limit=n=>({limit:n}),query=(ref,...filters)=>({...ref,filters});
+ let clock=1000,tail=Promise.resolve();export const serverTimestamp=()=>({seconds:++clock,nanoseconds:0});
+ export async function getDoc(ref){window.trace.push(['get',ref.path]);const value=window.docs[ref.path];return {data:()=>value?structuredClone(value):undefined,exists:()=>!!value};}export const getDocFromServer=getDoc;
+ export async function getDocs(ref){window.trace.push(['query',ref.filters]);let rows=Object.entries(window.docs).filter(([p])=>p.startsWith(ref.path+'/')&&p.split('/').length===ref.path.split('/').length+1).map(([path,data])=>({id:path.split('/').at(-1),value:data}));for(const f of ref.filters||[]){if(f.field)rows=rows.filter(r=>f.op==='in'?f.value.includes(f.field==='__name__'?r.id:r.value[f.field]):f.op==='=='?(f.field==='__name__'?r.id:r.value[f.field])===f.value:true);if(f.order)rows.sort((a,b)=>(b.value[f.order]?.seconds||0)-(a.value[f.order]?.seconds||0));if(f.limit)rows=rows.slice(0,f.limit);}return {docs:rows.map(r=>({id:r.id,data:()=>structuredClone(r.value)}))};}export const getDocsFromServer=getDocs;
+ export async function setDoc(ref,value){window.trace.push(['set',ref.path]);window.docs[ref.path]=structuredClone(value);}
+ export function runTransaction(db,fn){const task=tail.then(async()=>{const result=await fn({get:getDoc,set:setDoc,update:async(ref,value)=>{window.trace.push(['update',ref.path]);Object.assign(window.docs[ref.path],structuredClone(value));}});if(window.loseCommitResponse){window.loseCommitResponse=false;throw Error('response lost');}return result;});tail=task.catch(()=>{});return task;}
+`;

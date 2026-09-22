@@ -34,7 +34,7 @@ test('timetable imports, edits, conflict-checks, publishes and renders teacher m
  const boardOut=join(base,'checkhere/test-results');mkdirSync(boardOut,{recursive:true});await page.screenshot({path:join(boardOut,'timetable-admin-months.png')});
  await page.getByRole('button',{name:'주간',exact:true}).click();
  assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaPublished/')).length),0);
- await page.getByRole('button',{name:'선택 반 담임에게 공개'}).click();await page.getByRole('status').getByText(/1\/1개 반 공개 완료/).waitFor();assert.equal(await page.evaluate(()=>JSON.stringify(window.docs['timetableBetaPublished/1']).includes('010-0000')),false);
+ await page.getByRole('button',{name:'선택 반 담임에게 공개'}).click();await page.getByRole('button',{name:'공개 확정',exact:true}).click();await page.getByRole('status').getByText(/1\/1개 반 공개 완료/).waitFor();assert.equal(await page.evaluate(()=>JSON.stringify(window.docs['timetableBetaPublished/1']).includes('010-0000')),false);
  const finalLesson=await page.evaluate(()=>{const e=window.docs['timetableBetaDrafts/1'].entries.filter(e=>e.title==='MCU 프로그래밍').sort((a,b)=>a.date.localeCompare(b.date));return e.at(-1);});
  await page.locator('#date').fill(finalLesson.date);await page.locator('#date').dispatchEvent('change');
  await page.locator('.lecture-end.notice').filter({hasText:'MCU 프로그래밍'}).waitFor();
