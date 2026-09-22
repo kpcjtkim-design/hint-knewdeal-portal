@@ -39,7 +39,7 @@ export function summarizeClassWork(meta,bundle,{date,through=date,from='2026-07-
  for(const [key,error]of Object.entries(errors))if(error)notes.push(({summary:'출결',timetable:'시간표',surveys:'설문',config:'설문 설정'}[key]||key)+' 읽기 실패');
  if(requestError)notes.push('체크히어 요청 조회 실패');
  const own=requests.filter(r=>String(r.classId)===classId&&r.date<=through&&r.date>=from),pending=own.filter(r=>ACTIVE_REQUESTS.includes(r.status)),failed=own.filter(r=>FAILED_REQUESTS.includes(r.status));
- return {classId,course:meta.course,target,date,through,from,syncedAt:summary?.syncedAt||'',covered,notes:[...new Set(notes)],attendance,evidence:evidence.rows.map(r=>({...r,kind:'evidence',label:r.status==='반려'?'증빙서류 반려 · 보완 필요':'증빙서류 미제출'})),evidenceUnknown:evidence.unknown,surveyItems,surveyReview,surveyUnchecked,pending,failed,errors,requestError};
+ return {classId,course:meta.course,target,date,through,from,syncedAt:summary?.syncedAt||'',covered,evidenceCovered:!!summary&&!errors.summary,surveyCovered:!!catalog&&!!timetable&&!errors.surveys&&!errors.config,notes:[...new Set(notes)],attendance,evidence:evidence.rows.map(r=>({...r,kind:'evidence',label:r.status==='반려'?'증빙서류 반려 · 보완 필요':'증빙서류 미제출'})),evidenceUnknown:evidence.unknown,surveyItems,surveyReview,surveyUnchecked,pending,failed,errors,requestError};
 }
 export function teacherHandoff(reports){
  const blocks=[];
