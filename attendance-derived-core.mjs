@@ -1,6 +1,8 @@
 import {isoLabel,portalStatus,matchSnapshot,latestSnapshots,koreaToday,evidenceStatus,overviewColorState} from './attendance-beta-core.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
-export const DERIVED_VERSION='20260918-identity2';
+import {hasHospitalRecognition} from './disease-recognition-core.mjs';
+import {surveyBaseName} from './survey-identity.mjs';
+export const DERIVED_VERSION='20260923-disease1';
 export const PARTICIPATED=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
 const recognized=new Set(['인정출석','인정지각','인정조퇴','인정외출']);
 const validStatus=new Set([...PARTICIPATED,'인정출석','결석','중복']);
@@ -36,14 +38,16 @@ export function deriveAttendanceClass(data,{classId,metadata={},records=[],entri
  const recordDays=new Map(dates.map(d=>[d.date,latestSnapshots(records,classId,d.date)]));
  const latest=dates.at(-1),evaluation=dates.findLast(d=>roster.some(s=>validStatus.has(String(s.row[d.col]||'').trim()))),latestEntered=evaluation?.date===latest.date;
  const students=roster.map(s=>{
-  const history={};for(const d of dates){const raw=String(s.row[d.col]||'').trim(),record=matchSnapshot(s,roster,recordDays.get(d.date),identities).record,excursion=entries.some(e=>e.date===d.date&&/공장견학|분해조립|실차체험/.test(e.module+' '+e.title));
+  const history={},diseaseDates=[],diseaseReviewDates=[];for(const d of dates){const raw=String(s.row[d.col]||'').trim(),dayRecords=recordDays.get(d.date),record=matchSnapshot(s,roster,dayRecords,identities).record,excursion=entries.some(e=>e.date===d.date&&/공장견학|분해조립|실차체험/.test(e.module+' '+e.title));
+   if(hasHospitalRecognition(record))diseaseDates.push(d.date);
+   else if(!record&&dayRecords.some(r=>surveyBaseName(r.name)===surveyBaseName(s.name)&&hasHospitalRecognition(r)))diseaseReviewDates.push(d.date);
    const meta=metadata[d.date]?.[s.id],derived=deriveRecognized(raw,meta,record,{excursion}),color=backgrounds[s.rowIndex+1]?.[d.col];
    history[d.date]={raw,...derived,...(recognized.has(raw)||recognized.has(derived.status)?{evidenceStatus:typeof color==='string'&&color.trim()?evidenceStatus(color,raw,meta,overviewColorState):'미확인'}:{})};
   }
   const first=dates.find(d=>validStatus.has(history[d.date].raw))?.date||'';
   let trailing=[];for(let i=dates.findIndex(d=>d.date===evaluation?.date);i>=0;i--){if(history[dates[i].date].raw!=='해당없음')break;trailing.unshift(dates[i].date);}
   const dropout=Boolean(evaluation&&first&&trailing.length>=2&&first<trailing[0]);
-  return {id:s.id,name:s.name,firstDate:first,dropout,dropoutFrom:dropout?trailing[0]:'',dropoutDays:dropout?trailing.length:0,history};
+  return {id:s.id,name:s.name,firstDate:first,dropout,dropoutFrom:dropout?trailing[0]:'',dropoutDays:dropout?trailing.length:0,diseaseDates,diseaseReviewDates,history};
  });
  return {classId:String(classId),version:DERIVED_VERSION,asOf:today,latestDate:latest.date,latestEntered,dates:dates.map(d=>d.date),students};
 }
