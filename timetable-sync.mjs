@@ -2,8 +2,9 @@ import {sortEntries} from './timetable-core.mjs';
 // Excel workbook updates arrive as a new timetable-seed.json. Each draft remembers the seed it came from,
 // so a three-way merge keeps portal-only edits (instructor, times, notes, moves the sheet did not touch).
 export const ORIGINAL_SEED='20260911';
-export const SHEET_FIELDS=['date','course','module','lectureId','title','day','hours','kind','online'];
-const labels={date:'날짜',course:'과정',module:'모듈',lectureId:'강의',title:'강의명',day:'일차',hours:'교육시간',kind:'휴일 구분',online:'수업 방식'};
+// note/order are empty in the workbook; tools/timetable-overrides.json may set them (e.g. "수료식 직후 진행").
+export const SHEET_FIELDS=['date','course','module','lectureId','title','day','hours','kind','online','note','order'];
+const labels={date:'날짜',course:'과정',module:'모듈',lectureId:'강의',title:'강의명',day:'일차',hours:'교육시간',kind:'휴일 구분',online:'수업 방식',note:'전달사항',order:'같은 날 순서'};
 export const seedKey=e=>e.kind==='holiday'?`h|${e.date}|${e.title}`:`c|${e.lectureId||e.title}|${e.day}`;
 export const draftSeedVersion=d=>d?.seedVersion||ORIGINAL_SEED;
 export function mergeSeed({classId,base=null,next=[],draft=[],version}){

@@ -1,8 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-import {weekDays,monthDays,validateEntry,conflicts,publishEntries,visibleToday,lectureEndDays,lectureEndsOn} from '../../timetable-core.mjs';
+import {sortEntries,weekDays,monthDays,validateEntry,conflicts,publishEntries,visibleToday,lectureEndDays,lectureEndsOn} from '../../timetable-core.mjs';
 const seed=JSON.parse(readFileSync(new URL('../../timetable-seed.json',import.meta.url)));
 test('import preserves all 17 classes and multiple same-day events, without inventing times or contacts',()=>{
- assert.equal(Object.keys(seed.classes).length,17);assert.equal(seed.classes['1'].entries.filter(e=>e.date==='2026-09-21').length,2);
+ assert.equal(Object.keys(seed.classes).length,17);assert.deepEqual(sortEntries(seed.classes['1'].entries.filter(e=>e.date==='2026-10-22')).map(e=>e.title),['수료식-행사','HINT 골든벨'],'golden bell is one session right after the ceremony');
+ for(const c of Object.values(seed.classes))assert.deepEqual(c.entries.filter(e=>e.title==='HINT 골든벨').map(e=>[e.date,e.day]),[['2026-10-22',1]]);
  for(const c of Object.values(seed.classes)){assert.equal(new Set(c.entries.map(e=>e.id)).size,c.entries.length);for(const e of c.entries){validateEntry(e);assert.equal(e.instructorId,'');assert.equal(e.start,'');assert.equal(e.end,'');}}
  assert.equal(seed.classes['1'].entries.find(e=>e.date==='2026-10-06').title,'SW 테스팅');
 });
