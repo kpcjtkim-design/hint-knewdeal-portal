@@ -5,7 +5,7 @@ const fields=['date','start','end','title','lectureId','course','module','day','
 const titles={date:'날짜',start:'시작',end:'종료',title:'강의명',lectureId:'강의 연결',course:'과정',module:'모듈',day:'일차',hours:'교육시간',kind:'휴일 구분',instructorId:'강사',instructorName:'강사',venue:'장소',note:'전달사항',online:'수업 방식'};
 const endKey=e=>JSON.stringify([e.classId||'',e.course||'',e.lectureId||[e.module||'',e.title?.trim()||'']]);
 const dateText=e=>e?`${e.date}${e.start?' '+e.start+'–'+e.end:''}`:'없음';
-function differences(before,after){
+export function differences(before,after){
  const old=new Map(before.map(e=>[e.id,e])),next=new Map(after.map(e=>[e.id,e]));
  return [...new Set([...old.keys(),...next.keys()])].flatMap(id=>{const a=old.get(id),b=next.get(id),changed=fields.filter(k=>(a?.[k]??'')!==(b?.[k]??''));return !a||!b||changed.length?[{id,title:(b||a).title,day:(b||a).day,from:dateText(a),to:dateText(b),kind:!a?'추가':!b?'삭제':'변경',fields:[...new Set(changed.map(k=>titles[k]))]}]:[];});
 }

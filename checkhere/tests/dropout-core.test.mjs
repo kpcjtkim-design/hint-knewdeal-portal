@@ -67,3 +67,37 @@ test('student is matched only within the Q-column class unless it is blank',()=>
  assert.equal(locateStudent({name:'가',classId:''},classes).hit.classId,'14');
  const [r]=evaluateAll([entry({classId:'6'})],classes,'2026-09-29');assert.equal(r.verdict,'확인필요');assert.match(r.issues[0],/6반/);
 });
+
+import {documentStatus,parseContractCell,contractCellValue,oxValue,writeDropoutCell,readDropoutRows as readRows} from '../../dropout-core.mjs';
+test('O column keeps the two known documents as separate lines and preserves other lines',()=>{
+ assert.deepEqual(parseContractCell('근로계약서\n고용보험가입확인서'),{contract:true,insurance:true,extra:[]});
+ assert.deepEqual(parseContractCell('(해당없음)'),{contract:false,insurance:false,extra:[]});
+ const c=parseContractCell('재직증명서');c.contract=true;c.insurance=true;assert.equal(contractCellValue(c),'근로계약서\n고용보험가입확인서\n재직증명서');
+ assert.equal(contractCellValue({contract:false,insurance:true,extra:[]}),'고용보험가입확인서');
+ assert.equal(oxValue(' o '),'O');assert.equal(oxValue('X'),'X');assert.equal(oxValue(''),'');
+});
+test('document status: personal needs only 포기사유서; employment needs offer and, after start, contract + insurance',()=>{
+ assert.equal(documentStatus({reason:'개인사정 포기',resignText:'O'},'2026-09-29').state,'완료');
+ assert.deepEqual(documentStatus({reason:'개인사정 포기',resignText:''},'2026-09-29').missing,['포기사유서']);
+ const before=documentStatus({reason:'기업 합격',startText:'10/6 출근',resignText:'O',offerText:'합격이메일',contractText:''},'2026-09-29');
+ assert.equal(before.state,'입사 후 제출');assert.deepEqual(before.later,['근로계약서','고용보험가입확인서']);
+ const after=documentStatus({reason:'기업 합격',startText:'9/1 출근',resignText:'O',offerText:'(해당없음)',contractText:'근로계약서'},'2026-09-29');
+ assert.equal(after.state,'미제출');assert.deepEqual(after.missing,['기업합격자료','고용보험가입확인서']);
+ assert.equal(documentStatus({reason:'기업 합격',startText:'9/1 출근',resignText:'O',offerText:'합격문자',contractText:'근로계약서\n고용보험가입확인서'},'2026-09-29').state,'완료');
+});
+const HEAD=['순번','순번','연락처','반배정','포기사유','근로개시일','포기일(마지막수강일)','결석일수','문의일정','연락방법','수험번호','유선확인','서류1. 포기사유서','서류2. \n채용통보 발표문','서류3. 채용인정서류 (제출완료)'];
+function fakeSheet(row){const calls=[];let cell=row[14];const api=async(url,opt={})=>{calls.push([opt.method||'GET',decodeURIComponent(url),opt.body]);if(url.includes(':batchGet'))return{valueRanges:[{values:[HEAD]},{values:[row]}]};if(opt.method==='PUT'){cell=opt.body.values[0][0];return{};}return{values:[[cell]]};};return {api,calls,cell:()=>cell};}
+test('sheet rows expose M/N/O document cells',()=>{
+ const [r]=readRows([HEAD,['1','가','','반','기업 합격','9/1 출근','8/31까지','','','','','','O','합격이메일','근로계약서']]);
+ assert.equal(r.row,2);assert.equal(r.resignText,'O');assert.equal(r.offerText,'합격이메일');assert.equal(r.contractText,'근로계약서');
+});
+test('writer checks header, name and previous value, writes one RAW cell and verifies it',async()=>{
+ const row=['1','가','','','','','','','','','','','O','','근로계약서'],f=fakeSheet(row);
+ const res=await writeDropoutCell(f.api,{row:5,name:'가',field:'contract',before:'근로계약서',after:'근로계약서\n고용보험가입확인서'});
+ assert.equal(res.range,'O5');assert.equal(f.cell(),'근로계약서\n고용보험가입확인서');
+ const put=f.calls.find(c=>c[0]==='PUT');assert.match(put[1],/'중도포기자\(교육생\)'!O5\?valueInputOption=RAW$/);
+ await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'나',field:'resign',before:'O',after:'X'}),/행 위치/);
+ await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'resign',before:'',after:'X'}),/먼저 이 칸/);
+ await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'offer',before:'',after:'=IMPORTXML()'}),/입력 값/);
+ await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'note',before:'',after:'x'}),/허용되지 않는/);
+});

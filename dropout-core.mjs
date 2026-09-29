@@ -25,9 +25,9 @@ export function classIdOf(text){const m=clean(text).match(/^(\d{1,2})\s*반/);re
 export function readDropoutRows(values){
  const rows=Array.isArray(values)?values:[];const head=(rows[0]||[]).map(clean);
  const find=(re,fallback)=>{const i=head.findIndex(h=>re.test(h));return i>=0?i:fallback;};
- const c={name:1,course:find(/반배정/,3),reason:find(/포기사유/,4),start:find(/근로개시일/,5),last:find(/포기일|마지막/,6),note:find(/수료가능|결석일수/,7),classInfo:find(/반\s*정보/,16)};
+ const c={name:1,course:find(/반배정/,3),reason:find(/^포기사유$/,4),start:find(/근로개시일/,5),last:find(/포기일|마지막/,6),note:find(/수료가능|결석일수/,7),classInfo:find(/반\s*정보/,16),...docColumns(head)};
  if(!/근로개시일/.test(head[c.start]||'')||!/포기일|마지막/.test(head[c.last]||''))throw Error('중도포기자 시트의 근로개시일(F)·포기일(G) 머리글을 확인하지 못했습니다.');
- return rows.slice(1).map((r,i)=>({row:i+2,no:clean(r[0]),name:clean(r[c.name]),course:clean(r[c.course]),reason:clean(r[c.reason]),startText:clean(r[c.start]),lastText:clean(r[c.last]),sheetNote:clean(r[c.note]),classId:classIdOf(r[c.classInfo])})).filter(r=>r.name);
+ return rows.slice(1).map((r,i)=>({row:i+2,no:clean(r[0]),name:clean(r[c.name]),course:clean(r[c.course]),reason:clean(r[c.reason]),startText:clean(r[c.start]),lastText:clean(r[c.last]),sheetNote:clean(r[c.note]),classId:classIdOf(r[c.classInfo]),resignText:clean(r[c.resign]),offerText:clean(r[c.offer]),contractText:clean(r[c.contract])})).filter(r=>r.name);
 }
 // 운영총괄 탭 중 반별 원본 탭("4. 충청_제조지능화(1)")만 고른다. 단위기간·테스트·사본 탭 제외.
 export function classTabs(titles){
@@ -101,3 +101,50 @@ export function evaluateAll(entries,classes,today){
  return entries.map(e=>{const {hit,issue}=locateStudent(e,classes);const r=evaluateDropout({...e,classId:hit?.classId||e.classId,locateIssue:issue},hit||null,today);if(issue&&!r.issues.includes(issue))r.issues.unshift(issue);return r;});
 }
 export const verdictLabel=r=>r.verdict==='확인필요'?'확인필요':(r.scheduled?'예정 · ':'')+r.verdict;
+
+// ---- 서류 제출 (M: 포기사유서, N: 기업합격자료, O: 채용인정서류) ----
+export const DOC_FIELDS={resign:/포기사유서/,offer:/채용통보|합격/,contract:/채용인정/};
+export const CONTRACT_ITEMS=[{key:'contract',label:'근로계약서',match:/근로계약서/},{key:'insurance',label:'고용보험가입확인서',match:/고용보험/}];
+const NA=/^\(?\s*해당\s*없음\s*\)?$/;
+export function docColumns(head){const out={};for(const [k,re] of Object.entries(DOC_FIELDS)){const i=head.findIndex(h=>re.test(clean(h).replace(/\s+/g,' ')));out[k]=i>=0?i:{resign:12,offer:13,contract:14}[k];}return out;}
+export function oxValue(text){const s=clean(text).toUpperCase();if(/^[O○◯●]$/.test(s))return 'O';if(/^[X×✕]$/.test(s))return 'X';return '';}
+// O열: 알려진 두 서류 여부 + 그 외 기존 줄(보존).
+export function parseContractCell(text){
+ const lines=clean(text).split(/\r?\n/).map(clean).filter(Boolean),out={extra:[]};for(const i of CONTRACT_ITEMS)out[i.key]=false;
+ for(const line of lines){const item=CONTRACT_ITEMS.find(i=>i.match.test(line));if(item)out[item.key]=true;else if(!NA.test(line))out.extra.push(line);}
+ return out;
+}
+export function contractCellValue(state){return [...CONTRACT_ITEMS.filter(i=>state[i.key]).map(i=>i.label),...(state.extra||[])].join('\n');}
+export const isPersonal=entry=>/개인/.test(entry.reason||'');
+export function documentStatus(entry,today){
+ const personal=isPersonal(entry),contract=parseContractCell(entry.contractText),missing=[],later=[];
+ if(oxValue(entry.resignText)!=='O')missing.push('포기사유서');
+ if(!personal){
+  const offer=clean(entry.offerText);if(!offer||NA.test(offer))missing.push('기업합격자료');
+  const start=parseSheetDate(entry.startText),started=!!start&&start<=today;
+  for(const i of CONTRACT_ITEMS)if(!contract[i.key])(started?missing:later).push(i.label);
+ }
+ const state=missing.length?'미제출':later.length?'입사 후 제출':'완료';
+ return {kind:personal?'개인사정':'조기취업',state,missing,later,contract};
+}
+// 한 셀만 쓴다. 쓰기 직전 머리글·학생 이름·기존 값을 다시 확인하고, 쓴 뒤 다시 읽어 검증한다.
+// api(url,{method,body}) → JSON. RAW 입력이라 수식으로 해석되지 않는다.
+const SHEETS='https://sheets.googleapis.com/v4/spreadsheets/';
+const norm=v=>clean(v).replace(/\r\n/g,'\n');
+export async function writeDropoutCell(api,{row,name,field,before,after}){
+ if(!DOC_FIELDS[field])throw Error('허용되지 않는 열입니다.');
+ if(!Number.isInteger(row)||row<2||row>300)throw Error('시트 행 번호를 확인해 주세요.');
+ if(typeof after!=='string'||after.length>500||/^[=+\-@]/.test(after.trim()))throw Error('입력 값을 확인해 주세요.');
+ const tab="'"+DROPOUT_TAB.replace(/'/g,"''")+"'",base=SHEETS+DROPOUT_SHEET_ID,q=encodeURIComponent;
+ const fresh=await api(`${base}/values:batchGet?ranges=${q(tab+'!A1:T1')}&ranges=${q(`${tab}!A${row}:T${row}`)}&valueRenderOption=FORMATTED_VALUE`);
+ const head=(fresh.valueRanges?.[0]?.values?.[0]||[]).map(clean),cur=fresh.valueRanges?.[1]?.values?.[0]||[],col=docColumns(head)[field];
+ if(!DOC_FIELDS[field].test((head[col]||'').replace(/\s+/g,' ')))throw Error('시트 서류 열 머리글이 바뀌었습니다. 동기화 후 다시 시도해 주세요.');
+ if(clean(cur[1])!==name)throw Error('시트의 학생 행 위치가 바뀌었습니다. 동기화 후 다시 시도해 주세요.');
+ if(norm(cur[col])!==norm(before))throw Error('다른 사람이 먼저 이 칸을 수정했습니다. 동기화 후 다시 확인해 주세요.');
+ const letter=String.fromCharCode(65+col),range=`${tab}!${letter}${row}`;
+ let transport;try{await api(`${base}/values/${q(range)}?valueInputOption=RAW`,{method:'PUT',body:{range,majorDimension:'ROWS',values:[[after]]}});}catch(e){transport=e;}
+ let saved;try{saved=await api(`${base}/values/${q(range)}?valueRenderOption=FORMATTED_VALUE`);}catch{throw Error('저장 결과를 확인하지 못했습니다. 동기화해서 시트 값을 확인해 주세요.');}
+ const actual=norm(saved.values?.[0]?.[0]);
+ if(actual!==norm(after))throw Error(transport?`저장 실패: ${transport.message}`:'저장 후 값이 요청과 다릅니다. 시트를 확인해 주세요.');
+ return {range:`${letter}${row}`,value:actual};
+}
