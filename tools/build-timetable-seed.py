@@ -15,6 +15,7 @@ import openpyxl
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEED = ROOT / 'timetable-seed.json'
+OVERRIDES = ROOT / 'tools' / 'timetable-overrides.json'
 HOLIDAY = re.compile(r'연휴|휴무|휴일|한글날|개천절|성탄|신정|현충일|광복절|선거')
 
 
@@ -108,6 +109,22 @@ def main():
         sys.exit('강의 목록에 없는 과목이 있습니다. 강의 목록 또는 이 스크립트의 규칙을 먼저 정해 주세요:\n'
                  + '\n'.join(f'  {c} · {t!r}' for c, t in sorted(unknown)))
 
+    # Operating decisions the workbook may not reflect yet; applying them again is harmless.
+    for rule in json.loads(OVERRIDES.read_text()) if OVERRIDES.exists() else []:
+        if rule['type'] != 'single-session':
+            sys.exit(f"알 수 없는 조정 규칙입니다: {rule['type']}")
+        for cid, c in classes.items():
+            matches = [e for e in c['entries'] if e['kind'] != 'holiday' and compact(e['title']) == compact(rule['title'])]
+            if not matches:
+                continue
+            first = matches[0]
+            anchor = next((e for e in c['entries'] if e['date'] == rule['date'] and e['title'] == rule.get('after')), None)
+            c['entries'] = [e for e in c['entries'] if e not in matches]
+            c['entries'].append({**first, 'id': f"xlsx-{cid}-{anchor['sourceRow'] if anchor else first['sourceRow']}-{compact(rule['title'])}",
+                                 'date': rule['date'], 'day': 1, 'online': False, 'note': rule.get('note', ''),
+                                 'order': 999 if anchor else 0, 'sourceRow': anchor['sourceRow'] if anchor else first['sourceRow']})
+            c['entries'].sort(key=lambda e: (e['date'], e.get('order', 0), e['sourceRow']))
+
     # Keep catalog day totals in step with the workbook (maximum across classes).
     totals = collections.defaultdict(int)
     for cid, c in classes.items():
@@ -126,10 +143,10 @@ def main():
     # Per-class summary keyed like timetable-sync.mjs (lecture + day, holidays by date).
     def key(e):
         return f"h|{e['date']}|{e['title']}" if e['kind'] == 'holiday' else f"c|{e['lectureId']}|{e['day']}"
-    fields = ('date', 'module', 'lectureId', 'title', 'day', 'hours', 'kind', 'online')
+    fields = ('date', 'module', 'lectureId', 'title', 'day', 'hours', 'kind', 'online', 'note')
     total = 0
     for cid in old['classes']:
-        before = {key(e): e for e in old['classes'][cid]['entries']}
+        before = {key(e): {'note': '', **e} for e in old['classes'][cid]['entries']}
         after = {key(e): e for e in seed['classes'][cid]['entries']}
         lines = [f"  + {after[k]['date']} {after[k]['title']}" for k in after.keys() - before.keys()]
         lines += [f"  - {before[k]['date']} {before[k]['title']}" for k in before.keys() - after.keys()]
