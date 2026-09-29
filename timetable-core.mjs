@@ -17,7 +17,7 @@ export function conflicts(entry,classes,classId){
  if(!entry.instructorId||entry.kind==='holiday')return [];
  return Object.entries(classes).flatMap(([cid,data])=>(data.entries||[]).filter(e=>e.id!==entry.id||cid!==classId).filter(e=>e.kind!=='holiday'&&e.date===entry.date&&e.instructorId===entry.instructorId&&(!e.start||!entry.start||(e.start<entry.end&&entry.start<e.end))).map(e=>({classId:cid,date:e.date,title:e.title,start:e.start,end:e.end})));
 }
-export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,...out}=e;return {...out,instructorName:instructors[e.instructorId]?.name||''};});}
+export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,seedKey,...out}=e;return {...out,instructorName:instructors[e.instructorId]?.name||''};});}
 export function visibleToday(entries,today=todayKST()){const sorted=sortEntries(entries);return{today:sorted.filter(e=>e.date===today),next:sorted.find(e=>e.date>today&&e.kind!=='holiday')||null};}
 // Per-class, per-lecture final scheduled date, not the end of a broad module.
 const lectureKey=e=>JSON.stringify([e.classId||'',e.course||'',e.lectureId||[e.module||'',e.title?.trim()||'']]);

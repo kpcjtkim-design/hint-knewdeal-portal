@@ -17,12 +17,12 @@ test('timetable imports, edits, conflict-checks, publishes and renders teacher m
  const firstId=await first.getAttribute('data-edit'),secondId=await second.getAttribute('data-edit');
  const beforeDrag=await page.evaluate(()=>structuredClone(window.docs['timetableBetaDrafts/1']));
  const a=beforeDrag.entries.find(e=>e.id===firstId),b=beforeDrag.entries.find(e=>e.id===secondId);
- await first.dragTo(second);await page.getByRole('status').getByText(/수업을 끼워 넣고/).waitFor();
+ await first.dragTo(second);await page.getByRole('heading',{name:/수업을 어떻게 옮길까요/}).waitFor();await page.getByRole('button',{name:/^끼워넣기/}).click();await page.getByRole('status').getByText(/수업을 끼워 넣고/).waitFor();
  assert.deepEqual(await page.evaluate(()=>window.docs['timetableBetaDrafts/1']),beforeDrag,'drag does not save');
  assert(await page.getByRole('button',{name:'선택 반 담임에게 공개'}).isDisabled());
  assert.equal(await page.locator(`[data-edit="${firstId}"]`).getAttribute('aria-label'),`1반 ${b.date} ${a.title} 수정`);
  await page.getByRole('button',{name:'이동 되돌리기'}).click();assert.equal(await page.locator(`[data-edit="${firstId}"]`).getAttribute('aria-label'),`1반 ${a.date} ${a.title} 수정`);
- await page.locator(`[data-edit="${firstId}"]`).dragTo(page.locator('[data-drop-date="2026-09-12"]'),{targetPosition:{x:20,y:15}});
+ assert.equal(await page.locator('[data-drop-date="2026-09-12"]').count(),0,'weekends hidden by default');await page.getByLabel('주말 표시').check();await page.locator(`[data-edit="${firstId}"]`).dragTo(page.locator('[data-drop-date="2026-09-12"]'),{targetPosition:{x:20,y:15}});
  await page.getByRole('button',{name:/^시간표 저장/}).click();await page.getByRole('status').getByText(/시간표 저장 완료/).waitFor();
  const saved=await page.evaluate(()=>window.docs['timetableBetaDrafts/1']);assert.equal(saved.entries.length,beforeDrag.entries.length);assert.deepEqual(saved.entries.find(e=>e.id===firstId),{...a,date:'2026-09-12'});
  await page.getByRole('button',{name:'월간',exact:true}).click();assert.equal(await page.locator('.month-grid .day-cell').count(),42);

@@ -1,4 +1,5 @@
 import {weekDays,monthDays,sortEntries,validateEntry,todayKST,lectureEndDays} from './timetable-core.mjs';
+import {hideWeekend} from './timetable-tools.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const weekday=d=>new Intl.DateTimeFormat('ko-KR',{timeZone:'UTC',weekday:'short'}).format(new Date(d+'T12:00:00Z'));
 export function moveLesson(entries,id,date,swapId=null){
@@ -20,30 +21,38 @@ export function moveLesson(entries,id,date,swapId=null){
  }
  return sortEntries(entries.map(e=>changed.get(e.id)||e));
 }
-export function createTimetableBoard({root,classes,data,lesson,instructors,status,onMove,onError}){
- let current={view:'week',date:todayKST(),shown:classes},drag=null,ignoreClickUntil=0;
+export function createTimetableBoard({root,classes,data,lesson,instructors,status,onMove,onError,warning=()=>'',progress=()=>'',weekend=()=>false,preview=()=>new Set()}){
+ let current={view:'week',date:todayKST(),shown:classes},drag=null,ignoreClickUntil=0,previewKey='';
+ const heads=days=>days.map(d=>`<div class="grid-head">${weekday(d)}</div>`).join('');
+ const columns=(n,min)=>`grid-template-columns:repeat(${n},minmax(${min}px,1fr));min-width:${n*min}px`;
  function cells(cid,days,{month='',hideOutside=false}={}){
   const rows=data(cid).entries||[],ends=new Set(lectureEndDays(rows).map(e=>e.id)),byDate=new Map();
   for(const e of sortEntries(rows)){if(!byDate.has(e.date))byDate.set(e.date,[]);byDate.get(e.date).push(e);}
   return days.map(d=>{const outside=month&&d.slice(0,7)!==month,hidden=outside&&hideOutside;
-   return `<div class="day-cell ${d===todayKST()?'today':''} ${outside?'outside':''}" ${hidden?'':`data-drop-date="${d}" data-drop-cid="${cid}" aria-label="${cid}반 ${d} 일정 이동 위치"`}><div class="day-num">${d.slice(5).replace('-','/')}</div>${hidden?'':(byDate.get(d)||[]).map(e=>lesson(e,instructors(),true,cid,ends.has(e.id))).join('')+`<button class="add" data-add="${d}" data-cid="${cid}">+ 추가</button>`}</div>`;
+   return `<div class="day-cell ${d===todayKST()?'today':''} ${outside?'outside':''}" ${hidden?'':`data-drop-date="${d}" data-drop-cid="${cid}" aria-label="${cid}반 ${d} 일정 이동 위치"`}><div class="day-num">${d.slice(5).replace('-','/')}</div>${hidden?'':(byDate.get(d)||[]).map(e=>lesson(e,instructors(),true,cid,ends.has(e.id),{warn:warning(cid,e.id)})).join('')+`<button class="add" data-add="${d}" data-cid="${cid}" aria-label="${cid}반 ${d} 일정 추가">+ 추가</button>`}</div>`;
   }).join('');
  }
  function calendar(cid){
-  const months=current.view==='month'?[current.date.slice(0,7)]:[...new Set((data(cid).entries||[]).map(e=>e.date.slice(0,7)))].sort();
-  return (months.length?months:[current.date.slice(0,7)]).map(month=>`<section class="calendar-month"><h4>${month.replace('-','년 ')}월</h4><div class="schedule-scroll calendar-scroll"><div class="month-grid">${['월','화','수','목','금','토','일'].map(d=>`<div class="grid-head">${d}</div>`).join('')}${cells(cid,monthDays(month+'-01'),{month,hideOutside:current.view==='all'})}</div></div></section>`).join('');
+  const entries=data(cid).entries||[],months=current.view==='month'?[current.date.slice(0,7)]:[...new Set(entries.map(e=>e.date.slice(0,7)))].sort();
+  return (months.length?months:[current.date.slice(0,7)]).map(month=>{const days=hideWeekend(monthDays(month+'-01'),entries,weekend());return `<section class="calendar-month"><h4>${month.replace('-','년 ')}월</h4><div class="schedule-scroll calendar-scroll"><div class="month-grid" style="${columns(days.length/6,125)}">${heads(days.slice(0,days.length/6))}${cells(cid,days,{month,hideOutside:current.view==='all'})}</div></div></section>`;}).join('');
  }
  function html(options){
   current={...current,...options};const {shown,view,date}=current;
-  if(view==='week'){const days=weekDays(date);return `<div class="schedule-scroll"><div class="admin-grid"><div class="grid-head">반 / 교육일</div>${days.map(d=>`<div class="grid-head">${d.slice(5).replace('-','/')} (${weekday(d)})${d===todayKST()?' · 오늘':''}</div>`).join('')}${shown.map(c=>`<div class="class-label"><b>${c.id}반</b><div class="muted">${esc(c.course)}<br>${esc(c.venue||'')}</div><div class="board-status">${status(c.id)}</div></div>${cells(c.id,days)}`).join('')}</div></div>`;}
-  return shown.map((c,i)=>`<details class="calendar-class" data-calendar-class="${c.id}" ${shown.length===1||i===0?'open':''}><summary><b>${c.id}반 · ${esc(c.course)}</b><span>${status(c.id)} · 전체 ${(data(c.id).entries||[]).length}개 일정</span></summary><div data-calendar-content="${c.id}">${shown.length===1||i===0?calendar(c.id):''}</div></details>`).join('');
+  if(view==='week'){const days=hideWeekend(weekDays(date),shown.flatMap(c=>data(c.id).entries||[]),weekend());return `<div class="schedule-scroll"><div class="admin-grid" style="grid-template-columns:125px repeat(${days.length},minmax(160px,1fr));min-width:${125+days.length*160}px"><div class="grid-head">반 / 교육일</div>${days.map(d=>`<div class="grid-head">${d.slice(5).replace('-','/')} (${weekday(d)})${d===todayKST()?' · 오늘':''}</div>`).join('')}${shown.map(c=>`<div class="class-label"><b>${c.id}반</b><div class="muted">${esc(c.course)}<br>${esc(c.venue||'')}</div><div class="board-progress">${esc(progress(c.id))}</div><div class="board-status">${status(c.id)}</div></div>${cells(c.id,days)}`).join('')}</div></div>`;}
+  return shown.map((c,i)=>`<details class="calendar-class" data-calendar-class="${c.id}" ${shown.length===1||i===0?'open':''}><summary><b>${c.id}반 · ${esc(c.course)}</b><span>${status(c.id)} · ${esc(progress(c.id))} · 전체 ${(data(c.id).entries||[]).length}개 일정</span></summary><div data-calendar-content="${c.id}">${shown.length===1||i===0?calendar(c.id):''}</div></details>`).join('');
  }
+ const clearPreview=()=>{previewKey='';root.querySelectorAll('.will-shift,.drop-invalid').forEach(x=>x.classList.remove('will-shift','drop-invalid'));};
  const start=e=>{const card=e.target.closest?.('[data-edit]');if(!card)return;const item=data(card.dataset.cid).entries.find(x=>x.id===card.dataset.edit);if(item?.kind==='holiday'){e.preventDefault();return;}drag={cid:card.dataset.cid,id:card.dataset.edit};e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('application/x-hint-lesson',JSON.stringify(drag));card.classList.add('dragging');};
- const over=e=>{const cell=e.target.closest?.('[data-drop-date]');if(!cell||!drag||cell.dataset.dropCid!==drag.cid)return;e.preventDefault();e.dataTransfer.dropEffect='move';root.querySelectorAll('.drop-target').forEach(x=>x.classList.remove('drop-target'));cell.classList.add('drop-target');};
- const end=()=>{drag=null;ignoreClickUntil=performance.now()+200;root.querySelectorAll('.drop-target,.dragging').forEach(x=>x.classList.remove('drop-target','dragging'));};
- const drop=e=>{const cell=e.target.closest?.('[data-drop-date]');if(!cell||!drag)return;e.preventDefault();const source=drag,card=e.target.closest?.('[data-edit]');end();if(cell.dataset.dropCid!==source.cid){onError('같은 반 안에서 날짜를 옮겨 주세요. 다른 반에 넣으려면 수업 수정의 복사를 사용해 주세요.');return;}try{onMove(source.cid,source.id,cell.dataset.dropDate,card&&card.dataset.edit!==source.id?card.dataset.edit:null);}catch(error){onError(error.message);}};
+ const over=e=>{const cell=e.target.closest?.('[data-drop-date]');if(!cell||!drag||cell.dataset.dropCid!==drag.cid)return;e.preventDefault();e.dataTransfer.dropEffect='move';root.querySelectorAll('.drop-target').forEach(x=>x.classList.remove('drop-target'));cell.classList.add('drop-target');
+  // Show which lessons an insertion would push along before the drop.
+  const card=e.target.closest?.('[data-edit]'),target=card&&card.dataset.edit!==drag.id?card.dataset.edit:'',key=cell.dataset.dropDate+'|'+target;if(key===previewKey)return;clearPreview();previewKey=key;
+  try{const ids=preview(drag.cid,drag.id,cell.dataset.dropDate,target||null);root.querySelectorAll(`[data-edit][data-cid="${drag.cid}"]`).forEach(x=>{if(ids.has(x.dataset.edit)&&x.dataset.edit!==drag.id)x.classList.add('will-shift');});}catch{cell.classList.add('drop-invalid');}
+ };
+ const end=()=>{drag=null;ignoreClickUntil=performance.now()+200;clearPreview();root.querySelectorAll('.drop-target,.dragging').forEach(x=>x.classList.remove('drop-target','dragging'));};
+ const drop=e=>{const cell=e.target.closest?.('[data-drop-date]');if(!cell||!drag)return;e.preventDefault();const source=drag,card=e.target.closest?.('[data-edit]');end();if(cell.dataset.dropCid!==source.cid){onError('같은 반 안에서 날짜를 옮겨 주세요. 다른 반에 넣으려면 일괄 작업의 기간 복사를 사용해 주세요.');return;}try{onMove(source.cid,source.id,cell.dataset.dropDate,card&&card.dataset.edit!==source.id?card.dataset.edit:null);}catch(error){onError(error.message);}};
  const click=e=>{if(e.target.closest?.('[data-edit]')&&performance.now()<ignoreClickUntil){e.preventDefault();e.stopImmediatePropagation();}};
  const toggle=e=>{const el=e.target;if(!el.matches?.('[data-calendar-class]')||!el.open)return;const mount=el.querySelector('[data-calendar-content]');if(!mount.childElementCount)mount.innerHTML=calendar(el.dataset.calendarClass);};
- for(const [event,fn,capture]of [['dragstart',start],['dragover',over],['dragend',end],['drop',drop],['click',click,true],['toggle',toggle,true]])root.addEventListener(event,fn,!!capture);
- return {html,dispose(){for(const [event,fn,capture]of [['dragstart',start],['dragover',over],['dragend',end],['drop',drop],['click',click,true],['toggle',toggle,true]])root.removeEventListener(event,fn,!!capture);}};
+ const events=[['dragstart',start],['dragover',over],['dragend',end],['drop',drop],['click',click,true],['toggle',toggle,true]];
+ for(const [event,fn,capture]of events)root.addEventListener(event,fn,!!capture);
+ return {html,dispose(){for(const [event,fn,capture]of events)root.removeEventListener(event,fn,!!capture);}};
 }
