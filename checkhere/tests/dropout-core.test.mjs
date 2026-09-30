@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {parseSheetDate,readDropoutRows,classTabs,classAttendance,evaluateDropout,evaluateAll,locateStudent,verdictLabel} from '../../dropout-core.mjs';
+import {parseSheetDate,readDropoutRows,classTabs,classAttendance,evaluateDropout,evaluateAll,locateStudent,verdictLabel,verdictText,verdictPlan,writeVerdictCells,sheetVerdict} from '../../dropout-core.mjs';
 // 운영총괄 M18:ZZ48 형태: 첫 행 [이름,출석률,출석일수,지조외,날짜...]
 function sheet(dates,students){return [['','출석률','출석일수','지/조/외/중복',...dates],...students.map(([name,values])=>[name,'','','',...values])];}
 const DAYS=['7/27','7/28','7/29','7/30','7/31','8/3','8/4','8/5','8/6','8/7','8/10','8/11','8/12','8/13','8/14','8/18','8/19','8/20','8/21','8/24','8/25','8/26','8/27','8/28','8/31','9/1','9/2','9/3','9/4','9/7','9/8','9/9','9/10','9/11','9/14','9/15','9/16','9/17','9/18','9/21','9/22','9/23','9/28','9/29','9/30','10/1','10/2','10/6','10/7','10/8','10/12','10/13','10/14','10/15','10/16','10/19','10/20','10/21','10/22'];
@@ -100,4 +100,36 @@ test('writer checks header, name and previous value, writes one RAW cell and ver
  await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'resign',before:'',after:'X'}),/먼저 이 칸/);
  await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'offer',before:'',after:'=IMPORTXML()'}),/입력 값/);
  await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'note',before:'',after:'x'}),/허용되지 않는/);
+});
+
+test('H column text follows the staff format: per unit period, the period before the start date is 근로전',()=>{
+ // 시트 8행(이준서)과 같은 경우: 8/17까지 출석, 8/18-21 결석, 8/24-27 인정출석, 8/28·8/31 결석, 9/1 출근.
+ const att=classAttendance(sheet(DAYS,[['가',row(upTo('8/17'),{'8/24':'인정출석','8/25':'인정출석','8/26':'인정출석','8/27':'인정출석'})]]));
+ const r=evaluateAll([entry({lastText:'8/17까지 출석'})],{'1':att},'2026-09-30')[0];
+ assert.equal(verdictText(r),'결석4회(1차), 결석2회(근로전) = 수료가능');
+ const later=evaluateAll([entry({startText:'10/12 출근',lastText:'10/8까지 출석예정'})],{'1':classAttendance(sheet(DAYS,[['가',row(upTo('9/30'))]]))},'2026-09-30')[0];
+ assert.equal(verdictText(later),'결석0회(1차), 결석0회(2차), 결석0회(근로전) = 수료가능(예정)');
+ assert.equal(verdictText(evaluateAll([entry({reason:'개인사정 포기',startText:'-'})],{},'2026-09-30')[0]),'제적');
+ assert.equal(verdictText({verdict:'확인필요',periods:[]}),'','unresolved rows are not written');
+ assert.equal(sheetVerdict('결석 2회(1차)\n결석 7회(근로전)\n=수료가능'),'수료가능');assert.equal(sheetVerdict('제적(결석00일)'),'제적');
+});
+test('H column plan fills blank or portal-written cells only and flags staff entries that disagree',()=>{
+ const base={verdict:'수료가능',scheduled:false,requiredUntil:'2026-08-31',periods:[{id:'1',from:'2026-07-27',to:'2026-08-26',days:22,total:1},{id:'2',from:'2026-08-27',to:'2026-09-26',days:20,total:0}]};
+ const rows=[{...base,row:2,name:'빈칸',sheetNote:''},{...base,row:3,name:'자동',sheetNote:'결석0회(1차) = 수료가능 · 포털자동(9/29)'},{...base,row:4,name:'같음',sheetNote:'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/29)'},{...base,row:5,name:'담당자',sheetNote:'제적'},{...base,row:6,name:'담당자일치',sheetNote:'수료(결석00일)'},{...base,row:7,name:'확인',verdict:'확인필요',sheetNote:''},{...base,row:8,name:'대시',sheetNote:'-'}];
+ const {writes,manual}=verdictPlan(rows,'2026-09-30');
+ assert.deepEqual(writes.map(w=>[w.row,w.after]),[[2,'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)'],[3,'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)'],[8,'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)']]);
+ assert.deepEqual(manual.map(m=>[m.row,m.sheet]),[[5,'제적']],'staff-written cells are never overwritten; only disagreement is reported');
+});
+test('H writer rechecks header, names and previous values, writes in one RAW batch and verifies',async()=>{
+ const head=['순번','순번','연락처','반배정','포기사유','근로개시일','포기일(마지막수강일)','결석일수\n(수료가능여부)\n※확인중'];
+ const cells={'H2':'','H3':'직접 입력'},calls=[];
+ const api=async(url,opt={})=>{calls.push([opt.method||'GET',decodeURIComponent(url)]);
+  if(opt.method==='POST'){for(const d of opt.body.data)cells[d.range.split('!')[1]]=d.values[0][0];assert.equal(opt.body.valueInputOption,'RAW');return {};}
+  if(url.includes('batchGet'))return {valueRanges:decodeURIComponent(url).split('ranges=').slice(1).map(r=>({values:[[cells[r.split('!')[1].replace(/&.*/,'')]]]}))};
+  return {values:[head,['1','가','','','','','',cells.H2],['2','나','','','','','',cells.H3]]};};
+ const res=await writeVerdictCells(api,[{row:2,name:'가',before:'',after:'제적 · 포털자동(9/30)'},{row:3,name:'나',before:'',after:'제적 · 포털자동(9/30)'},{row:2,name:'다',before:'',after:'x'}].slice(0,2));
+ assert.deepEqual(res.saved.map(s=>s.cell),['H2']);assert.deepEqual(res.skipped.map(s=>[s.row,s.reason]),[[3,'다른 사람이 먼저 수정함']]);
+ assert.equal(cells.H2,'제적 · 포털자동(9/30)');assert.equal(cells.H3,'직접 입력');assert.equal(calls.filter(c=>c[0]==='POST').length,1);
+ await assert.rejects(writeVerdictCells(api,[{row:2,name:'가',before:'',after:'=HYPERLINK("x")'}]));
+ const moved=await writeVerdictCells(api,[{row:2,name:'다른학생',before:cells.H2,after:'제적'}]);assert.equal(moved.skipped[0].reason,'학생 행 위치가 바뀜');
 });

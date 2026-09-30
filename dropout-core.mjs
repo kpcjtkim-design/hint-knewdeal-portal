@@ -148,3 +148,44 @@ export async function writeDropoutCell(api,{row,name,field,before,after}){
  if(actual!==norm(after))throw Error(transport?`저장 실패: ${transport.message}`:'저장 후 값이 요청과 다릅니다. 시트를 확인해 주세요.');
  return {range:`${letter}${row}`,value:actual};
 }
+
+// ---- 수료판정 (H: 결석일수(수료가능여부)) ----
+// 담당자 표기 방식을 따른다: "결석2회(1차), 결석1회(근로전) = 수료가능". 근로개시 직전 수업일이 속한
+// 단위기간은 "근로전", 그 앞 단위기간은 "N차". 포털이 쓴 칸은 끝에 "· 포털자동(M/D)"를 붙여,
+// 비어 있거나 이 표시가 있는 칸만 다시 쓴다. 담당자가 직접 적은 칸은 건드리지 않는다.
+export const AUTO_MARK=/\s*·\s*포털자동\(\d{1,2}\/\d{1,2}\)\s*$/;
+const VERDICT_HEAD=/결석일수|수료가능/;
+export function verdictText(r){
+ if(r.verdict==='확인필요')return '';
+ const tail=r.verdict+(r.scheduled?'(예정)':'');
+ if(!r.periods?.length||!r.requiredUntil)return tail;
+ const parts=r.periods.filter(p=>p.days&&p.from<=r.requiredUntil).map(p=>`결석${p.total}회(${p.to>=r.requiredUntil?'근로전':p.id+'차'})`);
+ return parts.length?`${parts.join(', ')} = ${tail}`:tail;
+}
+export const sheetVerdict=text=>{const s=clean(text).replace(AUTO_MARK,'');return /제적/.test(s)?'제적':/수료/.test(s)?'수료가능':'';};
+export function verdictPlan(results,today){
+ const mark=` · 포털자동(${+today.slice(5,7)}/${+today.slice(8)})`,writes=[],manual=[];
+ for(const r of results){
+  const text=verdictText(r),current=clean(r.sheetNote),auto=!current||current==='-'||AUTO_MARK.test(current);
+  if(!auto){const sheet=sheetVerdict(current);if(text&&sheet&&sheet!==r.verdict)manual.push({row:r.row,name:r.name,sheet:current,portal:text});continue;}
+  if(!text||current.replace(AUTO_MARK,'')===text)continue;
+  writes.push({row:r.row,name:r.name,before:r.sheetNote,after:text+mark});
+ }
+ return {writes,manual};
+}
+// 여러 H칸을 한 번에 쓴다. 쓰기 직전 머리글·학생 이름·기존 값을 다시 확인하고, 바뀐 행은 건너뛴다.
+export async function writeVerdictCells(api,items){
+ if(!items.length)return {saved:[],skipped:[]};
+ for(const i of items){if(!Number.isInteger(i.row)||i.row<2||i.row>300)throw Error('시트 행 번호를 확인해 주세요.');if(typeof i.after!=='string'||i.after.length>300||/^[=+\-@]/.test(i.after))throw Error('판정 값을 확인해 주세요.');}
+ const tab="'"+DROPOUT_TAB.replace(/'/g,"''")+"'",base=SHEETS+DROPOUT_SHEET_ID,q=encodeURIComponent;
+ const fresh=await api(`${base}/values/${q(tab+'!A1:T300')}?valueRenderOption=FORMATTED_VALUE`),rows=fresh.values||[],head=(rows[0]||[]).map(clean);
+ const col=head.findIndex(h=>VERDICT_HEAD.test(h));
+ if(col<0)throw Error('중도포기자 시트의 결석일수(수료가능여부) 열 머리글을 찾지 못했습니다.');
+ const letter=String.fromCharCode(65+col),saved=[],skipped=[],ready=[];
+ for(const i of items){const cur=rows[i.row-1]||[];if(clean(cur[1])!==i.name)skipped.push({...i,reason:'학생 행 위치가 바뀜'});else if(norm(cur[col])!==norm(i.before))skipped.push({...i,reason:'다른 사람이 먼저 수정함'});else ready.push({...i,range:`${tab}!${letter}${i.row}`});}
+ if(!ready.length)return {saved,skipped};
+ let transport;try{await api(`${base}/values:batchUpdate`,{method:'POST',body:{valueInputOption:'RAW',data:ready.map(i=>({range:i.range,majorDimension:'ROWS',values:[[i.after]]}))}});}catch(e){transport=e;}
+ const check=await api(`${base}/values:batchGet?${ready.map(i=>'ranges='+q(i.range)).join('&')}&valueRenderOption=FORMATTED_VALUE`);
+ ready.forEach((i,n)=>{const v=norm(check.valueRanges?.[n]?.values?.[0]?.[0]);if(v===norm(i.after))saved.push({...i,cell:`${letter}${i.row}`});else skipped.push({...i,reason:transport?`저장 실패: ${transport.message}`:'저장 후 값이 다름'});});
+ return {saved,skipped};
+}
