@@ -18,6 +18,8 @@ test('module-end forms: 진로취업 · 문화체험 · track-specific 현직자
   const events=Object.fromEntries(eventsForClass(catalog,cid,entries).map(e=>[e.title,e]));
   assert.equal(events['진로취업'].date,'2026-10-21');assert.equal(events['진로취업'].url,form('1_8xTlzjO1asVWQYcbgWjBBgrE2aUDf3eAshCuUKXWb4'));
   assert.equal(events['문화체험'].date,'2026-10-15');assert.equal(events['문화체험'].url,form('1a7YNRUKwvNi-xz-xGjBYiRVinbpSojcdJqXundguAls'));
+  assert.deepEqual(sourceCandidates(events['진로취업'],catalog.responseSources,course).map(s=>s.id),['response-58']);
+  assert.deepEqual(sourceCandidates(events['문화체험'],catalog.responseSources,course).map(s=>s.id),['response-57']);
   const special=events['현직자특강(비대면)'];assert.ok(special.scheduleMatched);assert.equal(special.date,'2026-10-02');assert.equal(special.url,form(lecture));
   assert.deepEqual(sourceCandidates(special,catalog.responseSources,course).map(s=>s.id),[source]);
   assert.deepEqual(sourceCandidates(special,catalog.responseSources,'').map(s=>s.id),[source]);

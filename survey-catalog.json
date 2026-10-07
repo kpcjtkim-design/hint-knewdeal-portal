@@ -3665,6 +3665,18 @@
       "track": "임베디드",
       "title": "[K-뉴딜 아카데미] 현직자 특강 만족도 조사 (임베디드AI)(응답)",
       "sheetUrl": "https://docs.google.com/spreadsheets/d/12o1aFOEmK1ho9q1UOQbWe9DBAeFSx7S4KrJQm1ocz7E/edit"
+    },
+    {
+      "id": "response-57",
+      "module": "문화체험",
+      "title": "[K-뉴딜 아카데미] 문화체험 만족도 조사(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1heYRpS4Qbv3zU_7Wve6iDPIm8CZJA72H6uov-ZNKmZc/edit"
+    },
+    {
+      "id": "response-58",
+      "module": "진로취업",
+      "title": "[K-뉴딜 아카데미] 진로취업(1~4차수) 교육과정 만족도 조사(응답)",
+      "sheetUrl": "https://docs.google.com/spreadsheets/d/1PnWDb7Uc0xo1Z_zlRKwT1_ExjGQVBMyyS22forO3WuE/edit"
     }
   ]
 }
