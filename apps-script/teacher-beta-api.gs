@@ -16,7 +16,8 @@ function doPost(e) {
     const A = {
       portalClasses: portalClasses, portalData: portalData, portalSave: portalSave,
       portalCheck: portalCheck, portalClose: portalClose, portalAddRow: portalAddRow,
-      portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus
+      portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus,
+      portalRoster: portalRoster
     };
     const fn = A[body.action];
     if (!fn) return out({ ok: false, error: 'unknown action' });
@@ -26,6 +27,18 @@ function doPost(e) {
   } catch (err) {
     return out({ ok: false, error: String((err && err.message) || err) });
   }
+}
+
+// 출결 업로드 파일용: 한 반의 명부(이름·상태·생년월일·성별). Vercel이 관리자 요청만 넘깁니다.
+function portalRoster(cls) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('명부');
+  if (!sh) throw new Error('명부 탭이 없습니다.');
+  const v = sh.getDataRange().getValues(), h = v[0].map(String);
+  const at = name => h.indexOf(name), c = at('반'), n = at('이름'), st = at('상태'), b = at('생년월일'), g = at('성별');
+  if (c < 0 || n < 0 || b < 0 || g < 0) throw new Error('명부에 반·이름·생년월일·성별 칸이 필요합니다.');
+  const day = x => x instanceof Date ? Utilities.formatDate(x, 'Asia/Seoul', 'yyyy-MM-dd') : String(x || '').trim();
+  return v.slice(1).filter(r => String(r[c]) === String(cls) && String(r[n]).trim())
+    .map(r => ({ name: String(r[n]).trim(), status: st < 0 ? '' : String(r[st] || ''), birth: day(r[b]), gender: String(r[g] || '').trim() }));
 }
 
 // 편집기에서 한 번 실행하면 API_KEY를 새로 만들고 실행 로그에 보여 줍니다. Vercel 환경변수 HINT_SHEET_API_KEY에 넣으세요.

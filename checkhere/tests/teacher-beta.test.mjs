@@ -56,6 +56,17 @@ test('teacher class rules stay ready for the later rollout: only assigned classe
  assert.throws(()=>resolveClass({role:'TEACHER',classIds:[]},{cls:1},'portalData',[1,'']),/NO_CLASS/);
 });
 
+test('the roster with birth dates is administrator-only and an outdated Apps Script is named plainly',async t=>{
+ withEnv(t);let calls=backend(t,{sheet:()=>Response.json({ok:true,data:[{name:'가나다',birth:'2000-01-02',gender:'남성'}]})});
+ let res=await call({action:'portalRoster',args:[1,''],cls:1},{email:ADMIN_EMAIL});
+ assert.equal(res.statusCode,200);assert.deepEqual(calls.at(-1).body,{key:KEY,action:'portalRoster',args:[1,'']});
+ res=await call({action:'portalRoster',args:[3,''],cls:3},{email:'teacher@test.kr'});
+ assert.deepEqual([res.statusCode,res.body.code],[403,'ADMIN_ONLY']);assert.equal(calls.length,1);
+ t.mock.restoreAll();backend(t,{sheet:()=>Response.json({ok:false,error:'unknown action'})});
+ res=await call({action:'portalRoster',args:[1,''],cls:1},{email:ADMIN_EMAIL});
+ assert.deepEqual([res.statusCode,res.body.code],[400,'SHEET_OUTDATED']);assert.match(res.body.error,/다시 배포/);
+});
+
 test('administrators choose the preview class, and bad input never reaches the sheet',async t=>{
  withEnv(t);const calls=backend(t);
  await call({action:'portalData',args:[1,''],cls:1},{email:'hint.kpc@gmail.com'});
