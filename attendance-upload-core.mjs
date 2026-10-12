@@ -55,22 +55,22 @@ export function uploadWorkbook(ExcelJS,rows){
  return book;
 }
 
-// records: 날짜별 최신 체크히어 기록. 결석·미수집(입퇴실 모두 없음)은 행을 만들지 않고 확인 목록에 남깁니다.
+// records: 날짜별 최신 체크히어 기록. 결석·미수집(입퇴실 모두 없음)도 시각을 비운 채 행을 남기고 확인 목록에 표시합니다.
 export function buildUploadRows({records,roster,courseId='',round=''}){
- const rows=[],issues=[],codes=new Map();let skipped=0;
+ const rows=[],issues=[],codes=new Map();let empty=0;
  const sorted=[...records].sort((a,b)=>a.date.localeCompare(b.date)||String(a.name).localeCompare(String(b.name),'ko'));
  for(const r of sorted){
   const name=surveyBaseName(r.name),note=text=>issues.push({date:r.date,name,issue:text});
-  if(!r.entry&&!r.exit){skipped++;note('입실·퇴실 기록이 없어 행을 만들지 않았습니다 (결석 또는 미수집)');continue;}
   const match=findStudent(r,roster);let code='';
   if(match.issue)note(match.issue+' · 생년월일성별 칸을 비웠습니다');
   else{code=birthGenderCode(match.student.birth,match.student.gender);if(!code)note('생년월일 또는 성별 형식을 읽지 못해 생년월일성별 칸을 비웠습니다');else codes.set(name,code);}
-  if(!r.entry)note('입실 시각이 없습니다');
-  if(!r.exit)note('퇴실 시각이 없습니다');
+  if(!r.entry&&!r.exit){empty++;note('입실·퇴실 기록이 없어 시각을 비운 채 행을 남겼습니다 (결석 또는 미수집)');}
+  else if(!r.entry)note('입실 시각이 없습니다');
+  else if(!r.exit)note('퇴실 시각이 없습니다');
   const outings=(r.outings||[]).filter(o=>o&&o.start);
   if(outings.length>1)note(`외출 ${outings.length}회 · 첫 구간만 넣었습니다`);
   if(outings[0]&&!outings[0].end)note('외출 종료 시각이 없습니다');
   rows.push([String(courseId),String(round),name,code,ymd(r.date),hhmm(r.entry),hhmm(r.exit),hhmm(outings[0]?.start),hhmm(outings[0]?.end)]);
  }
- return {rows,issues,stats:{rows:rows.length,students:new Set(rows.map(r=>r[2])).size,days:new Set(rows.map(r=>r[4])).size,skipped,coded:codes.size}};
+ return {rows,issues,stats:{rows:rows.length,students:new Set(rows.map(r=>r[2])).size,days:new Set(rows.map(r=>r[4])).size,empty,coded:codes.size}};
 }
