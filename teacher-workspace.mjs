@@ -2,7 +2,7 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
  const hero=parent.querySelector('.hero');if(!hero)return;
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
  const nav=document.createElement('nav');nav.className='admin-tabs teacher-tabs';nav.setAttribute('aria-label','담임 업무 메뉴');
- const labels={home:'우리 반 홈',timetable:'전체 시간표',attendance:'출결 통계',evidence:'증빙서류',disease:'질병 인정 현황',surveys:'만족도조사',materials:'강의자료',resources:'자료·바로가기'};
+ const labels={home:'우리 반 홈',timetable:'전체 시간표',attendance:'출결 통계',evidence:'증빙서류',disease:'질병 인정 현황',surveys:'만족도조사',materials:'강의자료',resources:'자료·바로가기',...(preview?{beta:'2기 베타'}:{})};
  nav.innerHTML=Object.entries(labels).map(([id,label])=>`<button class="tab" data-teacher-tab="${id}">${label}</button>`).join('');hero.after(nav);
  // Move existing nodes, including the class selector, so their handlers stay attached.
  let classHeader=!preview&&parent.querySelector('.topbar');
@@ -45,6 +45,8 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
   if(id==='disease'){const m=await import('./disease-risk.mjs');if(!alive())return;host.textContent='';work=await m.mountDiseaseRisk(host,options);}
   if(id==='surveys'){const m=await import('./survey-view.mjs');if(!alive())return;host.textContent='';work=await m.mountSurveys(host,options);}
   if(id==='materials'){const m=await import('./lecture-materials.mjs');if(!alive())return;host.textContent='';work=await m.mountLectureMaterials(host,{...options,readOnly:preview});}
+  // Admin preview only for now. Class switches rebuild the whole workspace, so the beta view mounts once per class.
+  if(id==='beta'){const m=await import('./teacher-beta.js?v=20261012-beta1');if(!alive())return;host.textContent='';work=m.mountTeacherBeta(host,{cls:Number(classInfo.id),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta'});}
   retain(id,work);
  }catch(e){if(alive()){host.textContent='화면을 불러오지 못했습니다. '+e.message;loaded.delete(id);}}}
  nav.querySelectorAll('button').forEach(b=>b.onclick=()=>void show(b.dataset.teacherTab));void show('home');

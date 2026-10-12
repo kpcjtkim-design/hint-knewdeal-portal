@@ -1,0 +1,93 @@
+// 2기 베타 담임화면 ↔ Apps Script 데이터 API 중계. 담임 브라우저는 script.google.com을 직접 부르지 않습니다.
+// 환경변수: HINT_SHEET_API_URL (Apps Script 웹앱 /exec 주소), HINT_SHEET_API_KEY (setApiKey로 만든 값)
+const FIREBASE_KEY='AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE';
+const PROJECT='knewdeal-portal';
+const ADMIN=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
+const CLASS_IDS=Array.from({length:17},(_,i)=>String(i+1));
+const ALLOWED=new Set(['portalData','portalSave','portalCheck','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus']);
+// 일단 관리자만 씁니다. 담임에게 열 때 true로 바꾸고 teacher-workspace.mjs의 탭 조건(preview)도 함께 풉니다.
+const TEACHER_ACCESS=false;
+// 담임 화면에 그대로 보이므로 오류는 한국어 문장으로 돌려줍니다.
+const FAILURES={
+  LOGIN_REQUIRED:[401,'로그인이 필요합니다. 다시 로그인해 주세요.'],
+  PROFILE_NOT_FOUND:[403,'계정 정보를 찾지 못했습니다. 운영자에게 문의해 주세요.'],
+  ACCESS_DENIED:[403,'2기 베타 화면을 볼 권한이 없습니다.'],
+  ADMIN_ONLY:[403,'2기 베타는 지금 관리자만 볼 수 있습니다.'],
+  NO_CLASS:[403,'담당 반 설정이 없습니다.'],
+  BAD_CLASS:[400,'반 번호가 올바르지 않습니다.'],
+  BAD_REQUEST:[400,'요청 형식이 올바르지 않습니다.'],
+  BAD_ACTION:[400,'지원하지 않는 요청입니다.'],
+  DATABASE_QUOTA_EXCEEDED:[503,'계정 확인이 잠시 지연되고 있습니다. 잠시 후 다시 시도해 주세요.'],
+  NOT_CONFIGURED:[503,'데이터 API 연결 전입니다. 운영자가 연결을 마치면 바로 사용할 수 있습니다.'],
+  SHEET_UNAUTHORIZED:[502,'데이터 API 인증에 실패했습니다. 운영자에게 알려 주세요.'],
+  SHEET_TIMEOUT:[504,'마스터시트 응답이 늦습니다. 잠시 후 다시 시도해 주세요.'],
+  SHEET_BAD_RESPONSE:[502,'마스터시트 응답을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.'],
+  SHEET_UNAVAILABLE:[502,'마스터시트에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.']
+};
+
+const scalar=v=>String(v?.stringValue??v?.integerValue??'');
+const list=v=>v?.arrayValue?(v.arrayValue.values||[]).map(scalar):null;
+// index.html의 teacherClassIds와 같은 규칙: 기본담당반 + 임시담당반(tempClassIds가 있으면 예전 classIds는 무시).
+export function teacherClassIds(f){
+  const raw=scalar(f.primaryClassId)||scalar(f.classId),primary=CLASS_IDS.includes(raw)?raw:'';
+  const explicit=list(f.tempClassIds),temps=(explicit!==null?explicit:list(f.classIds)||[]).filter(x=>CLASS_IDS.includes(x)&&x!==primary);
+  return [...new Set([primary,...temps].filter(Boolean))];
+}
+async function verifyUser(idToken){
+  if(!idToken)throw new Error('LOGIN_REQUIRED');
+  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken})});
+  if(!r.ok)throw new Error('LOGIN_REQUIRED');
+  const email=String((await r.json()).users?.[0]?.email||'').toLowerCase();
+  if(!email)throw new Error('LOGIN_REQUIRED');
+  if(ADMIN.has(email))return{email,role:'ADMIN',classIds:CLASS_IDS};
+  const p=await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/users/${encodeURIComponent(email)}`,{headers:{authorization:`Bearer ${idToken}`}});
+  if(p.status===429)throw new Error('DATABASE_QUOTA_EXCEEDED');
+  if(!p.ok)throw new Error(p.status===401?'LOGIN_REQUIRED':'PROFILE_NOT_FOUND');
+  const f=(await p.json()).fields||{},role=scalar(f.role);
+  if(f.active!==undefined&&f.active?.booleanValue!==true)throw new Error('ACCESS_DENIED');
+  if(role==='ADMIN')return{email,role,classIds:CLASS_IDS};
+  if(role!=='TEACHER')throw new Error('ACCESS_DENIED');
+  return{email,role,classIds:teacherClassIds(f)};
+}
+// 관리자는 미리보기에서 고른 반을 씁니다. 담임은 담당반 밖의 반 번호를 보내면 기본담당반으로 덮어씁니다.
+export function resolveClass(user,body,action,args){
+  const requested=String(body.cls??(action==='portalSave'?args[0]?.cls:args[0])??'');
+  if(user.role==='ADMIN'){if(!CLASS_IDS.includes(requested))throw new Error('BAD_CLASS');return Number(requested);}
+  if(!user.classIds.length)throw new Error('NO_CLASS');
+  return Number(user.classIds.includes(requested)?requested:user.classIds[0]);
+}
+async function callSheet(action,args){
+  const url=process.env.HINT_SHEET_API_URL,key=process.env.HINT_SHEET_API_KEY;
+  if(!url||!key)throw new Error('NOT_CONFIGURED');
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
+  try{
+    // Apps Script는 302로 결과 주소를 돌려주므로 redirect를 따라가야 합니다.
+    const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,action,args}),redirect:'follow',signal:controller.signal});
+    const text=await r.text();let data;
+    try{data=JSON.parse(text);}catch{throw new Error('SHEET_BAD_RESPONSE');}
+    if(data?.ok===false&&data.error==='unauthorized')throw new Error('SHEET_UNAUTHORIZED');
+    return data;
+  }catch(e){if(controller.signal.aborted)throw new Error('SHEET_TIMEOUT');if(e instanceof TypeError)throw new Error('SHEET_UNAVAILABLE');throw e;}
+  finally{clearTimeout(timer);}
+}
+export default async function handler(req,res){
+  res.setHeader('cache-control','no-store');
+  try{
+    if(req.method!=='POST')return res.status(405).json({ok:false,error:'POST만 지원합니다.'});
+    let body=req.body||{};
+    if(typeof body==='string'){try{body=JSON.parse(body||'{}');}catch{throw new Error('BAD_REQUEST');}}
+    const bearer=String(req.headers?.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
+    const user=await verifyUser(bearer||body.idToken);
+    if(user.role!=='ADMIN'&&!TEACHER_ACCESS)throw new Error('ADMIN_ONLY');
+    const {action}=body,rest=Array.isArray(body.args)?body.args:[];
+    if(!ALLOWED.has(action))throw new Error('BAD_ACTION');
+    const cls=resolveClass(user,body,action,rest);
+    const args=action==='portalSave'?[{...(rest[0]&&typeof rest[0]==='object'?rest[0]:{}),cls,pin:''}]:[cls,'',...rest.slice(2)];
+    const out=await callSheet(action,args);
+    return res.status(out?.ok?200:400).json(out?.ok?{ok:true,data:out.data}:{ok:false,error:String(out?.error||'요청을 처리하지 못했습니다.')});
+  }catch(e){
+    const [status,error]=FAILURES[e.message]||[500,'요청을 처리하지 못했습니다.'];
+    if(!FAILURES[e.message])console.error('teacher_beta',e);
+    return res.status(status).json({ok:false,code:FAILURES[e.message]?e.message:'UNEXPECTED',error});
+  }
+}
