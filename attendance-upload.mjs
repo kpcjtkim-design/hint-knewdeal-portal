@@ -50,14 +50,7 @@ export function mountAttendanceUpload(section,{db,user,classes,loadLibraries}){
   if(!j.ok)throw Error(j.error||'마스터시트를 읽지 못했습니다.');
   return j.data;
  }
- // 출결원장(유형·외출 시각)과 명부 상태. 중도포기·외출·결석 대조에 씁니다.
- async function masterLedger(cid){
-  const d=await sheetApi('portalData',cid)||{},ledger=new Map(),leavers=new Map();
-  for(const [k,v] of Object.entries(d.recs||{})){const i=k.lastIndexOf('|');if(i>0)ledger.set(surveyBaseName(k.slice(0,i))+'|'+k.slice(i+1),{type:v?.type,oa:v?.oa,ob:v?.ob});}
-  for(const kid of d.kids||[])if(kid?.status&&kid.status!=='재학')leavers.set(surveyBaseName(kid.name),kid.status);
-  return {ledger,leavers};
- }
- // 출결원장을 못 읽으면 포털 출결 통계 저장본의 자동 중도포기 표시를 씁니다(읽기 1번).
+ // 중도포기는 포털 출결 통계 저장본(Firebase)의 중도포기 표시로 가립니다(읽기 1번).
  async function summaryLeavers(cid,signal){
   const snap=await within(getDocFromServer(doc(db,'attendanceBetaSummaries',cid)),20000,undefined,signal);
   return new Map((snap.data()?.students||[]).filter(s=>s.dropout).map(s=>[surveyBaseName(s.name),'중도포기']));
@@ -90,14 +83,12 @@ export function mountAttendanceUpload(section,{db,user,classes,loadLibraries}){
    const roster=$('#upRosterSource').value==='file'?await rosterFromFile(cid):await rosterFromMaster(cid);signal.throwIfAborted();
    const {records}=await checkhereRecords(cid,period.from,period.to,signal);
    if(!records.length)throw Error(`${cid}반 ${period.from} ~ ${period.to} 체크히어 저장본이 없습니다. 체크히어 수집·저장을 먼저 확인해 주세요.`);
-   say('마스터시트 출결원장과 대조하는 중…');
-   let sheet;try{sheet=await masterLedger(cid);}catch(e){sheet={error:e.message};}signal.throwIfAborted();
-   let leavers=sheet.leavers;if(!leavers){try{leavers=await summaryLeavers(cid,signal);}catch{leavers=new Map();}}
-   const built=buildUploadRows({records,roster,leavers,ledger:sheet.ledger||null,courseId:$('#upCourse').value.trim(),round:$('#upRound').value.trim()});
+   let leavers,leaverNote='';try{leavers=await summaryLeavers(cid,signal);}catch(e){leavers=new Map();leaverNote=e.message;}signal.throwIfAborted();
+   const built=buildUploadRows({records,roster,leavers,courseId:$('#upCourse').value.trim(),round:$('#upRound').value.trim()});
    const bytes=await uploadWorkbook(window.ExcelJS,built.rows).xlsx.writeBuffer();signal.throwIfAborted();if(disposed)return;
    file={bytes,name:`출결업로드_${cid.padStart(2,'0')}반_${period.id}단위_${period.from.slice(5).replace('-','')}-${period.to.slice(5).replace('-','')}.xlsx`};
    const s=built.stats;
-   result.innerHTML=`<p><strong>${esc(file.name)}</strong></p><p>행 ${s.rows}개 · 교육생 ${s.students}명 · 교육일 ${s.days}일 · 생년월일성별 ${s.coded}명 채움 · 입퇴실 빈칸 ${s.empty}행 · 중도포기 ${s.leavers}명(이후 ${s.cut}일 제외)</p>${sheet.ledger?'<p>마스터시트 출결원장과 대조했습니다. 외출 시각이 체크히어에 없으면 출결원장 값을 넣었습니다.</p>':`<p class="muted">출결원장과 대조하지 못했습니다 (${esc(sheet.error)}). 체크히어 기록만으로 만들었고, 중도포기는 포털 출결 통계 저장본으로 가렸습니다.</p>`}<p class="muted">교육생 개인정보(생년월일성별)가 들어 있는 파일입니다. 업로드 후에는 PC에서 지워 주세요.</p><button id="upDownload" class="primary">Excel 다운로드</button>${issuesTable(built.issues)}`;
+   result.innerHTML=`<p><strong>${esc(file.name)}</strong></p><p>행 ${s.rows}개 · 교육생 ${s.students}명 · 교육일 ${s.days}일 · 생년월일성별 ${s.coded}명 채움 · 입퇴실 빈칸 ${s.empty}행 · 중도포기 ${s.leavers}명(이후 ${s.cut}일 제외)</p><p class="muted">체크히어 수집 저장본(Firebase) 기준입니다. 중도포기는 포털 출결 통계 저장본으로 가렸습니다${leaverNote?` (저장본을 읽지 못함: ${esc(leaverNote)})`:''}.</p><p class="muted">교육생 개인정보(생년월일성별)가 들어 있는 파일입니다. 업로드 후에는 PC에서 지워 주세요.</p><button id="upDownload" class="primary">Excel 다운로드</button>${issuesTable(built.issues)}`;
    $('#upDownload').onclick=()=>{if(!file)return;const url=URL.createObjectURL(new Blob([file.bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})),a=document.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);};
    say(`${cid}반 ${period.id}단위기간 업로드 파일을 만들었습니다. 확인 필요 항목을 본 뒤 내려받아 주세요.`);
   }catch(e){if(!disposed)say('만들지 못했습니다 · '+e.message);}
