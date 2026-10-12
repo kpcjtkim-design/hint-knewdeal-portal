@@ -51,10 +51,41 @@ test('upload rows come from CheckHere times; blank days keep their row and missi
   ['AIG2026','1','동명','','20260902','0900','','',''],
   ['AIG2026','1','없는사람','','20260902','0910','1800','1000','1010']
  ]);
- assert.deepEqual(stats,{rows:6,students:4,days:3,empty:1,coded:3});
+ assert.deepEqual(stats,{rows:6,students:4,days:3,empty:1,coded:3,leavers:0,cut:0});
  const said=(date,name)=>issues.filter(i=>i.date===date&&i.name===name).map(i=>i.issue).join(' / ');
  assert.equal(said('2026-09-01','가나다'),'입실·퇴실 기록이 없어 시각을 비운 채 행을 남겼습니다 (결석 또는 미수집)');
  assert.match(said('2026-09-02','동명'),/동명이인/);assert.match(said('2026-09-02','동명'),/퇴실 시각이 없습니다/);
  assert.match(said('2026-09-02','없는사람'),/명단에 없는 이름/);assert.match(said('2026-09-02','없는사람'),/외출 2회/);
  assert.equal(said('2026-09-01','라마바'),'');
+});
+
+test('the ledger fills missing outing times and marks absences; leavers stop after their last attended day',()=>{
+ const roster=[{name:'가나다',birth:'2000.01.02',gender:'남성'},{name:'라마바',birth:'1998.03.04',gender:'여성'},{name:'사아자',birth:'2001.05.06',gender:'남성'},{name:'차카타',birth:'1999.07.08',gender:'여성'}];
+ const records=[
+  {date:'2026-09-22',name:'차카타',entry:'09:00:00',exit:'18:00:00'},
+  {date:'2026-09-23',name:'가나다',entry:'08:55:00',exit:'18:01:00',outingCount:1,outings:[]},
+  {date:'2026-09-23',name:'라마바',entry:null,exit:null},
+  {date:'2026-09-23',name:'사아자',entry:'09:02:00',exit:'17:58:00',outingCount:2,outings:[],readState:'partial'},
+  {date:'2026-09-23',name:'차카타',entry:null,exit:null},
+  {date:'2026-09-24',name:'라마바',entry:'09:00:00',exit:'18:00:00'},
+  {date:'2026-09-24',name:'차카타',entry:null,exit:null}
+ ];
+ const ledger=new Map([['가나다|2026-09-23',{type:'외출',oa:'09:00',ob:'10:00'}],['라마바|2026-09-23',{type:'결석'}],['라마바|2026-09-24',{type:'결석'}],['사아자|2026-09-23',{type:'외출',oa:'00:00',ob:'00:00'}]]);
+ const {rows,issues,stats}=buildUploadRows({records,roster,ledger,leavers:new Map([['차카타','조기취업']])});
+ assert.deepEqual(rows.map(r=>r.slice(2)),[
+  ['차카타','9907082','20260922','0900','1800','',''],
+  ['가나다','0001023','20260923','0855','1801','0900','1000'],
+  ['라마바','9803042','20260923','','','',''],
+  ['사아자','0105063','20260923','0902','1758','',''],
+  ['라마바','9803042','20260924','0900','1800','','']
+ ]);
+ assert.equal(stats.leavers,1);assert.equal(stats.cut,2);assert.equal(stats.empty,1);
+ const said=(date,name)=>issues.filter(i=>i.date===date&&i.name===name).map(i=>i.issue).join(' / ');
+ assert.equal(said('2026-09-23','가나다'),'외출 시각은 출결원장 값을 넣었습니다');
+ assert.equal(said('2026-09-23','라마바'),'결석 · 시각을 비운 채 행을 남겼습니다');
+ assert.match(said('2026-09-23','사아자'),/외출 기록이 있지만 시각을 찾지 못해 비웠습니다 \(체크히어 외출 2회, 상세 미수집\)/);
+ assert.equal(said('2026-09-24','라마바'),'출결원장은 결석인데 체크히어에 입실·퇴실 시각이 있습니다');
+ assert.equal(said('2026-09-22','차카타'),'조기취업 · 마지막 출석일(2026-09-22) 다음 2일은 행을 만들지 않았습니다');
+ const none=buildUploadRows({records:[{date:'2026-09-01',name:'차카타',entry:null,exit:null}],roster,leavers:new Map([['차카타','중도포기']])});
+ assert.equal(none.rows.length,0);assert.match(none.issues[0].issue,/이 기간에 출석 기록이 없어 1일 모두/);
 });
