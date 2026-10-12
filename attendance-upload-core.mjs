@@ -56,21 +56,31 @@ export function uploadWorkbook(ExcelJS,rows){
 }
 
 // records: 날짜별 최신 체크히어 기록. 결석·미수집(입퇴실 모두 없음)도 시각을 비운 채 행을 남기고 확인 목록에 표시합니다.
-export function buildUploadRows({records,roster,courseId='',round=''}){
- const rows=[],issues=[],codes=new Map();let empty=0;
+// leavers: 중도포기 학생(이름 → 상태). 마지막 출석일(입실·퇴실 시각이 있는 마지막 날)까지만 행을 만듭니다.
+// ledger: 마스터시트 출결원장('이름|YYYY-MM-DD' → {type,oa,ob}). 없으면(null) 체크히어만으로 만듭니다.
+export function buildUploadRows({records,roster,courseId='',round='',leavers=new Map(),ledger=null}){
+ const rows=[],issues=[],codes=new Map(),last=new Map(),cut=new Map();let empty=0;
+ for(const r of records)if(r.entry||r.exit){const n=surveyBaseName(r.name);if(!last.has(n)||r.date>last.get(n))last.set(n,r.date);}
  const sorted=[...records].sort((a,b)=>a.date.localeCompare(b.date)||String(a.name).localeCompare(String(b.name),'ko'));
  for(const r of sorted){
   const name=surveyBaseName(r.name),note=text=>issues.push({date:r.date,name,issue:text});
+  if(leavers.has(name)&&!(last.has(name)&&r.date<=last.get(name))){cut.set(name,(cut.get(name)||0)+1);continue;}
   const match=findStudent(r,roster);let code='';
   if(match.issue)note(match.issue+' · 생년월일성별 칸을 비웠습니다');
   else{code=birthGenderCode(match.student.birth,match.student.gender);if(!code)note('생년월일 또는 성별 형식을 읽지 못해 생년월일성별 칸을 비웠습니다');else codes.set(name,code);}
-  if(!r.entry&&!r.exit){empty++;note('입실·퇴실 기록이 없어 시각을 비운 채 행을 남겼습니다 (결석 또는 미수집)');}
-  else if(!r.entry)note('입실 시각이 없습니다');
-  else if(!r.exit)note('퇴실 시각이 없습니다');
-  const outings=(r.outings||[]).filter(o=>o&&o.start);
-  if(outings.length>1)note(`외출 ${outings.length}회 · 첫 구간만 넣었습니다`);
-  if(outings[0]&&!outings[0].end)note('외출 종료 시각이 없습니다');
-  rows.push([String(courseId),String(round),name,code,ymd(r.date),hhmm(r.entry),hhmm(r.exit),hhmm(outings[0]?.start),hhmm(outings[0]?.end)]);
+  const led=ledger?.get(name+'|'+r.date),type=String(led?.type||'');
+  if(!r.entry&&!r.exit){empty++;note(type==='결석'?'결석 · 시각을 비운 채 행을 남겼습니다':`입실·퇴실 기록이 없어 시각을 비운 채 행을 남겼습니다 (${ledger?'출결원장 '+(type||'기록 없음'):'결석 또는 미수집'})`);}
+  else{if(type==='결석')note('출결원장은 결석인데 체크히어에 입실·퇴실 시각이 있습니다');if(!r.entry)note('입실 시각이 없습니다');else if(!r.exit)note('퇴실 시각이 없습니다');}
+  // 외출: 체크히어 상세 구간 → 출결원장 외출 시작·종료 순. 횟수만 있고 시각이 없으면 비우고 표시합니다.
+  const detail=(r.outings||[]).filter(o=>o&&o.start),fromLedger=type.includes('외출')&&hhmm(led.oa)&&hhmm(led.oa)!=='0000'?{start:led.oa,end:led.ob}:null;
+  const outing=detail[0]||fromLedger,count=Math.max(Number(r.outingCount)||0,detail.length);
+  if(detail.length>1)note(`외출 ${detail.length}회 · 첫 구간만 넣었습니다`);
+  if(!detail.length&&fromLedger)note('외출 시각은 출결원장 값을 넣었습니다');
+  if(!outing&&(count||type.includes('외출')))note(`외출 기록이 있지만 시각을 찾지 못해 비웠습니다 (${count?'체크히어 외출 '+count+'회, 상세 미수집':'출결원장 '+type})`);
+  else if(outing&&!outing.end)note('외출 종료 시각이 없습니다');
+  rows.push([String(courseId),String(round),name,code,ymd(r.date),hhmm(r.entry),hhmm(r.exit),hhmm(outing?.start),hhmm(outing?.end)]);
  }
- return {rows,issues,stats:{rows:rows.length,students:new Set(rows.map(r=>r[2])).size,days:new Set(rows.map(r=>r[4])).size,empty,coded:codes.size}};
+ for(const [name,days] of cut)issues.push({date:last.get(name)||'',name,issue:last.has(name)?`${leavers.get(name)} · 마지막 출석일(${last.get(name)}) 다음 ${days}일은 행을 만들지 않았습니다`:`${leavers.get(name)} · 이 기간에 출석 기록이 없어 ${days}일 모두 행을 만들지 않았습니다`});
+ issues.sort((a,b)=>String(a.date).localeCompare(String(b.date))||a.name.localeCompare(b.name,'ko'));
+ return {rows,issues,stats:{rows:rows.length,students:new Set(rows.map(r=>r[2])).size,days:new Set(rows.map(r=>r[4])).size,empty,coded:codes.size,leavers:cut.size,cut:[...cut.values()].reduce((a,b)=>a+b,0)}};
 }
