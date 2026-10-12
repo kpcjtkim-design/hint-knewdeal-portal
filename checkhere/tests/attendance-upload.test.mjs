@@ -31,7 +31,7 @@ test('the roster sheet is read by header names and filtered to one class assignm
  assert.throws(()=>rosterFromSheet([['이름','성별']],1),/머리글/);
 });
 
-test('upload rows come from CheckHere times; missing data is reported instead of guessed',()=>{
+test('upload rows come from CheckHere times; blank days keep their row and missing data is reported instead of guessed',()=>{
  const roster=[{name:'가나다',birth:'2000.01.02',gender:'남성',phone:'010-1111-2222'},{name:'라마바',birth:'1998.03.04',gender:'여성'},
   {name:'동명',birth:'1999.07.08',gender:'남성',phone:'010-0000-1234'},{name:'동명',birth:'2001.09.10',gender:'여성',phone:'010-0000-5678'}];
  const records=[
@@ -45,14 +45,15 @@ test('upload rows come from CheckHere times; missing data is reported instead of
  const {rows,issues,stats}=buildUploadRows({records,roster,courseId:'AIG2026',round:'1'});
  assert.deepEqual(rows,[
   ['AIG2026','1','가나다','0001023','20260831','0858','1802','',''],
+  ['AIG2026','1','가나다','0001023','20260901','','','',''],
   ['AIG2026','1','동명','0109104','20260901','0900','1800','',''],
   ['AIG2026','1','라마바','9803042','20260901','0901','1750','1320','1537'],
   ['AIG2026','1','동명','','20260902','0900','','',''],
   ['AIG2026','1','없는사람','','20260902','0910','1800','1000','1010']
  ]);
- assert.deepEqual(stats,{rows:5,students:4,days:3,skipped:1,coded:3});
+ assert.deepEqual(stats,{rows:6,students:4,days:3,empty:1,coded:3});
  const said=(date,name)=>issues.filter(i=>i.date===date&&i.name===name).map(i=>i.issue).join(' / ');
- assert.match(said('2026-09-01','가나다'),/행을 만들지 않았습니다/);
+ assert.equal(said('2026-09-01','가나다'),'입실·퇴실 기록이 없어 시각을 비운 채 행을 남겼습니다 (결석 또는 미수집)');
  assert.match(said('2026-09-02','동명'),/동명이인/);assert.match(said('2026-09-02','동명'),/퇴실 시각이 없습니다/);
  assert.match(said('2026-09-02','없는사람'),/명단에 없는 이름/);assert.match(said('2026-09-02','없는사람'),/외출 2회/);
  assert.equal(said('2026-09-01','라마바'),'');

@@ -77,7 +77,7 @@ export function mountAttendanceUpload(section,{db,user,classes,loadLibraries}){
    const bytes=await uploadWorkbook(window.ExcelJS,built.rows).xlsx.writeBuffer();signal.throwIfAborted();if(disposed)return;
    file={bytes,name:`출결업로드_${cid.padStart(2,'0')}반_${period.id}단위_${period.from.slice(5).replace('-','')}-${period.to.slice(5).replace('-','')}.xlsx`};
    const s=built.stats;
-   result.innerHTML=`<p><strong>${esc(file.name)}</strong></p><p>행 ${s.rows}개 · 교육생 ${s.students}명 · 교육일 ${s.days}일 · 생년월일성별 ${s.coded}명 채움 · 기록 없음 ${s.skipped}건</p><p class="muted">교육생 개인정보(생년월일성별)가 들어 있는 파일입니다. 업로드 후에는 PC에서 지워 주세요.</p><button id="upDownload" class="primary">Excel 다운로드</button>${issuesTable(built.issues)}`;
+   result.innerHTML=`<p><strong>${esc(file.name)}</strong></p><p>행 ${s.rows}개 · 교육생 ${s.students}명 · 교육일 ${s.days}일 · 생년월일성별 ${s.coded}명 채움 · 입퇴실 빈칸 ${s.empty}행</p><p class="muted">교육생 개인정보(생년월일성별)가 들어 있는 파일입니다. 업로드 후에는 PC에서 지워 주세요.</p><button id="upDownload" class="primary">Excel 다운로드</button>${issuesTable(built.issues)}`;
    $('#upDownload').onclick=()=>{if(!file)return;const url=URL.createObjectURL(new Blob([file.bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})),a=document.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);};
    say(`${cid}반 ${period.id}단위기간 업로드 파일을 만들었습니다. 확인 필요 항목을 본 뒤 내려받아 주세요.`);
   }catch(e){if(!disposed)say('만들지 못했습니다 · '+e.message);}
