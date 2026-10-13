@@ -11,5 +11,13 @@
       "destination": "/scan-guide.svg",
       "permanent": false
     }
+  ],
+  "rewrites": [
+    {"source": "/beta2", "destination": "/index.html"},
+    {"source": "/beta2/", "destination": "/index.html"}
+  ],
+  "headers": [
+    {"source": "/beta2", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}, {"key": "Cache-Control", "value": "no-store"}]},
+    {"source": "/beta2/", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}, {"key": "Cache-Control", "value": "no-store"}]}
   ]
 }

@@ -13,3 +13,4 @@ checkhere/firebase-public.mjs
 checkhere/Start.ps1
 checkhere/*.cmd
 checkhere/*.command
+apps-script/

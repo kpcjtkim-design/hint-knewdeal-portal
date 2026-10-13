@@ -13,17 +13,19 @@ function doPost(e) {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
     if (!key || body.key !== key) return out({ ok: false, error: 'unauthorized' });
-    const A = {
+    const A = Object.assign({
       portalClasses: portalClasses, portalData: portalData, portalSave: portalSave,
       portalCheck: portalCheck, portalClose: portalClose, portalAddRow: portalAddRow,
       portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus,
       portalRoster: portalRoster
-    };
+    }, typeof B2_ACTIONS === 'object' ? B2_ACTIONS : {}); // beta2.gs가 있으면 2기 베타 기능도 받습니다.
     const fn = A[body.action];
     if (!fn) return out({ ok: false, error: 'unknown action' });
     __API = true;
+    // Vercel이 로그인 확인을 마친 사용자 이메일·역할(beta2.gs 변경이력·서류 신청자에 씀)
+    if (typeof __ACTOR !== 'undefined') { __ACTOR = String(body.actor || ''); __ACTOR_ROLE = String(body.role || ''); }
     try { return out({ ok: true, data: fn.apply(null, body.args || []) }); }
-    finally { __API = false; }
+    finally { __API = false; if (typeof __ACTOR !== 'undefined') { __ACTOR = ''; __ACTOR_ROLE = ''; } }
   } catch (err) {
     return out({ ok: false, error: String((err && err.message) || err) });
   }
