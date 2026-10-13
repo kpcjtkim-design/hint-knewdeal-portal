@@ -27,7 +27,8 @@ export const getDoc=async ref=>snap(ref.path==='users/teacher@test.kr'?{role:'TE
 export const getDocFromServer=async ref=>snap(ref.path==='classes/1/checkhereCurrent/2026-09-03'?{records:[
  {id:'a',classId:'1',date:'2026-09-03',name:'고다원',rawEntry:'09:02:00',entry:'09:02:00',exit:'18:00:00',outings:[],outingCount:0,collectedAt:'1'},
  {id:'b',classId:'1',date:'2026-09-03',name:'김동진',rawEntry:'09:25:00',entry:'09:25:00',exit:'18:00:00',outings:[],outingCount:0,collectedAt:'1',entryMemo:'지각_담임:김지아(09:25)'}]}:undefined);
-export const getDocs=async()=>({docs:[],size:0}),getDocsFromServer=async()=>({docs:[],size:0,metadata:{}}),onSnapshot=()=>()=>{};
+export const getDocs=async()=>({docs:[],size:0}),getDocsFromServer=async()=>({docs:[],size:0,metadata:{}});
+export const onSnapshot=(ref,opts,cb)=>{const entry={path:ref.path,cb};(window.snapCbs=window.snapCbs||[]).push(entry);return()=>{window.snapCbs=window.snapCbs.filter(x=>x!==entry);};};
 export const setDoc=async(ref,data)=>{window.sdkWrites.push(['set',ref.path,data]);},updateDoc=async(ref,data)=>{window.sdkWrites.push(['update',ref.path,data]);},deleteDoc=async ref=>{window.sdkWrites.push(['delete',ref.path]);},addDoc=async(c,data)=>{window.sdkWrites.push(['add',c.path,data]);return {id:'n'};};
 export const runTransaction=async(db,fn)=>fn({get:async()=>snap(undefined),set:(ref,data)=>{window.sdkWrites.push(['tx.set',ref.path,data]);},update:(ref,data)=>{window.sdkWrites.push(['tx.update',ref.path,data]);},delete:()=>{}});
 export const writeBatch=()=>({set:(ref,data)=>window.sdkWrites.push(['batch.set',ref.path,data]),update(){},delete(){},commit:async()=>{}});`;
@@ -182,10 +183,10 @@ test('출결 현황 combines statistics, evidence, disease and dropout views fro
   await page.getByRole('button',{name:'출결',exact:true}).click();
   await page.getByRole('button',{name:'출결 현황',exact:true}).click();
   await page.getByRole('heading',{name:'출결 현황'}).waitFor();
-  assert.deepEqual(await page.locator('.b2-tabs .b2-tab').allInnerTexts(),['출결 통계','증빙서류','질병 인정','중도포기·수료']);
+  assert.deepEqual(await page.locator('.b2-tabs .b2-tab').allInnerTexts(),['출결 통계','증빙서류','질병 인정','중도탈락·수료']);
   await page.getByRole('tab',{name:'질병 인정'}).click();
   await page.getByText('4/6회').waitFor();
-  await page.getByRole('tab',{name:'중도포기·수료'}).click();
+  await page.getByRole('tab',{name:'중도탈락·수료'}).click();
   await page.getByText('한수빈').first().waitFor();
  });
 });
@@ -229,4 +230,23 @@ test('the regular portal path keeps the 1기 menu and the real Firestore SDK',as
   assert.ok(plain.length>=1,'the 1기 portal imports the Firestore SDK directly');
   assert.equal(posts.filter(p=>p.action?.startsWith('b2')).length,0);
  },{path:'/'});
+});
+
+test('today\'s live CheckHere subscription keeps updating after the master sheet is reloaded',async()=>{
+ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const live={...BUNDLE,today,days:[...BUNDLE.days.filter(d=>d<today),today],ledger:[]};
+ await beta(async page=>{
+  await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
+  await page.locator('.b2-class').first().click();
+  await page.locator('tr[data-name="고다원"]').waitFor();
+  await page.waitForFunction(p=>(window.snapCbs||[]).some(x=>x.path===p),`classes/1/checkhereCurrent/${today}`);
+  const push=async exit=>page.evaluate(([day,exit])=>{const snap={exists:()=>true,data:()=>({records:[{id:'a',classId:'1',date:day,name:'고다원',rawEntry:'09:02:00',entry:'09:02:00',exit,outings:[],outingCount:0,collectedAt:exit}]}),metadata:{fromCache:false,hasPendingWrites:false}};window.snapCbs.filter(x=>x.path===`classes/1/checkhereCurrent/${day}`).forEach(x=>x.cb(snap));},[today,exit]);
+  await push('17:00:00');
+  await page.locator('tr[data-name="고다원"]').getByText('17:00',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'이 반 운영총괄 가져오기'}).click();
+  await page.getByText('1반 가져오기 완료').waitFor();
+  await push('18:05:00');
+  await page.locator('tr[data-name="고다원"]').getByText('18:05',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(p=>window.snapCbs.filter(x=>x.path===p).length,`classes/1/checkhereCurrent/${today}`),1,'one subscription, not re-subscribed by the sheet reload');
+ },{api:body=>body.action==='b2Bundle'?{ok:true,data:live}:body.action==='b2SyncNow'?{ok:true,data:{stats:{added:0,updated:0,removed:0,flagged:0},errors:[]}}:null});
 });

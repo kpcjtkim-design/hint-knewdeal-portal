@@ -6,7 +6,8 @@ import {assertChangeAllowed,normalizeTime} from './checkhere/rules.mjs';
 
 export const LIVE_MARK='[실시간 베타]';
 export const LIVE_FIELDS=['entry','exit','entryMemo','exitMemo'];
-export const LIVE_INTERVAL_MS=5*60*1000;
+// 자동 갱신 간격: 10분(사용자 결정 2026-10-13). 바뀐 학생만 상세를 읽고 바뀐 반만 저장합니다.
+export const LIVE_INTERVAL_MS=10*60*1000;
 export const LIVE_WINDOW={weekdays:[1,2,3,4,5],start:'08:50',end:'18:40'};
 export const CLASS_IDS=Array.from({length:17},(_,i)=>String(i+1));
 export const ACTIVE=['pending','approved','applying'];

@@ -1,5 +1,5 @@
 // 2기 베타 홈: 알림(질병·증빙·서류·동기화) + 17개 반 오늘 출결 + 오늘 업무·담임 전달(1기 기능, 보기 전용)
-import {dayView,dayCounts,studentStats,diseaseReport,evidenceRows} from './beta2-core.mjs';
+import {dayView,dayCounts,studentStats,diseaseReport,evidenceRows,isConflictFlag} from './beta2-core.mjs';
 import {esc,md,syncPill,toast,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 
 const SECTIONS=[['summary','요약'],['work','오늘 업무'],['handoff','담임 전달']];
@@ -14,7 +14,7 @@ export async function mount(host,{db,user,classes,client,open}){
  function summary(){
   if(!bundle){body.innerHTML=error?errorBox(error):loading();return;}
   const day=bundle.days.filter(d=>d<=bundle.today).at(-1)||bundle.today,stats=studentStats(bundle,{}),disease=diseaseReport(stats),evidence=evidenceRows(stats);
-  const flags=bundle.ledger.filter(r=>r.flag),flagClass=flags[0]?.cls||'1',newDocs=(docs?.rows||[]).filter(d=>d.status==='접수'),openDocs=(docs?.rows||[]).filter(d=>['접수','처리중','보완 필요'].includes(d.status));
+  const flags=bundle.ledger.filter(r=>isConflictFlag(r.flag)),flagClass=flags[0]?.cls||'1',newDocs=(docs?.rows||[]).filter(d=>d.status==='접수'),openDocs=(docs?.rows||[]).filter(d=>['접수','처리중','보완 필요'].includes(d.status));
   const alert=(n,label,sub,go,hot)=>`<button class="b2-card b2-alert ${hot&&n?'hot':''}" data-go="${esc(go)}"><span class="b2-small b2-muted">${esc(label)}</span><b>${n}</b><span class="b2-tiny b2-muted">${esc(sub)}</span></button>`;
   const index=new Map(bundle.ledger.map(r=>[`${r.cls}|${r.name}|${r.date}`,r]));
   body.innerHTML=`<div class="b2-alerts">${alert(disease.rows.length,'질병 인정 4회 이상',`6회 도달 ${disease.atLimit} · 초과 ${disease.exceeded}`,'b2status:disease',true)}${alert(evidence.length,'증빙 미제출·반려',`${new Set(evidence.map(e=>e.cls+e.name)).size}명`,'b2status:evidence',true)}${alert(newDocs.length,'새 서류발급 신청',`진행 중 ${openDocs.length}건`,'b2docs',true)}${alert(flags.length,'동기화 확인 필요','운영총괄과 다른 베타 수정',`b2ledger:flag:${flagClass}`,true)}</div>

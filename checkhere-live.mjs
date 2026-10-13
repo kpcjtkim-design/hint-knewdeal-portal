@@ -61,7 +61,7 @@ async function mountLive(user){
       </div>
       <span id="fresh" class="muted"></span>
     </div>
-    <p class="note" style="margin:12px 0 0">수정하면 수집 PC가 체크히어에 입력하고, 다시 읽어 확인한 값만 이 표에 반영합니다. 수업 중에는 5분마다 자동으로 갱신됩니다. 수집 PC 중계가 꺼져 있으면 <b>반영 대기</b>로 남아 있다가 켜지면 처리됩니다.</p>
+    <p class="note" style="margin:12px 0 0">수정하면 수집 PC가 체크히어에 입력하고, 다시 읽어 확인한 값만 이 표에 반영합니다. 수업 중에는 10분마다 자동으로 갱신됩니다. 수집 PC 중계가 꺼져 있으면 <b>반영 대기</b>로 남아 있다가 켜지면 처리됩니다.</p>
   </section>
   <section><div class="table-wrap"><table><thead><tr><th>학생</th><th>실제 입실</th><th>입실(교시)</th><th>퇴실</th><th>외출</th><th>입실 사유</th><th>퇴실 사유</th><th>판정</th><th>처리 상태</th></tr></thead><tbody id="rows"><tr><td colspan="9" class="muted">불러오는 중…</td></tr></tbody></table></div></section>
   <section><h2>이 반·날짜의 수정 기록</h2><div id="reqs" class="muted">없음</div></section>
@@ -139,7 +139,7 @@ async function mountLive(user){
 }
 
 function relayMarkup(){return `<section id="relay"><h2>수집 PC 중계 <small class="muted">(지정 관리자 전용)</small></h2>
-  <p class="muted">이 PC에서 「체크히어 시작.cmd」를 실행하고 체크히어에 로그인한 뒤, 로컬 화면의 연결 키를 붙여 넣고 시작하세요. 이 탭이 열려 있는 동안 관리자들의 수정을 체크히어에 반영하고, 평일 08:50~18:40에는 5분마다 오늘 출결을 갱신합니다.</p>
+  <p class="muted">이 PC에서 「체크히어 시작.cmd」를 실행하고 체크히어에 로그인한 뒤, 로컬 화면의 연결 키를 붙여 넣고 시작하세요. 이 탭이 열려 있는 동안 관리자들의 수정을 체크히어에 반영하고, 평일 08:50~18:40에는 10분마다 오늘 출결을 갱신합니다.</p>
   <div class="row"><input id="relayKey" type="password" placeholder="연결 키" autocomplete="off" style="min-width:260px"><button class="primary" id="relayStart">중계 시작</button><button id="relayStop" disabled>중계 멈춤</button><button id="relayNow" disabled>이 반 지금 갱신</button></div>
   <p id="relayStatus" class="muted" style="margin:10px 0 0">꺼져 있음</p><ul class="log" id="relayLog"></ul></section>`;}
 // Background tabs throttle page timers to about once a minute; worker timers keep

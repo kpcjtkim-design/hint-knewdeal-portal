@@ -22,8 +22,10 @@ export function ledgerIndex(bundle){
  const map=new Map();for(const r of bundle.ledger)map.set(ledgerKey(r.cls,r.name,r.date),r);return map;
 }
 export const rosterFor=(bundle,cls)=>bundle.roster.filter(p=>p.cls===String(cls));
-// 마스터시트 반 출결판 수식과 같은 기준: 재학·빈 상태이거나 상태 변경일이 그날보다 뒤면 재학으로 셉니다.
-export const enrolledOn=(person,date)=>!person.status||person.status==='재학'||(!!person.changed&&person.changed>date);
+// 2기 담임 화면 기준: 재학·빈 상태이거나, 상태 변경일(마지막 출석일)까지는 재학으로 셉니다. 그다음 교육일부터 빠집니다.
+export const enrolledOn=(person,date)=>!person.status||person.status==='재학'||(!!person.changed&&person.changed>=date);
+// 출결원장 T열 중 '운영총괄과 다름' 계열만 충돌입니다(사유 해석 참고 메모는 충돌이 아님). beta2.gs b2IsConflict_와 같은 기준.
+export const isConflictFlag=flag=>/^운영총괄 값:|^운영총괄에는|^같은 학생/.test(String(flag||''));
 export const courseDays=(bundle,{from='',to=bundle.today}={})=>bundle.days.filter(d=>(!from||d>=from)&&d<=to);
 export function teacherOf(bundle,cls){return bundle.classes.find(c=>String(c.id)===String(cls))?.teacher||'';}
 
@@ -39,7 +41,7 @@ export function dayCounts(rows){
  for(const r of rows){
   if(!r.enrolled&&!r.rec)continue;c.총원++;const t=r.type;
   if(t==='결석')c.결석++;else if(recognizedType(t))c.인정++;else if(['지각','조퇴','외출','중복'].includes(t))c[t]++;
-  if(r.rec?.flag)c.확인필요++;
+  if(isConflictFlag(r.rec?.flag))c.확인필요++;
  }
  c.출석=c.총원-c.결석;return c;
 }
@@ -55,7 +57,7 @@ export function studentStats(bundle,{cls=null,from='',to=bundle.today}={},index=
    const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;
    if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||''});
    if(rec&&recognizedType(t)&&isDiseaseReason(rec.reason))disease.push(d);
-   if(rec?.flag)flags.push({date:d,flag:rec.flag});
+   if(isConflictFlag(rec?.flag))flags.push({date:d,flag:rec.flag});
   }
   const absent=counts['결석']||0;
   return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease,flags};
@@ -119,7 +121,7 @@ export function neededTimes(type,v){
 export function evidenceRows(stats){
  return stats.flatMap(s=>s.evidence.map(e=>({cls:s.cls,name:s.name,...e}))).sort((a,b)=>Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }
-// 중도포기·수료 위험(출석률 80% 미만)
+// 중도탈락·수료 위험(출석률 80% 미만)
 export function dropoutRows(stats,{threshold=80}={}){
  const left=stats.filter(s=>s.status&&s.status!=='재학').map(s=>({...s,verdict:s.status}));
  const risk=stats.filter(s=>(!s.status||s.status==='재학')&&s.rate!==null&&s.rate<threshold).map(s=>({...s,verdict:'수료 위험'}));

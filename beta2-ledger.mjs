@@ -1,5 +1,5 @@
 // 2기 베타 출결대조: 마스터시트 출결원장 + 체크히어 실시간 기록. 저장은 Apps Script로 시트에 바로 들어갑니다.
-import {dayView,dayCounts,compareCheckHere,timesFromRecord,neededTimes,teacherOf,recognizedType,B2_TYPES} from './beta2-core.mjs';
+import {dayView,dayCounts,compareCheckHere,timesFromRecord,neededTimes,teacherOf,recognizedType,isConflictFlag,B2_TYPES} from './beta2-core.mjs';
 import {esc,md,badge,evBadge,syncPill,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {loadCheckHereDay,watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {matchSnapshot} from './attendance-beta-core.mjs';
@@ -14,7 +14,7 @@ const koreaNow=()=>{const s=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Se
 export async function mount(host,{db,user,classes,client,selected,context}){
  const life=lifecycle(host);
  let cls=String(context?.classId||selected||'1'),date=String(context?.date||''),bundle=null,rows=[],records=[],recordsNote='',identities=[],live='',filter=context?.filter||'all',search='',editing=null,form=null,formErr='',saving=false,error='',loaded=false;
- const opened=new Set();let proposalsLoaded='',unwatch=null,seq=0;
+ const opened=new Set();let proposalsLoaded='',unwatch=null,seq=0,chSeq=0;
  host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 저장하면 Google 경고 없이 마스터시트에 바로 들어가고 변경이력에 남습니다.</p></div><div id="b2Sync"></div></div>
  <section class="b2-card"><div class="b2-toolbar">
   <label class="b2-field">반<select id="b2Class">${classOptions(classes,cls)}</select></label>
@@ -37,7 +37,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  }
  function visible(){
   const q=search.trim();
-  return rows.filter(r=>(!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='flag'&&r.rec?.flag)));
+  return rows.filter(r=>(!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='flag'&&isConflictFlag(r.rec?.flag))));
  }
  function timeText(rec){if(!rec)return '';const p=[];if(rec.inT)p.push('입실 '+rec.inT);if(rec.outT)p.push('퇴실 '+rec.outT);if(rec.oa||rec.ob)p.push(`외출 ${rec.oa||'?'}~${rec.ob||'?'}`);return p.join(' · ');}
  function checkhereCell(record){
@@ -58,8 +58,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   <div class="b2-tiny b2-muted">저장한 기록은 출처가 '베타 수정'이 되어 10분 동기화가 덮어쓰지 않습니다. 운영총괄과 다르면 '동기화 확인'에 표시됩니다.</div></div>`;
  }
  function rowHtml(row){
-  const rec=row.rec,cmp=compareRow(row),out=!row.enrolled&&!rec,flag=rec?.flag;
-  const ledger=out?'<span class="b2-muted">해당없음 (재학 기간 아님)</span>':`${badge(row.type)} ${rec?`<span class="b2-small">${esc(timeText(rec))}</span>`:''} ${evBadge(rec?.evApplied)}${rec?.reason?`<span class="b2-sub">${esc(rec.reason)}${rec.evr?` · 반려: ${esc(rec.evr)}`:''}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${flag?`<span class="b2-flag">${esc(flag)} <button class="b2-btn small warn" data-release>운영총괄 값으로</button></span>`:''}`;
+  const rec=row.rec,cmp=compareRow(row),out=!row.enrolled&&!rec,flag=isConflictFlag(rec?.flag)?rec.flag:'',note=rec?.flag&&!flag?rec.flag:'';
+  const ledger=out?'<span class="b2-muted">해당없음 (재학 기간 아님)</span>':`${badge(row.type)} ${rec?`<span class="b2-small">${esc(timeText(rec))}</span>`:''} ${evBadge(rec?.evApplied)}${rec?.reason?`<span class="b2-sub">${esc(rec.reason)}${rec.evr?` · 반려: ${esc(rec.evr)}`:''}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${flag?`<span class="b2-flag">${esc(flag)} <button class="b2-btn small warn" data-release>운영총괄 값으로</button></span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
   return `<tr class="${cmp.state==='diff'?'diff':''} ${flag?'flag':''} ${out?'out':''} ${editing===row.name?'editing':''}" data-name="${esc(row.name)}"><td><span class="b2-name">${esc(row.name)}</span>${row.status&&row.status!=='재학'?`<span class="b2-sub">${esc(row.status)}${row.changed?' · '+md(row.changed):''}</span>`:''}</td><td>${ledger}</td><td>${checkhereCell(matchFor(row))}</td><td><span class="b2-match ${cmp.state}">${cmp.state==='ok'?'✓ ':cmp.state==='diff'?'⚠ ':''}${esc(cmp.text)}</span></td><td><div class="b2-chips"><button class="b2-btn small ${editing===row.name?'dark':''}" data-edit>${editing===row.name?'닫기':'수정'}</button><button class="b2-btn small soft" data-req aria-pressed="${opened.has(row.name)}">체크히어 요청</button></div></td></tr>`
    +(editing===row.name?`<tr class="editing"><td colspan="5">${editorHtml(row)}</td></tr>`:'')
    +(opened.has(row.name)?`<tr><td colspan="5"><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${['times','entryMemo','exitMemo'].map(c=>proposals.html({rowIndex:row.rowIndex,name:row.name},c)).join('')}</div><div class="b2-tiny b2-muted">요청 근거 앞에 [2기 베타]가 붙고, 수집 PC가 승인한 뒤 체크히어에 반영됩니다.</div></td></tr>`:'');
@@ -80,19 +80,20 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(!date||!days.includes(date))date=days[0]||'';
   $('#b2Date').innerHTML=days.map(d=>`<option value="${d}" ${d===date?'selected':''}>${md(d)}${d===bundle.today?' · 오늘':''}</option>`).join('');
  }
- async function loadCheckHere(n){
-  unwatch?.();unwatch=null;records=[];recordsNote='';live='체크히어 확인 중';
+ // 체크히어 구독은 반·날짜가 바뀔 때만 새로 겁니다. 마스터시트를 다시 읽어도(seq) 구독은 그대로 둡니다.
+ async function loadCheckHere(){
+  const n=++chSeq;unwatch?.();unwatch=null;records=[];recordsNote='';live='체크히어 확인 중';
   try{
    identities=await loadCheckHereIdentities(db,cls,students()).catch(()=>[]);
    if(date===koreaNow().date){
     live='체크히어 연결 중';
-    unwatch=watchCheckHereDay(db,cls,date,recs=>{if(n!==seq||!life.alive())return;records=recs;live='live';renderRows();},e=>{if(n===seq){live='실시간 연결 끊김';recordsNote=e.message;renderRows();}});
+    unwatch=watchCheckHereDay(db,cls,date,recs=>{if(n!==chSeq||!life.alive())return;records=recs;live='live';renderRows();},e=>{if(n===chSeq){live='실시간 연결 끊김';recordsNote=e.message;renderRows();}});
     life.on(()=>unwatch?.());
    }else{
-    const recs=await loadCheckHereDay(db,cls,date);if(n!==seq||!life.alive())return;records=recs;live='day';if(!recs.length)recordsNote='이 날 체크히어 저장본 없음';
+    const recs=await loadCheckHereDay(db,cls,date);if(n!==chSeq||!life.alive())return;records=recs;live='day';if(!recs.length)recordsNote='이 날 체크히어 저장본 없음';
    }
-  }catch(e){if(n===seq){live='체크히어 읽기 실패';recordsNote=e.message;}}
-  renderRows();
+  }catch(e){if(n===chSeq){live='체크히어 읽기 실패';recordsNote=e.message;}}
+  if(n===chSeq)renderRows();
  }
  async function load({fresh=false,keepCheckHere=false}={}){
   const n=++seq;say('');
@@ -102,7 +103,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    dateOptions();rows=dayView(bundle,cls,date);
    if(editing&&!rows.some(r=>r.name===editing)){editing=null;form=null;}
    renderRows();
-   if(!keepCheckHere)await loadCheckHere(n);
+   if(!keepCheckHere)await loadCheckHere();
    if(opened.size&&proposalsLoaded!==`${cls}|${date}`){proposalsLoaded=`${cls}|${date}`;await proposals.load(cls,date);renderRows();}
   }catch(e){if(n===seq){error=e.message;tbody.innerHTML=`<tr><td colspan="5">${errorBox(e)}</td></tr>`;}}
  }
@@ -147,10 +148,10 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   }
  });
  $('#b2Class').onchange=e=>{if(editing&&form?.dirty&&!confirm('저장하지 않은 수정이 있습니다. 반을 바꿀까요?')){e.target.value=cls;return;}cls=e.target.value;editing=null;form=null;opened.clear();void load();};
- $('#b2Date').onchange=e=>{if(editing&&form?.dirty&&!confirm('저장하지 않은 수정이 있습니다. 날짜를 바꿀까요?')){e.target.value=date;return;}date=e.target.value;editing=null;form=null;opened.clear();rows=dayView(bundle,cls,date);renderRows();void loadCheckHere(seq);};
+ $('#b2Date').onchange=e=>{if(editing&&form?.dirty&&!confirm('저장하지 않은 수정이 있습니다. 날짜를 바꿀까요?')){e.target.value=date;return;}date=e.target.value;editing=null;form=null;opened.clear();rows=dayView(bundle,cls,date);renderRows();void loadCheckHere();};
  $('#b2Search').oninput=e=>{search=e.target.value;renderRows();};
  $('#b2Reload').onclick=()=>void load({fresh:true});
- $('#b2Pull').onclick=async e=>{e.target.disabled=true;say(`${cls}반을 운영총괄에서 가져오는 중… (보통 5초 안팎)`);try{const r=await client.syncNow({cls});const s=r?.stats||{};say(`${cls}반 가져오기 완료 · 추가 ${s.added||0} · 수정 ${s.updated||0} · 삭제 ${s.removed||0} · 확인 필요 ${s.flagged||0}${r?.errors?.length?' · 오류: '+r.errors.join(', '):''}`);await load({fresh:true,keepCheckHere:true});}catch(err){say(err.message,'err');}finally{e.target.disabled=false;}};
+ $('#b2Pull').onclick=async e=>{e.target.disabled=true;say(`${cls}반을 운영총괄에서 가져오는 중… (보통 5초 안팎)`);try{const r=await client.syncNow({cls}),s=r?.stats||{};await load({fresh:true,keepCheckHere:true});say(`${cls}반 가져오기 완료 · 추가 ${s.added||0} · 수정 ${s.updated||0} · 삭제 ${s.removed||0} · 확인 필요 ${s.flagged||0}${r?.errors?.length?' · 오류: '+r.errors.join(', '):''}`,r?.errors?.length?'warn':'');}catch(err){say(err.message,'err');}finally{e.target.disabled=false;}};
  const stopWatch=client.watch(async()=>{if(!life.alive()||saving)return;const keep=editing;await load({fresh:true,keepCheckHere:true});if(keep)say('마스터시트가 바뀌어 새로 읽었습니다. 열려 있는 수정 칸은 그대로 두었습니다.');},{current:()=>bundle?.rev||0});
  life.on(stopWatch);
  await load();

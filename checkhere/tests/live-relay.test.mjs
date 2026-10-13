@@ -92,17 +92,17 @@ async function harness(w,port,opts={}){
   await relay.start({loop:false});
   return {app,relay,logs,advance(ms){clock=new Date(clock.getTime()+ms);},close:()=>{relay.stop();app.close();}};
 }
-test('5-minute cycle saves a class once, skips unchanged students, re-reads only changed ones and drops classes without a lecture',async()=>{
+test('10-minute cycle saves a class once, skips unchanged students, re-reads only changed ones and drops classes without a lecture',async()=>{
   const w=world(),h=await harness(w,18791,{classIds:['2','3']});
   try{
     assert.equal(await h.relay.step(),'sync');assert.equal(w.day('2').length,2);assert.deepEqual(w.reads.sort(),['가상둘','가상하나']);
     assert.equal(await h.relay.step(),'sync');assert.match(h.logs.join('\n'),/3반: 오늘 강의가 없어/);
-    assert.equal(await h.relay.step(),'idle','waits for the next 5-minute round');
-    h.advance(5*60*1000);w.reads.length=0;const commits=w.commits;
+    assert.equal(await h.relay.step(),'idle','waits for the next 10-minute round');
+    h.advance(10*60*1000);w.reads.length=0;const commits=w.commits;
     await h.relay.step();await h.relay.step();
     assert.deepEqual(w.reads,[],'nothing changed: no editor opened');assert.equal(w.commits,commits,'and no DB write');
     [...w.truth.values()].find(t=>t.name==='가상둘').exit='17:30:00';
-    h.advance(5*60*1000);await h.relay.step();
+    h.advance(10*60*1000);await h.relay.step();
     assert.deepEqual(w.reads,['가상둘']);assert.equal(w.day('2').find(r=>r.name==='가상둘').exit,'17:30:00');
   }finally{h.close();}
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText} from '../../beta2-core.mjs';
+import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText,isConflictFlag,enrolledOn} from '../../beta2-core.mjs';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
@@ -8,13 +8,13 @@ const COLS=['date','cls','name','type','inT','outT','oa','ob','reason','ev','evr
 const L=(date,name,type,o={})=>COLS.map(k=>({date,cls:'1',name,type,inT:'',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',memo:'',evApplied:recognized(type)?(o.ev||'미제출'):'해당없음',check:'',prov:'1기 동기화',flag:'',sig:'s',...o})[k]);
 const recognized=t=>t.startsWith('인정');
 const RAW={rev:7,today:'2026-09-03',days:['2026-09-01','2026-09-02','2026-09-03','2026-09-04'],classes:[{id:'1',teacher:'김지아'}],
- roster:[['1','가','재학',''],['1','나','중도포기','2026-09-03'],['1','다','',''],['2','라','재학','']],ledgerCols:COLS,
+ roster:[['1','가','재학',''],['1','나','중도탈락','2026-09-02'],['1','다','',''],['2','라','재학','']],ledgerCols:COLS,
  ledger:[L('2026-09-01','가','지각',{inT:'09:20'}),L('2026-09-02','가','인정출석',{reason:'병원 진료'}),L('2026-09-03','가','인정지각',{reason:'병결',ev:'확인',inT:'09:40'}),
   L('2026-09-01','나','결석'),L('2026-09-02','나','결석'),L('2026-09-02','다','인정조퇴',{reason:'면접',ev:'반려',evr:'날짜 없음',outT:'15:00',flag:'운영총괄 값: 조퇴'})]};
 
 test('bundles decode into rows and a day view follows the roster with implied attendance and leavers',()=>{
  const b=decodeBundle(RAW);
- assert.equal(b.ledger.length,6);assert.equal(b.ledger[0].inT,'09:20');assert.equal(b.roster[1].changed,'2026-09-03');
+ assert.equal(b.ledger.length,6);assert.equal(b.ledger[0].inT,'09:20');assert.equal(b.roster[1].changed,'2026-09-02');
  const day=dayView(b,'1','2026-09-03');
  assert.deepEqual(day.map(r=>[r.name,r.type,r.enrolled]),[['가','인정지각',true],['나','해당없음',false],['다','출석',true]]);
  assert.deepEqual(dayCounts(dayView(b,'1','2026-09-02')),{총원:3,출석:2,결석:1,지각:0,조퇴:0,외출:0,인정:2,중복:0,확인필요:1});
@@ -27,7 +27,10 @@ test('student statistics use the master-sheet attendance rate, evidence and dise
  assert.deepEqual(ga.counts,{지각:1,인정출석:1,인정지각:1});
  assert.deepEqual(ga.disease,['2026-09-02','2026-09-03']);
  assert.deepEqual(ga.evidence.map(e=>e.date),['2026-09-02']);
- assert.deepEqual([na.days,na.absent,Math.round(na.rate)],[2,2,0],'days after the change date are not counted');
+ assert.deepEqual([na.days,na.absent,Math.round(na.rate)],[2,2,0],'the change date is the last attended day; later days are not counted');
+ assert.equal(enrolledOn({status:'중도탈락',changed:'2026-09-02'},'2026-09-02'),true);assert.equal(enrolledOn({status:'중도탈락',changed:'2026-09-02'},'2026-09-03'),false);
+ assert.equal(isConflictFlag('운영총괄 값: 지각'),true);assert.equal(isConflictFlag('운영총괄에는 이 날 기록 없음(출석)'),true);
+ assert.equal(isConflictFlag('사유: 동명이인·이름 경계 확인 필요'),false);assert.equal(isConflictFlag('운영총괄 값 확인 필요: 이상한값'),false);
  assert.deepEqual(da.flags,[{date:'2026-09-02',flag:'운영총괄 값: 조퇴'}]);
  assert.deepEqual(evidenceRows(s).map(e=>[e.name,e.date,e.state]),[['가','2026-09-02','미제출'],['다','2026-09-02','반려']]);
  const {left,risk}=dropoutRows(s);

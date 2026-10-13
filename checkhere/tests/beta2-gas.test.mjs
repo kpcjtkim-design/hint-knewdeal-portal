@@ -51,7 +51,7 @@ test('one 운영총괄 class tab becomes exception rows with reasons, evidence a
   ['한수빈','','','','지각','출석','출석','출석','출석','출석','출석'],
   ['임태종','','','','출석','출석','출석','인정출석','인정출석','중복',''],
   ['고다원','','','','출석','결석','해당없음','해당없음','해당없음','해당없음',''],
-  ['황보재','','','','출석','인정결석','이상한값','출석','출석','출석',''],
+  ['황보재','','','','출석','인정결석','이상한값','출석','출석','중복(지각+외출, 지각+조퇴, 외출+조퇴)',''],
  ],{'7/27':'지각1- 한수빈_교통편문제','7/30':'인정결석1 임태종_면접결석','7/28':'결석1- 고다원:면접준비\n인정출석 황보재_예비군'});
  const bg=values.map(r=>r.map(()=> '#ffffff'));bg[2][7]='#ffff00';bg[2][8]='#ff0000';
  const out=g('b2ParseGrid_')('1',values,bg,'2026-10-13',DAYS);
@@ -64,9 +64,10 @@ test('one 운영총괄 class tab becomes exception rows with reasons, evidence a
   ['2026-08-03','임태종','중복','','','운영총괄 중복 표시 · 유형 확인 필요'],
   ['2026-07-28','고다원','결석','면접준비','',''],
   ['2026-07-28','황보재','인정출석','예비군','',''],
-  ['2026-07-29','황보재','이상한값','','','운영총괄 값 확인 필요: 이상한값']
+  ['2026-07-29','황보재','이상한값','','','운영총괄 값 확인 필요: 이상한값'],
+  ['2026-08-03','황보재','중복','','','운영총괄 중복 표시 · 유형 확인 필요']
  ]);
- assert.deepEqual(JSON.parse(JSON.stringify(out.students)),[{name:'한수빈',dropoutFrom:''},{name:'임태종',dropoutFrom:''},{name:'고다원',dropoutFrom:'2026-07-29'},{name:'황보재',dropoutFrom:''}]);
+ assert.deepEqual(JSON.parse(JSON.stringify(out.students)),[{name:'한수빈',dropoutFrom:'',lastDay:''},{name:'임태종',dropoutFrom:'',lastDay:''},{name:'고다원',dropoutFrom:'2026-07-29',lastDay:'2026-07-28'},{name:'황보재',dropoutFrom:'',lastDay:''}]);
  assert.throws(()=>g('b2ParseGrid_')('1',grid([]).map((r,i)=>i===0?[...head.slice(0,5),'7/27']:r),null,'2026-10-13',DAYS),/겹칩니다/);
 });
 
@@ -117,8 +118,9 @@ test('a beta 출석 override stays and is flagged against the source; duplicate 
 test('roster merge adds students, marks dropouts only over 재학/blank and fills birth data by class and birth year',()=>{
  const roster=[{row:2,cls:'1',name:'가',status:'재학',changed:'',birth:'',gender:''},{row:3,cls:'1',name:'나',status:'조기취업',changed:'2026-09-01',birth:'2000-01-01',gender:'남성'}];
  const people=[{cls:'1',name:'가',birth:'1999-05-31',gender:'여성'},{cls:'1',name:'나',birth:'2000-01-01',gender:'남성'},{cls:'9',name:'김민수',birth:'1999-02-03',gender:'남성'},{cls:'9',name:'김민수',birth:'2002-04-05',gender:'남성'},{cls:'9',name:'동명',birth:'2001-01-01',gender:'여성'},{cls:'9',name:'동명',birth:'2001-02-02',gender:'남성'}];
- const out=g('b2MergeRoster_')(roster,{'1':[{name:'가',dropoutFrom:'2026-09-10'},{name:'나',dropoutFrom:'2026-09-10'}],'9':[{name:'김민수(02년생)',dropoutFrom:''},{name:'동명',dropoutFrom:''}]},people);
- assert.deepEqual(JSON.parse(JSON.stringify(out.updates)),[{status:'중도포기',changed:'2026-09-10',birth:'1999-05-31',gender:'여성',row:2}]);
+ roster.push({row:4,cls:'1',name:'다',status:'중도포기',changed:'2026-09-10',birth:'2001-01-01',gender:'남성'},{row:5,cls:'1',name:'라',status:'중도포기',changed:'2026-09-01',birth:'2001-01-01',gender:'남성'});
+ const out=g('b2MergeRoster_')(roster,{'1':[{name:'가',dropoutFrom:'2026-09-10',lastDay:'2026-09-09'},{name:'나',dropoutFrom:'2026-09-10',lastDay:'2026-09-09'},{name:'다',dropoutFrom:'2026-09-10',lastDay:'2026-09-09'},{name:'라',dropoutFrom:'',lastDay:''}],'9':[{name:'김민수(02년생)',dropoutFrom:''},{name:'동명',dropoutFrom:''}]},people);
+ assert.deepEqual(JSON.parse(JSON.stringify(out.updates)),[{status:'중도탈락',changed:'2026-09-09',birth:'1999-05-31',gender:'여성',row:2},{status:'중도탈락',changed:'2026-09-09',row:4},{status:'중도탈락',changed:'2026-09-01',row:5}],'old beta2 wording is migrated to the sheet term');
  assert.deepEqual(JSON.parse(JSON.stringify(out.appends)),[{cls:'9',name:'김민수(02년생)',status:'재학',changed:'',birth:'2002-04-05',gender:'남성'},{cls:'9',name:'동명',status:'재학',changed:'',birth:'',gender:''}]);
 });
 
@@ -140,4 +142,18 @@ test('1기 document requests map onto the master 서류발급 columns',()=>{
  assert.deepEqual(plain(g('B2_DOC_FIELDS').map(k=>d[k])),['1기-6','2026-08-13','4반','이경수','2001.06.23','기간: 2026년 7월 27일 ~ 8월 14일 · 목적: 취업','국민취업제도 운영기관','2026-08-18','처리완료','개인 톡 전달','출석부','','','1기 운영총괄','','','','']);
  assert.equal(g('b2DocFromSource_')(['','','','','x'],7),null);
  assert.equal(Object.keys(g('B2_ACTIONS')).length,9);
+});
+
+test('reasons carrying times move into the time columns and board cells use the Code.gs notation',()=>{
+ const split=(t,r)=>plain(g('b2SplitReason_')(t,r));
+ assert.deepEqual(split('지각','09:14'),{reason:'',inT:'09:14',outT:'',oa:'',ob:''});
+ assert.deepEqual(split('조퇴','토익시험 15:53'),{reason:'토익시험',inT:'',outT:'15:53',oa:'',ob:''});
+ assert.deepEqual(split('외출','개인일정(9:00-10:00)'),{reason:'개인일정',inT:'',outT:'',oa:'09:00',ob:'10:00'});
+ assert.deepEqual(split('인정출석','병결(인)'),{reason:'병결',inT:'',outT:'',oa:'',ob:''});
+ assert.deepEqual(split('결석','면접 9:30'),{reason:'면접 9:30',inT:'',outT:'',oa:'',ob:''},'times stay in the reason when the type has no time column');
+ assert.equal(g('b2NormType_')('중복(지각+외출, 지각+조퇴, 외출+조퇴)'),'중복');assert.equal(g('b2NormType_')('인정결석'),'인정출석');
+ const cell=g('b2BoardCell_'),left={status:'중도탈락',changed:'2026-09-09'};
+ assert.equal(cell({type:'인정출석',ev:''},left,'2026-09-01'),'인정출석','no evidence star on the board');
+ assert.equal(cell(null,left,'2026-09-09'),'출석');assert.equal(cell(null,left,'2026-09-10'),'','blank after the last attended day');
+ assert.equal(g('b2IsConflict_')('사유: 동명이인·이름 경계 확인 필요'),false);assert.equal(g('b2IsConflict_')('운영총괄 값: 증빙 확인'),true);
 });

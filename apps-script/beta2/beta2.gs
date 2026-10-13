@@ -88,6 +88,22 @@ function b2ColorState_(bg) {
   return '미제출';
 }
 
+// 운영총괄 값 정리: '중복(지각+외출, …)' 같은 목록 문구는 '중복'으로, 별칭은 시트 유형으로 바꿉니다.
+function b2NormType_(raw) { var v = String(raw == null ? '' : raw).trim(); if (B2.ALIASES[v]) return B2.ALIASES[v]; return /^중복/.test(v) ? '중복' : v; }
+// 사유에 섞인 시간·표기를 시트 칸으로 옮깁니다: 지각 '09:14' → 입실, 조퇴 → 퇴실, 외출 '(9:00-10:00)' → 외출 시작·종료. 끝의 '(인)'·'(인정)'은 지웁니다.
+function b2SplitReason_(type, reason) {
+  var base = String(type || '').replace(/^인정/, ''), r = String(reason || '').trim(), out = { reason: '', inT: '', outT: '', oa: '', ob: '' };
+  r = r.replace(/\s*[（(]\s*인정?\s*[)）]\s*$/, '').trim();
+  var range = r.match(/[（(]?\s*(\d{1,2}:\d{2})\s*[~\-–]\s*(\d{1,2}:\d{2})\s*[)）]?/);
+  if (range && base === '외출') { out.oa = b2Time_(range[1]); out.ob = b2Time_(range[2]); r = r.replace(range[0], ' '); }
+  var one = range ? null : r.match(/[（(]?\s*(\d{1,2}:\d{2})\s*[)）]?/);
+  if (one && (base === '지각' || base === '조퇴')) { out[base === '지각' ? 'inT' : 'outT'] = b2Time_(one[1]); r = r.replace(one[0], ' '); }
+  out.reason = r.replace(/\s+/g, ' ').replace(/^[\s,，·_:\-]+|[\s,，·_:\-]+$/g, '').trim();
+  return out;
+}
+// T열 중 '운영총괄과 다름' 계열만 충돌로 봅니다(사유 해석 참고 메모는 충돌이 아님).
+function b2IsConflict_(flag) { return /^운영총괄 값:|^운영총괄에는|^같은 학생/.test(String(flag || '')); }
+
 /* 사유 해석: attendance-reason-core.mjs의 parseAttendanceReasons·reasonFor를 그대로 옮겼습니다.
  * (tests/beta2-gas.test.mjs가 두 구현의 결과가 같은지 확인합니다.) */
 var B2_STATUS = '인정출석|인정지각|인정조퇴|인정외출|인정결석|출석인정|무단결석|결석|지각|조퇴|외출|출석|중복';
@@ -155,19 +171,21 @@ function b2ParseGrid_(cls, values, backgrounds, today, days) {
   for (c = G.dateOffset; c < rh.length; c++) { var d = b2HeaderIso_(rh[c]); if (d) reasons[d] = String(rt[c] || ''); }
   var names = students.map(function (s) { return s.name; }), parsedCache = {}, records = [];
   var valid = ['출석', '지각', '조퇴', '외출', '결석', '인정출석', '중복'];
-  var statusOf = function (s, d) { var v = String(s.row[d.c] || '').trim(); return B2.ALIASES[v] || v; };
-  // 중도포기: 마지막으로 입력된 날짜에서 거꾸로 '해당없음'이 2일 이상 이어지면 그 첫날부터 (포털 통계와 같은 기준)
+  var statusOf = function (s, d) { return b2NormType_(s.row[d.c]); };
+  // 중도탈락: 마지막으로 입력된 날짜에서 거꾸로 '해당없음'이 2일 이상 이어지면 그 첫날부터 (포털 통계와 같은 기준)
   var evaluation = -1;
   dates.forEach(function (d, i) { if (students.some(function (s) { return valid.indexOf(statusOf(s, d)) >= 0; })) evaluation = i; });
   var outStudents = students.map(function (s) {
     var first = -1; for (var i = 0; i < dates.length; i++) if (valid.indexOf(statusOf(s, dates[i])) >= 0) { first = i; break; }
     var trailing = []; for (i = evaluation; i >= 0; i--) { if (statusOf(s, dates[i]) !== '해당없음') break; trailing.unshift(dates[i].iso); }
     var dropout = evaluation >= 0 && first >= 0 && trailing.length >= 2 && dates[first].iso < trailing[0];
-    return { name: s.name, dropoutFrom: dropout ? trailing[0] : '' };
+    // lastDay: 마지막 출석일(해당없음 바로 앞 교육일). 명부 '상태 변경일'에 넣고, 그다음 교육일부터 재학에서 뺍니다(2기 담임 화면 기준).
+    var at = dropout ? dates.map(function (d) { return d.iso; }).indexOf(trailing[0]) : -1;
+    return { name: s.name, dropoutFrom: dropout ? trailing[0] : '', lastDay: at > 0 ? dates[at - 1].iso : '' };
   });
   students.forEach(function (s) {
     dates.forEach(function (d) {
-      var raw = String(s.row[d.c] || '').trim(), type = B2.ALIASES[raw] || raw, notes = [];
+      var raw = String(s.row[d.c] || '').trim(), type = b2NormType_(raw), notes = [];
       if (!raw || raw === '출석' || raw === '해당없음' || raw === '-' || raw === '미입력') return;
       if (type === '중복') notes.push('운영총괄 중복 표시 · 유형 확인 필요');
       else if (B2.TYPES.indexOf(type) < 0) notes.push('운영총괄 값 확인 필요: ' + raw);
@@ -179,7 +197,8 @@ function b2ParseGrid_(cls, values, backgrounds, today, days) {
         var state = b2ColorState_(((backgrounds || [])[s.r] || [])[d.c]);
         ev = state === '확인' ? '확인' : state === '보완필요' ? '반려' : '';
       }
-      records.push({ date: d.iso, cls: String(cls), name: s.name, type: type, inT: '', outT: '', oa: '', ob: '', reason: found.reason, ev: ev, evr: '', note: notes.join(' · ') });
+      var split = b2SplitReason_(type, found.reason);
+      records.push({ date: d.iso, cls: String(cls), name: s.name, type: type, inT: split.inT, outT: split.outT, oa: split.oa, ob: split.ob, reason: split.reason, ev: ev, evr: '', note: notes.join(' · ') });
     });
   });
   return { records: records, students: outStudents, dates: dates.map(function (d) { return d.iso; }) };
@@ -243,7 +262,8 @@ function b2Merge_(existing, desired, scope) {
 
 /* 명부 합치기. roster: [{row, cls, name, status, changed, birth, gender}], students: {cls: [{name, dropoutFrom}]},
  * people: 교육생정보 [{cls, name, birth, gender}] (birth: 'yyyy-MM-dd')
- * - 없는 학생은 추가, 중도포기는 상태가 비었거나 재학일 때만 바꿈, 생년월일·성별은 빈 칸만 채움. */
+ * - 없는 학생은 추가, 중도탈락은 상태가 비었거나 재학일 때만 바꿈(상태 변경일 = 마지막 출석일), 생년월일·성별은 빈 칸만 채움.
+ * - 예전 beta2가 쓴 '중도포기'는 시트 용어 '중도탈락'으로 고칩니다. */
 function b2MergeRoster_(roster, students, people) {
   var byKey = {}, updates = [], appends = [];
   roster.forEach(function (r) { byKey[String(r.cls) + '|' + String(r.name).trim()] = r; });
@@ -257,11 +277,13 @@ function b2MergeRoster_(roster, students, people) {
     students[cls].forEach(function (s) {
       var cur = byKey[cls + '|' + s.name], person = personFor(cls, s.name);
       if (!cur) {
-        appends.push({ cls: cls, name: s.name, status: s.dropoutFrom ? '중도포기' : '재학', changed: s.dropoutFrom || '', birth: person ? person.birth : '', gender: person ? person.gender : '' });
+        appends.push({ cls: cls, name: s.name, status: s.dropoutFrom ? '중도탈락' : '재학', changed: s.dropoutFrom ? (s.lastDay || s.dropoutFrom) : '', birth: person ? person.birth : '', gender: person ? person.gender : '' });
         return;
       }
       var patch = {};
-      if (s.dropoutFrom && (!cur.status || cur.status === '재학')) { patch.status = '중도포기'; patch.changed = s.dropoutFrom; }
+      var want = s.lastDay || s.dropoutFrom;
+      if (s.dropoutFrom && (!cur.status || cur.status === '재학' || (cur.status === '중도포기' && cur.changed !== want))) { patch.status = '중도탈락'; patch.changed = want; }
+      else if (cur.status === '중도포기') { patch.status = '중도탈락'; patch.changed = cur.changed; }
       if (!cur.birth && person && person.birth) patch.birth = person.birth;
       if (!cur.gender && person && person.gender) patch.gender = person.gender;
       if (Object.keys(patch).length) { patch.row = cur.row; updates.push(patch); }
@@ -399,13 +421,11 @@ function b2Summary_(r) {
 }
 
 /* ---------- 반별 출결판(3001~3017) 새로 그리기 ---------- */
-// A17:A48 이름, 16행 E열부터 교육일(최근일 먼저), 칸 값은 출결원장 예외 기록 또는 출석/해당없음.
+// A17:A48 이름, 16행 E열부터 교육일(최근일 먼저), 칸 값은 b2BoardCell_ (Code.gs와 같은 표기).
+// 반별 출결판 칸 값은 Code.gs(rebuildBoard_)와 같은 표기: 출결원장 유형 그대로, 기록이 없으면 출석, 상태 변경일(마지막 출석일) 다음부터는 빈칸.
 function b2BoardCell_(rec, person, date) {
-  if (rec) {
-    var pending = rec.type.indexOf('인정') === 0 && (!rec.ev || rec.ev === '미제출' || rec.ev === '반려');
-    return rec.type + (pending ? '*' : '');
-  }
-  if (person && person.status && person.status !== '재학' && person.changed && date >= person.changed) return '해당없음';
+  if (rec) return rec.type;
+  if (person && person.status && person.status !== '재학' && person.changed && date > person.changed) return '';
   return '출석';
 }
 function b2RefreshBoards_(classes, ctx) {
@@ -455,12 +475,14 @@ function b2SyncRun_(opts) {
   if (!sourceId) return { skipped: true, reason: '원본 시트가 없어 동기화하지 않습니다(2기 마스터).' };
   if (all) {
     srcUpdated = DriveApp.getFileById(sourceId).getLastUpdated().getTime();
-    if (!opts.force && srcUpdated <= (+props.getProperty('B2_SRC_SEEN') || 0)) {
+    if (!opts.force && props.getProperty('B2_LEGACY_ADOPTED') === '1' && srcUpdated <= (+props.getProperty('B2_SRC_SEEN') || 0)) {
       props.setProperty('B2_SYNC_CHECKED', String(Date.now()));
       return { skipped: true, reason: '운영총괄이 바뀌지 않았습니다.' };
     }
   }
   var classes = all ? Object.keys(B2.SOURCE_TABS) : opts.classes.map(String).filter(function (c) { return B2.SOURCE_TABS[c]; });
+  // 처음 한 번: beta2 설치 전부터 있던 출결원장 행(출처·지문 빈칸)은 운영총괄 값으로 맞춥니다(사용자 결정 2026-10-13).
+  var adoptLegacy = all && props.getProperty('B2_LEGACY_ADOPTED') !== '1';
   var src = SpreadsheetApp.openById(sourceId), days = b2Days_(), today = b2Today_();
   var desired = [], scope = {}, students = {}, errors = [];
   classes.forEach(function (cls) {
@@ -478,9 +500,7 @@ function b2SyncRun_(opts) {
   var lock = LockService.getDocumentLock(); lock.waitLock(30000);
   var result;
   try {
-    var ledger = b2ReadLedger_(), merged = b2Merge_(ledger.rows, desired, scope);
-    var dirty = merged.changed.length > 0;
-    if (dirty) b2WriteLedger_(ledger, merged.rows);
+    // 명부를 먼저 씁니다(출결원장 이름 칸의 명부 데이터 확인 규칙과 맞추기 위해).
     var roster = b2ReadRoster_(), rm = b2MergeRoster_(roster.rows, students, b2ReadPeople_());
     rm.updates.forEach(function (u) {
       if (u.status) roster.sh.getRange(u.row, 4, 1, 2).setValues([[u.status, u.changed ? b2DateValue_(u.changed) : '']]);
@@ -495,21 +515,30 @@ function b2SyncRun_(opts) {
       roster.sh.getRange(at, 1, rm.appends.length, 5).setValues(rm.appends.map(function (a) { return [Number(a.cls), a.name, '', a.status, a.changed ? b2DateValue_(a.changed) : '']; }));
       roster.sh.getRange(at, 7, rm.appends.length, 2).setValues(rm.appends.map(function (a) { return [a.birth ? b2DateValue_(a.birth) : '', a.gender]; }));
     }
+    if (rm.updates.length || rm.appends.length) SpreadsheetApp.flush();
+    var ledger = b2ReadLedger_(), adopted = 0;
+    if (adoptLegacy) ledger.rows.forEach(function (r) { if (!r.prov && !r.sig) { r.prov = B2.PROV_SYNC; r.sig = '*'; adopted++; } });
+    var merged = b2Merge_(ledger.rows, desired, scope);
+    var dirty = merged.changed.length > 0;
+    if (dirty) b2WriteLedger_(ledger, merged.rows);
     var infoFilled = srcInfo ? b2FillInfo_(srcInfo) : 0;
     var docsAdded = srcDocs ? b2ImportDocs_(srcDocs) : 0;
     var boardClasses = merged.changed.slice();
     rm.appends.forEach(function (a) { if (boardClasses.indexOf(a.cls) < 0) boardClasses.push(a.cls); });
+    var rowCls = {}; roster.rows.forEach(function (r) { rowCls[r.row] = r.cls; });
+    rm.updates.forEach(function (u) { var c = rowCls[u.row]; if (u.status && c && boardClasses.indexOf(c) < 0) boardClasses.push(c); });
     if (opts.reason === 'setup') boardClasses = classes.slice();
     if (boardClasses.length) {
       var freshRoster = b2ReadRoster_().rows, freshLedger = dirty ? b2ReadLedger_().rows : ledger.rows;
       b2RefreshBoards_(boardClasses, { ledger: freshLedger, roster: freshRoster, days: days.list, today: today });
     }
     var s = merged.stats, changes = s.added + s.updated + s.removed + rm.updates.length + rm.appends.length + infoFilled + docsAdded;
+    if (adoptLegacy && !errors.length) props.setProperty('B2_LEGACY_ADOPTED', '1');
     if (changes || dirty) b2Bump_();
     if (changes) {
       b2Log_(classes.length === 17 ? '' : classes.join(','), '', '', '', '추가 ' + s.added + ' · 수정 ' + s.updated + ' · 삭제 ' + s.removed + ' · 확인 필요 ' + s.flagged + ' · 명부 ' + (rm.updates.length + rm.appends.length) + ' · 서류 ' + docsAdded, '1기 동기화');
     }
-    result = { at: Date.now(), ms: Date.now() - started, reason: opts.reason || '', classes: classes.length, stats: s, roster: { updated: rm.updates.length, added: rm.appends.length }, info: infoFilled, docs: docsAdded, errors: errors };
+    result = { at: Date.now(), ms: Date.now() - started, reason: opts.reason || '', classes: classes.length, stats: s, legacyAdopted: adopted, roster: { updated: rm.updates.length, added: rm.appends.length }, info: infoFilled, docs: docsAdded, errors: errors };
     props.setProperty('B2_SYNC_LAST', JSON.stringify(result));
     if (changes) props.setProperty('B2_SYNC_CHANGED', String(Date.now()));
     if (all && !errors.length) props.setProperty('B2_SRC_SEEN', String(srcUpdated));
@@ -646,7 +675,7 @@ function b2Release(p) {
     var ledger = b2ReadLedger_();
     ledger.rows.forEach(function (r) {
       if (r.rec.cls !== cls) return;
-      var hit = p.flagged ? !!r.flag : (r.rec.name === String(p.name || '').trim() && r.rec.date === String(p.date || ''));
+      var hit = p.flagged ? (r.prov !== B2.PROV_SYNC && b2IsConflict_(r.flag)) : (r.rec.name === String(p.name || '').trim() && r.rec.date === String(p.date || ''));
       if (!hit) return;
       ledger.sh.getRange(r.row, B2.COL.prov, 1, 2).setValues([[B2.PROV_SYNC, '*']]); count++;
     });
