@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>HINT · 체크히어 실시간 (베타)</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--line:#dbe3ee;--ink:#172033;--muted:#64748b;--blue:#2563eb;--blue-soft:#eff6ff;--green:#15803d;--green-soft:#f0fdf4;--amber:#b45309;--amber-soft:#fffbeb;--red:#b91c1c;--red-soft:#fef2f2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.45}
+button,input,select,textarea{font:inherit;color:inherit}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{margin:0;font-size:18px}
+.beta{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--amber-soft);color:var(--amber);font-size:12px;font-weight:600;vertical-align:middle}
+main{max-width:1280px;margin:0 auto;padding:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:16px}
+.muted,small{color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;cursor:pointer}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+textarea{width:100%;min-height:64px;resize:vertical}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:collapse;min-width:960px}
+th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top}
+th{background:#f8fafc;font-weight:600;font-size:13px;white-space:nowrap}
+td.time{font-variant-numeric:tabular-nums;white-space:nowrap}
+td.memo{max-width:220px;word-break:break-all}
+tr.changed td{animation:flash 2.4s ease-out}
+@keyframes flash{from{background:#fef9c3}to{background:transparent}}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;white-space:nowrap;background:#f1f5f9;color:#334155}
+.chip.ok{background:var(--green-soft);color:var(--green)}
+.chip.wait{background:var(--blue-soft);color:var(--blue)}
+.chip.warn{background:var(--amber-soft);color:var(--amber)}
+.chip.bad{background:var(--red-soft);color:var(--red)}
+.note{padding:10px 12px;border-radius:8px;background:var(--blue-soft);color:#1e3a8a}
+.error{color:var(--red)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));padding:10px 14px;border-radius:10px;background:#0f172a;color:#fff;box-shadow:0 8px 24px rgba(15,23,42,.25);display:none;z-index:10}
+dialog{border:1px solid var(--line);border-radius:14px;padding:18px;width:min(520px,calc(100% - 24px))}
+dialog::backdrop{background:rgba(15,23,42,.35)}
+dialog label{display:block;margin:10px 0 4px;font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.log{max-height:220px;overflow:auto;font-size:12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px;margin:8px 0 0;list-style:none}
+.log li{padding:2px 0}.log li.warn{color:var(--amber)}.log li.error{color:var(--red)}
+.req{display:flex;flex-wrap:wrap;gap:4px 10px;padding:8px 0;border-bottom:1px solid #eef2f7}
+@media (max-width:640px){header{padding:12px 16px}main{padding:12px}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>체크히어 실시간 수정<span class="beta">베타</span></h1><div class="row" id="who"></div></header>
+<main id="app"><section><p class="muted">불러오는 중…</p></section></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="/checkhere-live.mjs?v=20261012-1"></script>
+</body>
+</html>

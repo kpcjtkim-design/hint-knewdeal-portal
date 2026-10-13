@@ -4,13 +4,18 @@ import {readFileSync,mkdirSync,existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
 import {randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
-import {CheckHereCollector} from './collector.mjs';
+import {CheckHereCollector,sameTableRow} from './collector.mjs';
 import {judge,RULES} from './rules.mjs';
 import {applyVerified,confirmAlreadyApplied} from './writeback.mjs';
 import {createApprovalCloud} from './cloud-approval.mjs';
 import {readRequestRecord} from './request-record.mjs';
 import {proposalFromApproval,prepareApproval} from './approval-core.mjs';
+import {runProbe} from './probe-network.mjs';
+import {summarize} from './probe-core.mjs';
+import {writeFileSync} from 'node:fs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
+const CAPABILITIES=['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1'];
+const NO_LECTURE=/강의가 없습니다/;
 export function createBridge({dataDir=join(here,'data'),collector=null,port=8765,approvalCloud=createApprovalCloud()}={}){
   mkdirSync(dataDir,{recursive:true});const db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS snapshot_id ON snapshots(id,seq); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS journal(seq INTEGER PRIMARY KEY, job TEXT, payload TEXT);');
@@ -33,6 +38,20 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
   const saveJob=j=>{db.prepare('INSERT INTO jobs(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(j.id,JSON.stringify(j));jobs.set(j.id,j);};
   for(const row of db.prepare('SELECT payload FROM jobs').all()){const j=JSON.parse(row.payload);if(j.status==='running'){j.status=j.kind==='apply'?'unknown':'interrupted';j.message='프로그램이 중단되었습니다. 다시 수집해 결과를 확인해 주세요.';saveJob(j);}jobs.set(j.id,j);}
   const seed=join(dataDir,'seed.json');if(!latest().length&&existsSync(seed))for(const r of JSON.parse(readFileSync(seed,'utf8')))put({...r,source:'snapshot',readState:'partial'});
+  // Remembered CheckHere addresses survive restarts, so a repeated period
+  // collection skips the paged lecture search. The collector re-looks-up any
+  // address that no longer opens the right class/day.
+  db.exec('CREATE TABLE IF NOT EXISTS places(key TEXT PRIMARY KEY, url TEXT NOT NULL, savedAt TEXT NOT NULL);');
+  const placeOk=u=>{try{const x=new URL(u);return x.origin==='https://check.ihereapp.com'&&x.pathname.startsWith('/history/lecture/');}catch{return false;}};
+  const remembers=adapter.urls instanceof Map&&adapter.lectureUrls instanceof Map;
+  if(remembers)for(const row of db.prepare('SELECT key,url FROM places').all()){if(!placeOk(row.url))continue;if(/^lecture\|(?:[1-9]|1[0-7])$/.test(row.key))adapter.lectureUrls.set(row.key.slice(8),row.url);else if(/^(?:[1-9]|1[0-7])\|\d{4}-\d{2}-\d{2}$/.test(row.key))adapter.urls.set(row.key,row.url);}
+  const rememberPlaces=()=>{
+    if(!remembers)return;const now=new Date().toISOString(),current=new Map([...adapter.urls,...[...adapter.lectureUrls].map(([k,v])=>['lecture|'+k,v])].filter(([,v])=>placeOk(v)));
+    const upsert=db.prepare('INSERT INTO places(key,url,savedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET url=excluded.url,savedAt=excluded.savedAt WHERE places.url<>excluded.url'),drop=db.prepare('DELETE FROM places WHERE key=?');
+    for(const [k,v] of current)upsert.run(k,v,now);for(const row of db.prepare('SELECT key FROM places').all())if(!current.has(row.key))drop.run(row.key);
+  };
+  // Same student, same complete content as the last stored read (memos included).
+  const sameStored=r=>{const old=snapshots.get(r.id)?.record;return !!old&&old.source==='live'&&old.readState==='complete'&&old.version===r.version&&old.tableSignature===r.tableSignature&&old.studentKey===r.studentKey;};
   const journal=(job,event)=>db.prepare('INSERT INTO journal(job,payload) VALUES(?,?)').run(job,JSON.stringify({at:new Date().toISOString(),...event}));
   const authorized=req=>{const raw=req.headers['x-hint-key'];return typeof raw==='string'&&raw.length===key.length&&timingSafeEqual(Buffer.from(raw),Buffer.from(key));};
   const localOrigin=o=>!o||o===`http://127.0.0.1:${port}`||o===`http://localhost:${port}`;
@@ -48,7 +67,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20260922.1',capabilities:['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1'],pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20261013.4',capabilities:CAPABILITIES,pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
@@ -56,11 +75,11 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         if(req.method==='GET'&&url.pathname==='/api/state'){
           const connected=await adapter.loggedIn();
           // Take records, cursor and job progress together, after the await.
-          return send(res,200,{rules:RULES,capabilities:['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1'],busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
+          return send(res,200,{rules:RULES,capabilities:CAPABILITIES,busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
         }
         if(req.method==='GET'&&url.pathname==='/api/history'){const id=url.searchParams.get('id');return send(res,200,{snapshots:db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 20').all(id).map(x=>JSON.parse(x.payload))});}
         if(req.method!=='POST')return send(res,405,{error:'지원하지 않는 요청입니다.'});const input=await body(req);
-        if(url.pathname==='/api/cancel'){if(busy&&jobs.get(busy)?.kind==='sync')adapter.cancelled=true;return send(res,200,{ok:true});}
+        if(url.pathname==='/api/cancel'){if(busy&&['sync','batch'].includes(jobs.get(busy)?.kind))adapter.cancelled=true;return send(res,200,{ok:true});}
         if(url.pathname==='/api/connect'){
           if(busy||connecting)return send(res,409,{error:'연결 또는 작업이 진행 중입니다.'});
           connecting=true;try{return send(res,200,await adapter.connect());}finally{connecting=false;}
@@ -68,11 +87,76 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         if(url.pathname==='/api/sync'){
           if(busy)return send(res,409,{error:'진행 중인 작업이 있습니다.'});const classId=String(input.classId),dates=input.dates;
           if(!/^(?:[1-9]|1[0-7])$/.test(classId)||!Array.isArray(dates)||!dates.length||dates.length>31||new Set(dates).size!==dates.length||dates.some(d=>!/^202\d-\d{2}-\d{2}$/.test(d)||Number.isNaN(Date.parse(d))||new Date(d).toISOString().slice(0,10)!==d))throw new Error('반 또는 날짜 범위를 확인해 주세요. 최대 31일입니다.');
-          await adapter.requireLogin();const j={id:randomUUID(),kind:'sync',classId,dates,status:'running',startedAt:new Date().toISOString(),count:0,errors:0,message:'출결 상세를 읽고 있습니다.'};saveJob(j);busy=j.id;
+          const incremental=input.mode==='incremental';
+          await adapter.requireLogin();const j={id:randomUUID(),kind:'sync',classId,dates,status:'running',startedAt:new Date().toISOString(),count:0,errors:0,...(incremental?{mode:'incremental',skipped:0}:{}),message:'출결 상세를 읽고 있습니다.'};saveJob(j);busy=j.id;
+          // Incremental: students whose visible row equals their last complete read
+          // keep that record; no editor is opened and no snapshot row is added.
+          const unchanged=incremental?row=>{const same=sameTableRow(snapshots.get(row.id)?.record,row);if(same)j.skipped++;return same;}:null;
           void(async()=>{try{
-            await adapter.collect(classId,dates,async r=>{const old=get(r.id);if(old?.reference)r.reference=old.reference;if(old?.exception)r.exception=old.exception;put(r);j.count++;if(r.readState!=='complete')j.errors++;saveJob(j);},async progress=>{j.progress=progress;saveJob(j);});
-            j.status=adapter.cancelled?'cancelled':j.errors?'partial':'complete';j.message=`${j.count}건 수집 · 상세 확인 실패 ${j.errors}건`;
-          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);busy=null;}})();return send(res,202,j);
+            await adapter.collect(classId,dates,async r=>{const old=get(r.id);if(old?.reference)r.reference=old.reference;if(old?.exception)r.exception=old.exception;put(r);j.count++;if(r.readState!=='complete')j.errors++;saveJob(j);},async progress=>{j.progress=progress;saveJob(j);},{unchanged,...(incremental?{pageData:true,sameAsStored:r=>{const same=sameStored(r);if(same)j.skipped++;return same;},onDay:d=>{j.method=d.method;if(d.note)j.methodNote=d.note;}}:{})});
+            j.status=adapter.cancelled?'cancelled':j.errors?'partial':'complete';j.message=`${j.count}건 수집${incremental?` · 변경 없음 ${j.skipped}건`:''} · 상세 확인 실패 ${j.errors}건`;
+          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();busy=null;}})();return send(res,202,j);
+        }
+        // Several classes × a period in one job: no per-day request/poll gaps, one
+        // schedule scan per class, a second attempt for failed or partly read days.
+        if(url.pathname==='/api/sync-batch'){
+          if(busy)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
+          const validDate=d=>typeof d==='string'&&/^202\d-\d{2}-\d{2}$/.test(d)&&!Number.isNaN(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d;
+          const classIds=Array.isArray(input.classIds)?[...new Set(input.classIds.map(String))].sort((a,b)=>a-b):[],dates=Array.isArray(input.dates)?[...new Set(input.dates)].sort():[];
+          if(!classIds.length||classIds.length>17||classIds.some(c=>!/^(?:[1-9]|1[0-7])$/.test(c))||!dates.length||dates.length>130||!dates.every(validDate))throw new Error('반(1~17)과 날짜를 확인해 주세요. 한 번에 최대 130일입니다.');
+          const mode=input.mode==='full'?'full':'incremental';
+          await adapter.requireLogin();adapter.cancelled=false;
+          const j={id:randomUUID(),kind:'batch',classIds,dates,mode,status:'running',startedAt:new Date().toISOString(),total:classIds.length*dates.length,done:0,count:0,skipped:0,errors:0,results:[],message:'선택한 반·기간을 차례로 읽고 있습니다.'};saveJob(j);busy=j.id;
+          let savedAt=0;const persist=force=>{const t=Date.now();if(force||t-savedAt>2000){savedAt=t;saveJob(j);}};
+          const finish=result=>{result.finishedAt=new Date().toISOString();const i=j.results.findIndex(r=>r.classId===result.classId&&r.date===result.date);if(i>=0)j.results[i]=result;else j.results.push(result);j.done=j.results.length;persist(true);rememberPlaces();return result;};
+          const runDay=async(classId,date,attempt)=>{
+            const result={classId,date,status:'running',count:0,skipped:0,errors:0,attempt,startedAt:new Date().toISOString()};j.current={classId,date};
+            const unchanged=mode==='incremental'?row=>{const same=sameTableRow(snapshots.get(row.id)?.record,row);if(same){result.skipped++;j.skipped++;}return same;}:null;
+            try{
+              await adapter.collect(classId,[date],async r=>{const old=get(r.id);if(old?.reference)r.reference=old.reference;if(old?.exception)r.exception=old.exception;put(r);result.count++;j.count++;if(r.readState!=='complete'){result.errors++;j.errors++;}persist();},async progress=>{j.progress={...progress,classId};persist();},{unchanged,...(mode==='incremental'?{pageData:true,sameAsStored:r=>{const same=sameStored(r);if(same){result.skipped++;j.skipped++;}return same;},onDay:d=>{result.method=d.method;if(d.method==='page-data')j.pageDays=(j.pageDays||0)+1;if(d.note)result.note=d.note;}}:{})});
+              result.status=adapter.cancelled?'cancelled':result.errors?'partial':'complete';
+            }catch(e){result.status=NO_LECTURE.test(e.message)?'no-lecture':'failed';result.message=e.message;if(/LOGIN_REQUIRED/.test(e.message)){finish(result);throw e;}}
+            return finish(result);
+          };
+          void(async()=>{try{
+            for(const classId of classIds){
+              if(adapter.cancelled)break;let known=null;
+              if(typeof adapter.lectureDates==='function'&&dates.some(d=>!adapter.urls?.has?.(`${classId}|${d}`))){
+                try{const scan=await adapter.lectureDates(classId);if(scan?.complete&&scan.dates?.length)known={set:new Set(scan.dates),min:scan.dates[0],max:scan.dates.at(-1)};}
+                catch(e){if(/LOGIN_REQUIRED/.test(e.message))throw e;if(/강의를 찾지 못했습니다/.test(e.message)){for(const date of dates)finish({classId,date,status:'failed',message:e.message,count:0,skipped:0,errors:0});continue;}}
+              }
+              for(const date of dates){
+                if(adapter.cancelled)break;
+                // Only a complete scan whose date range covers the day may rule a lecture out.
+                if(known&&!known.set.has(date)&&date>=known.min&&date<=known.max&&!adapter.urls?.has?.(`${classId}|${date}`)){finish({classId,date,status:'no-lecture',message:'체크히어 강의 목록에 없는 날짜',count:0,skipped:0,errors:0});continue;}
+                await runDay(classId,date,1);
+              }
+            }
+            for(const r of j.results.filter(r=>['failed','partial'].includes(r.status)&&!/강의를 찾지 못했습니다/.test(r.message||''))){if(adapter.cancelled)break;await runDay(r.classId,r.date,2);}
+            const bad=j.results.filter(r=>['failed','partial'].includes(r.status)).length,none=j.results.filter(r=>r.status==='no-lecture').length;
+            j.status=adapter.cancelled?'cancelled':bad?'partial':'complete';
+            j.message=`${j.done}/${j.total} 반·날짜 · 저장 ${j.count}명${mode==='incremental'?` · 변경 없음 ${j.skipped}명 · 화면 데이터로 읽은 날 ${j.pageDays||0}`:''} · 강의 없음 ${none} · 확인 필요 ${bad}`;
+          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{delete j.current;j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();busy=null;}})();
+          return send(res,202,j);
+        }
+        // Read-only diagnosis inside the bridge: reuses its logged-in dedicated Chrome,
+        // so it never fights over the Chrome profile. Writes only data/probe/*.json.
+        if(url.pathname==='/api/probe'){
+          if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
+          const classId=String(input.classId||'2'),date=String(input.date||''),knownUrl=typeof input.url==='string'&&input.url.startsWith('https://check.ihereapp.com/history/lecture/modify?')?input.url:null;
+          if(!/^(?:[1-9]|1[0-7])$/.test(classId)||!/^202\d-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date)))throw new Error('반과 날짜를 확인해 주세요.');
+          const j={id:randomUUID(),kind:'probe',classId,date,status:'running',startedAt:new Date().toISOString(),message:'진단을 준비하고 있습니다.'};saveJob(j);busy=j.id;
+          void(async()=>{try{
+            if(!adapter.page||adapter.page.isClosed?.())await adapter.connect();
+            for(let i=0;i<90&&!await adapter.loggedIn().catch(()=>false);i++){j.message='전용 크롬에서 체크히어 로그인을 기다리고 있습니다.';await new Promise(r=>setTimeout(r,2000));}
+            if(!await adapter.loggedIn().catch(()=>false))throw new Error('LOGIN_REQUIRED: 전용 크롬에서 체크히어에 로그인해 주세요.');
+            const report=await runProbe({collector:adapter,classId,date,url:knownUrl,modal:input.modal!==false,log:t=>{j.message=String(t).trim();}});
+            const dir=join(dataDir,'probe');mkdirSync(dir,{recursive:true});
+            const file=join(dir,`probe-${classId}-${date}-${new Date().toISOString().replace(/[:.]/g,'').slice(0,15)}.json`);
+            writeFileSync(file,JSON.stringify(report,null,1));
+            j.report=file;j.summary=summarize(report);j.status='complete';j.message='진단 완료';
+          }catch(e){j.status='failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);busy=null;}})();
+          return send(res,202,j);
         }
         if(url.pathname==='/api/preview-request'){
           await approvalCloud.verify(input.idToken);

@@ -14,3 +14,4 @@ checkhere/Start.ps1
 checkhere/*.cmd
 checkhere/*.command
 apps-script/
+checkhere/probe-*.mjs

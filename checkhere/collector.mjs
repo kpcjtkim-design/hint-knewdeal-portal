@@ -3,12 +3,15 @@ import {join} from 'node:path';
 import {homedir} from 'node:os';
 import {studentKey,recordId,version} from './identity.mjs';
 import {normalizeTime,RULES} from './rules.mjs';
+import {planFromPageData,sampleIds,sameReading} from './day-data.mjs';
+const settle=(promise,ms)=>{let t;return Promise.race([promise,new Promise(r=>{t=setTimeout(()=>r(null),ms);})]).finally(()=>clearTimeout(t));};
 const require=createRequire(import.meta.url);
 export function loadPlaywright(){
   try{return require('playwright');}catch{return require(join(homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));}
 }
 const HOME='https://check.ihereapp.com/history/lecture';
 const CLASS2='A66812D9-3028-4E8E-BA35-B09CD29B9BDB';
+export const sameTableRow=(old,row)=>!!old&&!!row?.tableSignature&&old.source==='live'&&old.readState==='complete'&&old.id===row.id&&old.studentKey===row.studentKey&&old.name===row.name&&old.tableSignature===row.tableSignature;
 const SCHEDULES={
  '2026-08-27':'6D96EB21-FF3B-4B0F-A2B5-C7AE448BEF09','2026-08-28':'95AEBDCC-1636-4D70-929A-F145E831DE97',
  '2026-08-31':'29A17CA5-27EB-4EF5-AAFC-366488BA2F70','2026-09-01':'E9897B32-14C7-48B9-925C-39FB949F1E9A',
@@ -55,35 +58,66 @@ export class CheckHereCollector{
       if(!changed)return null;
     }throw new Error('조회 페이지 수가 너무 많습니다.');
   }
+  async openLecture(classId){
+    const lecture=this.lectureUrls.get(String(classId));
+    if(lecture){await this.page.goto(lecture);await this.requireLogin();return;}
+    await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
+    const row=await this.findPagedRow(t=>t.includes(`[${classId}반]`));if(!row)throw new Error(`${classId}반 강의를 찾지 못했습니다.`);
+    await row.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname!==new URL(HOME).pathname);
+    const observed=new URL(this.page.url());if(observed.origin!==new URL(HOME).origin||!observed.pathname.startsWith('/history/lecture/'))throw new Error('반별 강의 주소를 확인하지 못했습니다.');
+    this.lectureUrls.set(String(classId),observed.href);
+  }
+  // One pass over the class's schedule pages: which dates have a lecture at all.
+  // `complete` is false when pages could not all be visited, so callers never
+  // treat an unseen date as "no lecture" on partial evidence.
+  async lectureDates(classId){
+    await this.openLecture(classId);this.pageNumbers=new Set(['1']);
+    const dates=new Set(),visited=new Set();let complete=false;
+    for(let attempt=0;attempt<100;attempt++){
+      await this.page.getByRole('button',{name:'보기',exact:true}).first().waitFor({state:'visible',timeout:15000});
+      const texts=await this.page.getByRole('row').allTextContents(),signature=texts.join('|');
+      if(visited.has(signature))break;visited.add(signature);
+      for(const t of texts)for(const m of t.matchAll(/(20\d{2})[-.](\d{2})[-.](\d{2})/g))dates.add(`${m[1]}-${m[2]}-${m[3]}`);
+      const next=(await this.numericPages()).find(n=>!this.pageNumbers.has(n));
+      if(!next){complete=true;break;}
+      this.pageNumbers.add(next);await this.page.getByRole('button',{name:next,exact:true}).click();
+      await this.page.waitForFunction(previous=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='보기')&&[...document.querySelectorAll('tr')].map(r=>r.textContent).join('|')!==previous,signature,{timeout:15000});
+    }
+    return {dates:[...dates].sort(),complete};
+  }
   async discover(classId,date){
     const key=`${classId}|${date}`;if(this.urls.has(key))return this.urls.get(key);
     if(String(classId)==='2'&&SCHEDULES[date]){const url=`${HOME}/modify?tab=STUDENT&academyId=ACADEMY-HNGV&lectureId=${CLASS2}&scheduleId=${SCHEDULES[date]}&scheduleDate=${date}`;this.urls.set(key,url);return url;}
-    const lecture=this.lectureUrls.get(String(classId));
-    if(lecture){await this.page.goto(lecture);await this.requireLogin();}
-    else{
-      await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
-      const row=await this.findPagedRow(t=>t.includes(`[${classId}반]`));if(!row)throw new Error(`${classId}반 강의를 찾지 못했습니다.`);
-      await row.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname!==new URL(HOME).pathname);
-      const observed=new URL(this.page.url());if(observed.origin!==new URL(HOME).origin||!observed.pathname.startsWith('/history/lecture/'))throw new Error('반별 강의 주소를 확인하지 못했습니다.');
-      this.lectureUrls.set(String(classId),observed.href);
-    }
+    await this.openLecture(classId);
     this.pageNumbers=new Set(['1']);const target=await this.findPagedRow(t=>t.includes(date)||t.includes(date.replaceAll('-','.')));
     if(!target)throw new Error(`${date} 강의가 없습니다. 휴강 여부를 확인해 주세요.`);
     await target.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname.endsWith('/modify'));
     const url=this.page.url(),parsed=new URL(url);if(parsed.searchParams.get('scheduleDate')!==date)throw new Error('선택한 날짜와 화면이 다릅니다.');this.urls.set(key,url);return url;
   }
+  // A remembered day address that no longer opens the right day is forgotten and
+  // looked up again once; supplied (verification) addresses are never replaced.
   async openDay(classId,date,url){
+    const key=`${classId}|${date}`,remembered=!url&&this.urls.has(key);
+    try{return await this.openDayOnce(classId,date,url);}
+    catch(e){if(!remembered||/LOGIN_REQUIRED/.test(e.message))throw e;this.urls.delete(key);return this.openDayOnce(classId,date);}
+  }
+  async openDayOnce(classId,date,url){
     await this.requireLogin();const beforeDiscovery=this.page.url(),suppliedUrl=!!url;url=url||await this.discover(classId,date);
     const u=new URL(url);if(u.origin!=='https://check.ihereapp.com'||u.pathname!=='/history/lecture/modify'||u.searchParams.get('scheduleDate')!==date)throw new Error('출결상세 주소를 확인해 주세요.');
     // Discovery has already loaded a new day. Explicit verification reads still
     // reload it, so a modal's stale local value can never serve as save evidence.
     if(suppliedUrl||beforeDiscovery===this.page.url()||this.page.url()!==url)await this.page.goto(url);
     await this.requireLogin();await this.page.getByRole('table').nth(1).waitFor({state:'visible'});
+    // Keep the real-time attendance data the page loads for this day (read-only).
+    const scheduleId=u.searchParams.get('scheduleId');this.dayData=null;
+    const realtime=typeof this.page.waitForResponse==='function'?this.page.waitForResponse(res=>{try{const p=new URL(res.url()).pathname;return p.includes('/history/attendee/detail/')&&p.endsWith('/isRealTime/true')&&(!scheduleId||p.includes(scheduleId));}catch{return false;}},{timeout:6000}).catch(()=>null):null;
     await this.page.getByText('실제 시간 기반',{exact:true}).click();await this.page.getByText('초',{exact:true}).click();await this.page.getByText('표시',{exact:true}).click();
     await this.page.getByRole('table').nth(0).getByRole('row').nth(2).getByRole('cell').nth(2).waitFor({state:'visible',timeout:15000});
     const title=await this.page.getByText(new RegExp(`\\[${classId}반\\].*${date}.*출석부`)).innerText();
     if(!title.includes(`[${classId}반]`)||!title.includes(date))throw new Error('반·날짜 확인에 실패했습니다.');
     this.day={classId:String(classId),date,url,teacher:/\(([^()]*)\)\s*\|/.exec(title)?.[1]||''};
+    const response=realtime&&await realtime;
+    if(response&&/json/i.test(response.headers()['content-type']||''))this.dayData=await settle(response.json().catch(()=>null),5000);
     return this.tableRecords();
   }
   async tableRecords(){
@@ -95,7 +129,10 @@ export class CheckHereCollector{
       const key=studentKey(name,phone);if(seen.has(key))throw new Error('중복된 학생 식별정보가 있습니다.');seen.add(key);
       const t=times[i],count=/\(\s*(\d+)\s*\)/.exec(t[3]);
       if(!count&&!/0분\s*\(\s*-\s*\)/.test(t[3]))throw new Error('외출 횟수를 읽지 못했습니다.');
-      const r={...this.day,name,studentKey:key,phoneLast4:phone.slice(-4),rowIndex:i+2,schedule:tables[1][1][1],entry:normalizeTime(t[1]),rawEntry:normalizeTime(t[0]),exit:normalizeTime(t[2]),outingCount:count?+count[1]:0,outings:[],entryMemo:null,exitMemo:null,source:'live',readState:'partial',collectedAt:new Date().toISOString()};r.id=recordId(r);return r;
+      // The visible row (not the live-growing participation total) decides whether
+      // an incremental collection must reopen this student's editors.
+      const tableSignature=[tables[1][1][1],t[0],t[1],t[2],t[3]].map(v=>String(v??'').replace(/\s+/g,' ').trim()).join('|');
+      const r={...this.day,name,studentKey:key,phoneLast4:phone.slice(-4),rowIndex:i+2,schedule:tables[1][1][1],entry:normalizeTime(t[1]),rawEntry:normalizeTime(t[0]),exit:normalizeTime(t[2]),outingCount:count?+count[1]:0,outings:[],entryMemo:null,exitMemo:null,tableSignature,source:'live',readState:'partial',collectedAt:new Date().toISOString()};r.id=recordId(r);return r;
     });
   }
   async locate(record){
@@ -140,10 +177,33 @@ export class CheckHereCollector{
     }catch(e){record.readState='partial';record.readError=e.message;await this.closeModal();}
     record.version=version(record);record.collectedAt=new Date().toISOString();return record;
   }
-  async collect(classId,dates,onRecord,onProgress){
+  // `unchanged(row)` lets an incremental collection skip students whose visible
+  // row matches their last complete live read; only changed rows open editors.
+  // pageData: read the day from the page's own data, checked against the table and
+  // a 1–2 student editor sample; any disagreement falls back to editors for the day.
+  // sameAsStored(record) then skips unchanged students by full content (memos included).
+  async collect(classId,dates,onRecord,onProgress,{unchanged=null,pageData=false,sameAsStored=null,onDay=null}={}){
     await this.requireLogin();this.cancelled=false;
     for(const date of dates){if(this.cancelled)break;const rows=await this.openDay(classId,date);
-      for(let i=0;i<rows.length;i++){if(this.cancelled)break;await onProgress({date,index:i+1,total:rows.length,name:rows[i].name});await onRecord(await this.readDetails(rows[i]));}
+      const plan=pageData&&this.dayData?planFromPageData(rows,this.dayData):null;
+      if(plan?.byId.size){
+        let agreed=true;
+        for(const id of sampleIds(plan.byId.values())){
+          const viaEditor=await this.readDetails({...rows.find(r=>r.id===id)});
+          if(viaEditor.readState!=='complete'||!sameReading(viaEditor,plan.byId.get(id))){agreed=false;break;}
+        }
+        if(agreed){
+          await onDay?.({date,method:'page-data',fallback:plan.fallback.length,note:plan.reason});
+          for(let i=0;i<rows.length;i++){
+            if(this.cancelled)break;const fast=plan.byId.get(rows[i].id);
+            if(fast){if(sameAsStored?.(fast))continue;await onRecord(fast);continue;}
+            if(unchanged?.(rows[i]))continue;await onProgress({date,index:i+1,total:rows.length,name:rows[i].name});await onRecord(await this.readDetails(rows[i]));
+          }
+          continue;
+        }
+        await onDay?.({date,method:'editor',note:'화면 데이터와 수정창 값이 달라 이 날은 수정창으로 읽었습니다.'});
+      }else if(pageData)await onDay?.({date,method:'editor',note:plan?.reason||'화면 데이터를 받지 못해 수정창으로 읽었습니다.'});
+      for(let i=0;i<rows.length;i++){if(this.cancelled)break;if(unchanged?.(rows[i]))continue;await onProgress({date,index:i+1,total:rows.length,name:rows[i].name});await onRecord(await this.readDetails(rows[i]));}
     }
   }
   async readOpened(record,openedRows=null){

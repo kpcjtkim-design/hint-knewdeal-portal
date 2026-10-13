@@ -11,9 +11,15 @@ export async function mountCheckHere(host,ctx={}){
   let batchRunning=false,batchStopped=false,page=1,lastTableSignature='',refreshPromise=null,disposed=false;const auditCache=new Map();
   let key='',state={records:[],jobs:[]},pollTimer=null,shownJobs=new Set(),editing=false,cloudShown=false;
   let collectorCursor='';const collectorRecords=new Map();
+  let batchShown='';const batchSaveErrors=new Map();
+  // Days of the latest batch job already saved to the platform, kept per browser so
+  // reopening the screen does not re-check hundreds of days.
+  const savedKey=id=>'checkhere.batchSaved.'+id,savedDays=id=>{try{return new Set(JSON.parse(localStorage.getItem(savedKey(id))||'[]'));}catch{return new Set();}};
+  const markSaved=(id,set)=>{try{localStorage.setItem(savedKey(id),JSON.stringify([...set]));}catch{}};
   root.innerHTML=`<style>${css}</style><div class="app"><header class="top"><div><div class="brand">HINT / ATTENDANCE REVIEW</div><h1>체크히어 검수</h1><div class="muted">입·퇴실, 관리자 메모, 외출 구간을 한 번에 확인합니다.</div></div><div class="line"><span id="connectionStatus" class="badge">연결 대기</span><button id="connect">체크히어 로그인</button></div></header>
     <details id="pairing" class="card connection"><summary>수집 연결 프로그램 설정</summary><p class="muted">Windows에서는 ‘체크히어 시작.cmd’, macOS에서는 ‘체크히어 시작.command’를 실행하세요. 플랫폼에서는 로컬 화면에 표시된 연결 키를 아래에 입력하면 됩니다. 프로그램을 재시작하면 키가 바뀝니다.</p><div class="line"><input id="keyInput" type="password" autocomplete="off" aria-label="로컬 연결 키" placeholder="연결 키"><button id="pair">연결</button></div><div id="localKey"></div></details>
-    <section class="toolbar"><div><label for="class">반</label><select id="class"><option value="all">전체 17개 반</option>${Array.from({length:17},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}반</option>`).join('')}</select></div><div><label for="from">시작 날짜</label><input id="from" type="date" min="2026-07-27" value="2026-09-03"></div><div><label for="to">종료 날짜</label><input id="to" type="date" min="2026-07-27" value="2026-09-03"></div><button id="bulkPreset">전체반 · 7/27~오늘</button><button id="sync" class="primary">체크히어에서 수집</button><button id="refresh">저장된 기록 조회</button><button id="cancel" hidden>수집 중단</button>${ctx.load?'<button id="loadCloud">플랫폼 저장본 조회</button><button id="saveCloud">플랫폼에 저장</button>':''}</section>
+    <section class="toolbar"><div><label for="class">반</label><select id="class"><option value="all">전체 17개 반</option>${Array.from({length:17},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}반</option>`).join('')}<option value="multi">여러 반 선택…</option></select></div><div><label for="from">시작 날짜</label><input id="from" type="date" min="2026-07-27" value="2026-09-03"></div><div><label for="to">종료 날짜</label><input id="to" type="date" min="2026-07-27" value="2026-09-03"></div><div><label for="mode">수집 방식</label><select id="mode"><option value="incremental">빠른 수집 · 화면 데이터로 한 번에 읽고 표본 대조</option><option value="full">정밀 수집 · 모든 학생 수정창 다시 읽기</option></select></div><button id="bulkPreset">전체반 · 7/27~오늘</button><button id="sync" class="primary">체크히어에서 수집</button><button id="refresh">저장된 기록 조회</button><button id="cancel" hidden>수집 중단</button>${ctx.load?'<button id="loadCloud">플랫폼 저장본 조회</button><button id="saveCloud">플랫폼에 저장</button>':''}</section>
+    <div id="classPicker" class="card" hidden><div class="line"><strong>수집·조회할 반</strong><button id="pickAll" type="button">전체 선택</button><button id="pickNone" type="button">선택 해제</button><span id="pickCount" class="muted"></span></div><div class="line" style="flex-wrap:wrap;gap:6px 14px;margin-top:8px">${Array.from({length:17},(_,i)=>`<label style="display:inline-flex;align-items:center;gap:4px;font-weight:500"><input type="checkbox" data-pick="${i+1}" ${i===1?'checked':''}>${i+1}반</label>`).join('')}</div><p class="muted">빠른 수집은 체크히어 출결상세 화면이 받는 데이터로 그날 반 전체의 시간·메모·외출을 한 번에 읽습니다. 표의 시간과 하나하나 대조하고, 매일 학생 1~2명은 수정창을 열어 값이 같은지 확인합니다. 하나라도 다르면 그날은 수정창 방식으로 다시 읽습니다. 정밀 수집은 모든 학생의 수정창을 엽니다.</p></div>
     <div class="notice">기준 09:00–18:00 · 점심 12:00–13:00 제외 · 09:11부터 지각 · 17:50 이전 조퇴. 시간만으로 인정출석을 확정하지 않습니다. 저장본과 상세 수집 실패는 별도로 표시합니다.</div>
     <div id="cloudSaveStatus" role="status" aria-live="polite"></div><div id="bulkStatus" role="status"></div><div id="jobStatus" role="status" aria-live="polite"></div><section id="stats" class="stats"></section><div class="filters"><div class="line"><select id="filter" aria-label="검수 상태"><option value="all">전체 기록</option><option value="review">확인 필요</option><option value="memo">사유 확인</option><option value="partial">재수집 필요</option></select><input id="search" placeholder="학생 이름 검색" aria-label="학생 이름 검색"></div><button id="export">검수 결과 내보내기</button></div><div id="table"></div><div class="foot">시간 판정은 검토를 돕는 결과입니다. 정상 시간으로 임의 보정하지 않습니다. 중복 출결은 반영에서 제외합니다.<br>반영 완료는 체크히어를 다시 읽어 시간과 메모가 일치한 경우에만 표시합니다. Google Sheet 및 출결 파일을 수정·삭제하지 않습니다.</div><details><summary>최근 작업 결과</summary><div id="jobs"></div></details></div><div id="overlay"></div><div id="alerts"></div>`;
   const $=s=>root.querySelector(s);
@@ -24,13 +30,18 @@ export async function mountCheckHere(host,ctx={}){
     let r;try{r=await fetch(`http://127.0.0.1:8765/api/${path}`,{method:data?'POST':'GET',headers:{'x-hint-key':key,...(data?{'content-type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(['apply','confirm-existing','preview-request'].includes(path)?90000:30000)});}catch{throw new Error('수집 연결 프로그램에 연결하지 못했습니다. Windows의 ‘체크히어 시작.cmd’ 또는 macOS의 ‘체크히어 시작.command’를 실행하고 브라우저의 로컬 네트워크 연결 허용 여부를 확인해 주세요.');}
     const d=await r.json();if(!r.ok)throw new Error(d.error||'요청에 실패했습니다.');return d;
   }
-  const selected=()=>state.records.filter(r=>($('#class').value==='all'||String(r.classId)===$('#class').value)&&r.date>=$('#from').value&&r.date<=$('#to').value);
+  const picked=new Set(['2']),ALL=Array.from({length:17},(_,i)=>String(i+1));
+  const classIds=()=>{const v=$('#class').value;return v==='all'?ALL:v==='multi'?ALL.filter(c=>picked.has(c)):[v];};
+  const classLabel=()=>{const v=$('#class').value;return v==='all'?'전체':v==='multi'?[...classIds()].join('·')||'선택없음':v;};
+  const selected=()=>state.records.filter(r=>($('#class').value==='all'||($('#class').value==='multi'?picked.has(String(r.classId)):String(r.classId)===$('#class').value))&&r.date>=$('#from').value&&r.date<=$('#to').value);
   function render(){
     if(disposed||!host.isConnected||host.hidden){clearTimeout(pollTimer);return;}
     $('#connectionStatus').textContent=state.connected?'체크히어 연결됨':key?'로컬 연결됨 · 로그인 확인':'연결 대기';$('#connectionStatus').className=`badge ${state.connected?'good':''}`;
     const busy=state.jobs.find(j=>j.id===state.busy),records=selected().map(r=>{const fingerprint=JSON.stringify([r.version,r.source,r.readState,r.reference,r.exception]);let cached=auditCache.get(r.id);if(!cached||cached.fingerprint!==fingerprint){cached={fingerprint,audit:judge(r)};auditCache.set(r.id,cached);}return {...r,audit:cached.audit};});
-    $('#sync').disabled=!!state.busy||batchRunning||cloudSaves>0;$('#connect').disabled=!!state.busy||batchRunning||cloudSaves>0;$('#refresh').disabled=cloudSaves>0;$('#cancel').hidden=!(busy?.kind==='sync')&&!batchRunning;for(const id of ['class','from','to','bulkPreset','loadCloud','saveCloud'])if($('#'+id))$('#'+id).disabled=batchRunning||cloudSaves>0;$('#saveCloud')&&($('#saveCloud').disabled ||= !!state.busy);
-    $('#jobStatus').innerHTML=busy?`<div class="status"><span class="spinner"></span>${esc(busy.kind==='apply'?'체크히어 변경값 확인 중':busy.message)} ${busy.progress?`· ${esc(busy.progress.date)} ${busy.progress.index}/${busy.progress.total} ${esc(busy.progress.name)}`:''}</div>`:state.jobs[0]?`<div class="status">${esc(state.jobs[0].cloudError||state.jobs[0].message)} <span class="muted">${esc(state.jobs[0].finishedAt?.replace('T',' ').slice(0,19)||'')}</span></div>`:'';
+    $('#sync').disabled=!!state.busy||batchRunning||cloudSaves>0;$('#connect').disabled=!!state.busy||batchRunning||cloudSaves>0;$('#refresh').disabled=cloudSaves>0;$('#cancel').hidden=!['sync','batch'].includes(busy?.kind)&&!batchRunning;for(const id of ['class','from','to','mode','bulkPreset','loadCloud','saveCloud','pickAll','pickNone'])if($('#'+id))$('#'+id).disabled=batchRunning||cloudSaves>0||!!busy&&busy.kind==='batch';
+    root.querySelectorAll('[data-pick]').forEach(x=>{x.checked=picked.has(x.dataset.pick);x.disabled=batchRunning||!!busy&&busy.kind==='batch';});
+    $('#classPicker').hidden=$('#class').value!=='multi';$('#pickCount').textContent=`${picked.size}개 반 선택`;$('#saveCloud')&&($('#saveCloud').disabled ||= !!state.busy);
+    $('#jobStatus').innerHTML=busy?.kind==='batch'?`<div class="status"><span class="spinner"></span>${esc(busy.mode==='full'?'정밀 수집':'빠른 수집')} ${busy.done}/${busy.total} 반·날짜 완료 · 상세 ${busy.count}명${busy.mode==='full'?'':` · 변경 없음 ${busy.skipped}명`}${busy.progress?` · 지금 ${esc(busy.progress.classId)}반 ${esc(busy.progress.date)} ${busy.progress.index}/${busy.progress.total}`:''}<br><span class="muted">연결 프로그램이 끝까지 진행합니다. 이 화면을 닫아도 수집은 계속됩니다.${ctx.save?' 다시 열면 끝난 날짜를 이어서 DB에 저장합니다.':''}</span></div>`:busy?`<div class="status"><span class="spinner"></span>${esc(busy.kind==='apply'?'체크히어 변경값 확인 중':busy.message)} ${busy.progress?`· ${esc(busy.progress.date)} ${busy.progress.index}/${busy.progress.total} ${esc(busy.progress.name)}`:''}</div>`:state.jobs[0]?`<div class="status">${esc(state.jobs[0].cloudError||state.jobs[0].message)} <span class="muted">${esc(state.jobs[0].finishedAt?.replace('T',' ').slice(0,19)||'')}</span></div>`:'';
     const review=records.filter(r=>r.audit.issues.length),missing=records.filter(r=>r.readState!=='complete'||r.source!=='live');
     $('#stats').innerHTML=[['전체 학생·날짜',records.length,''],['확인 필요',review.length,'warn'],['사유 확인',records.filter(r=>r.audit.issues.some(i=>i.code.startsWith('MEMO')||i.code==='RECOGNIZED_MEMO')).length,'warn'],['재수집 필요',missing.length,'bad']].map(([label,n,c])=>`<div class="stat ${c}"><small>${label}</small><strong>${n}</strong></div>`).join('');
     const filter=$('#filter').value,search=$('#search').value.trim();
@@ -42,6 +53,10 @@ export async function mountCheckHere(host,ctx={}){
     if($('#pagePrevious'))$('#pagePrevious').onclick=()=>{page--;render();};if($('#pageNext'))$('#pageNext').onclick=()=>{page++;render();};
     }
     $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':'반영')} · ${esc(({verified:j.cloudError?'DB 저장 재확인':j.platformSaved?(j.alreadyApplied?'이미 반영 · DB 저장 완료':'반영·DB 저장 완료'):'DB 저장 확인 중',complete:'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.cloudError||j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
+  }
+  function showBatch(j){
+    const bad=(j.results||[]).filter(r=>['failed','partial','cancelled'].includes(r.status)),none=(j.results||[]).filter(r=>r.status==='no-lecture'),saveFails=[...batchSaveErrors];
+    $('#bulkStatus').innerHTML=`<div class="status">${j.status==='cancelled'?'수집 중단':'수집 종료'} · ${esc(j.message)}${bad.length?`<details open><summary>확인 필요 ${bad.length}건</summary>${bad.map(r=>`<p>${esc(r.classId)}반 · ${esc(r.date)} · ${esc(r.message||(r.status==='partial'?'일부 학생 상세를 읽지 못했습니다. 다시 수집해 주세요.':'중단됨'))}</p>`).join('')}</details>`:''}${none.length?`<details><summary>강의 없는 날 ${none.length}건</summary><p>${none.map(r=>`${esc(r.classId)}반 ${esc(r.date)}`).join(', ')}</p></details>`:''}${saveFails.length?`<details open><summary>DB 저장 실패 ${saveFails.length}건 · ‘플랫폼에 저장’으로 다시 저장하세요</summary>${saveFails.map(([k,m])=>`<p>${esc(k.replace('|','반 · '))} · ${esc(m)}</p>`).join('')}</details>`:''}</div>`;
   }
   function saveCloud(records,job){
     cloudSaves++;render();
@@ -65,6 +80,21 @@ export async function mountCheckHere(host,ctx={}){
     if(update.recordsMode!=='merge'){collectorRecords.clear();auditCache.clear();}
     for(const record of update.records)collectorRecords.set(record.id,record);
     collectorCursor=update.cursor||'';state={...update,records:[...collectorRecords.values()]};cloudShown=false;render();
+    const batch=state.jobs.find(x=>x.kind==='batch');
+    if(batch){
+      if(ctx.save){
+        const done=savedDays(batch.id);
+        for(const r of batch.results||[]){
+          if(!['complete','partial'].includes(r.status)||!r.finishedAt)continue;
+          const k=`${r.classId}|${r.date}|${r.finishedAt}`;if(done.has(k))continue;done.add(k);
+          // The whole day (skipped students included) so the platform mirrors this PC.
+          const day=state.records.filter(x=>String(x.classId)===String(r.classId)&&x.date===r.date&&x.source==='live');
+          if(day.length)saveCloud(day,{id:batch.id,status:r.status}).then(()=>batchSaveErrors.delete(`${r.classId}|${r.date}`),e=>{batchSaveErrors.set(`${r.classId}|${r.date}`,e.message);done.delete(k);markSaved(batch.id,done);showBatch(batch);});
+        }
+        markSaved(batch.id,done);
+      }
+      if(batch.status!=='running'&&batchShown!==batch.id){batchShown=batch.id;showBatch(batch);}
+    }
     for(const j of state.jobs){
       if(j.status==='running'||j.kind==='apply'&&j.cloudSaved===undefined||shownJobs.has(j.id))continue;shownJobs.add(j.id);
       if(j.kind==='apply'&&Date.now()-Date.parse(j.finishedAt||0)<120000)alertMessage(j.status==='verified'&&j.platformSaved?'체크히어 반영·DB 저장 완료':'체크히어 반영 확인 필요',j.message+(j.cloudError?'\n'+j.cloudError:'')+(j.results?.length?'\n'+j.results.map(x=>`${x.field==='entry'?'입실·교시':'퇴실'}: ${x.state==='verified'?'확인 완료':x.state==='unknown'?'결과 미확인':'실패 또는 충돌'}`).join('\n'):''));
@@ -114,15 +144,25 @@ export async function mountCheckHere(host,ctx={}){
   $('#bulkPreset').onclick=()=>{$('#class').value='all';$('#from').value='2026-07-27';$('#to').value=[koreaToday(),'2026-10-22'].sort()[0];render();};
   $('#sync').onclick=handle(async()=>{
     if(batchRunning||state.busy)throw Error('진행 중인 작업이 있습니다.');
-    const dates=collectionDates($('#from').value,$('#to').value),classIds=$('#class').value==='all'?Array.from({length:17},(_,i)=>String(i+1)):[$('#class').value];
-    if(!dates.length)throw Error('평일 강의 날짜를 선택해 주세요.');batchRunning=true;batchStopped=false;clearTimeout(pollTimer);render();
+    const dates=collectionDates($('#from').value,$('#to').value),chosen=classIds();
+    if(!chosen.length)throw Error('수집할 반을 하나 이상 선택해 주세요.');
+    if(!dates.length)throw Error('평일 강의 날짜를 선택해 주세요.');
+    if(state.capabilities?.includes('batch-sync-v1')){
+      // The bridge runs every class/day in one job; this screen only watches and saves.
+      const job=await api('sync-batch',{classIds:chosen,dates,mode:$('#mode').value});
+      $('#bulkStatus').innerHTML=`<div class="status">${chosen.length}개 반 · ${dates.length}일 (${job.total}건) ${$('#mode').value==='full'?'정밀':'빠른'} 수집을 시작했습니다.</div>`;
+      await refresh();return;
+    }
+    const classIdsForQueue=chosen;batchRunning=true;batchStopped=false;clearTimeout(pollTimer);render();
     try{
-      const result=await runCollectionQueue({classIds,dates,api,refresh,stopped:()=>batchStopped||!host.isConnected,onProgress:p=>{$('#bulkStatus').innerHTML=`<div class="status">전체 수집 ${p.completed}/${p.total} · ${esc(p.classId)}반 ${esc(p.date)}<br>현재 페이지와 연결 프로그램을 열어두세요.</div>`;}});
+      const result=await runCollectionQueue({classIds:classIdsForQueue,dates,api,refresh,stopped:()=>batchStopped||!host.isConnected,onProgress:p=>{$('#bulkStatus').innerHTML=`<div class="status">전체 수집 ${p.completed}/${p.total} · ${esc(p.classId)}반 ${esc(p.date)}<br>현재 페이지와 연결 프로그램을 열어두세요.</div>`;}});
       const errors=result.results.filter(x=>x.status!=='complete');$('#bulkStatus').innerHTML=`<div class="status">${result.stopped?'수집 중단':'전체 수집 종료'} · ${result.results.length}/${result.total} 반·날짜 · 확인 필요 ${errors.length}건${errors.length?`<details><summary>미완료·오류 목록</summary>${errors.map(x=>`<p>${esc(x.classId)}반 · ${esc(x.date)} · ${esc(x.message)}</p>`).join('')}</details>`:''}</div>`;
     }finally{batchRunning=false;render();}
   });
   for(const selector of ['#class','#from','#to','#filter','#search'])$(selector).addEventListener(selector==='#search'?'input':'change',render);
-  $('#export').onclick=()=>{const data=selected().map(r=>{const fingerprint=JSON.stringify([r.version,r.source,r.readState,r.reference,r.exception]);let cached=auditCache.get(r.id);if(!cached||cached.fingerprint!==fingerprint){cached={fingerprint,audit:judge(r)};auditCache.set(r.id,cached);}return {...r,audit:cached.audit};});if(!data.length)return alertMessage('내보낼 기록 없음','먼저 기록을 수집하거나 저장본을 조회하세요.');const url=URL.createObjectURL(new Blob([JSON.stringify({exportedAt:new Date().toISOString(),records:data},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`체크히어_${$('#class').value}반_${$('#from').value}_${$('#to').value}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  root.querySelectorAll('[data-pick]').forEach(x=>x.addEventListener('change',()=>{if(x.checked)picked.add(x.dataset.pick);else picked.delete(x.dataset.pick);render();}));
+  $('#pickAll').onclick=()=>{for(const c of ALL)picked.add(c);render();};$('#pickNone').onclick=()=>{picked.clear();render();};
+  $('#export').onclick=()=>{const data=selected().map(r=>{const fingerprint=JSON.stringify([r.version,r.source,r.readState,r.reference,r.exception]);let cached=auditCache.get(r.id);if(!cached||cached.fingerprint!==fingerprint){cached={fingerprint,audit:judge(r)};auditCache.set(r.id,cached);}return {...r,audit:cached.audit};});if(!data.length)return alertMessage('내보낼 기록 없음','먼저 기록을 수집하거나 저장본을 조회하세요.');const url=URL.createObjectURL(new Blob([JSON.stringify({exportedAt:new Date().toISOString(),records:data},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`체크히어_${classLabel()}반_${$('#from').value}_${$('#to').value}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   if(ctx.save)$('#saveCloud').onclick=handle(async()=>{const records=selected().filter(r=>r.source==='live');if(!records.length)throw new Error('현재 PC에서 수집한 기록이 없습니다.');const result=await saveCloud(records,{id:crypto.randomUUID(),status:'manual_archive'});alertMessage('플랫폼 저장 완료',`DB에서 ${result.recordCount}건의 저장 내용을 다시 확인했습니다. 출결대조에서 바로 확인할 수 있습니다.${result.partialCount?' 상세 미수집 '+result.partialCount+'건은 재수집이 필요합니다.':''}`);});
   if(ctx.load)$('#loadCloud').onclick=handle(async()=>{state.records=await ctx.load($('#class').value,{from:$('#from').value,to:$('#to').value});state.busy=null;cloudShown=true;render();});
   render();
