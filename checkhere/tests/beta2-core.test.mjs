@@ -76,3 +76,15 @@ test('the client and Apps Script agree on the ledger row signature',()=>{
  const gas=vm.createContext({});vm.runInContext(readFileSync(new URL('../../apps-script/beta2/beta2.gs',import.meta.url),'utf8'),gas);
  assert.deepEqual(JSON.parse(JSON.stringify(gas.B2_LEDGER_COLS)),COLS);
 });
+
+test('the /beta2 guard keeps live relay requests recognisable',async()=>{
+ const {beta2RequestData,LIVE_MARK:GUARD_MARK}=await import('../../beta2-guard-core.mjs');
+ const {LIVE_MARK,isLiveRequest,editorReason,tagOf}=await import('../../checkhere-live-core.mjs');
+ assert.equal(GUARD_MARK,LIVE_MARK);
+ const live=beta2RequestData('checkhereRequests/a',{status:'pending',reason:`${LIVE_MARK} 지각 교통 [기준:0a1b2c3d]`});
+ assert.equal(isLiveRequest(live),true);assert.equal(tagOf(live.reason),'0a1b2c3d');assert.equal(editorReason(live.reason),'[2기 베타] 지각 교통');
+ assert.equal(beta2RequestData('checkhereRequests/a',live).reason,live.reason,'never tagged twice');
+ assert.equal(beta2RequestData('checkhereRequests/b',{status:'pending',reason:'출결대조 메모'}).reason,'[2기 베타] 출결대조 메모');
+ const long={status:'pending',reason:`${LIVE_MARK} ${'가'.repeat(980)} [기준:0a1b2c3d]`};
+ assert.equal(beta2RequestData('checkhereRequests/c',long).reason,long.reason,'too long: keep the original rather than cut the fingerprint');
+});

@@ -95,10 +95,11 @@ test('on /beta2 shared 1기 data is view-only while CheckHere change requests st
    try{await fs.runTransaction({},async tx=>{tx.set(fs.doc({},'classes','1','checkhereCurrent','2026-09-03'),{});});out.tx='saved';}catch(e){out.tx=e.code;}
    await fs.setDoc(fs.doc({},'checkhereRequests','r1'),{status:'pending',reason:'출결대조 입실 → 퇴실 · 지각'});
    await fs.runTransaction({},async tx=>{tx.set(fs.doc({},'checkhereRequests','r2'),{status:'pending',reason:'[2기 베타] 이미 붙음'});tx.set(fs.doc({},'checkhereProposalSources','checkhereProposalRequest_r2'),{a:1});});
+   await fs.setDoc(fs.doc({},'checkhereRequests','r3'),{status:'pending',reason:'[실시간 베타] 지각 교통 [기준:0a1b2c3d]'});
    return {out,writes:window.sdkWrites,loads:window.sdkLoads};
   });
   assert.deepEqual(result.out,{settings:'BETA2_READ_ONLY',update:'BETA2_READ_ONLY',add:'BETA2_READ_ONLY',tx:'BETA2_READ_ONLY'});
-  assert.deepEqual(result.writes.map(w=>[w[0],w[1],w[2]?.reason]),[['set','checkhereRequests/r1','[2기 베타] 출결대조 입실 → 퇴실 · 지각'],['tx.set','checkhereRequests/r2','[2기 베타] 이미 붙음'],['tx.set','checkhereProposalSources/checkhereProposalRequest_r2',undefined]]);
+  assert.deepEqual(result.writes.map(w=>[w[0],w[1],w[2]?.reason]),[['set','checkhereRequests/r1','[2기 베타] 출결대조 입실 → 퇴실 · 지각'],['tx.set','checkhereRequests/r2','[2기 베타] 이미 붙음'],['tx.set','checkhereProposalSources/checkhereProposalRequest_r2',undefined],['set','checkhereRequests/r3','[실시간 베타] [2기 베타] 지각 교통 [기준:0a1b2c3d]']]);
   assert.equal(result.loads,1,'one Firestore SDK instance');
   await page.getByRole('button',{name:'공지·설정',exact:true}).click();
   await page.getByText('2기 베타 · 보기 전용').waitFor();
