@@ -93,7 +93,7 @@ test('slow legacy settings reads cannot overwrite the next administrator menu',a
 test('auth changes clear the read session and ignore a previous account profile result',async()=>{
  const authHandler=index.slice(index.indexOf('onAuthStateChanged(auth,async user=>'),index.indexOf('\n',index.indexOf('onAuthStateChanged(auth,async user=>')));
  await fixture(`<script type="module">${helper}
- const db={},auth={};window.profiles={};window.events=[];
+ const db={},auth={},BETA2=false;window.profiles={};window.events=[];
  const onAuthStateChanged=(_auth,callback)=>window.authChange=callback;
  const clearReadSession=()=>window.events.push('clear'),profileFor=user=>new Promise(resolve=>window.profiles[user.id]=resolve);
  const loginView=()=>window.events.push('login'),denied=()=>window.events.push('denied'),fatal=()=>window.events.push('fatal');

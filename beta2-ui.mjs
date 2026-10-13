@@ -1,0 +1,40 @@
+// 2기 베타 화면 공통 도우미
+import {recognizedType,syncText} from './beta2-core.mjs';
+
+export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function ensureBeta2Css(){
+ if(document.querySelector('link[data-beta2-css]'))return;
+ const link=document.createElement('link');link.rel='stylesheet';link.href='/beta2.css?v=20261013-b2';link.dataset.beta2Css='1';document.head.append(link);
+}
+const W='일월화수목금토';
+export const md=iso=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||'')))return String(iso||'');const d=new Date(iso+'T00:00:00Z');return `${+iso.slice(5,7)}/${+iso.slice(8,10)}(${W[d.getUTCDay()]})`;};
+export function typeClass(t){
+ if(t==='결석')return 't-absent';if(recognizedType(t))return 't-rec';if(t==='해당없음')return 't-na';if(t==='중복')return 't-dup';if(['지각','조퇴','외출'].includes(t))return 't-late';return '';
+}
+export const badge=t=>`<span class="b2-badge ${typeClass(t)}">${esc(t||'출석')}</span>`;
+export function evBadge(state){
+ if(!state||state==='해당없음')return '';
+ return `<span class="b2-badge ${state==='확인'?'e-ok':['미제출','반려'].includes(state)?'e-miss':'e-none'}">증빙 ${esc(state)}</span>`;
+}
+export function syncPill(sync){
+ const t=syncText(sync);
+ if(t.error)return `<span class="b2-pill err" title="${esc(t.error)}">운영총괄 동기화 오류 · ${esc(t.error)}</span>`;
+ return `<span class="b2-pill ${t.errors.length?'wait':'live'}" title="${esc(t.errors.join('\n'))}">운영총괄 확인 ${esc(t.checked)} · 마지막 변경 ${esc(t.changed)}${t.errors.length?` · 일부 오류 ${t.errors.length}`:''}</span>`;
+}
+export function toast(message){
+ const el=document.getElementById('toast');if(!el){console.info(message);return;}
+ el.textContent=message;el.classList.add('show');clearTimeout(el._b2);el._b2=setTimeout(()=>el.classList.remove('show'),2200);
+}
+export async function copyText(text){try{await navigator.clipboard.writeText(text);toast('복사했습니다.');}catch{toast('복사하지 못했습니다. 브라우저 권한을 확인해 주세요.');}}
+export function downloadCsv(name,rows){
+ const csv='﻿'+rows.map(r=>r.map(v=>{const s=String(v??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\r\n');
+ const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+export const classOptions=(classes,selected,{all=false}={})=>(all?`<option value="all" ${selected==='all'?'selected':''}>전체 반</option>`:'')+classes.map(c=>`<option value="${esc(c.id)}" ${String(c.id)===String(selected)?'selected':''}>${esc(c.id)}반 · ${esc(c.course||'')}</option>`).join('');
+export const loading=text=>`<div class="b2-card b2-pad b2-muted">${esc(text||'불러오는 중…')}</div>`;
+export const errorBox=e=>`<div class="b2-note err">${esc(e?.message||e)}</div>`;
+// 같은 화면에서 비동기 작업이 겹치지 않게 하고, 화면을 떠난 뒤 늦게 온 결과는 버립니다.
+export function lifecycle(host){
+ let disposed=false;const cleanups=[];
+ return {alive:()=>!disposed&&host.isConnected,on:fn=>cleanups.push(fn),dispose(){if(disposed)return;disposed=true;cleanups.splice(0).forEach(fn=>{try{fn();}catch{}});}};
+}

@@ -4,9 +4,11 @@ const FIREBASE_KEY='AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE';
 const PROJECT='knewdeal-portal';
 const ADMIN=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
 const CLASS_IDS=Array.from({length:17},(_,i)=>String(i+1));
-const ALLOWED=new Set(['portalData','portalSave','portalCheck','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster']);
-// 생년월일·성별이 담긴 명부는 담임에게 열어도 관리자만 읽습니다.
-const ADMIN_ACTIONS=new Set(['portalRoster']);
+// 2기 베타 마스터시트 기능(apps-script/beta2/beta2.gs). 담임에게 열 때도 자기 반으로만 읽고 신청합니다.
+const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2SyncNow','b2Save','b2Release','b2DocUpdate']);
+const ALLOWED=new Set(['portalData','portalSave','portalCheck','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
+// 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리는 담임에게 열어도 관리자만 씁니다.
+const ADMIN_ACTIONS=new Set(['portalRoster','b2Status','b2SyncNow','b2Save','b2Release','b2DocUpdate']);
 // 일단 관리자만 씁니다. 담임에게 열 때 true로 바꾸고 teacher-workspace.mjs의 탭 조건(preview)도 함께 풉니다.
 const TEACHER_ACCESS=false;
 // 담임 화면에 그대로 보이므로 오류는 한국어 문장으로 돌려줍니다.
@@ -58,13 +60,24 @@ export function resolveClass(user,body,action,args){
   if(!user.classIds.length)throw new Error('NO_CLASS');
   return Number(user.classIds.includes(requested)?requested:user.classIds[0]);
 }
-async function callSheet(action,args){
+// beta2 요청 인자: 반 번호는 서버에서 정합니다(관리자는 고른 반·전체, 담임은 담당반).
+export function b2Args(user,action,rest){
+  const p=rest[0]&&typeof rest[0]==='object'&&!Array.isArray(rest[0])?{...rest[0]}:{},admin=user.role==='ADMIN';
+  const own=c=>{const s=String(c??'');if(admin){if(!CLASS_IDS.includes(s))throw new Error('BAD_CLASS');return s;}if(!user.classIds.length)throw new Error('NO_CLASS');return user.classIds.includes(s)?s:user.classIds[0];};
+  if(action==='b2Bundle'){const c=String(rest[0]??'all');return [admin&&c==='all'?'all':own(c)];}
+  if(action==='b2Docs')return [admin&&!p.cls?{}:{cls:own(p.cls)}];
+  if(action==='b2DocCreate')return [{...p,cls:own(p.cls)}];
+  if(action==='b2Rev'||action==='b2Status')return [];
+  if(action==='b2SyncNow')return [p.cls?{cls:own(p.cls)}:{}];
+  return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
+}
+async function callSheet(action,args,extra={}){
   const url=process.env.HINT_SHEET_API_URL,key=process.env.HINT_SHEET_API_KEY;
   if(!url||!key)throw new Error('NOT_CONFIGURED');
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
   try{
     // Apps Script는 302로 결과 주소를 돌려주므로 redirect를 따라가야 합니다.
-    const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,action,args}),redirect:'follow',signal:controller.signal});
+    const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,action,args,...extra}),redirect:'follow',signal:controller.signal});
     const text=await r.text();let data;
     try{data=JSON.parse(text);}catch{throw new Error('SHEET_BAD_RESPONSE');}
     if(data?.ok===false&&data.error==='unauthorized')throw new Error('SHEET_UNAUTHORIZED');
@@ -83,9 +96,14 @@ export default async function handler(req,res){
     if(user.role!=='ADMIN'&&(!TEACHER_ACCESS||ADMIN_ACTIONS.has(body.action)))throw new Error('ADMIN_ONLY');
     const {action}=body,rest=Array.isArray(body.args)?body.args:[];
     if(!ALLOWED.has(action))throw new Error('BAD_ACTION');
-    const cls=resolveClass(user,body,action,rest);
-    const args=action==='portalSave'?[{...(rest[0]&&typeof rest[0]==='object'?rest[0]:{}),cls,pin:''}]:[cls,'',...rest.slice(2)];
-    const out=await callSheet(action,args);
+    if(JSON.stringify(rest).length>20000)throw new Error('BAD_REQUEST');
+    let out;
+    if(B2_ACTIONS.has(action))out=await callSheet(action,b2Args(user,action,rest),{actor:user.email,role:user.role});
+    else{
+      const cls=resolveClass(user,body,action,rest);
+      const args=action==='portalSave'?[{...(rest[0]&&typeof rest[0]==='object'?rest[0]:{}),cls,pin:''}]:[cls,'',...rest.slice(2)];
+      out=await callSheet(action,args);
+    }
     if(!out?.ok&&out?.error==='unknown action')return res.status(400).json({ok:false,code:'SHEET_OUTDATED',error:'마스터시트 데이터 API에 아직 없는 기능입니다. Apps Script를 새 코드로 다시 배포해 주세요.'});
     return res.status(out?.ok?200:400).json(out?.ok?{ok:true,data:out.data}:{ok:false,error:String(out?.error||'요청을 처리하지 못했습니다.')});
   }catch(e){

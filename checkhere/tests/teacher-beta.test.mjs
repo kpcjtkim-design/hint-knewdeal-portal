@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {loadPlaywright} from '../collector.mjs';
-import handler,{resolveClass,teacherClassIds} from '../../api/teacher-beta.js';
+import handler,{resolveClass,teacherClassIds,b2Args} from '../../api/teacher-beta.js';
 
 const base=join(import.meta.dirname,'../..');
 const SHEET='https://script.test/exec',KEY='secret-key-123',ADMIN_EMAIL='hint.kpc@gmail.com';
@@ -100,6 +100,32 @@ test('missing configuration and upstream failures become readable messages witho
  res=await call({action:'portalSave',args:[{name:'없음'}],cls:3},{email:ADMIN_EMAIL});
  assert.deepEqual([res.statusCode,res.body],[400,{ok:false,error:'없는 학생입니다.'}]);
  assert.equal(JSON.stringify(res.body).includes(KEY),false);
+});
+
+test('2기 베타 sheet actions carry the verified user, are administrator-only now, and class scope is decided on the server',async t=>{
+ withEnv(t);const calls=backend(t);
+ let res=await call({action:'b2Save',args:[{cls:'3',name:'가',date:'2026-09-01',type:'결석',actor:'fake@evil.kr'}]},{email:ADMIN_EMAIL});
+ assert.equal(res.statusCode,200);
+ assert.deepEqual(calls.at(-1).body,{key:KEY,action:'b2Save',args:[{cls:'3',name:'가',date:'2026-09-01',type:'결석',actor:'fake@evil.kr'}],actor:ADMIN_EMAIL,role:'ADMIN'},'the actor sent to Apps Script is the verified login, not a body field');
+ await call({action:'b2Bundle',args:['all']},{email:ADMIN_EMAIL});
+ assert.deepEqual(calls.at(-1).body.args,['all']);
+ for(const action of ['b2Bundle','b2Save','b2DocCreate','b2Docs','b2SyncNow']){
+  res=await call({action,args:[{cls:'3'}]},{email:'teacher@test.kr'});
+  assert.deepEqual([res.statusCode,res.body.code],[403,'ADMIN_ONLY'],action);
+ }
+ assert.equal((await call({action:'b2Save',args:[{cls:'18'}]},{email:ADMIN_EMAIL})).body.code,'BAD_CLASS');
+ assert.equal((await call({action:'b2Save',args:[{note:'x'.repeat(20001)}]},{email:ADMIN_EMAIL})).body.code,'BAD_REQUEST');
+ assert.equal(calls.length,2);
+ const teacher={role:'TEACHER',classIds:['3','7']},admin={role:'ADMIN',classIds:[]};
+ assert.deepEqual(b2Args(teacher,'b2Bundle',['all']),['3'],'teachers never read every class');
+ assert.deepEqual(b2Args(teacher,'b2Bundle',['7']),['7']);
+ assert.deepEqual(b2Args(teacher,'b2Docs',[{}]),[{cls:'3'}]);
+ assert.deepEqual(b2Args(teacher,'b2DocCreate',[{cls:'9',name:'가'}]),[{cls:'3',name:'가'}]);
+ assert.deepEqual(b2Args(admin,'b2Docs',[{}]),[{}]);
+ assert.deepEqual(b2Args(admin,'b2SyncNow',[{}]),[{}]);
+ assert.deepEqual(b2Args(admin,'b2SyncNow',[{cls:'5'}]),[{cls:'5'}]);
+ assert.deepEqual(b2Args(admin,'b2DocUpdate',[{id:'D1',status:'처리완료'}]),[{id:'D1',status:'처리완료'}]);
+ assert.deepEqual(b2Args(admin,'b2Rev',[{cls:'1'}]),[]);
 });
 
 const DATA={cls:1,region:'수도권',course:'임베디드 AI(HW)',teacher:'김담임',place:'본관',mainDay:'2026-10-12',days:['2026-10-12','2026-10-08'],

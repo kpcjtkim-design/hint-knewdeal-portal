@@ -1,4 +1,6 @@
-export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=false}){
+export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=false,layout=''}){
+ // 2기 베타(/beta2) 관리자 미리보기는 6탭 통합 담임 화면을 띄웁니다.
+ if(layout==='beta2'){const m=await import('./beta2-teacher-layout.mjs?v=20261013-b2');return m.mountBeta2TeacherLayout(parent,{db,user,classInfo});}
  const hero=parent.querySelector('.hero');if(!hero)return;
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
  const nav=document.createElement('nav');nav.className='admin-tabs teacher-tabs';nav.setAttribute('aria-label','담임 업무 메뉴');
