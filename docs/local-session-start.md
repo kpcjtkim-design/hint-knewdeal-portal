@@ -131,6 +131,50 @@ Cowork 보고서: `docs/cowork/2026-10-13-checkhere-delete-report.md`. 원본과
 
 **백업**: `master-before-*.txt` 3개와 `master-now-Code.gs.txt`가 드라이브 폴더에 있다. 커밋 전에 비밀값과 개인정보를 확인한다(5절 6번).
 
+## 2-2. Cowork 10/14 확인 결과와 할 일 (`docs/cowork/2026-10-14-checkhere-api.md`)
+
+**체크히어 요청 형식** (화면 코드로 확인. 실제 요청은 보내지 않았다)
+- 삭제: `DELETE https://checkhere-admin-api.ihereapp.com/api/v3/history/event/delete`
+  - 본문 `{scheduleId, typeEvent:"ATTEND"|"COMPLETE", attendeeId, baseTime, existEventId}`
+- 수정: `PUT …/history/event/update`
+  - 본문은 위 다섯 항목에 `time:"YYYY-MM-DDTHH:MM:SS"`, `memoByAdmin:문자열|null`을 더한다.
+  - 빈 칸에 새로 넣을 때도 update에 `existEventId:null`을 쓴다. create 경로는 없다.
+  - 시간을 비우고 `변경`하면 요청이 나가지 않는다. 그래서 지우기는 delete로만 한다.
+- 항목 값
+  - `baseTime`: COMPLETE면 마지막 교시의 `timeEnd`, ATTEND면 그 교시의 `timeStart`(예: `2026-10-12T09:00:00`).
+  - `existEventId`: COMPLETE면 `eventList`의 COMPLETE `eventId`, ATTEND면 `type==="ATTEND" && timeIndex===교시`인 `eventId`, 없으면 null.
+- 인증: `Authorization: Bearer <session.accessToken>`. 토큰은 `GET check.ihereapp.com/api/auth/session`에서 받는다. `Content-Type: application/json`.
+  - 연결 프로그램의 로그인된 전용 크롬 안에서 보내면 된다. 토큰을 저장하거나 기록하지 않는다.
+- 출결상세: `GET …/history/attendee/detail/academy/{ac}/schedule/{id}/type/STUDENT/isRealTime/false`
+  - `data.eventResultList[]` 학생마다 `{attendeeId, …, eventList[]}`가 있다.
+  - 이벤트는 `{eventId(null 가능), time, baseTime, timeIndex, type: ENTER/PASS/ATTEND/COMPLETE, status, memoByAdmin}`이다.
+  - `eventId`가 null이면 다른 기록에서 계산된 값이다.
+    - 체크인한 학생: ENTER(번호 있음) + PASS(1교시, 번호 없음) + COMPLETE
+    - 관리자가 1교시를 넣은 학생: ENTER(번호 없음) + ATTEND(번호 있음) + COMPLETE
+
+**삭제 안전 규칙 (사용자 결정, 꼭 반영)**
+- 지우기는 **`eventId`가 있는 칸에만** 허용한다. 퇴실 COMPLETE와 관리자가 넣은 1교시 ATTEND가 해당한다.
+- PASS 1교시(번호 없음)와 ENTER(입실)는 절대 지우지 않는다.
+  - ENTER는 화면에서 되돌릴 방법이 없다.
+  - PASS를 지울 때 서버가 어떻게 동작하는지 모른다.
+  - 화면에서는 × 를 잠그고 이유를 표시한다.
+- 지웠다가 다시 넣으면 값은 같아도 새 관리자 기록(새 `eventId`)이 된다. 변경 기록에 남긴다.
+- 결과: 체크인한 학생을 '결석'으로 맞출 때 체크히어에서 지울 수 있는 것은 퇴실(COMPLETE)뿐이다.
+  - 지우면 1교시와 총 참여 시간은 `-`로 보이고, 입실 시간은 남는다.
+  - 화면안(Artifact 「체크히어 실시간 반영 화면안」)의 '결석인데 시간 있음' 처리를 이 기준으로 맞춘다.
+
+**마스터시트 트리거 (10/13 17:30 ~ 10/14 15:30, 30분 간격)**
+- `b2SyncTick`은 44번 돌았고 합계 약 37분이다. 일과 중 14번이 약 2,000초를 차지했고, 밤에는 1~4초였다.
+- 시간 초과 2번(11:51, 15:21)이 있었다.
+- 실패 1번(13:51): `Service Spreadsheets failed while accessing document` @ `b2WriteLedger_`.
+  - 같은 때 웹앱 doPost 7번과 onEdit 1번이 함께 돌았다.
+  - 패치(`docs/wip/`)의 '바뀐 행만 쓰기'에 더해, **이런 일시 오류는 몇 초 쉬고 다시 시도**하게 넣는다. 쓰기는 문서 잠금 안에서만 한다.
+  - 고친 뒤 트리거를 10분으로 되돌린다.
+- `onOpen` 시간 초과는 0번이었지만, 13:38에 27.8초로 한도(30초)에 거의 닿았다.
+  - 원인: `apps-script/master/Code.gs`(지금 Apps Script와 같음, SHA-256 ef9ad3c0…) 18~28행의 `onOpen`이 메뉴를 만든 뒤 `rebuildAll()`을 부른다. 이 함수는 17개 반 출결판을 다 그린다.
+  - 가장 간단한 해결은 `onOpen`에서 `rebuildAll()` 호출을 빼는 것이다. '출결판 새로고침' 메뉴는 남긴다.
+  - beta2 동기화와 저장이 바뀐 반의 출결판을 다시 그린다. 이것으로 충분한지 확인하고, Code.gs `onEdit`도 확인한 뒤 바꾼다(사용자 확인).
+
 ## 3. 이 PC에서 준비
 
 1. 저장소를 받는다(비공개 저장소면 Git 로그인 창이 뜬다).
