@@ -127,8 +127,19 @@ export function dropoutRows(stats,{threshold=80}={}){
  const risk=stats.filter(s=>(!s.status||s.status==='재학')&&s.rate!==null&&s.rate<threshold).map(s=>({...s,verdict:'수료 위험'}));
  return {left,risk};
 }
+// 자동 동기화 시간 'b2InWindow_'(beta2.gs)와 같은 규칙: '1-5 09:10-18:00'(요일 1=월~7=일) 또는 'always'
+const WINDOW_RE=/^([\d,\-\s]+?)\s+(\d{2}:\d{2})\s*[-~]\s*(\d{2}:\d{2})$/,DEFAULT_WINDOW='1-5 09:10-18:00';
+function syncWindow(spec,now){
+ const s=String(spec||DEFAULT_WINDOW).trim();if(/^(always|항상)$/i.test(s))return {text:'항상',open:true};
+ const m=s.match(WINDOW_RE)||DEFAULT_WINDOW.match(WINDOW_RE),days=new Set();
+ for(const part of m[1].split(',')){const [a,b=a]=part.trim().split('-').map(Number);for(let d=a;d<=b;d++)days.add(d);}
+ const k=new Date(now+9*3600e3),dow=k.getUTCDay()||7,hm=k.toISOString().slice(11,16),key=[...days].join(',');
+ const label={'1,2,3,4,5':'평일','1,2,3,4,5,6,7':'매일','6,7':'주말'}[key]||[...days].map(d=>'월화수목금토일'[d-1]).join('·');
+ return {text:`${label} ${m[2]}~${m[3]}`,open:days.has(dow)&&hm>=m[2]&&hm<=m[3]};
+}
 export function syncText(sync,now=Date.now()){
  const ago=t=>{if(!t)return '기록 없음';const m=Math.round((now-t)/60000);return m<1?'방금':m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`;};
- const last=sync?.last;
- return {checked:ago(sync?.checkedAt||last?.at),changed:ago(sync?.changedAt),error:sync?.error?.message||'',errors:last?.errors||[],stats:last?.stats||null};
+ const last=sync?.last,win=syncWindow(sync?.window,now),cutAt=Number(sync?.cutAt)||0;
+ return {checked:ago(sync?.checkedAt||last?.at),changed:ago(sync?.changedAt),error:sync?.error?.message||'',errors:last?.errors||[],stats:last?.stats||null,
+  window:win.text,resting:!win.open,cut:cutAt&&cutAt>(Number(last?.at)||0)?ago(cutAt):''};
 }

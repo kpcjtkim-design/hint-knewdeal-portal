@@ -2,7 +2,8 @@
  * HINT 2기 베타 · 마스터시트 확장 (beta2.gs)
  *
  * 마스터시트(HINT 운영 마스터시트)에 연결된 Apps Script 프로젝트에 새 파일 'beta2'로 추가합니다.
- * - 1기 운영총괄(읽기 전용) → 마스터시트 출결원장·명부·반정보·서류발급 가져오기 (10분마다, 바뀐 때만)
+ * - 1기 운영총괄(읽기 전용) → 마스터시트 출결원장·명부·반정보·서류발급 가져오기
+ *   (평일 09:10~18:00 10분마다, 바뀐 반만. Google Sheets API 서비스를 추가하면 17개 반을 한 번에 읽습니다)
  * - 베타에서 고친 출결 행은 다시 덮어쓰지 않고, 운영총괄과 다르면 T열(동기화 확인)에 적습니다.
  * - 베타 관리자 출결 저장(b2Save), 서류발급 신청·처리, 신청 시 관리자 메일 알림
  * - 포털 화면용 읽기(b2Bundle), 변경 번호(b2Rev), 동기화 상태(b2Status)
@@ -38,6 +39,10 @@ var B2 = {
   DOC_DELIVERY: ['이메일(PDF)', '담임 전달', '우편'],
   MAIL: ['hint.kpc@gmail.com', 'kpc.jtkim@gmail.com'],
   BETA_URL: 'https://hint-knewdealportal.vercel.app/beta2',
+  // 자동 동기화: 도는 시간(요일 1=월~7=일, Script Properties B2_SYNC_WINDOW로 바꿀 수 있음), 한 번에 색을 확인할 반 수,
+  // 읽기에 쓸 수 있는 시간(넘으면 쓰기는 다음 실행으로, 6분 한도), 하루 트리거 사용 상한(넘으면 30분에 한 번), 이보다 많이 바뀌면 출결원장을 통째로 씀,
+  // 일시 오류 때 쉬었다 다시 시도하는 간격, 기존 행 맞추기에서 뺄 '사람이 고친 행'을 변경이력에서 찾기 시작하는 날(beta2 설치일)
+  SYNC: { window: '1-5 09:10-18:00', colorPerTick: 4, budgetMs: 180000, dailyMs: 3600000, boardsPerLock: 4, boardFails: 3, retryWaits: [2000, 6000], legacySince: '2026-10-13' },
   TZ: 'Asia/Seoul'
 };
 
@@ -103,6 +108,99 @@ function b2SplitReason_(type, reason) {
 }
 // T열 중 '운영총괄과 다름' 계열만 충돌로 봅니다(사유 해석 참고 메모는 충돌이 아님).
 function b2IsConflict_(flag) { return /^운영총괄 값:|^운영총괄에는|^같은 학생/.test(String(flag || '')); }
+
+/* 동기화 효율용 순수 함수 */
+// spec '1-5 09:10-18:00'(요일 1=월~7=일, 쉼표·범위 가능) 또는 'always'. 잘못 적으면 기본값을 씁니다.
+function b2InWindow_(spec, dow, hm) {
+  var s = String(spec || '').trim();
+  if (/^(always|항상)$/i.test(s)) return true;
+  var m = s.match(/^([\d,\-\s]+?)\s+(\d{2}:\d{2})\s*[-~]\s*(\d{2}:\d{2})$/) || B2.SYNC.window.match(/^([\d,\-\s]+?)\s+(\d{2}:\d{2})\s*[-~]\s*(\d{2}:\d{2})$/);
+  var days = {};
+  m[1].split(',').forEach(function (part) {
+    var r = part.trim().split('-').map(Number);
+    for (var d = r[0]; d <= (r.length > 1 ? r[1] : r[0]); d++) days[d] = true;
+  });
+  return !!days[+dow] && hm >= m[2] && hm <= m[3];
+}
+// 끝의 빈 칸·빈 행을 뺀 값 묶음(시트에서 읽은 것과 Sheets API로 읽은 것이 같은 결과가 되게)
+function b2GridKey_(values) {
+  var rows = (values || []).map(function (r) {
+    var a = (r || []).map(function (v) { return String(v == null ? '' : v); });
+    while (a.length && a[a.length - 1] === '') a.pop();
+    return a;
+  });
+  while (rows.length && !rows[rows.length - 1].length) rows.pop();
+  return JSON.stringify(rows);
+}
+// 증빙 판단에 쓰는 색만 모은 값(인정 칸의 확인·보완필요·미제출). 색만 바뀐 반을 찾을 때 씁니다.
+function b2EvidenceKey_(values, backgrounds) {
+  var G = B2.GRID, out = [];
+  for (var r = 1; r <= G.studentRows; r++) {
+    var row = (values || [])[r] || [];
+    for (var c = G.dateOffset; c < row.length; c++) {
+      if (b2NormType_(row[c]).indexOf('인정') === 0) out.push(r + ',' + c + ':' + b2ColorState_(((backgrounds || [])[r] || [])[c]));
+    }
+  }
+  return out.join(';');
+}
+// 반 목록에서 cursor부터 n개(끝나면 처음으로)
+function b2Rotation_(list, cursor, n) {
+  var pick = [], len = list.length, start = len ? ((+cursor || 0) % len + len) % len : 0;
+  for (var i = 0; i < Math.min(n, len); i++) pick.push(list[(start + i) % len]);
+  return { pick: pick, next: len ? (start + pick.length) % len : 0 };
+}
+// 처음 설치 때 예전 코드가 붙인 표시(출처 빈칸 또는 '직접 입력', 지문 빈칸)를 운영총괄 값을 따르는 행으로 바꿉니다(사용자 결정 2026-10-13).
+// '베타 수정' 행, 지문이 있는 행, 설치 뒤 사람이 고친 행(skip: 변경이력에 남은 '반|이름|날짜')은 건드리지 않습니다.
+// scope({반: {날짜: true}})에 든 행만, 곧 이번 실행이 운영총괄과 맞추는 반·날짜만 바꿉니다. 그래야 '*' 표시가 같은 실행 안에서 실제 지문으로 바뀝니다.
+function b2AdoptLegacy_(rows, skip, scope) {
+  var n = 0;
+  rows.forEach(function (r) {
+    if (r.sig || (r.prov && r.prov !== B2.PROV_DIRECT) || (skip && skip[b2Key_(r.rec)])) return;
+    if (!scope || !scope[r.rec.cls] || !scope[r.rec.cls][r.rec.date]) return;
+    r.prov = B2.PROV_SYNC; r.sig = '*'; n++;
+  });
+  return n;
+}
+// 다시 읽은 출결원장 A~C열(now, 2행부터 {date, cls, name})이 읽을 때 그대로이거나, 이 계획(plan)을 쓰다 만 상태인지.
+// 비울 행은 비어 있어도 되고, 마지막 행(ledgerLast) 아래에는 이 계획이 붙이는 행이 차례로 있어도 됩니다(일시 오류 뒤 다시 시도).
+// 그 밖에 행이 지워지거나 끼워지거나 정렬됐으면 false입니다.
+function b2RowsAsPlanned_(origByRow, now, ledgerLast, plan) {
+  var cleared = {}, same = function (v, r) { return v.date === r.date && v.cls === String(r.cls) && v.name === r.name; };
+  plan.clears.forEach(function (r) { cleared[r] = true; });
+  for (var i = 0; i < now.length; i++) {
+    var row = i + 2, v = now[i];
+    if (row > ledgerLast) { var a = plan.appends[row - ledgerLast - 1]; if (v.date && !(a && same(v, a.rec))) return false; continue; }
+    var o = origByRow[row];
+    if (cleared[row] && !v.date) continue;
+    if (!o) { if (v.date) return false; continue; }
+    if (!same(v, o.rec)) return false;
+  }
+  return true;
+}
+// 합친 결과를 시트에 쓸 계획: 바뀐 행만 고치기(patch), 새 행은 아래에 붙이기(append), 없어진 동기화 행은 비우기(clear).
+// origByRow: 읽을 때의 {rec, prov, sig, flag} (행 번호별). 행 번호는 바꾸지 않고, 바뀌지 않은 행은 건드리지 않습니다.
+function b2LedgerPlan_(rows, removed, origByRow) {
+  var patches = [], appends = [];
+  rows.forEach(function (r) {
+    var o = r.row ? origByRow[r.row] : null;
+    if (!o) { appends.push(r); return; }
+    var input = b2Sig_(o.rec) !== b2Sig_(r.rec);
+    var meta = (o.prov || '') !== (r.prov || '') || (o.sig || '') !== (r.sig || '') || (o.flag || '') !== (r.flag || '');
+    if (input || meta) patches.push({ row: r.row, cls: r.rec.cls, rec: input ? r.rec : null, meta: meta ? [r.prov || '', r.sig || '', r.flag || ''] : null });
+  });
+  patches.sort(function (a, b) { return a.row - b.row; });
+  var clears = (removed || []).map(function (x) { return x.row; }).filter(Boolean).sort(function (a, b) { return a - b; });
+  return { patches: patches, appends: appends, clears: clears, removed: removed || [] };
+}
+// 행 번호 순으로 정렬된 [{row, value}] → 붙어 있는 행끼리 [{row: 첫 행, values: [...]}] (시트 쓰기 횟수를 줄이기 위해)
+function b2Runs_(items) {
+  var runs = [];
+  items.forEach(function (it) {
+    var cur = runs[runs.length - 1];
+    if (cur && cur.row + cur.values.length === it.row) cur.values.push(it.value); else runs.push({ row: it.row, values: [it.value] });
+  });
+  return runs;
+}
 
 /* 사유 해석: attendance-reason-core.mjs의 parseAttendanceReasons·reasonFor를 그대로 옮겼습니다.
  * (tests/beta2-gas.test.mjs가 두 구현의 결과가 같은지 확인합니다.) */
@@ -213,26 +311,28 @@ function b2Diff_(cur, want) {
   return '운영총괄 값: ' + (parts.length ? parts.join(' / ') : want.type);
 }
 
-/* 출결원장 행 합치기. existing: [{rec, prov, sig, flag}], desired: 운영총괄 기록, scope: {cls: {iso:true}}
+/* 출결원장 행 합치기. existing: [{rec, prov, sig, flag, row}], desired: 운영총괄 기록, scope: {cls: {iso:true}}
  * - 동기화로 들어온 뒤 손대지 않은 행(출처=1기 동기화, 지문 일치 또는 '*')만 운영총괄 값으로 바꾸거나 지웁니다.
+ * - 출처가 1기 동기화이고 값이 운영총괄과 같으면 지문이 어긋나도 동기화 행으로 봅니다(중간에 끊긴 쓰기 복구).
  * - 출처가 비어 있고 값이 같은 행은 동기화 행으로 받아들입니다(처음 한 번).
- * - 그 밖의 행은 그대로 두고, 운영총괄과 다르면 T열에 적습니다. */
+ * - 그 밖의 행은 그대로 두고, 운영총괄과 다르면 T열에 적습니다.
+ * 결과 rows에는 읽은 행 번호(row)가 따라가고, removed에는 지울 동기화 행이 들어갑니다. */
 function b2Merge_(existing, desired, scope) {
-  var want = {}, used = {}, seen = {}, out = [], changed = {}, stats = { added: 0, updated: 0, removed: 0, adopted: 0, flagged: 0, kept: 0 };
+  var want = {}, used = {}, seen = {}, out = [], removed = [], changed = {}, stats = { added: 0, updated: 0, removed: 0, adopted: 0, flagged: 0, kept: 0 };
   desired.forEach(function (d) { want[b2Key_(d)] = d; });
   var push = function (rec, prov, sig, flag, before) {
-    out.push({ rec: rec, prov: prov, sig: sig, flag: flag || '' });
+    out.push({ rec: rec, prov: prov, sig: sig, flag: flag || '', row: before && before.row });
     if (before && (before.prov !== prov || before.sig !== sig || (before.flag || '') !== (flag || ''))) changed[rec.cls] = true;
   };
   existing.forEach(function (e) {
     var rec = b2Norm_(e.rec), k = b2Key_(rec), dates = scope[rec.cls];
     if (seen[k]) { push(rec, e.prov, e.sig, '같은 학생·날짜 기록이 여러 줄입니다', e); stats.flagged++; return; }
     seen[k] = true;
-    if (!dates || !dates[rec.date]) { out.push({ rec: rec, prov: e.prov, sig: e.sig, flag: e.flag || '' }); return; }
-    var d = want[k], cur = b2Sig_(rec), synced = e.prov === B2.PROV_SYNC && (e.sig === cur || e.sig === '*'), unknown = !e.prov && !e.sig;
+    if (!dates || !dates[rec.date]) { out.push({ rec: rec, prov: e.prov, sig: e.sig, flag: e.flag || '', row: e.row }); return; }
+    var d = want[k], cur = b2Sig_(rec), ds = d ? b2Sig_(d) : '';
+    var synced = e.prov === B2.PROV_SYNC && (e.sig === cur || e.sig === '*' || (!!d && ds === cur)), unknown = !e.prov && !e.sig;
     if (d) {
       used[k] = true;
-      var ds = b2Sig_(d);
       if (synced) {
         if (ds !== cur || e.sig === '*') { push(b2Norm_(d), B2.PROV_SYNC, ds, d.note, e); changed[rec.cls] = true; stats.updated++; }
         else push(rec, B2.PROV_SYNC, cur, d.note, e);
@@ -242,7 +342,7 @@ function b2Merge_(existing, desired, scope) {
         push(rec, e.prov || B2.PROV_DIRECT, e.sig, diff, e);
         if (diff) stats.flagged++; else stats.kept++;
       }
-    } else if (synced) { changed[rec.cls] = true; stats.removed++; }
+    } else if (synced) { changed[rec.cls] = true; stats.removed++; removed.push({ row: e.row, cls: rec.cls }); }
     else {
       var note = rec.type === '출석' ? '' : '운영총괄에는 이 날 기록 없음(출석)';
       push(rec, e.prov || B2.PROV_DIRECT, e.sig, note, e);
@@ -257,7 +357,7 @@ function b2Merge_(existing, desired, scope) {
   out.sort(function (a, b) {
     return a.rec.date < b.rec.date ? -1 : a.rec.date > b.rec.date ? 1 : (+a.rec.cls - +b.rec.cls) || (a.rec.name < b.rec.name ? -1 : a.rec.name > b.rec.name ? 1 : 0);
   });
-  return { rows: out, stats: stats, changed: Object.keys(changed) };
+  return { rows: out, removed: removed, stats: stats, changed: Object.keys(changed) };
 }
 
 /* 명부 합치기. roster: [{row, cls, name, status, changed, birth, gender}], students: {cls: [{name, dropoutFrom}]},
@@ -372,20 +472,36 @@ function b2ReadLedger_() {
 function b2LedgerValues_(rec) {
   return [b2DateValue_(rec.date), Number(rec.cls), rec.name, rec.type, rec.inT, rec.outT, rec.oa, rec.ob, rec.reason, rec.ev, rec.evr];
 }
-function b2WriteLedger_(ledger, rows) {
-  var sh = ledger.sh, n = rows.length, oldLast = ledger.last;
+// 출결원장에 쓰기 계획(b2LedgerPlan_)을 씁니다. 행 번호는 바꾸지 않고(정렬·당기기 없음) 바뀐 행만 씁니다. 붙어 있는 행은 한 번에 씁니다.
+// 중간에 끊겨도 다음 실행이 b2Merge_로 바로잡을 수 있는 순서로 씁니다:
+//  1) 값이 바뀌는 동기화 행의 R:T를 먼저 '1기 동기화'·'*'(운영총괄을 따름)로 → 2) A~K 값과 비울 행 → 3) 마지막 R:T
+//  새 행은 R:T를 먼저, A~K를 나중에 씁니다(A가 비면 읽을 때 건너뛰고 다음 실행이 같은 줄에 다시 붙입니다).
+// 쓰기 전에 행 위치가 그사이 바뀌었는지 확인합니다(일시 오류로 다시 시도할 때도 매번).
+// S열(동기화 지문)은 '일반 텍스트' 서식으로 둡니다. 그러지 않으면 '01234567'·'12345e67' 같은 지문이 숫자로 바뀌어 다시는 맞지 않습니다.
+var B2_MOVED = '출결원장 행 위치가 그사이 바뀌어(행 삭제·추가·정렬) 이번 반영을 멈췄습니다. 다음 실행에서 다시 맞춥니다.';
+function b2WriteLedgerPlan_(ledger, plan, origByRow) {
+  var sh = ledger.sh, W = B2.COL.input, P = B2.COL.prov, last = ledger.last, k = plan.appends.length;
+  if (b2LedgerMoved_(ledger, origByRow, plan)) throw new Error(B2_MOVED);
+  var dateFormat = k ? sh.getRange(2, 1).getNumberFormat() : '';
   if (sh.getMaxColumns() < B2.COL.width) sh.insertColumnsAfter(sh.getMaxColumns(), B2.COL.width - sh.getMaxColumns());
-  if (sh.getMaxRows() < n + 1) sh.insertRowsAfter(sh.getMaxRows(), n + 1 - sh.getMaxRows());
-  if (n) {
-    sh.getRange(2, 1, n, B2.COL.input).setValues(rows.map(function (r) { return b2LedgerValues_(r.rec); }));
-    sh.getRange(2, B2.COL.prov, n, 3).setValues(rows.map(function (r) { return [r.prov || '', r.sig || '', r.flag || '']; }));
-    var dateFormat = sh.getRange(2, 1).getNumberFormat();
-    sh.getRange(2, 1, n, 1).setNumberFormat(/y/.test(dateFormat) ? dateFormat : 'yyyy/mm/dd (ddd)');
-    sh.getRange(2, 5, n, 4).setNumberFormat('hh:mm');
+  if (sh.getMaxRows() < last + k) sh.insertRowsAfter(sh.getMaxRows(), last + k - sh.getMaxRows());
+  sh.getRange(2, B2.COL.sig, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+  var put = function (col, width, items) { b2Runs_(items).forEach(function (run) { sh.getRange(run.row, col, run.values.length, width).setValues(run.values); }); };
+  put(P, 3, plan.patches.filter(function (p) { return p.rec && p.meta && p.meta[0] === B2.PROV_SYNC; })
+    .map(function (p) { var o = origByRow[p.row]; return { row: p.row, value: [B2.PROV_SYNC, '*', (o && o.flag) || ''] }; }));
+  put(1, W, plan.patches.filter(function (p) { return p.rec; }).map(function (p) { return { row: p.row, value: b2LedgerValues_(p.rec) }; }));
+  if (plan.clears.length) {
+    var a1 = [];
+    b2Runs_(plan.clears.map(function (r) { return { row: r, value: 0 }; })).forEach(function (run) { var e = run.row + run.values.length - 1; a1.push('A' + run.row + ':K' + e, 'R' + run.row + ':T' + e); });
+    sh.getRangeList(a1).clearContent();
   }
-  if (oldLast > n + 1) {
-    sh.getRange(n + 2, 1, oldLast - n - 1, B2.COL.input).clearContent();
-    sh.getRange(n + 2, B2.COL.prov, oldLast - n - 1, 3).clearContent();
+  put(P, 3, plan.patches.filter(function (p) { return p.meta; }).map(function (p) { return { row: p.row, value: p.meta }; }));
+  if (k) {
+    var at = last + 1;
+    sh.getRange(at, P, k, 3).setValues(plan.appends.map(function (r) { return [r.prov || '', r.sig || '', r.flag || '']; }));
+    sh.getRange(at, 1, k, W).setValues(plan.appends.map(function (r) { return b2LedgerValues_(r.rec); }));
+    sh.getRange(at, 1, k, 1).setNumberFormat(/y/.test(dateFormat) ? dateFormat : 'yyyy/mm/dd (ddd)');
+    sh.getRange(at, 5, k, 4).setNumberFormat('hh:mm');
   }
 }
 function b2ReadRoster_() {
@@ -433,11 +549,15 @@ function b2RefreshBoards_(classes, ctx) {
   b2Info_().forEach(function (c) { info[c.id] = c; });
   ctx.ledger.forEach(function (r) { byKey[b2Key_(r.rec)] = r.rec; });
   var dates = ctx.days.filter(function (d) { return d <= mainDay; }).reverse().slice(0, 60);
+  // 탭 확인(읽기)을 먼저 모두 하고 쓰기를 몰아서 합니다. 읽기와 쓰기가 섞이면 반마다 시트가 다시 계산됩니다.
+  var boards = [];
   classes.forEach(function (cls) {
     var tab = (info[cls] && info[cls].tab) || B2.SOURCE_TABS[cls], sh = tab && ss.getSheetByName(tab);
-    if (!sh || String(sh.getRange('A16').getValue()) !== '이름') return;
+    if (sh && String(sh.getRange('A16').getValue()) === '이름') boards.push({ cls: cls, sh: sh, width: Math.min(60, sh.getMaxColumns() - 4) });
+  });
+  boards.forEach(function (b) {
+    var cls = b.cls, sh = b.sh, width = b.width;
     var people = ctx.roster.filter(function (p) { return p.cls === String(cls); }).slice(0, 32);
-    var width = Math.min(60, sh.getMaxColumns() - 4);
     var names = [], grid = [];
     for (var i = 0; i < 32; i++) {
       var p = people[i]; names.push([p ? p.name : '']);
@@ -461,89 +581,360 @@ function b2BoardTouch_(cls, name, date, rec, person) {
 
 /* ---------- 1기 운영총괄 → 마스터시트 동기화 ---------- */
 
-function b2ReadSourceClass_(src, cls) {
-  var sh = src.getSheetByName(B2.SOURCE_TABS[cls]);
-  if (!sh) throw new Error(cls + '반 운영총괄 탭을 찾지 못했습니다.');
-  var G = B2.GRID, width = sh.getMaxColumns() - G.nameCol + 1, range = sh.getRange(G.headerRow, G.nameCol, G.lastRow - G.headerRow + 1, width);
-  return { values: range.getDisplayValues(), backgrounds: range.getBackgrounds() };
+var B2_SYNC_VERSION = '20261014.1'; // 바꾸면 다음 실행이 17개 반을 모두 다시 맞춥니다.
+function b2A1Tab_(name) { return "'" + String(name).replace(/'/g, "''") + "'"; }
+function b2JsonProp_(key, fallback) { try { var v = b2Props_().getProperty(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } }
+function b2Msg_(e) { return String(e && e.message || e); }
+// 일시 오류(예: 'Service Spreadsheets failed while accessing document')는 몇 초 쉬고 다시 시도합니다.
+// fn은 여러 번 불러도 결과가 같은 일(같은 칸에 같은 값 쓰기, 읽기)만 넣습니다. 다시 시도한 기록은 실행 결과 retries에 남깁니다.
+var B2_TRANSIENT = /failed while accessing document|timed out while accessing|Service error|server error occurred|try again|Internal error|Backend Error|currently unavailable|Service unavailable|too many times in a short time|Address unavailable/i;
+var __B2_RETRIES = [];
+function b2Retry_(label, fn) {
+  var waits = B2.SYNC.retryWaits;
+  for (var i = 0; ; i++) {
+    try { return fn(); } catch (e) {
+      var msg = b2Msg_(e);
+      if (i >= waits.length || !B2_TRANSIENT.test(msg)) throw e;
+      __B2_RETRIES.push(label + ': ' + msg.replace(/id [\w-]{20,}/g, 'id …').slice(0, 120));
+      Utilities.sleep(waits[i]);
+    }
+  }
+}
+// 변경이력에서 since(yyyy-MM-dd) 이후 사람이 고친 학생·날짜('반|이름|날짜'). 기존 행 맞추기에서 뺍니다.
+function b2HumanKeys_(since) {
+  var sh = b2Ss_().getSheetByName(B2.SHEETS.log), keys = {};
+  if (!sh) return keys;
+  var last = b2LastRow_(sh, 1); if (last < 2) return keys;
+  var from = b2DateValue_(since).getTime();
+  sh.getRange(2, 1, last - 1, 6).getValues().forEach(function (r) {
+    var at = r[0] instanceof Date ? r[0].getTime() : 0, cls = String(r[3] || '').replace(/반.*$/, '').trim(), name = String(r[4] || '').trim(), date = b2Iso_(r[5]);
+    if (at >= from && cls && name && date && String(r[2] || '') !== '1기 동기화') keys[cls + '|' + name + '|' + date] = true;
+  });
+  return keys;
+}
+// 읽은 뒤 출결원장 행이 밀렸는지(누가 행을 지우거나 끼워 넣거나 정렬함). 이 계획을 쓰다 만 상태는 밀린 것으로 보지 않습니다.
+function b2LedgerMoved_(ledger, origByRow, plan) {
+  var sh = ledger.sh, last = b2LastRow_(sh, 1), top = Math.max(last, ledger.last);
+  if (last > ledger.last + plan.appends.length) return true;
+  if (top < 2) return false;
+  var now = sh.getRange(2, 1, top - 1, 3).getValues().map(function (r) { return { date: b2Iso_(r[0]), cls: String(r[1]).trim(), name: String(r[2] || '').trim() }; });
+  return !b2RowsAsPlanned_(origByRow, now, ledger.last, plan);
+}
+function b2Pad2d_(rows, h, w) {
+  var out = [];
+  for (var i = 0; i < h; i++) { var r = (rows || [])[i] || [], a = []; for (var j = 0; j < w; j++) a.push(r[j] == null ? '' : r[j]); out.push(a); }
+  return out;
 }
 
-// opts: {classes: ['3'] (없으면 전체), force: true면 바뀌지 않았어도 읽음, reason: 'trigger'|'manual'|'setup'}
+// 운영총괄 값 읽기. Google Sheets API 서비스(Sheets)가 추가돼 있으면 반 17개·서류·반정보를 한 번에 읽고,
+// 없거나 실패하면 반마다 읽습니다. extras: 서류발급요청·반정보도 읽을지(전체 동기화)
+function b2ReadSource_(sourceId, classes, extras) {
+  var G = B2.GRID, h = G.lastRow - G.headerRow + 1, out = { mode: '', grids: {}, docs: null, info: null, errors: [], apiError: '', src: null };
+  if (typeof Sheets !== 'undefined' && Sheets.Spreadsheets && Sheets.Spreadsheets.Values) {
+    try {
+      // 없는 탭이 하나라도 있으면 batchGet 전체가 실패하므로, 탭 이름을 먼저 보고 있는 탭만 읽습니다.
+      var titles = {};
+      ((b2Retry_('운영총괄 탭 목록(API)', function () { return Sheets.Spreadsheets.get(sourceId, { fields: 'sheets.properties.title' }); }) || {}).sheets || [])
+        .forEach(function (s) { titles[s.properties && s.properties.title] = true; });
+      var found = classes.filter(function (c) { if (titles[B2.SOURCE_TABS[c]]) return true; out.errors.push(c + '반: 운영총괄 탭을 찾지 못했습니다.'); return false; });
+      var extra = extras ? [B2.SHEETS.srcDocs, B2.SHEETS.info].filter(function (n) { if (titles[n]) return true; out.errors.push(n + ': 운영총괄 탭을 찾지 못했습니다.'); return false; }) : [];
+      var ranges = found.map(function (c) { return b2A1Tab_(B2.SOURCE_TABS[c]) + '!' + G.headerRow + ':' + G.lastRow; });
+      extra.forEach(function (n) { ranges.push(b2A1Tab_(n) + (n === B2.SHEETS.srcDocs ? '!A1:Z' : '!G4:N20')); });
+      var vr = ranges.length ? b2Retry_('운영총괄 읽기(API)', function () { return Sheets.Spreadsheets.Values.batchGet(sourceId, { ranges: ranges, valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' }); }).valueRanges || [] : [];
+      found.forEach(function (c, i) {
+        var rows = (vr[i] && vr[i].values) || [], grid = [];
+        for (var r = 0; r < h; r++) grid.push((rows[r] || []).slice(G.nameCol - 1));
+        out.grids[c] = grid;
+      });
+      extra.forEach(function (n, j) {
+        var v = (vr[found.length + j] && vr[found.length + j].values) || [];
+        if (n === B2.SHEETS.srcDocs) out.docs = v; else out.info = b2Pad2d_(v, 17, 8);
+      });
+      out.mode = 'api';
+      return out;
+    } catch (e) { out.apiError = b2Msg_(e); out.errors = []; out.grids = {}; out.docs = out.info = null; }
+  }
+  var src = out.src = b2Retry_('운영총괄 열기', function () { return SpreadsheetApp.openById(sourceId); });
+  classes.forEach(function (c) {
+    try {
+      out.grids[c] = b2Retry_(c + '반 읽기', function () {
+        var sh = src.getSheetByName(B2.SOURCE_TABS[c]);
+        if (!sh) throw new Error('운영총괄 탭을 찾지 못했습니다.');
+        var width = Math.max(1, Math.min(sh.getMaxColumns(), sh.getLastColumn()) - G.nameCol + 1);
+        return sh.getRange(G.headerRow, G.nameCol, h, width).getDisplayValues();
+      });
+    } catch (e) { out.errors.push(c + '반: ' + b2Msg_(e)); }
+  });
+  if (extras) {
+    try { out.docs = b2Retry_('서류발급요청 읽기', function () { return src.getSheetByName(B2.SHEETS.srcDocs).getDataRange().getDisplayValues(); }); } catch (e) { out.errors.push('서류발급요청: ' + b2Msg_(e)); }
+    try { out.info = b2Retry_('반정보 읽기', function () { return src.getSheetByName(B2.SHEETS.info).getRange('G4:N20').getDisplayValues(); }); } catch (e) { out.errors.push('반정보: ' + b2Msg_(e)); }
+  }
+  out.mode = 'sheet';
+  return out;
+}
+// 증빙 색(배경색)은 시트 방식으로 읽습니다(포털·첫 설치와 같은 기준). 값이 있는 칸 너비까지만 읽습니다.
+function b2ReadBackgrounds_(read, sourceId, cls) {
+  return b2Retry_(cls + '반 색 읽기', function () {
+    var G = B2.GRID, src = read.src || (read.src = SpreadsheetApp.openById(sourceId)), sh = src.getSheetByName(B2.SOURCE_TABS[cls]);
+    if (!sh) throw new Error('운영총괄 탭을 찾지 못했습니다.');
+    var w = 1; (read.grids[cls] || []).forEach(function (r) { if (r && r.length > w) w = r.length; });
+    w = Math.max(1, Math.min(w, sh.getMaxColumns() - G.nameCol + 1));
+    return sh.getRange(G.headerRow, G.nameCol, G.lastRow - G.headerRow + 1, w).getBackgrounds();
+  });
+}
+// 포털에서 저장한 반: 다음 동기화가 그 반을 다시 맞춰 T열(동기화 확인)을 새로 적습니다.
+function b2MarkDirty_(cls) {
+  var list = b2JsonProp_('B2_DIRTY', []);
+  if (list.indexOf(String(cls)) < 0) { list.push(String(cls)); b2Props_().setProperty('B2_DIRTY', JSON.stringify(list)); }
+}
+
+// opts: {classes: ['3'] (없으면 전체), force: true면 바뀌지 않은 반도 다시 맞춤, reason: 'trigger'|'manual'|'setup'|'release'}
+// 반마다 값 지문을 저장해 두고, 값이 바뀐 반·포털에서 저장한 반·색(증빙)이 바뀐 반만 출결원장에 반영합니다.
+// 시트 쓰기는 모두 문서 잠금 안에서 하고, 일시 오류는 b2Retry_로 몇 초 쉬고 다시 시도합니다.
 function b2SyncRun_(opts) {
   opts = opts || {};
-  var props = b2Props_(), all = !opts.classes || !opts.classes.length, started = Date.now(), srcUpdated = 0, sourceId = b2SourceId_();
+  __B2_RETRIES = [];
+  var props = b2Props_(), started = Date.now(), sourceId = b2SourceId_(), t = {};
   if (!sourceId) return { skipped: true, reason: '원본 시트가 없어 동기화하지 않습니다(2기 마스터).' };
+  var all = !opts.classes || !opts.classes.length, srcUpdated = 0, today = b2Today_();
+  var full = !!opts.force || props.getProperty('B2_SYNC_VERSION') !== B2_SYNC_VERSION;
+  var dirty = all ? b2JsonProp_('B2_DIRTY', []) : [];
+  // 날이 바뀐 뒤 첫 전체 동기화는 17개 반 출결판을 모두 다시 그립니다(새 교육일 열). 시트를 열 때(onOpen)는 그리지 않습니다.
+  var drawAll = all && props.getProperty('B2_BOARD_DAY') !== today;
+  // 지난 실행이 출결원장을 쓴 뒤 끊겼으면 남은 출결판 그리기와 변경 번호 올리기를 이어서 합니다.
+  var pendingAtStart = all && !!props.getProperty('B2_PENDING_BOARDS');
+  // 기존 행 맞추기(한 번, 사용자 결정 2026-10-13): 아직 맞추지 않은 반은 반영 대상에 넣고, 그 반을 맞춘 실행에서만 바꿉니다.
+  var legacyLeft = [];
+  if (all && (+props.getProperty('B2_LEGACY_ADOPTED') || 0) < 2) {
+    var legacyDone = b2JsonProp_('B2_LEGACY_DONE', []);
+    legacyLeft = Object.keys(B2.SOURCE_TABS).filter(function (c) { return legacyDone.indexOf(c) < 0; });
+  }
+  // 운영총괄이 바뀐 뒤 색 확인이 17개 반을 한 바퀴 돌 때까지(B2_COLOR_LAP번)는 파일이 그대로여도 계속 돕니다(색만 바꾼 경우를 잡기 위해).
+  var lap = +props.getProperty('B2_COLOR_LAP') || 0, seenBefore = +props.getProperty('B2_SRC_SEEN') || 0, newDay = props.getProperty('B2_SYNC_DAY') !== today;
   if (all) {
-    srcUpdated = DriveApp.getFileById(sourceId).getLastUpdated().getTime();
-    if (!opts.force && props.getProperty('B2_LEGACY_ADOPTED') === '1' && srcUpdated <= (+props.getProperty('B2_SRC_SEEN') || 0)) {
+    srcUpdated = b2Retry_('운영총괄 수정 시각', function () { return DriveApp.getFileById(sourceId).getLastUpdated().getTime(); });
+    if (!full && !dirty.length && !drawAll && !lap && !pendingAtStart && props.getProperty('B2_SYNC_DAY') === today && srcUpdated <= seenBefore) {
       props.setProperty('B2_SYNC_CHECKED', String(Date.now()));
       return { skipped: true, reason: '운영총괄이 바뀌지 않았습니다.' };
     }
   }
-  var classes = all ? Object.keys(B2.SOURCE_TABS) : opts.classes.map(String).filter(function (c) { return B2.SOURCE_TABS[c]; });
-  // 처음 한 번: beta2 설치 전부터 있던 출결원장 행(출처·지문 빈칸)은 운영총괄 값으로 맞춥니다(사용자 결정 2026-10-13).
-  var adoptLegacy = all && props.getProperty('B2_LEGACY_ADOPTED') !== '1';
-  var src = SpreadsheetApp.openById(sourceId), days = b2Days_(), today = b2Today_();
-  var desired = [], scope = {}, students = {}, errors = [];
-  classes.forEach(function (cls) {
+  var wanted = all ? Object.keys(B2.SOURCE_TABS) : opts.classes.map(String).filter(function (c) { return B2.SOURCE_TABS[c]; });
+  var days = b2Retry_('교육일자 읽기', b2Days_), salt = [B2_SYNC_VERSION, today, b2Hash_(days.list.join(','))].join('|');
+  var hashes = b2JsonProp_('B2_SRC_HASH', {}), colors = b2JsonProp_('B2_SRC_COLOR', {});
+  var read = b2ReadSource_(sourceId, wanted, all), errors = read.errors.slice(), warnings = [];
+  t.read = Date.now() - started;
+  var nextHash = {}, nextColor = {}, process = [], bgs = {};
+  wanted.forEach(function (cls) {
+    if (!read.grids[cls]) return;
+    nextHash[cls] = b2Hash_(salt + '␞' + b2GridKey_(read.grids[cls]));
+    if (full || hashes[cls] !== nextHash[cls] || dirty.indexOf(cls) >= 0 || legacyLeft.indexOf(cls) >= 0) process.push(cls);
+  });
+  // 증빙 색: 반영할 반은 모두 읽고, 나머지는 실행마다 몇 반씩 돌아가며 확인합니다(색만 바뀐 경우, 17개 반이 약 50분에 한 바퀴).
+  var rot = all && !full ? b2Rotation_(wanted, props.getProperty('B2_COLOR_CURSOR'), B2.SYNC.colorPerTick) : { pick: [], next: +props.getProperty('B2_COLOR_CURSOR') || 0 };
+  wanted.forEach(function (cls) {
+    var queued = process.indexOf(cls) >= 0;
+    if (!read.grids[cls] || (!queued && rot.pick.indexOf(cls) < 0)) return;
     try {
-      var grid = b2ReadSourceClass_(src, cls), parsed = b2ParseGrid_(cls, grid.values, grid.backgrounds, today, days.set);
+      bgs[cls] = b2ReadBackgrounds_(read, sourceId, cls);
+      nextColor[cls] = b2Hash_(b2EvidenceKey_(read.grids[cls], bgs[cls]));
+      if (!queued && colors[cls] !== nextColor[cls]) process.push(cls);
+    } catch (e) {
+      errors.push(cls + '반 색: ' + b2Msg_(e));
+      if (queued) { process.splice(process.indexOf(cls), 1); delete nextHash[cls]; }
+    }
+  });
+  t.colors = Date.now() - started - t.read;
+  var docsKey = read.docs ? b2Hash_(b2GridKey_(read.docs)) : '', infoKey = read.info ? b2Hash_(b2GridKey_(read.info)) : '';
+  var docsChanged = !!read.docs && (full || props.getProperty('B2_SRC_DOCS') !== docsKey);
+  var infoChanged = !!read.info && (full || props.getProperty('B2_SRC_INFO') !== infoKey);
+  var remember = function (done) {
+    Object.keys(nextHash).forEach(function (c) { hashes[c] = nextHash[c]; });
+    Object.keys(nextColor).forEach(function (c) { colors[c] = nextColor[c]; });
+    props.setProperty('B2_SRC_HASH', JSON.stringify(hashes));
+    props.setProperty('B2_SRC_COLOR', JSON.stringify(colors));
+    if (all) props.setProperty('B2_COLOR_CURSOR', String(rot.next));
+    if (read.docs) props.setProperty('B2_SRC_DOCS', docsKey);
+    if (read.info) props.setProperty('B2_SRC_INFO', infoKey);
+    if (done.length) {
+      var left = b2JsonProp_('B2_DIRTY', []).filter(function (c) { return done.indexOf(c) < 0; });
+      if (left.length) props.setProperty('B2_DIRTY', JSON.stringify(left)); else props.deleteProperty('B2_DIRTY');
+    }
+    if (all) {
+      // 오류가 난 반은 지문을 저장하지 않으므로 운영총괄이 다시 바뀌거나 색 확인 한 바퀴 동안 다시 읽습니다.
+      // 같은 오류가 계속되어도 빠른 건너뛰기가 막히지 않게 수정 시각은 늘 기억합니다(오류는 화면에 보임).
+      props.setProperty('B2_SRC_SEEN', String(srcUpdated));
+      var laps = full ? 0 : srcUpdated > seenBefore ? Math.ceil(wanted.length / B2.SYNC.colorPerTick) - 1 : Math.max(0, lap - 1);
+      // 새로 읽은 실행(전체 다시 맞추기·운영총괄 변경)에서 읽기 오류가 난 반은 운영총괄이 그대로여도 두 번 더 읽어 봅니다. 같은 오류가 계속되면 그 뒤로는 건너뜁니다.
+      if (errors.length && (full || newDay || srcUpdated > seenBefore)) laps = Math.max(laps, 2);
+      if (laps) props.setProperty('B2_COLOR_LAP', String(laps)); else props.deleteProperty('B2_COLOR_LAP');
+      props.setProperty('B2_SYNC_DAY', today);
+      props.setProperty('B2_SYNC_VERSION', B2_SYNC_VERSION);
+    }
+    props.setProperty('B2_SYNC_CHECKED', String(Date.now()));
+    props.deleteProperty('B2_SYNC_ERROR');
+  };
+  if (!process.length && !docsChanged && !infoChanged && !drawAll && !pendingAtStart) {
+    var quiet = LockService.getDocumentLock();
+    if (quiet.tryLock(10000)) { try { remember([]); } finally { quiet.releaseLock(); } }
+    return { at: Date.now(), ms: Date.now() - started, reason: opts.reason || '', mode: read.mode, apiError: read.apiError, processed: [], colorChecked: rot.pick, nothing: true, errors: errors, retries: __B2_RETRIES.slice(), t: t };
+  }
+  if (Date.now() - started > B2.SYNC.budgetMs) {
+    var late = { at: Date.now(), ms: Date.now() - started, reason: opts.reason || '', skipped: true, note: '운영총괄을 읽는 데 오래 걸려 반영은 다음 실행으로 미룹니다.', mode: read.mode, errors: errors, retries: __B2_RETRIES.slice(), t: t };
+    props.setProperty('B2_SYNC_LAST', JSON.stringify(late));
+    return late;
+  }
+
+  var desired = [], scope = {}, students = {};
+  process.forEach(function (cls) {
+    try {
+      var parsed = b2ParseGrid_(cls, read.grids[cls], bgs[cls], today, days.set);
       desired = desired.concat(parsed.records); students[cls] = parsed.students;
       scope[cls] = {}; parsed.dates.forEach(function (d) { scope[cls][d] = true; });
-    } catch (e) { errors.push(cls + '반: ' + (e && e.message || e)); }
+    } catch (e) { errors.push(cls + '반: ' + b2Msg_(e)); delete nextHash[cls]; delete nextColor[cls]; }
   });
-  var srcDocs = null;
-  if (all) { try { srcDocs = src.getSheetByName(B2.SHEETS.srcDocs).getDataRange().getDisplayValues(); } catch (e) { errors.push('서류발급요청: ' + (e && e.message || e)); } }
-  var srcInfo = null;
-  if (all) { try { srcInfo = src.getSheetByName(B2.SHEETS.info).getRange('G4:N20').getDisplayValues(); } catch (e) { errors.push('반정보: ' + (e && e.message || e)); } }
+  var done = Object.keys(scope), adoptNow = legacyLeft.filter(function (c) { return done.indexOf(c) >= 0; });
 
   var lock = LockService.getDocumentLock(); lock.waitLock(30000);
-  var result;
+  var result, t1 = Date.now(), rest = [], failedBoards = [];
   try {
     // 명부를 먼저 씁니다(출결원장 이름 칸의 명부 데이터 확인 규칙과 맞추기 위해).
-    var roster = b2ReadRoster_(), rm = b2MergeRoster_(roster.rows, students, b2ReadPeople_());
-    rm.updates.forEach(function (u) {
-      if (u.status) roster.sh.getRange(u.row, 4, 1, 2).setValues([[u.status, u.changed ? b2DateValue_(u.changed) : '']]);
-      if (u.birth || u.gender) {
-        var cur = roster.sh.getRange(u.row, 7, 1, 2).getValues()[0];
-        roster.sh.getRange(u.row, 7, 1, 2).setValues([[u.birth ? b2DateValue_(u.birth) : cur[0], u.gender || cur[1]]]);
-      }
-    });
-    if (rm.appends.length) {
-      var at = roster.last + 1;
-      if (roster.sh.getMaxRows() < at + rm.appends.length) roster.sh.insertRowsAfter(roster.sh.getMaxRows(), at + rm.appends.length - roster.sh.getMaxRows());
-      roster.sh.getRange(at, 1, rm.appends.length, 5).setValues(rm.appends.map(function (a) { return [Number(a.cls), a.name, '', a.status, a.changed ? b2DateValue_(a.changed) : '']; }));
-      roster.sh.getRange(at, 7, rm.appends.length, 2).setValues(rm.appends.map(function (a) { return [a.birth ? b2DateValue_(a.birth) : '', a.gender]; }));
+    var roster = b2Retry_('명부 읽기', b2ReadRoster_);
+    var rm = done.length ? b2MergeRoster_(roster.rows, students, b2Retry_('교육생정보 읽기', b2ReadPeople_)) : { updates: [], appends: [] };
+    if (rm.updates.length || rm.appends.length) b2Retry_('명부 쓰기', function () { b2WriteRoster_(roster, rm); SpreadsheetApp.flush(); });
+    var ledger = b2Retry_('출결원장 읽기', b2ReadLedger_), origByRow = {}, adopted = 0;
+    ledger.rows.forEach(function (r) { origByRow[r.row] = { rec: b2Norm_(r.rec), prov: r.prov, sig: r.sig, flag: r.flag }; });
+    if (adoptNow.length) {
+      var adoptScope = {}; adoptNow.forEach(function (c) { adoptScope[c] = scope[c]; });
+      adopted = b2AdoptLegacy_(ledger.rows, b2Retry_('변경이력 읽기', function () { return b2HumanKeys_(B2.SYNC.legacySince); }), adoptScope);
     }
-    if (rm.updates.length || rm.appends.length) SpreadsheetApp.flush();
-    var ledger = b2ReadLedger_(), adopted = 0;
-    if (adoptLegacy) ledger.rows.forEach(function (r) { if (!r.prov && !r.sig) { r.prov = B2.PROV_SYNC; r.sig = '*'; adopted++; } });
     var merged = b2Merge_(ledger.rows, desired, scope);
-    var dirty = merged.changed.length > 0;
-    if (dirty) b2WriteLedger_(ledger, merged.rows);
-    var infoFilled = srcInfo ? b2FillInfo_(srcInfo) : 0;
-    var docsAdded = srcDocs ? b2ImportDocs_(srcDocs) : 0;
-    var boardClasses = merged.changed.slice();
-    rm.appends.forEach(function (a) { if (boardClasses.indexOf(a.cls) < 0) boardClasses.push(a.cls); });
+    var plan = b2LedgerPlan_(merged.rows, merged.removed, origByRow);
+    var writes = plan.patches.length + plan.appends.length + plan.clears.length;
+    // 다시 그릴 출결판: 유형이 바뀐 반·명부가 바뀐 반(날이 바뀐 첫 실행·처음 설치는 전부).
+    // 전체 동기화는 지난 실행이 남긴 반(B2_PENDING_BOARDS)도 그리고, 쓰기 전에 그릴 반을 적어 두어 쓰기 뒤에 끊기면 다음 실행이 이어서 그립니다.
+    var boardClasses = [], addBoard = function (c) { c = String(c); if (c && c !== 'undefined' && boardClasses.indexOf(c) < 0) boardClasses.push(c); };
+    if (drawAll || opts.reason === 'setup') wanted.forEach(addBoard);
+    plan.patches.forEach(function (p) { if (p.rec) addBoard(p.cls); });
+    plan.appends.forEach(function (r) { addBoard(r.rec.cls); });
+    plan.removed.forEach(function (r) { addBoard(r.cls); });
+    rm.appends.forEach(function (a) { addBoard(a.cls); });
     var rowCls = {}; roster.rows.forEach(function (r) { rowCls[r.row] = r.cls; });
-    rm.updates.forEach(function (u) { var c = rowCls[u.row]; if (u.status && c && boardClasses.indexOf(c) < 0) boardClasses.push(c); });
-    if (opts.reason === 'setup') boardClasses = classes.slice();
-    if (boardClasses.length) {
-      var freshRoster = b2ReadRoster_().rows, freshLedger = dirty ? b2ReadLedger_().rows : ledger.rows;
-      b2RefreshBoards_(boardClasses, { ledger: freshLedger, roster: freshRoster, days: days.list, today: today });
-    }
+    rm.updates.forEach(function (u) { if (u.status) addBoard(rowCls[u.row]); });
+    if (all) { b2JsonProp_('B2_PENDING_BOARDS', []).forEach(addBoard); if (boardClasses.length) props.setProperty('B2_PENDING_BOARDS', JSON.stringify(boardClasses)); }
+    if (writes) b2Retry_('출결원장 쓰기', function () { b2WriteLedgerPlan_(ledger, plan, origByRow); SpreadsheetApp.flush(); });
+    t.write = Date.now() - t1;
+    var infoFilled = infoChanged ? b2Retry_('반정보 채우기', function () { return b2FillInfo_(read.info); }) : 0;
+    var docsAdded = docsChanged ? b2Retry_('서류발급 가져오기', function () { return b2ImportDocs_(read.docs); }) : 0;
     var s = merged.stats, changes = s.added + s.updated + s.removed + rm.updates.length + rm.appends.length + infoFilled + docsAdded;
-    if (adoptLegacy && !errors.length) props.setProperty('B2_LEGACY_ADOPTED', '1');
-    if (changes || dirty) b2Bump_();
-    if (changes) {
-      b2Log_(classes.length === 17 ? '' : classes.join(','), '', '', '', '추가 ' + s.added + ' · 수정 ' + s.updated + ' · 삭제 ' + s.removed + ' · 확인 필요 ' + s.flagged + ' · 명부 ' + (rm.updates.length + rm.appends.length) + ' · 서류 ' + docsAdded, '1기 동기화');
+    if (adoptNow.length) {
+      var legacyAll = b2JsonProp_('B2_LEGACY_DONE', []); adoptNow.forEach(function (c) { if (legacyAll.indexOf(c) < 0) legacyAll.push(c); });
+      if (Object.keys(B2.SOURCE_TABS).every(function (c) { return legacyAll.indexOf(c) >= 0; })) { props.setProperty('B2_LEGACY_ADOPTED', '2'); props.deleteProperty('B2_LEGACY_DONE'); }
+      else props.setProperty('B2_LEGACY_DONE', JSON.stringify(legacyAll));
     }
-    result = { at: Date.now(), ms: Date.now() - started, reason: opts.reason || '', classes: classes.length, stats: s, legacyAdopted: adopted, roster: { updated: rm.updates.length, added: rm.appends.length }, info: infoFilled, docs: docsAdded, errors: errors };
+    if (changes || writes || pendingAtStart) b2Bump_();
+    if (changes) {
+      try {
+        b2Log_(done.length === 17 ? '' : done.join(','), '', '', '', '추가 ' + s.added + ' · 수정 ' + s.updated + ' · 삭제 ' + s.removed + ' · 확인 필요 ' + s.flagged + ' · 명부 ' + (rm.updates.length + rm.appends.length) + ' · 서류 ' + docsAdded + (adopted ? ' · 기존 행 맞추기 ' + adopted : ''), '1기 동기화');
+      } catch (e) { warnings.push('변경이력: ' + b2Msg_(e)); }
+    }
+    t.total = Date.now() - started;
+    result = {
+      at: Date.now(), ms: t.total, reason: opts.reason || '', mode: read.mode, apiError: read.apiError, classes: wanted.length, processed: done, colorChecked: rot.pick,
+      stats: s, legacyAdopted: adopted, writes: { patched: plan.patches.length, appended: plan.appends.length, cleared: plan.clears.length, boards: boardClasses.length },
+      roster: { updated: rm.updates.length, added: rm.appends.length }, info: infoFilled, docs: docsAdded, errors: errors, warnings: warnings, retries: __B2_RETRIES.slice(), t: t
+    };
+    // 출결원장 반영은 여기서 끝났으므로 기록을 먼저 남깁니다. 출결판을 그리다 실패해도 다음 실행이 같은 반영을 되풀이하지 않습니다.
     props.setProperty('B2_SYNC_LAST', JSON.stringify(result));
     if (changes) props.setProperty('B2_SYNC_CHANGED', String(Date.now()));
-    if (all && !errors.length) props.setProperty('B2_SRC_SEEN', String(srcUpdated));
+    remember(done);
+    // 출결판: 처음 몇 반은 이 잠금 안에서 그리고, 나머지는 잠금을 놓았다가 몇 반씩 다시 잡아 그립니다(아래).
+    var t2 = Date.now(), firstBoards = boardClasses.slice(0, B2.SYNC.boardsPerLock);
+    rest = boardClasses.slice(firstBoards.length);
+    if (firstBoards.length) {
+      var freshRoster = rm.updates.length || rm.appends.length ? b2Retry_('명부 읽기', b2ReadRoster_).rows : roster.rows;
+      failedBoards = b2DrawBoardSet_(firstBoards, { ledger: merged.rows, roster: freshRoster, days: days.list, today: today }, warnings);
+    }
+    if (all) b2PendingBoards_(failedBoards.concat(rest), drawAll && !rest.length, today);
+    else if (failedBoards.length) b2AddPendingBoards_(failedBoards);
+    t.boards = Date.now() - t2;
   } finally { lock.releaseLock(); }
+  // 출결원장 반영은 끝났으므로, 남은 출결판을 그리다 생긴 오류(잠금 대기 초과 등)는 경고로만 남깁니다. 남은 반은 B2_PENDING_BOARDS에 있습니다.
+  if (rest.length) {
+    try { failedBoards = failedBoards.concat(b2DrawBoardsInTurns_(rest, days.list, today, all, drawAll, failedBoards, warnings)); }
+    catch (e) { warnings.push('출결판 그리기 중단: ' + b2Msg_(e)); if (!all) b2AddPendingBoards_(rest); }
+    if (!all && failedBoards.length) b2AddPendingBoards_(failedBoards);
+  }
+  if (rest.length || warnings.length) {
+    result.t.boards = (result.t.boards || 0) + (Date.now() - started - result.t.total);
+    result.ms = result.t.total = Date.now() - started; result.retries = __B2_RETRIES.slice(); result.warnings = warnings;
+    props.setProperty('B2_SYNC_LAST', JSON.stringify(result));
+  }
   return result;
+}
+// 출결판 몇 반을 그립니다. 한꺼번에 그리다 실패하면 반마다 따로 그려 실패한 반만 골라냅니다.
+// 실패한 반은 B2_BOARD_FAILS에 세고, B2.SYNC.boardFails번 실패하면 더 미루지 않고 경고로만 남깁니다(다음 날 전체 그리기 때 다시 시도).
+// 돌려주는 값: 다음 실행에 다시 그릴 반
+function b2DrawBoardSet_(classes, ctx, warnings) {
+  var fails = b2JsonProp_('B2_BOARD_FAILS', {}), again = [], props = b2Props_();
+  var draw = function (list) { b2Retry_('출결판 그리기', function () { b2RefreshBoards_(list, ctx); SpreadsheetApp.flush(); }); };
+  var ok = function (c) { delete fails[c]; };
+  var bad = function (c, e) {
+    fails[c] = (fails[c] || 0) + 1; warnings.push(c + '반 출결판: ' + b2Msg_(e));
+    if (fails[c] >= B2.SYNC.boardFails) { delete fails[c]; warnings.push(c + '반 출결판은 ' + B2.SYNC.boardFails + '번 실패해 다음 날 다시 그립니다.'); }
+    else again.push(c);
+  };
+  try { draw(classes); classes.forEach(ok); }
+  catch (e) {
+    if (classes.length === 1) bad(classes[0], e);
+    else classes.forEach(function (c) { try { draw([c]); ok(c); } catch (e2) { bad(c, e2); } });
+  }
+  if (Object.keys(fails).length) props.setProperty('B2_BOARD_FAILS', JSON.stringify(fails)); else props.deleteProperty('B2_BOARD_FAILS');
+  return again;
+}
+// 전체 동기화의 '다음 실행에 그릴 출결판' 표시. 다 그렸으면(done) 오늘 전체 그리기를 끝낸 것으로 적습니다.
+function b2PendingBoards_(list, done, today) {
+  var props = b2Props_();
+  if (list.length) props.setProperty('B2_PENDING_BOARDS', JSON.stringify(list)); else props.deleteProperty('B2_PENDING_BOARDS');
+  if (done) props.setProperty('B2_BOARD_DAY', today);
+}
+// 한 반 가져오기처럼 일부 반만 맞춘 실행이 그리지 못한 반을 '남은 출결판'에 더합니다(이미 있는 목록은 그대로 둠).
+function b2AddPendingBoards_(list) {
+  var cur = b2JsonProp_('B2_PENDING_BOARDS', []);
+  list.forEach(function (c) { if (cur.indexOf(String(c)) < 0) cur.push(String(c)); });
+  if (cur.length) b2Props_().setProperty('B2_PENDING_BOARDS', JSON.stringify(cur));
+}
+// 남은 출결판을 몇 반씩(B2.SYNC.boardsPerLock) 잠금을 다시 잡아 그립니다. 그 사이 담임 저장(Code.gs)이 잠금을 오래 기다리지 않게 하기 위해서입니다.
+// 잠금을 놓은 동안 출결원장·명부가 바뀌었을 수 있으니 매번 다시 읽습니다. 끊기면 B2_PENDING_BOARDS가 남아 다음 실행이 이어서 그립니다(전체 동기화만).
+// 돌려주는 값: 이번에 실패해 다음 실행으로 넘긴 반
+function b2DrawBoardsInTurns_(classes, days, today, all, drawAll, failedBefore, warnings) {
+  var left = classes.slice(), failed = [];
+  while (left.length) {
+    var chunk = left.slice(0, B2.SYNC.boardsPerLock), lock = LockService.getDocumentLock(); lock.waitLock(30000);
+    try {
+      var ctx = { ledger: b2Retry_('출결원장 읽기', b2ReadLedger_).rows, roster: b2Retry_('명부 읽기', b2ReadRoster_).rows, days: days, today: today };
+      failed = failed.concat(b2DrawBoardSet_(chunk, ctx, warnings));
+      left = left.slice(chunk.length);
+      if (all) b2PendingBoards_(failedBefore.concat(failed, left), drawAll && !left.length, today);
+    } finally { lock.releaseLock(); }
+  }
+  return failed;
+}
+// 명부 쓰기(b2MergeRoster_ 결과). 같은 칸에 같은 값을 쓰므로 다시 시도해도 결과가 같습니다.
+function b2WriteRoster_(roster, rm) {
+  var sh = roster.sh;
+  rm.updates.forEach(function (u) {
+    if (u.status) sh.getRange(u.row, 4, 1, 2).setValues([[u.status, u.changed ? b2DateValue_(u.changed) : '']]);
+    if (u.birth || u.gender) {
+      var cur = sh.getRange(u.row, 7, 1, 2).getValues()[0];
+      sh.getRange(u.row, 7, 1, 2).setValues([[u.birth ? b2DateValue_(u.birth) : cur[0], u.gender || cur[1]]]);
+    }
+  });
+  if (rm.appends.length) {
+    var at = roster.last + 1;
+    if (sh.getMaxRows() < at + rm.appends.length - 1) sh.insertRowsAfter(sh.getMaxRows(), at + rm.appends.length - 1 - sh.getMaxRows());
+    sh.getRange(at, 1, rm.appends.length, 5).setValues(rm.appends.map(function (a) { return [Number(a.cls), a.name, '', a.status, a.changed ? b2DateValue_(a.changed) : '']; }));
+    sh.getRange(at, 7, rm.appends.length, 2).setValues(rm.appends.map(function (a) { return [a.birth ? b2DateValue_(a.birth) : '', a.gender]; }));
+  }
 }
 function b2FillInfo_(srcRows) {
   var sh = b2Sheet_(B2.SHEETS.info), cur = sh.getRange('G4:N20').getValues(), filled = 0;
@@ -571,10 +962,27 @@ function b2ImportDocs_(srcValues) {
   return add.length + updated;
 }
 
-// 10분 트리거가 부릅니다. 운영총괄이 바뀌지 않았으면 바로 끝납니다.
+// 10분 트리거가 부릅니다. 정한 시간(B2.SYNC.window, 기본 평일 09:10~18:00) 밖이면 바로 끝나고,
+// 하루 사용 시간이 상한(B2.SYNC.dailyMs)을 넘으면 30분에 한 번만 돕니다. 6분 한도로 끊긴 실행은 다음 실행이 기록합니다.
 function b2SyncTick() {
+  var props = b2Props_(), now = new Date(), tz = b2Tz_();
+  var spec = props.getProperty('B2_SYNC_WINDOW') || B2.SYNC.window;
+  if (!b2InWindow_(spec, Utilities.formatDate(now, tz, 'u'), Utilities.formatDate(now, tz, 'HH:mm'))) return;
+  var day = b2Today_(), usage = b2JsonProp_('B2_RUN_USAGE', null);
+  if (!usage || usage.day !== day) usage = { day: day, ms: 0, runs: 0, cut: 0, lastAt: 0 };
+  var running = +props.getProperty('B2_SYNC_RUNNING') || 0;
+  if (running && Date.now() - running < 7 * 60 * 1000) return;
+  if (running) { usage.cut++; usage.ms += 6 * 60 * 1000; props.setProperty('B2_SYNC_CUT', String(running)); }
+  if (usage.ms > B2.SYNC.dailyMs && Date.now() - usage.lastAt < 30 * 60 * 1000) { props.setProperty('B2_RUN_USAGE', JSON.stringify(usage)); props.deleteProperty('B2_SYNC_RUNNING'); return; }
+  props.setProperty('B2_SYNC_RUNNING', String(Date.now()));
+  var t0 = Date.now();
   try { b2SyncRun_({ force: false, reason: 'trigger' }); }
-  catch (e) { b2Props_().setProperty('B2_SYNC_ERROR', JSON.stringify({ at: Date.now(), message: String(e && e.message || e) })); throw e; }
+  catch (e) { props.setProperty('B2_SYNC_ERROR', JSON.stringify({ at: Date.now(), message: b2Msg_(e) })); throw e; }
+  finally {
+    usage.ms += Date.now() - t0; usage.runs++; usage.lastAt = Date.now();
+    props.setProperty('B2_RUN_USAGE', JSON.stringify(usage));
+    props.deleteProperty('B2_SYNC_RUNNING');
+  }
 }
 
 /* ---------- 편집기에서 한 번 실행 ---------- */
@@ -607,7 +1015,7 @@ function b2RemoveTrigger() {
 var B2_LEDGER_COLS = ['date', 'cls', 'name', 'type', 'inT', 'outT', 'oa', 'ob', 'reason', 'ev', 'evr', 'memo', 'evApplied', 'check', 'prov', 'flag', 'sig'];
 function b2SyncState_() {
   var p = b2Props_(), parse = function (k) { try { return JSON.parse(p.getProperty(k) || 'null'); } catch (e) { return null; } };
-  return { last: parse('B2_SYNC_LAST'), error: parse('B2_SYNC_ERROR'), checkedAt: +p.getProperty('B2_SYNC_CHECKED') || 0, changedAt: +p.getProperty('B2_SYNC_CHANGED') || 0, sourceSeen: +p.getProperty('B2_SRC_SEEN') || 0 };
+  return { last: parse('B2_SYNC_LAST'), error: parse('B2_SYNC_ERROR'), checkedAt: +p.getProperty('B2_SYNC_CHECKED') || 0, changedAt: +p.getProperty('B2_SYNC_CHANGED') || 0, sourceSeen: +p.getProperty('B2_SRC_SEEN') || 0, window: p.getProperty('B2_SYNC_WINDOW') || B2.SYNC.window, usage: parse('B2_RUN_USAGE'), cutAt: +p.getProperty('B2_SYNC_CUT') || 0 };
 }
 // cls: '1'~'17' 또는 'all'. 개인정보(생년월일·성별)는 보내지 않습니다.
 function b2Bundle(cls) {
@@ -655,13 +1063,18 @@ function b2Save(p) {
     }
     if (!cur && rec.type === '출석') return { ok: true, unchanged: true, rev: +b2Props_().getProperty('B2_REV') || 0 };
     var row = cur ? cur.row : b2LastRow_(ledger.sh, 1) + 1;
-    if (ledger.sh.getMaxColumns() < B2.COL.width) ledger.sh.insertColumnsAfter(ledger.sh.getMaxColumns(), B2.COL.width - ledger.sh.getMaxColumns());
-    ledger.sh.getRange(row, 1, 1, B2.COL.input).setValues([b2LedgerValues_(rec)]);
-    if (!cur && row > 2) { ledger.sh.getRange(row, 1).setNumberFormat(ledger.sh.getRange(2, 1).getNumberFormat()); ledger.sh.getRange(row, 5, 1, 4).setNumberFormat('hh:mm'); }
-    ledger.sh.getRange(row, B2.COL.prov, 1, 3).setValues([[B2.PROV_BETA, '', '']]);
-    SpreadsheetApp.flush();
+    // 같은 행에 같은 값을 쓰므로 일시 오류 때 다시 시도해도 됩니다.
+    b2Retry_('출결원장 저장', function () {
+      if (ledger.sh.getMaxColumns() < B2.COL.width) ledger.sh.insertColumnsAfter(ledger.sh.getMaxColumns(), B2.COL.width - ledger.sh.getMaxColumns());
+      if (ledger.sh.getMaxRows() < row) ledger.sh.insertRowsAfter(ledger.sh.getMaxRows(), row - ledger.sh.getMaxRows());
+      ledger.sh.getRange(row, 1, 1, B2.COL.input).setValues([b2LedgerValues_(rec)]);
+      if (!cur && row > 2) { ledger.sh.getRange(row, 1).setNumberFormat(ledger.sh.getRange(2, 1).getNumberFormat()); ledger.sh.getRange(row, 5, 1, 4).setNumberFormat('hh:mm'); }
+      ledger.sh.getRange(row, B2.COL.prov, 1, 3).setValues([[B2.PROV_BETA, '', '']]);
+      SpreadsheetApp.flush();
+    });
     b2Log_(cls, name, date, cur ? b2Summary_(cur.rec) : '출석', rec.type === '출석' ? '출석' : b2Summary_(rec));
     try { b2BoardTouch_(cls, name, date, rec.type === '출석' ? null : rec, person); } catch (e) { }
+    b2MarkDirty_(cls);
     var back = ledger.sh.getRange(row, 1, 1, B2.COL.width).getValues()[0];
     return { ok: true, rev: b2Bump_(), sig: b2Sig_(rec), memo: String(back[11] || ''), evApplied: String(back[14] || ''), check: String(back[16] || '') };
   } finally { lock.releaseLock(); }

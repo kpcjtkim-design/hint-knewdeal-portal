@@ -19,7 +19,8 @@ export function evBadge(state){
 export function syncPill(sync){
  const t=syncText(sync);
  if(t.error)return `<span class="b2-pill err" title="${esc(t.error)}">운영총괄 동기화 오류 · ${esc(t.error)}</span>`;
- return `<span class="b2-pill ${t.errors.length?'wait':'live'}" title="${esc(t.errors.join('\n'))}">운영총괄 확인 ${esc(t.checked)} · 마지막 변경 ${esc(t.changed)}${t.errors.length?` · 일부 오류 ${t.errors.length}`:''}</span>`;
+ const title=[`자동 동기화: ${t.window}`,...(t.cut?[`${t.cut} 실행이 6분 한도에 걸려 중간에 멈췄습니다. 다음 실행이 이어서 맞춥니다.`]:[]),...t.errors].join('\n');
+ return `<span class="b2-pill ${t.errors.length||t.cut?'wait':'live'}" title="${esc(title)}">운영총괄 확인 ${esc(t.checked)} · 마지막 변경 ${esc(t.changed)}${t.cut?` · 시간 초과 중단 ${esc(t.cut)}`:''}${t.errors.length?` · 일부 오류 ${t.errors.length}`:''}${t.resting?` · 자동 동기화 쉬는 시간(${esc(t.window)})`:''}</span>`;
 }
 export function toast(message){
  const el=document.getElementById('toast');if(!el){console.info(message);return;}

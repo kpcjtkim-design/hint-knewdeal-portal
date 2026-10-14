@@ -70,6 +70,14 @@ test('sync status text is plain Korean',()=>{
  const t=syncText({checkedAt:now-3*60000,changedAt:now-2*3600000,last:{errors:['3반: 탭 없음'],stats:{added:1}}},now);
  assert.deepEqual([t.checked,t.changed,t.errors[0]],['3분 전','2시간 전','3반: 탭 없음']);
  assert.equal(syncText({}).checked,'기록 없음');
+ // 2026-10-13 10:00Z = 화요일 19:00 KST → 평일 09:10~18:00 밖
+ assert.deepEqual([t.window,t.resting,t.cut],['평일 09:10~18:00',true,'']);
+ const wed=Date.parse('2026-10-14T03:00:00Z');
+ assert.equal(syncText({window:'1-5 09:10-18:00'},wed).resting,false);
+ assert.equal(syncText({window:'always'},Date.parse('2026-10-17T03:00:00Z')).resting,false);
+ assert.equal(syncText({window:'6-7 10:00-12:00'},wed).window,'주말 10:00~12:00');
+ assert.equal(syncText({cutAt:wed-20*60000,last:{at:wed-30*60000}},wed).cut,'20분 전','a cut after the last finished run is shown');
+ assert.equal(syncText({cutAt:wed-40*60000,last:{at:wed-30*60000}},wed).cut,'','an older cut is not');
 });
 
 test('the client and Apps Script agree on the ledger row signature',()=>{

@@ -24,7 +24,8 @@ function onOpen() {
     .addItem('홈으로 이동', 'goHome')
     .addItem('출결원장으로 이동', 'goLedger')
     .addToUi();
-  try { rebuildAll(); } catch (e) { console.log(e); }
+  // 열 때는 출결판을 다시 그리지 않습니다. 17개 반을 그리면 단순 트리거 한도(30초)에 걸립니다(2026-10-14).
+  // beta2 동기화가 바뀐 반과 날이 바뀐 첫 실행에 모든 반을 그립니다. 바로 보려면 메뉴 'HINT > 출결판 새로고침'.
 }
 
 function openPanel() {
@@ -49,10 +50,18 @@ function goLedger() { SpreadsheetApp.getActive().getSheetByName(CFG.LEDGER).acti
 
 /* ---------- 출결판 다시 그리기 ---------- */
 
-function rebuildAll() {
+function rebuildAll() { rebuildBoards_(null); }
+
+// classes: 다시 그릴 반 번호 목록(null이면 모두). 읽기(탭 찾기·색 규칙 확인)를 먼저 모두 하고 쓰기를 몰아서 합니다.
+// 읽기와 쓰기가 섞이면 반마다 시트가 다시 계산되어 느려집니다.
+function rebuildBoards_(classes) {
   const ss = SpreadsheetApp.getActive();
-  const base = loadBase_();
-  ss.getSheets().forEach(sh => { const n = boardNo_(sh); if (n) rebuildBoard_(sh, n, base); });
+  const base = loadBase_(), boards = [];
+  ss.getSheets().forEach(sh => {
+    const n = boardNo_(sh);
+    if (n && (!classes || classes.indexOf(n) >= 0)) boards.push({ sh: sh, n: n, rules: sh.getConditionalFormatRules() });
+  });
+  boards.forEach(b => rebuildBoard_(b.sh, b.n, base, b.rules));
 }
 
 function loadBase_() {
@@ -71,12 +80,14 @@ function loadBase_() {
 }
 
 function boardNo_(sh) {
+  if (sh.getMaxRows() < CFG.LAST_ROW || sh.getMaxColumns() < CFG.FIRST_COL) return 0; // 작은 탭은 출결판이 아님(A16을 읽으면 오류)
   if (sh.getRange('A16').getValue() !== '이름') return 0;
   const n = Number(sh.getRange('D3').getValue());
   return n >= 1 && n <= 17 ? n : 0;
 }
 
-function rebuildBoard_(sh, cls, base) {
+// rules: 미리 읽어 둔 조건부 서식(rebuildBoards_). 없으면 여기서 읽습니다.
+function rebuildBoard_(sh, cls, base, rules) {
   const tz = base.tz;
   const kids = base.roster.filter(r => Number(r[0]) === cls).slice(0, CFG.LAST_ROW - CFG.FIRST_ROW + 1);
   const rows = CFG.LAST_ROW - CFG.FIRST_ROW + 1, cols = CFG.MAX_DAYS;
@@ -100,11 +111,10 @@ function rebuildBoard_(sh, cls, base) {
   const body = sh.getRange(CFG.FIRST_ROW, CFG.FIRST_COL, rows, cols);
   body.setValues(grid);
   body.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(CFG.BOARD_LIST, true).setAllowInvalid(true).build());
-  ensureColors_(sh, body);
+  ensureColors_(sh, body, rules || sh.getConditionalFormatRules());
 }
 
-function ensureColors_(sh, body) {
-  const rules = sh.getConditionalFormatRules();
+function ensureColors_(sh, body, rules) {
   const has = rules.some(r => { const c = r.getBooleanCondition(); return c && c.getCriteriaType() === SpreadsheetApp.BooleanCriteria.TEXT_EQUAL_TO && String(c.getCriteriaValues()[0]) === '출석'; });
   if (has) return;
   const mk = () => SpreadsheetApp.newConditionalFormatRule().setRanges([body]);
@@ -123,8 +133,10 @@ function onEdit(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet(), name = sh.getName();
   try {
-    if (name === CFG.ROSTER || name === '시간표' || name === CFG.DAYS) { rebuildAll(); return; }
-    if (name === CFG.LEDGER) { touch_(); rebuildAll(); return; }
+    if (name === '시간표' || name === CFG.DAYS) { rebuildAll(); return; }
+    // 명부·원장은 고친 행의 반만 다시 그립니다(17개 반을 모두 그리면 단순 트리거 30초 한도에 걸릴 수 있음).
+    if (name === CFG.ROSTER) { rebuildBoards_(editedClasses_(e.range, 1)); return; }
+    if (name === CFG.LEDGER) { touch_(); rebuildBoards_(editedClasses_(e.range, 2)); return; }
     const cls = boardNo_(sh);
     if (!cls) return;
     const r0 = e.range.getRow(), c0 = e.range.getColumn(), nr = e.range.getNumRows(), nc = e.range.getNumColumns();
@@ -144,6 +156,19 @@ function onEdit(e) {
     }
     touch_();
   } catch (err) { console.log(err); }
+}
+
+// 고친 행들의 반 번호(classCol: 반이 적힌 열). 반 칸 자체를 고쳤으면 예전 반을 알 수 없으므로 null(모든 반).
+function editedClasses_(range, classCol) {
+  const c0 = range.getColumn(), c1 = c0 + range.getNumColumns() - 1, r0 = Math.max(2, range.getRow()), r1 = range.getRow() + range.getNumRows() - 1;
+  if (c0 <= classCol && classCol <= c1) return null;
+  if (r1 < r0) return [];
+  const out = [];
+  range.getSheet().getRange(r0, classCol, r1 - r0 + 1, 1).getValues().forEach(x => {
+    const n = Number(x[0]);
+    if (n >= 1 && n <= 17 && out.indexOf(n) < 0) out.push(n);
+  });
+  return out;
 }
 
 /* ---------- 패널이 부르는 함수 ---------- */
@@ -193,7 +218,7 @@ function saveRecord(p) {
 /* ---------- 원장 쓰기 ---------- */
 
 function upsert_(p, typeOnly, via) {
-  const lock = LockService.getDocumentLock(); lock.waitLock(10000);
+  const lock = LockService.getDocumentLock(); lock.waitLock(20000); // beta2 동기화가 잠금을 잡고 있을 수 있어 20초까지 기다림(단순 트리거 한도 30초)
   try {
     const ss = SpreadsheetApp.getActive(), tz = ss.getSpreadsheetTimeZone(), sh = ss.getSheetByName(CFG.LEDGER);
     const f = findRow_(p.cls, p.name, p.date, tz);
@@ -209,12 +234,16 @@ function upsert_(p, typeOnly, via) {
   } finally { lock.releaseLock(); }
 }
 
+// 행을 지우면 아래 행 번호가 모두 당겨지므로, beta2 동기화(행 번호로 씀)와 겹치지 않게 문서 잠금 안에서 지웁니다.
 function removeRow_(cls, stu, date, via) {
-  const ss = SpreadsheetApp.getActive(), tz = ss.getSpreadsheetTimeZone();
-  const f = findRow_(cls, stu, date, tz);
-  if (!f) return;
-  ss.getSheetByName(CFG.LEDGER).deleteRow(f.row);
-  log_({ cls: cls, name: stu, date: date }, sum_(f.record), '출석', via);
+  const lock = LockService.getDocumentLock(); lock.waitLock(20000); // beta2 동기화가 잠금을 잡고 있을 수 있어 20초까지 기다림(단순 트리거 한도 30초)
+  try {
+    const ss = SpreadsheetApp.getActive(), tz = ss.getSpreadsheetTimeZone();
+    const f = findRow_(cls, stu, date, tz);
+    if (!f) return;
+    ss.getSheetByName(CFG.LEDGER).deleteRow(f.row);
+    log_({ cls: cls, name: stu, date: date }, sum_(f.record), '출석', via);
+  } finally { lock.releaseLock(); }
 }
 
 function setCell_(p, value) {

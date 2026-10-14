@@ -175,6 +175,24 @@ Cowork 보고서: `docs/cowork/2026-10-13-checkhere-delete-report.md`. 원본과
   - 가장 간단한 해결은 `onOpen`에서 `rebuildAll()` 호출을 빼는 것이다. '출결판 새로고침' 메뉴는 남긴다.
   - beta2 동기화와 저장이 바뀐 반의 출결판을 다시 그린다. 이것으로 충분한지 확인하고, Code.gs `onEdit`도 확인한 뒤 바꾼다(사용자 확인).
 
+## 2-3. 로컬 세션 진행 (2026-10-14)
+
+사용자 지시 순서: ① 시험 기준선 → ② 동기화 실행 시간 패치 시험·완성(일시 오류 다시 시도 포함) → ③ onOpen 30초 → ④ 출결대조 바로 고치기 + 체크히어 빠른 반영(삭제는 기록 번호 있는 칸만). Apps Script 반영·배포·트리거 10분 복구는 시험 뒤 사용자 확인을 받고 한다.
+
+- ① 기준선: 4-1절.
+- ② `docs/wip` 패치를 적용하고 고쳤다(패치 파일은 커밋할 때 지운다). 시험 `checkhere/tests/beta2-sync.test.mjs`(가짜 Google 서비스 `checkhere/tests/gas-fake.mjs`).
+  - 패치에 더한 것: 일시 오류 다시 시도(2초·6초), 쓰기 직전 행 위치 확인, 행 순서를 바꾸지 않는 쓰기(끊겨도 복구되는 순서), 날이 바뀐 첫 실행에 출결판 전체, 남은 출결판 표시(`B2_PENDING_BOARDS`), 색 확인 한 바퀴(`B2_COLOR_LAP`), 기존 행 맞추기를 반마다·이번 실행 범위만, 설치 뒤 사람이 고친 `직접 입력` 행 제외, 단계별 시간 `t`, /beta2 표시(쉬는 시간·시간 초과 중단).
+  - 별도 검토(서브 에이전트)에서 나온 6건을 모두 고쳤다(정렬 다시 쓰기 제거, 범위 밖 `*` 표시, 쓰기 순서, 끊긴 뒤 출결판·변경 번호, 다시 시도 때 위치 확인, 오류 반이 빠른 건너뛰기를 막음).
+  - 두 번째 검토의 6건도 고쳤다: 바뀐 행만 쓰기(덩어리 다시 쓰기 제거), 출결판 실패를 반마다 가두고 3번 뒤 포기, 쓰다 만 상태의 다시 시도 허용, 오류 반은 새로 읽은 실행 뒤 두 번 더, 한 반 가져오기는 남은 출결판을 건드리지 않음, **S열 지문을 일반 텍스트로**(약 1.6%의 지문이 숫자로 바뀌던 기존 문제).
+  - 사용자 결정(2026-10-14): 설치 뒤 사람이 고친 `직접 입력` 행은 맞추기에서 뺀다. 커밋 뒤 Cowork로 반영한다(10분 트리거 복구는 첫 실행 결과를 보고 다시 확인).
+- ③ `apps-script/master/Code.gs`: `onOpen`에서 `rebuildAll` 뺌, `rebuildAll` 읽기 먼저·쓰기 나중(결과가 예전과 같음을 확인), `onEdit`은 고친 행의 반만, `removeRow_` 잠금, 잠금 대기 20초, 작은 탭 건너뜀. 시험 `checkhere/tests/master-code.test.mjs`.
+  - 남는 점: 평일 09:10 전에는 오늘 열이 출결판에 없다(첫 동기화가 그림, 메뉴로 바로 그릴 수 있음). 2기 마스터처럼 동기화가 없는 시트는 하루 한 번 그리는 트리거가 따로 필요하다.
+- ④ 사용자 결정(2026-10-14): 체크히어 쓰기는 **수정창 버튼** 방식, 자동 반영은 **메모만**(`memo-only`). `docs/beta2-instant-edit-plan.md` 10장에 적음.
+- ④ 먼저 할 일(삭제 전 필수, 검토 문서): 1번 작업 잠금 경쟁, 3번 중복 요청 검사, 4번 `retry_` 가로채기, 6번 수집 중단 — 고쳤지만 **아직 커밋 전**(사용자 확인 대기), 연결 프로그램 build `20261014.1`. 운영 중인 연결 프로그램(`Documents\Codex\2026-09-07\gk\hint-attendance-beta`)은 바꾸지 않았다.
+- ④ 순수 대응표 모듈 `beta2-checkhere-core.mjs`(시험 `checkhere/tests/beta2-checkhere-core.test.mjs`)와 병원 분류 넓히기(`checkhere-proposal-core.mjs`)도 작업 중이며 커밋 전.
+- ②·③은 커밋했고 Apps Script 반영은 Cowork(요청서 아래)로 한다. 반영 전에는 운영 중인 Apps Script가 그대로다.
+- 반영 순서·Cowork 요청서: `apps-script/beta2/README.md` 「동기화 실행 시간 줄이기 반영 순서」, `docs/cowork/2026-10-14-sync-runtime-deploy.md`.
+
 ## 3. 이 PC에서 준비
 
 1. 저장소를 받는다(비공개 저장소면 Git 로그인 창이 뜬다).
@@ -198,6 +216,17 @@ node --test tests/*.test.mjs
 - 클라우드에서는 `NODE_PATH=/opt/node22/lib/node_modules`로 돌렸고 환경 탓 실패 7건이 기준선이었다. 이 PC는 환경이 달라 결과가 다를 수 있으니 **코드를 바꾸기 전에 이 PC의 기준선을 먼저 기록**한다.
 - 브라우저 시험은 Playwright가 설치된 Chrome을 쓴다.
 - `checkhere/tests/live-ui.test.mjs`는 오늘 날짜를 써서 2026-10-23부터 실패한다(검토 문서 참고, 날짜 고정으로 고칠 것).
+
+### 4-1. 수집 PC 기준선 (2026-10-14, 코드 바꾸기 전 6889025)
+
+- 이 PC에는 PATH에 Node가 없다. `Start.ps1`이 쓰는 Codex 런타임 Node를 쓴다: `%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`(v24.19.0). playwright 1.62.1도 같은 런타임에 있어 `collector.mjs`의 `loadPlaywright`가 찾는다(`npm install` 안 함). Chrome 155.
+- 실행: `checkhere`에서 `"<위 node.exe>" --test tests/*.test.mjs` (약 14분).
+- **실제 연결 프로그램이 8765에서 돌고 있으면** `live-ui.test.mjs`는 같은 포트를 열지 못해 실패한다(EADDRINUSE). 실제 연결 프로그램에는 아무 요청도 가지 않는다. 이 시험은 실제 연결 프로그램을 끈 때만 돌리거나 포트를 바꿔야 한다.
+- 결과: **380개 중 361 통과, 19 실패**. 실패는 모두 환경·날짜 때문이다.
+  - Playwright 내장 Chromium 없음(`chromium.launch`에 `channel:'chrome'` 없음) 10건: `batch-sync`(1), `batch-ui`(1), `incremental-sync`(1), `page-data`(3), `probe`(4). `probe.test.mjs`는 브라우저 실행 실패 뒤 멈춰 있어 그 시험 프로세스만 끝냈다.
+  - 화면 요소를 30초 기다리다 실패 6건(혼자 돌려도 같음, Chrome 155의 로컬 네트워크 접근 확인 때문으로 추정): `attendance-beta-ui`, `portal-navigation-ui`, `proposal-source-ui`, `proposal-ui`, `review-ui`, `survey-ui`. 클라우드 기준선 7건 중 6건과 같다.
+  - 날짜 고정 안 된 시험 1건: `firestore-efficiency`(오늘 날짜 대신 2026-09-23을 기대). 클라우드 기준선의 나머지 1건과 같다.
+  - `live-ui` 1건(위 8765), `approval-sync-bridge` 1건(병렬 실행 중 `test-results/` 폴더가 아직 없어서. 혼자 돌리면 통과).
 
 ## 5. 다음 일 (순서)
 
