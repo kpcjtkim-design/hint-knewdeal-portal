@@ -175,7 +175,8 @@ function mountRelay(user,view){
     },
   });
   const store={
-    watchQueue:(cb,onError)=>onSnapshot(query(collection(db,'checkhereRequests'),where('status','in',['pending','approved'])),snap=>cb(snap.docs.map(d=>({id:d.id,...d.data()}))),onError),
+    // applying도 받습니다: 중계가 같은 학생·항목의 처리 중 요청을 보고 새 실시간 요청을 반려합니다.
+    watchQueue:(cb,onError)=>onSnapshot(query(collection(db,'checkhereRequests'),where('status','in',['pending','approved','applying'])),snap=>cb(snap.docs.map(d=>({id:d.id,...d.data()}))),onError),
     approve:(id,approval,r)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 바뀌었습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});}),
     reject:(id,note)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending')return;tx.update(ref,{status:'rejected',reviewNote:String(note).slice(0,1000),reviewedBy:user.email,updatedAt:serverTimestamp()});}),
     isAdmin,identities:(classId,name)=>loadCheckHereIdentities(db,classId,[{name}]),saveRecords,

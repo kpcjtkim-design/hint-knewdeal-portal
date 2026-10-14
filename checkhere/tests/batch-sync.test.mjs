@@ -93,3 +93,23 @@ test('schedule scan reads every page once and reports whether it saw them all; a
     await assert.rejects(c.openDay('2','2026-09-01','https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-09-01&old=1'),/반·날짜 확인/,'a supplied verification address is never swapped');
   }finally{await browser.close();}
 });
+test('the busy lock is taken before the login wait and only its owner releases it; a cancel while the next day waits for login is kept',{timeout:15000},async()=>{
+  const {c,calls}=fakeCollector({lectures:lectures(),scan:false}),b=await bridge(c,18942),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  try{
+    let open;const gate=new Promise(r=>open=r);const login=c.requireLogin;c.requireLogin=async()=>{await gate;return login();};
+    const first=b.api('sync',{classId:'2',dates:['2026-09-01'],mode:'full'});await sleep(20);
+    await assert.rejects(b.api('sync-batch',{classIds:['2'],dates:['2026-09-03']}),/진행 중/,'a second job cannot slip in while the first waits for login');
+    await assert.rejects(b.api('sync',{classId:'2',dates:['2026-09-03']}),/진행 중/);
+    assert.match(String((await b.api('state?delta=1')).busy),/^start:/);
+    open();const job=await b.wait((await first).id);assert.equal(job.status,'complete');
+    assert.equal((await b.api('state?delta=1')).busy,null);
+    // 다음 날짜가 로그인 확인을 기다리는 동안 누른 '수집 중단'이 지워지지 않습니다.
+    calls.openDay.length=0;let waiting=false,go;const hold=new Promise(r=>go=r);
+    c.requireLogin=async()=>{if(calls.openDay.length===1&&!waiting){waiting=true;await hold;}};
+    const started=await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'full'});
+    for(let i=0;i<200&&!waiting;i++)await sleep(5);assert.ok(waiting);
+    await b.api('cancel',{});go();
+    const cancelled=await b.wait(started.id);assert.equal(cancelled.status,'cancelled');
+    assert.deepEqual(calls.openDay,['2|2026-09-01'],'the second day is not opened');
+  }finally{b.app.close();}
+});

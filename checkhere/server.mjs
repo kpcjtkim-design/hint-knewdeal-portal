@@ -67,7 +67,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20261013.4',capabilities:CAPABILITIES,pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20261014.1',capabilities:CAPABILITIES,pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
@@ -85,27 +85,30 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           connecting=true;try{return send(res,200,await adapter.connect());}finally{connecting=false;}
         }
         if(url.pathname==='/api/sync'){
-          if(busy)return send(res,409,{error:'진행 중인 작업이 있습니다.'});const classId=String(input.classId),dates=input.dates;
+          if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});const classId=String(input.classId),dates=input.dates;
           if(!/^(?:[1-9]|1[0-7])$/.test(classId)||!Array.isArray(dates)||!dates.length||dates.length>31||new Set(dates).size!==dates.length||dates.some(d=>!/^202\d-\d{2}-\d{2}$/.test(d)||Number.isNaN(Date.parse(d))||new Date(d).toISOString().slice(0,10)!==d))throw new Error('반 또는 날짜 범위를 확인해 주세요. 최대 31일입니다.');
           const incremental=input.mode==='incremental';
-          await adapter.requireLogin();const j={id:randomUUID(),kind:'sync',classId,dates,status:'running',startedAt:new Date().toISOString(),count:0,errors:0,...(incremental?{mode:'incremental',skipped:0}:{}),message:'출결 상세를 읽고 있습니다.'};saveJob(j);busy=j.id;
+          // 로그인 확인(await) 전에 임시 값으로 잠가야 그 틈에 다른 작업이 들어오지 않습니다.
+          const claim='start:'+randomUUID();busy=claim;try{await adapter.requireLogin();}catch(e){if(busy===claim)busy=null;throw e;}
+          adapter.cancelled=false;const j={id:randomUUID(),kind:'sync',classId,dates,status:'running',startedAt:new Date().toISOString(),count:0,errors:0,...(incremental?{mode:'incremental',skipped:0}:{}),message:'출결 상세를 읽고 있습니다.'};saveJob(j);busy=j.id;
           // Incremental: students whose visible row equals their last complete read
           // keep that record; no editor is opened and no snapshot row is added.
           const unchanged=incremental?row=>{const same=sameTableRow(snapshots.get(row.id)?.record,row);if(same)j.skipped++;return same;}:null;
           void(async()=>{try{
             await adapter.collect(classId,dates,async r=>{const old=get(r.id);if(old?.reference)r.reference=old.reference;if(old?.exception)r.exception=old.exception;put(r);j.count++;if(r.readState!=='complete')j.errors++;saveJob(j);},async progress=>{j.progress=progress;saveJob(j);},{unchanged,...(incremental?{pageData:true,sameAsStored:r=>{const same=sameStored(r);if(same)j.skipped++;return same;},onDay:d=>{j.method=d.method;if(d.note)j.methodNote=d.note;}}:{})});
             j.status=adapter.cancelled?'cancelled':j.errors?'partial':'complete';j.message=`${j.count}건 수집${incremental?` · 변경 없음 ${j.skipped}건`:''} · 상세 확인 실패 ${j.errors}건`;
-          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();busy=null;}})();return send(res,202,j);
+          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();if(busy===j.id)busy=null;}})();return send(res,202,j);
         }
         // Several classes × a period in one job: no per-day request/poll gaps, one
         // schedule scan per class, a second attempt for failed or partly read days.
         if(url.pathname==='/api/sync-batch'){
-          if(busy)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
+          if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
           const validDate=d=>typeof d==='string'&&/^202\d-\d{2}-\d{2}$/.test(d)&&!Number.isNaN(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d;
           const classIds=Array.isArray(input.classIds)?[...new Set(input.classIds.map(String))].sort((a,b)=>a-b):[],dates=Array.isArray(input.dates)?[...new Set(input.dates)].sort():[];
           if(!classIds.length||classIds.length>17||classIds.some(c=>!/^(?:[1-9]|1[0-7])$/.test(c))||!dates.length||dates.length>130||!dates.every(validDate))throw new Error('반(1~17)과 날짜를 확인해 주세요. 한 번에 최대 130일입니다.');
           const mode=input.mode==='full'?'full':'incremental';
-          await adapter.requireLogin();adapter.cancelled=false;
+          const claim='start:'+randomUUID();busy=claim;try{await adapter.requireLogin();}catch(e){if(busy===claim)busy=null;throw e;}
+          adapter.cancelled=false;
           const j={id:randomUUID(),kind:'batch',classIds,dates,mode,status:'running',startedAt:new Date().toISOString(),total:classIds.length*dates.length,done:0,count:0,skipped:0,errors:0,results:[],message:'선택한 반·기간을 차례로 읽고 있습니다.'};saveJob(j);busy=j.id;
           let savedAt=0;const persist=force=>{const t=Date.now();if(force||t-savedAt>2000){savedAt=t;saveJob(j);}};
           const finish=result=>{result.finishedAt=new Date().toISOString();const i=j.results.findIndex(r=>r.classId===result.classId&&r.date===result.date);if(i>=0)j.results[i]=result;else j.results.push(result);j.done=j.results.length;persist(true);rememberPlaces();return result;};
@@ -136,7 +139,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
             const bad=j.results.filter(r=>['failed','partial'].includes(r.status)).length,none=j.results.filter(r=>r.status==='no-lecture').length;
             j.status=adapter.cancelled?'cancelled':bad?'partial':'complete';
             j.message=`${j.done}/${j.total} 반·날짜 · 저장 ${j.count}명${mode==='incremental'?` · 변경 없음 ${j.skipped}명 · 화면 데이터로 읽은 날 ${j.pageDays||0}`:''} · 강의 없음 ${none} · 확인 필요 ${bad}`;
-          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{delete j.current;j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();busy=null;}})();
+          }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{delete j.current;j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();if(busy===j.id)busy=null;}})();
           return send(res,202,j);
         }
         // Read-only diagnosis inside the bridge: reuses its logged-in dedicated Chrome,
@@ -155,18 +158,18 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
             const file=join(dir,`probe-${classId}-${date}-${new Date().toISOString().replace(/[:.]/g,'').slice(0,15)}.json`);
             writeFileSync(file,JSON.stringify(report,null,1));
             j.report=file;j.summary=summarize(report);j.status='complete';j.message='진단 완료';
-          }catch(e){j.status='failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);busy=null;}})();
+          }catch(e){j.status='failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);if(busy===j.id)busy=null;}})();
           return send(res,202,j);
         }
         if(url.pathname==='/api/preview-request'){
           await approvalCloud.verify(input.idToken);
           if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
-          busy='preview';try{
+          const tok='preview:'+randomUUID();busy=tok;try{
             const request=await approvalCloud.get(input.approvalId,input.idToken);
             if(!['pending','approved'].includes(request.data.status))throw Error('이미 처리된 요청입니다.');
             const current=await readRequestRecord(adapter,request.data,latest(),request.identities,put);
             return send(res,200,{record:current});
-          }finally{busy=null;}
+          }finally{if(busy===tok)busy=null;}
         }
         if(url.pathname==='/api/apply'||url.pathname==='/api/confirm-existing'){
           await approvalCloud.verify(input.idToken);
@@ -179,9 +182,9 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
             let approved=await approvalCloud.get(approvalId,input.idToken);
             await adapter.requireLogin();
             if(url.pathname==='/api/confirm-existing'){
-              if(approved.data.status!=='pending'){busy=null;return send(res,200,{status:approved.data.status,...approved.data.result});}
+              if(approved.data.status!=='pending'){if(busy===approvalId)busy=null;return send(res,200,{status:approved.data.status,...approved.data.result});}
               record=await readRequestRecord(adapter,approved.data,latest(),approved.identities,put);confirmed=record;
-              if(!confirmAlreadyApplied(approved.data,record,confirmed,approved.identities)){if(confirmed?.id===record.id)put(confirmed);busy=null;return send(res,200,{status:'pending',message:'현재 원본은 요청값과 다릅니다. 승인 대기를 유지합니다.'});}
+              if(!confirmAlreadyApplied(approved.data,record,confirmed,approved.identities)){if(confirmed?.id===record.id)put(confirmed);if(busy===approvalId)busy=null;return send(res,200,{status:'pending',message:'현재 원본은 요청값과 다릅니다. 승인 대기를 유지합니다.'});}
               put(confirmed);record=confirmed;approved=await approvalCloud.approveExisting(approved,input.idToken,confirmed);
             }
             request=approved.data;identities=approved.identities;proposal=proposalFromApproval(request);
@@ -191,12 +194,12 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
             proposal={id:record.id,version:record.version,...live.after,reason:live.reason};
             const attemptId=randomUUID();await approvalCloud.claim(approved,input.idToken,attemptId);
             j={id:approvalId,approvalId,attemptId,approvedBy:approved.data.approvedBy,kind:'apply',recordId:record.id,status:'running',startedAt:new Date().toISOString(),message:'승인된 변경 전 값을 다시 확인하고 있습니다.'};saveJob(j);
-          }catch(e){busy=null;throw e;}
+          }catch(e){if(busy===approvalId)busy=null;throw e;}
           const idToken=input.idToken;
           void(async()=>{try{const result=confirmed?{status:'verified',alreadyApplied:true,message:'이미 반영 · 원본 확인 완료',results:[],current:confirmed}:await applyVerified(adapter,record,proposal,async e=>journal(j.id,e),request,identities);Object.assign(j,result);if(result.current&&!confirmed)put(result.current);}catch(e){j.status='failed';j.message=e.message;}finally{
             j.finishedAt=new Date().toISOString();saveJob(j);
             try{const result=await approvalCloud.finish(approvalId,idToken,j.attemptId,j);j.cloudSaved=true;j.platformSaved=result?.platformSaved===true;if(result?.message)j.message=result.message;delete j.cloudError;}catch(e){j.cloudSaved=false;j.platformSaved=false;j.cloudError='체크히어 원본 확인 후 플랫폼 DB 저장을 완료하지 못했습니다. 결과 확인을 누르면 재입력 없이 저장을 다시 확인합니다. '+e.message;}
-            saveJob(j);busy=null;
+            saveJob(j);if(busy===approvalId)busy=null;
           }})();return send(res,202,j);
         }
         if(url.pathname==='/api/reconcile'){

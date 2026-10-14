@@ -49,7 +49,8 @@ export function buildLiveRequest(record,form,reason){
   checkLiveEdit(record,request.changes);
   return request;
 }
-const sameStudent=(a,b)=>String(a.classId)===String(b.classId)&&a.date===b.date&&a.name===b.name&&String(a.phoneLast4||'')===String(b.phoneLast4||'');
+// 전화 끝 4자리가 한쪽에 없으면(운영포털 양식은 선택 칸) 같은 학생으로 봅니다.
+const sameStudent=(a,b)=>String(a.classId)===String(b.classId)&&a.date===b.date&&a.name===b.name&&(!a.phoneLast4||!b.phoneLast4||String(a.phoneLast4)===String(b.phoneLast4));
 export const requestsFor=(record,requests)=>requests.filter(r=>sameStudent(r,record)).sort((a,b)=>(stamp(b.createdAt)-stamp(a.createdAt)));
 export function stamp(t){if(!t)return 0;if(typeof t.toMillis==='function')return t.toMillis();if(typeof t.seconds==='number')return t.seconds*1000+(t.nanoseconds||0)/1e6;const n=Date.parse(t);return Number.isFinite(n)?n:0;}
 export const LIVE_STATUS={pending:'반영 대기',approved:'반영 준비',applying:'반영 중',verified:'반영 완료',rejected:'자동 반영 안 함',withdrawn:'취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};

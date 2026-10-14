@@ -183,7 +183,8 @@ export class CheckHereCollector{
   // a 1–2 student editor sample; any disagreement falls back to editors for the day.
   // sameAsStored(record) then skips unchanged students by full content (memos included).
   async collect(classId,dates,onRecord,onProgress,{unchanged=null,pageData=false,sameAsStored=null,onDay=null}={}){
-    await this.requireLogin();this.cancelled=false;
+    // 중단 표시는 작업을 시작하는 곳(server.mjs)이 지웁니다. 여기서 지우면 날짜 사이에 누른 '수집 중단'이 묻힙니다.
+    await this.requireLogin();
     for(const date of dates){if(this.cancelled)break;const rows=await this.openDay(classId,date);
       const plan=pageData&&this.dayData?planFromPageData(rows,this.dayData):null;
       if(plan?.byId.size){

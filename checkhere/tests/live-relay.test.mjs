@@ -7,7 +7,7 @@ import {createBridge} from '../server.mjs';
 import {studentKey,recordId,version} from '../identity.mjs';
 import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
-import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveRequest,koreaClock,tagOf} from '../../checkhere-live-core.mjs';
+import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
 import {createBridgeClient,createLiveRelay} from '../../checkhere-live-relay.mjs';
 
 const DATE='2026-10-12';
@@ -135,6 +135,9 @@ test('stale edits, non-admin and unmarked requests are never written to CheckHer
     assert.equal(await h.relay.step(),'request');assert.equal(w.requests.get('live-teacher-00000001').status,'pending','left for a human');
     assert.equal(await h.relay.step(),'idle','plain requests are not in the beta queue');
     assert.equal(w.requests.get('plain-request-0000001').status,'pending');
+    // 운영포털 '실패 건 다시 처리'가 만든 retry_ 요청은 근거에 실시간 표시가 복사돼 있어도 중계가 가져가지 않습니다.
+    w.add('retry_'+'a'.repeat(64),{...buildLiveRequest(fresh,{entry:'09:20',exit:'18:00',entryMemo:'재처리',exitMemo:''},'재처리'),createdBy:APPROVER});
+    assert.equal(await h.relay.step(),'idle');assert.equal(w.requests.get('retry_'+'a'.repeat(64)).status,'pending');
     assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entryMemo,'');
   }finally{h.close();}
 });
@@ -165,4 +168,19 @@ test('a request that keeps failing by itself is closed after five tries; bridge 
     for(let i=0;i<7;i++){await h2.relay.step();h2.advance(61000);}
     assert.equal(w2.requests.get('live-offline-00000001').status,'pending','kept for when the collector PC is back');
   }finally{h2.relay.stop();h2.app.db.close();}
+});
+test('a live edit is refused while another request for the same student and field is in progress, even without phone digits',async()=>{
+  const w=world(),h=await harness(w,18941,{classIds:['2']});
+  try{
+    await h.relay.step();const shown=w.day('2').find(r=>r.name==='가상둘');
+    w.add('plain-old-000000000001',{classId:'2',date:DATE,name:'가상둘',phoneLast4:'',reason:'운영포털 요청',changes:{entry:'09:05:00'}});
+    w.add('live-late-00000000001',buildLiveRequest(shown,{entry:'09:10',exit:'18:00',entryMemo:'',exitMemo:''},'입실 정정'));
+    assert.equal(await h.relay.step(),'request');
+    const req=w.requests.get('live-late-00000000001');assert.equal(req.status,'rejected');assert.match(req.reviewNote,/처리 중인 다른 수정 요청/);
+    assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entry,'09:20:00','CheckHere untouched');
+    assert.deepEqual(requestsFor(shown,[...w.requests].map(([id,d])=>({id,...d}))).map(r=>r.id).sort(),['live-late-00000000001','plain-old-000000000001'],'the viewer also sees the request without phone digits');
+    // 다른 항목(퇴실 메모)만 바꾸는 요청은 겹치지 않으므로 반영됩니다.
+    w.add('live-exit-00000000001',buildLiveRequest(shown,{entry:'09:20',exit:'18:00',entryMemo:'',exitMemo:'메모'},'퇴실 메모'));
+    await h.relay.step();assert.equal(w.requests.get('live-exit-00000000001').status,'verified',h.logs.join('\n'));
+  }finally{h.close();}
 });

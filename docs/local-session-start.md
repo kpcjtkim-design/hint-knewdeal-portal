@@ -187,8 +187,8 @@ Cowork 보고서: `docs/cowork/2026-10-13-checkhere-delete-report.md`. 원본과
   - 사용자 결정(2026-10-14): 설치 뒤 사람이 고친 `직접 입력` 행은 맞추기에서 뺀다. 커밋 뒤 Cowork로 반영한다(10분 트리거 복구는 첫 실행 결과를 보고 다시 확인).
 - ③ `apps-script/master/Code.gs`: `onOpen`에서 `rebuildAll` 뺌, `rebuildAll` 읽기 먼저·쓰기 나중(결과가 예전과 같음을 확인), `onEdit`은 고친 행의 반만, `removeRow_` 잠금, 잠금 대기 20초, 작은 탭 건너뜀. 시험 `checkhere/tests/master-code.test.mjs`.
   - 남는 점: 평일 09:10 전에는 오늘 열이 출결판에 없다(첫 동기화가 그림, 메뉴로 바로 그릴 수 있음). 2기 마스터처럼 동기화가 없는 시트는 하루 한 번 그리는 트리거가 따로 필요하다.
-- ④ 사용자 결정(2026-10-14): 체크히어 쓰기는 **수정창 버튼** 방식, 자동 반영은 **메모만**(`memo-only`). `docs/beta2-instant-edit-plan.md` 10장에 적음.
-- ④ 먼저 할 일(삭제 전 필수, 검토 문서): 1번 작업 잠금 경쟁, 3번 중복 요청 검사, 4번 `retry_` 가로채기, 6번 수집 중단 — 고쳤지만 **아직 커밋 전**(사용자 확인 대기), 연결 프로그램 build `20261014.1`. 운영 중인 연결 프로그램(`Documents\Codex\2026-09-07\gk\hint-attendance-beta`)은 바꾸지 않았다.
+- ④ 사용자 결정(2026-10-14): 체크히어 쓰기는 **수정창 버튼** 방식, 자동 반영은 **메모만**(`memo-only`), **오늘만 자동**(지난 날은 `체크히어 맞추기` 버튼), 3초 되돌리기는 **출결원장과 요청 모두**. `docs/beta2-instant-edit-plan.md` 10장에 적음.
+- ④ 먼저 할 일(삭제 전 필수, 검토 문서): 1번 작업 잠금 경쟁, 3번 중복 요청 검사, 4번 `retry_` 가로채기, 6번 수집 중단 — 고치고 커밋함(사용자 확인 2026-10-14), 연결 프로그램 build `20261014.1`. 운영 중인 연결 프로그램(`Documents\Codex\2026-09-07\gk\hint-attendance-beta`)은 바꾸지 않았다.
 - ④ 순수 대응표 모듈 `beta2-checkhere-core.mjs`(시험 `checkhere/tests/beta2-checkhere-core.test.mjs`)와 병원 분류 넓히기(`checkhere-proposal-core.mjs`)도 작업 중이며 커밋 전.
 - ②·③은 커밋했고 Apps Script 반영은 Cowork(요청서 아래)로 한다. 반영 전에는 운영 중인 Apps Script가 그대로다.
 - 반영 순서·Cowork 요청서: `apps-script/beta2/README.md` 「동기화 실행 시간 줄이기 반영 순서」, `docs/cowork/2026-10-14-sync-runtime-deploy.md`.

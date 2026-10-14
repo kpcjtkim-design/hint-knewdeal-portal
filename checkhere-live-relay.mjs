@@ -2,7 +2,8 @@
 // the collector PC: it turns marked admin requests into verified CheckHere
 // writes and keeps today's `checkhereCurrent` documents fresh. One task at a time.
 import {cleanRequest,matchRequest,requestMatchesRecord,prepareApproval} from './checkhere/approval-core.mjs';
-import {CLASS_IDS,LIVE_INTERVAL_MS,NO_LECTURE,baseTag,checkLiveEdit,inLiveWindow,isLiveRequest,koreaClock,stamp,tagOf} from './checkhere-live-core.mjs';
+import {ACTIVE,CLASS_IDS,LIVE_INTERVAL_MS,NO_LECTURE,baseTag,checkLiveEdit,inLiveWindow,isLiveRequest,koreaClock,stamp,tagOf} from './checkhere-live-core.mjs';
+import {requestsOverlap} from './checkhere-proposal-core.mjs';
 
 export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(...a)=>fetch(...a)}){
   async function call(path,body){
@@ -18,7 +19,7 @@ export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(
 const REQUIRED=['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1'],MAX_ATTEMPTS=5;
 export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,intervalMs=LIVE_INTERVAL_MS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow}){
   const queue=new Map(),retryAt=new Map(),attempts=new Map(),ignored=new Set(),mirror=new Map(),saved=new Map(),noLecture=new Map(),manual=[];
-  let cursor=null,capabilities=[],cycle=null,nextCycleAt=0,running=false,wake=null,unwatch=null,listeners=new Set();
+  let cursor=null,capabilities=[],cycle=null,nextCycleAt=0,running=false,wake=null,unwatch=null,listeners=new Set(),active=[];
   const status={state:'stopped',lastCycle:null,lastError:null,processed:0,saves:0,queue:0,current:null};
   const emit=()=>{status.queue=[...queue.values()].length;for(const f of listeners)f({...status});};
   const note=(text,level='info')=>{log({at:now().toISOString(),level,text});if(level==='error')status.lastError=text;emit();};
@@ -79,6 +80,8 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
     // Approved earlier but not started (e.g. the tab closed): the bridge re-reads before writing.
     if(r.status==='approved'){await bridge.api('apply',{approvalId:r.id,idToken});return finishApply(r,idToken);}
     let clean;try{clean=cleanRequest(r);}catch(e){return reject(r,e.message);}
+    // 같은 학생·항목에 처리 중인 다른 요청(운영포털 수정 요청 포함)이 있으면 덮어쓰지 않고 반려합니다.
+    if(active.some(o=>o.id!==r.id&&ACTIVE.includes(o.status)&&o.changes&&requestsOverlap(o,clean)))return reject(r,'같은 학생·항목에 처리 중인 다른 수정 요청이 있습니다. 운영 포털 수정 요청에서 먼저 정리해 주세요.');
     const identities=await store.identities(clean.classId,clean.name);
     const preview=await bridge.api('preview-request',{approvalId:r.id,idToken});
     const record=matchRequest(r,[preview.record],identities);mirror.set(record.id,record);
@@ -155,7 +158,9 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
       if(!REQUIRED.every(c=>capabilities.includes(c)))throw Error('수집 PC의 연결 프로그램이 오래된 버전입니다. 「체크히어 시작.cmd」를 다시 실행해 주세요.');
       running=true;status.state='running';status.lastError=null;
       unwatch=store.watchQueue(list=>{
-        const live=list.filter(r=>isLiveRequest(r)&&['pending','approved'].includes(r.status)&&!ignored.has(r.id));
+        active=list;
+        // retry_·proposal_ 요청은 운영포털 재처리·제안 흐름이 처리합니다(근거 표시를 복사해도 가져가지 않음).
+        const live=list.filter(r=>isLiveRequest(r)&&['pending','approved'].includes(r.status)&&!ignored.has(r.id)&&!/^(retry|proposal)_/.test(String(r.id)));
         const ids=new Set(live.map(r=>r.id));for(const id of queue.keys())if(!ids.has(id))queue.delete(id);
         for(const r of live)queue.set(r.id,r);emit();wake?.();
       },e=>note('수정 대기열 구독 오류: '+e.message,'error'));
