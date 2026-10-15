@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {Worker} from 'node:worker_threads';
+import {fileURLToPath} from 'node:url';
 import {parseAttendanceReasons,reasonFor} from '../../attendance-reason-core.mjs';
 import {overviewColorState} from '../../attendance-beta-core.mjs';
 
@@ -30,6 +32,21 @@ test('the Apps Script reason parser gives the same result as the portal parser',
   for(const name of ROSTER){const r=g('b2ReasonFor_')(name,a);assert.equal(r.reason,reasonFor(name,text,ROSTER),`${name} · ${text}`);}
  }
  assert.equal(g('b2ReasonFor_')('최건용',g('b2ParseReasons_')(REASONS[2],ROSTER)).reason,'면접');
+});
+
+test('a roster name that is only a birth-year tag does not hang either reason parser',async()=>{
+ // 예전에는 기본 이름이 빈 글자가 되어 indexOf('')가 제자리를 돌았습니다. 멈추면 시험 전체가 멈추므로 다른 스레드에서 돌리고 시간 안에 끝나는지 봅니다.
+ const roster=['(01년생)','가상가','가상나(01년생)'],texts=['지각1- 가상가_교통','결석: 가상나(01년생) 병원, (01년생) 개인일정\n조퇴 가상가 15:00',''];
+ const code=`const {parentPort,workerData}=require('node:worker_threads'),vm=require('node:vm'),fs=require('node:fs');
+  import(workerData.core).then(m=>{const g=vm.createContext({});vm.runInContext(fs.readFileSync(workerData.gs,'utf8'),g);
+   parentPort.postMessage(workerData.texts.map(t=>[JSON.stringify(g.b2ParseReasons_(t,workerData.roster)),JSON.stringify(m.parseAttendanceReasons(t,workerData.roster))]));});`;
+ const workerData={core:new URL('../../attendance-reason-core.mjs',import.meta.url).href,gs:fileURLToPath(new URL('../../apps-script/beta2/beta2.gs',import.meta.url)),roster,texts};
+ const out=await new Promise((resolve,reject)=>{
+  const w=new Worker(code,{eval:true,workerData}),timer=setTimeout(()=>{w.terminate();reject(new Error('the reason parser did not finish within 10 s'));},10000);
+  w.once('message',m=>{clearTimeout(timer);w.terminate();resolve(m);});w.once('error',e=>{clearTimeout(timer);reject(e);});
+ });
+ for(const [a,b] of out)assert.equal(a,b,'Apps Script and portal parsers agree');
+ assert.deepEqual(JSON.parse(out[0][0]).byName['가상가'].map(e=>e.reason),['교통']);
 });
 
 test('evidence colours use the portal colour rule',()=>{

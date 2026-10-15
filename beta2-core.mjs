@@ -146,9 +146,13 @@ function syncWindow(spec,now){
  const label={'1,2,3,4,5':'평일','1,2,3,4,5,6,7':'매일','6,7':'주말'}[key]||[...days].map(d=>'월화수목금토일'[d-1]).join('·');
  return {text:`${label} ${m[2]}~${m[3]}`,open:days.has(dow)&&hm>=m[2]&&hm<=m[3]};
 }
+// beta2.gs b2Phase_가 남기는 동기화 단계 이름(B2_SYNC_PHASE·B2_SYNC_CUT) → 화면 말. 'boards n'은 출결판 n번째 차례.
+const SYNC_PHASES={start:'시작',drive:'운영총괄 수정 시각 확인',days:'교육일자 읽기',source:'운영총괄 읽기',colours:'증빙 색 확인',lock:'문서 잠금 기다리기',read:'출결원장 읽기',write:'출결원장 쓰기',slim:'입력 확인(Q열) 계산',done:'마무리'};
+export const syncPhaseText=phase=>{const s=String(phase||''),m=s.match(/^boards (\d+)$/);return m?`출결판 그리기 ${m[1]}번째 차례`:SYNC_PHASES[s]||'';};
 export function syncText(sync,now=Date.now()){
  const ago=t=>{if(!t)return '기록 없음';const m=Math.round((now-t)/60000);return m<1?'방금':m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`;};
- const last=sync?.last,win=syncWindow(sync?.window,now),cutAt=Number(sync?.cutAt)||0;
+ const last=sync?.last,win=syncWindow(sync?.window,now),cutAt=Number(sync?.cutAt)||0,cut=cutAt&&cutAt>(Number(last?.at)||0)?ago(cutAt):'';
+ const cutPhase=cut?syncPhaseText(sync?.cut?.phase):'';
  return {checked:ago(sync?.checkedAt||last?.at),changed:ago(sync?.changedAt),error:sync?.error?.message||'',errors:last?.errors||[],stats:last?.stats||null,
-  window:win.text,resting:!win.open,cut:cutAt&&cutAt>(Number(last?.at)||0)?ago(cutAt):''};
+  window:win.text,resting:!win.open,cut,cutPhase,cutText:cut?`시간 초과로 중단${cutPhase?`(단계: ${cutPhase})`:''}`:''};
 }

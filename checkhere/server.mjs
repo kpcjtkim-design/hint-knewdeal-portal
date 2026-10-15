@@ -13,12 +13,14 @@ import {readRequestRecord} from './request-record.mjs';
 import {proposalFromApproval,prepareApproval,resultText} from './approval-core.mjs';
 import {runProbe} from './probe-network.mjs';
 import {summarize} from './probe-core.mjs';
+import {runApiProbe,summarizeApi,validDate,dayIds,cleanMessage,API_PROBE_CAPABILITY} from './probe-api.mjs';
 import {writeFileSync} from 'node:fs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
 // build는 Start.ps1의 값과 같아야 합니다(다르면 「체크히어 시작.cmd」가 쉬고 있는 연결 프로그램을 다시 띄웁니다).
-const BUILD='20261015.1';
+const BUILD='20261015.2';
 // time-delete-v1: 수정창 '삭제'로 기록 번호가 있는 칸(퇴실 COMPLETE·관리자 1교시 ATTEND)만 지웁니다(collector.deleteTime). 관리자 1교시는 지금 꺼짐(rules.mjs ATTEND_DELETE).
-export const CAPABILITIES=Object.freeze(['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1',TIME_DELETE_CAPABILITY]);
+// api-probe-v1: 읽기 전용 체크히어 가림 진단(/api/api-probe, probe-api.mjs). 화면이 받은 출결상세 응답만 보고 따로 요청하지 않습니다.
+export const CAPABILITIES=Object.freeze(['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1',TIME_DELETE_CAPABILITY,API_PROBE_CAPABILITY]);
 const NO_LECTURE=/강의가 없습니다/;
 // 시간 삭제 요청(deleteTimes가 비어 있지 않음). 모양이 이상해도 삭제로 봅니다(능력 없으면 거절하는 쪽이 안전).
 const deletionRequest=r=>r?.deleteTimes!==undefined&&r?.deleteTimes!==null&&!(Array.isArray(r.deleteTimes)&&!r.deleteTimes.length);
@@ -168,6 +170,26 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
             writeFileSync(file,JSON.stringify(report,null,1));
             j.report=file;j.summary=summarize(report);j.status='complete';j.message='진단 완료';
           }catch(e){j.status='failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);if(busy===j.id)busy=null;}})();
+          return send(res,202,j);
+        }
+        // 읽기 전용 가림 진단: 같은 전용 크롬으로 두 날의 출결상세 화면을 열고, 화면이 스스로 받은 출결상세 응답만 셉니다.
+        // 체크히어에 따로 요청을 보내지 않습니다(토큰·직접 주소 없음). data/probe/api-probe-*.json만 씁니다.
+        // 날짜를 비우면 오늘과 직전 교육일. 보고서·요약에는 이름·전화번호·메모·시간·id 값·토큰이 없습니다.
+        if(url.pathname==='/api/api-probe'){
+          if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
+          const classId=String(input.classId||'2'),date1=String(input.date1||'').trim(),date2=String(input.date2||'').trim(),knownUrl=typeof input.url==='string'&&input.url.trim()?input.url.trim():null;
+          if(!/^(?:[1-9]|1[0-7])$/.test(classId)||date1&&!validDate(date1)||date2&&!validDate(date2)||date1&&date1===date2||knownUrl&&!dayIds(knownUrl))throw new Error('반, 두 날짜(서로 다른 날) 또는 출결상세 주소를 확인해 주세요.');
+          const j={id:randomUUID(),kind:'api-probe',classId,dates:[date1||'auto',date2||'auto'],status:'running',startedAt:new Date().toISOString(),message:'API 진단을 준비하고 있습니다.'};saveJob(j);busy=j.id;
+          void(async()=>{try{
+            if(!adapter.page||adapter.page.isClosed?.())await adapter.connect();
+            for(let i=0;i<90&&!await adapter.loggedIn().catch(()=>false);i++){j.message='전용 크롬에서 체크히어 로그인을 기다리고 있습니다.';await new Promise(r=>setTimeout(r,2000));}
+            if(!await adapter.loggedIn().catch(()=>false))throw new Error('LOGIN_REQUIRED: 전용 크롬에서 체크히어에 로그인해 주세요.');
+            const report=await runApiProbe({collector:adapter,classId,date1,date2,url:knownUrl,log:t=>{j.message=String(t).trim();}});
+            const dir=join(dataDir,'probe');mkdirSync(dir,{recursive:true});
+            const file=join(dir,`api-probe-${classId}-${report.dates.join('_')}-${new Date().toISOString().replace(/[:.]/g,'').slice(0,15)}.json`);
+            writeFileSync(file,JSON.stringify(report,null,1));
+            j.dates=report.dates;j.report=file;j.summary=summarizeApi(report);j.status='complete';j.message='API 진단 완료';
+          }catch(e){j.status='failed';j.message=cleanMessage(e.message);}finally{j.finishedAt=new Date().toISOString();saveJob(j);if(busy===j.id)busy=null;}})();
           return send(res,202,j);
         }
         if(url.pathname==='/api/preview-request'){

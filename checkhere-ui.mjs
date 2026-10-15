@@ -52,7 +52,7 @@ export async function mountCheckHere(host,ctx={}){
     root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditor(state.records.find(r=>r.id===b.dataset.edit)));
     if($('#pagePrevious'))$('#pagePrevious').onclick=()=>{page--;render();};if($('#pageNext'))$('#pageNext').onclick=()=>{page++;render();};
     }
-    $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':'반영')} · ${esc(({verified:j.cloudError?'DB 저장 재확인':j.platformSaved?(j.alreadyApplied?'이미 반영 · DB 저장 완료':'반영·DB 저장 완료'):'DB 저장 확인 중',complete:'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.cloudError||j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
+    $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':/probe$/.test(j.kind)?'진단':'반영')} · ${esc(({verified:j.cloudError?'DB 저장 재확인':j.platformSaved?(j.alreadyApplied?'이미 반영 · DB 저장 완료':'반영·DB 저장 완료'):'DB 저장 확인 중',complete:/probe$/.test(j.kind)?'진단 완료':'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.cloudError||j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
   }
   function showBatch(j){
     const bad=(j.results||[]).filter(r=>['failed','partial','cancelled'].includes(r.status)),none=(j.results||[]).filter(r=>r.status==='no-lecture'),saveFails=[...batchSaveErrors];

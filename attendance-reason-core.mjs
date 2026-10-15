@@ -24,7 +24,8 @@ export function parseAttendanceReasons(text,roster){
    if(left&&right&&!qualifier&&!hits.some(h=>at<h.end&&end>h.start))hits.push({name:[...targets][0],names:[...targets],start:at,end,invalid:targets.size!==1});at=end;}}
   // Ambiguous names still bound the preceding student's reason; never absorb
   // unmatched names and their reasons into an earlier student's value.
-  for(const name of unique){const base=baseName(name);let at=0;while((at=line.indexOf(base,at))>=0){const end=at+base.length;if(!hits.some(h=>at<h.end&&end>h.start))hits.push({name,names:unique.filter(n=>baseName(n)===base),start:at,end,invalid:true});at=end;}}
+  // 명부 이름이 '(01년생)'뿐이면 기본 이름이 빈 글자라 indexOf('')가 제자리를 돌므로 건너뜁니다.
+  for(const name of unique){const base=baseName(name);if(!base)continue;let at=0;while((at=line.indexOf(base,at))>=0){const end=at+base.length;if(!hits.some(h=>at<h.end&&end>h.start))hits.push({name,names:unique.filter(n=>baseName(n)===base),start:at,end,invalid:true});at=end;}}
   hits.sort((a,b)=>a.start-b.start);
   for(const hit of hits)if(hit.invalid)for(const name of hit.names)issues.push({name,line:li+1,message:'학생명 경계 또는 동명이인 식별표기 확인 필요'});
   if(!hits.length){const heading=line.trim().replace(/^[*•\s]+/,'').match(new RegExp(`^(${STATUS})\\s*\\d*\\s*[-:：.(]?\\s*$`));if(heading)sectionStatus=heading[1];continue;}

@@ -56,27 +56,29 @@ function rebuildAll() { rebuildBoards_(null); }
 // 읽기와 쓰기가 섞이면 반마다 시트가 다시 계산되어 느려집니다.
 function rebuildBoards_(classes) {
   const ss = SpreadsheetApp.getActive();
-  const base = loadBase_(), boards = [];
+  const base = loadBase_(true), boards = [];
   ss.getSheets().forEach(sh => {
     const n = boardNo_(sh);
-    if (n && (!classes || classes.indexOf(n) >= 0)) boards.push({ sh: sh, n: n, rules: sh.getConditionalFormatRules() });
+    // 시트 다듬기 뒤에는 C열 기준일(그 탭 A2)도 미리 읽습니다.
+    if (n && (!classes || classes.indexOf(n) >= 0)) boards.push({ sh: sh, n: n, rules: sh.getConditionalFormatRules(), a2: base.slim ? sh.getRange('A2').getValue() : null });
   });
-  boards.forEach(b => rebuildBoard_(b.sh, b.n, base, b.rules));
+  boards.forEach(b => rebuildBoard_(b.sh, b.n, base, b.rules, b.a2));
 }
 
-function loadBase_() {
+// forBoards: 출결판을 그릴 때. 시트 다듬기(beta2.gs b2SlimSheet) 뒤에는 반 탭 C/D값도 쓰므로 원장을 K열까지 한 번에 읽어 slim에 넣습니다.
+function loadBase_(forBoards) {
   const ss = SpreadsheetApp.getActive(), tz = ss.getSpreadsheetTimeZone();
   const daysSh = ss.getSheetByName(CFG.DAYS);
   const mainDay = fmtDate_(daysSh.getRange('D5').getValue(), tz);
   const days = daysSh.getRange('A2:A100').getValues().flat().filter(x => x instanceof Date).map(x => fmtDate_(x, tz))
     .filter(d => d <= mainDay).sort().reverse().slice(0, CFG.MAX_DAYS);
   const roster = ss.getSheetByName(CFG.ROSTER).getRange('A2:E800').getValues().filter(r => r[1] !== '');
-  const L = ss.getSheetByName(CFG.LEDGER), last = lastRow_(L);
-  const led = {};
-  if (last >= 2) L.getRange(2, 1, last - 1, 4).getValues().forEach(v => {
+  const L = ss.getSheetByName(CFG.LEDGER), last = lastRow_(L), slim = !!forBoards && slimOn_();
+  const led = {}, vals = last >= 2 ? L.getRange(2, 1, last - 1, slim ? 11 : 4).getValues() : [];
+  vals.forEach(v => {
     if (v[0] instanceof Date) led[Number(v[1]) + '|' + String(v[2]).trim() + '|' + fmtDate_(v[0], tz)] = v[3];
   });
-  return { tz: tz, mainDay: mainDay, days: days, roster: roster, led: led };
+  return { tz: tz, mainDay: mainDay, days: days, roster: roster, led: led, slim: slim ? b2SlimBase_(vals, tz) : null };
 }
 
 function boardNo_(sh) {
@@ -86,9 +88,10 @@ function boardNo_(sh) {
   return n >= 1 && n <= 17 ? n : 0;
 }
 
-// rules: 미리 읽어 둔 조건부 서식(rebuildBoards_). 없으면 여기서 읽습니다.
-function rebuildBoard_(sh, cls, base, rules) {
+// rules·a2: 미리 읽어 둔 조건부 서식·A2(rebuildBoards_). 없으면 여기서 읽습니다.
+function rebuildBoard_(sh, cls, base, rules, a2) {
   const tz = base.tz;
+  if (base.slim && a2 == null) a2 = sh.getRange('A2').getValue(); // 쓰기 전에 읽음
   const kids = base.roster.filter(r => Number(r[0]) === cls).slice(0, CFG.LAST_ROW - CFG.FIRST_ROW + 1);
   const rows = CFG.LAST_ROW - CFG.FIRST_ROW + 1, cols = CFG.MAX_DAYS;
   const hdr = [Array.from({ length: cols }, (_, i) => base.days[i] ? parseDate_(base.days[i]) : '')];
@@ -110,6 +113,9 @@ function rebuildBoard_(sh, cls, base, rules) {
   sh.getRange(CFG.FIRST_ROW, 1, rows, 1).setValues(names);
   const body = sh.getRange(CFG.FIRST_ROW, CFG.FIRST_COL, rows, cols);
   body.setValues(grid);
+  // 시트 다듬기 뒤: C열 누적 출석률·D열 증빙 미결도 수식 대신 값으로(이미 읽은 원장으로 계산. 다듬기에서 수식을 바꾼 탭만)
+  const cd = base.slim ? b2SlimBoardStats_(base.slim, cls, names.map(n => n[0]), a2) : null;
+  if (cd) sh.getRange(CFG.FIRST_ROW, 3, rows, 2).setValues(cd);
   body.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(CFG.BOARD_LIST, true).setAllowInvalid(true).build());
   ensureColors_(sh, body, rules || sh.getConditionalFormatRules());
 }
@@ -133,27 +139,39 @@ function onEdit(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet(), name = sh.getName();
   try {
-    if (name === '시간표' || name === CFG.DAYS) { rebuildAll(); return; }
+    // /beta2가 읽는 탭을 직접 고쳤으면 변경 번호를 올립니다(출결판 칸 고치기는 아래 upsert_·removeRow_가 올림). 교육일자는 시간표에서 올 수 있습니다.
+    if ([CFG.LEDGER, CFG.ROSTER, CFG.DAYS, CFG.INFO, '시간표'].indexOf(name) >= 0) bumpBeta2_();
+    // 시트 다듬기 뒤에는 교육일자(시간표에서 올 수 있음)·명부·원장을 고치면 원장 Q열(입력 확인)도 다시 계산합니다(slimLocked_, 그 전에는 아무것도 안 함).
+    // 다시 계산할 것을 먼저 적어 둡니다(slimMark_): 출결판 그리기에서 단순 트리거 한도(30초)로 끊기거나 잠금을 못 잡아도 다음 동기화·저장이 계산.
+    if ([CFG.LEDGER, CFG.ROSTER, CFG.DAYS, '시간표'].indexOf(name) >= 0) slimMark_();
+    if (name === '시간표' || name === CFG.DAYS) { rebuildAll(); slimLocked_(null); return; }
     // 명부·원장은 고친 행의 반만 다시 그립니다(17개 반을 모두 그리면 단순 트리거 30초 한도에 걸릴 수 있음).
-    if (name === CFG.ROSTER) { rebuildBoards_(editedClasses_(e.range, 1)); return; }
-    if (name === CFG.LEDGER) { touch_(); rebuildBoards_(editedClasses_(e.range, 2)); return; }
+    if (name === CFG.ROSTER) { rebuildBoards_(editedClasses_(e.range, 1)); slimLocked_(null); return; }
+    if (name === CFG.LEDGER) { touch_(); rebuildBoards_(editedClasses_(e.range, 2)); slimLocked_(null); return; }
     const cls = boardNo_(sh);
     if (!cls) return;
     const r0 = e.range.getRow(), c0 = e.range.getColumn(), nr = e.range.getNumRows(), nc = e.range.getNumColumns();
     if (r0 + nr - 1 < CFG.FIRST_ROW || r0 > CFG.LAST_ROW || c0 + nc - 1 < CFG.FIRST_COL) return;
     const tz = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
     const vals = e.range.getValues();
-    for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) {
-      const row = r0 + i, col = c0 + j;
-      if (row < CFG.FIRST_ROW || row > CFG.LAST_ROW || col < CFG.FIRST_COL) continue;
-      const stu = String(sh.getRange(row, 1).getValue() || '').trim();
-      const d = sh.getRange(CFG.HDR_ROW, col).getValue();
-      if (!stu || !(d instanceof Date)) continue;
-      const v = String(vals[i][j] || '').trim();
-      const date = fmtDate_(d, tz);
-      if (!v || v === '출석' || v === '해당없음') removeRow_(cls, stu, date, '드롭다운');
-      else if (CFG.TYPES.indexOf(v) >= 0) upsert_({ cls: cls, name: stu, date: date, type: v }, true, '드롭다운');
-    }
+    let wrote = false;
+    __SLIM_HOLD++; // 여러 칸을 붙여 넣어도 Q·C/D 계산은 끝에 한 번만
+    try {
+      for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) {
+        const row = r0 + i, col = c0 + j;
+        if (row < CFG.FIRST_ROW || row > CFG.LAST_ROW || col < CFG.FIRST_COL) continue;
+        const stu = String(sh.getRange(row, 1).getValue() || '').trim();
+        const d = sh.getRange(CFG.HDR_ROW, col).getValue();
+        if (!stu || !(d instanceof Date)) continue;
+        const v = String(vals[i][j] || '').trim();
+        const date = fmtDate_(d, tz);
+        if (!wrote) slimMark_(); // 첫 저장 전에(중간 칸 저장이 실패해 끝의 계산까지 못 가도 다음에 계산)
+        wrote = true;
+        if (!v || v === '출석' || v === '해당없음') removeRow_(cls, stu, date, '드롭다운');
+        else if (CFG.TYPES.indexOf(v) >= 0) upsert_({ cls: cls, name: stu, date: date, type: v }, true, '드롭다운');
+      }
+    } finally { __SLIM_HOLD--; }
+    if (wrote) slimLocked_([cls]);
     touch_();
   } catch (err) { console.log(err); }
 }
@@ -230,7 +248,8 @@ function upsert_(p, typeOnly, via) {
     };
     const row = f ? f.row : Math.max(2, lastRow_(sh) + 1);
     sh.getRange(row, 1, 1, 11).setValues([[parseDate_(p.date), p.cls, p.name, n.type, n.inT, n.outT, n.oa, n.ob, n.r, n.ev, n.evr]]);
-    log_(p, f ? sum_(old) : '출석', sum_(n), via);
+    // 변경 번호는 Q를 쓴 뒤에 올립니다(저장 한 번에 거의 한 번: 열린 /beta2 화면이 A~K와 Q를 함께 다시 읽게). 기록이 실패해도 올림.
+    try { log_(p, f ? sum_(old) : '출석', sum_(n), via); slimAfter_([p.cls]); } finally { bumpBeta2_(); }
   } finally { lock.releaseLock(); }
 }
 
@@ -242,7 +261,8 @@ function removeRow_(cls, stu, date, via) {
     const f = findRow_(cls, stu, date, tz);
     if (!f) return;
     ss.getSheetByName(CFG.LEDGER).deleteRow(f.row);
-    log_({ cls: cls, name: stu, date: date }, sum_(f.record), '출석', via);
+    // 지운 행의 Q값은 행과 함께 없어지고, 중복 짝 행의 Q값은 slimAfter_가 고침. 변경 번호는 그 뒤에(upsert_와 같음)
+    try { log_({ cls: cls, name: stu, date: date }, sum_(f.record), '출석', via); slimAfter_([cls]); } finally { bumpBeta2_(); }
   } finally { lock.releaseLock(); }
 }
 
@@ -302,6 +322,27 @@ function isHQ_() {
 
 function touch_() { PropertiesService.getDocumentProperties().setProperty('rev', String(Date.now())); }
 
+// 출결원장·명부·교육일자·반정보를 쓴 뒤 2기 베타 변경 번호(B2_REV, beta2.gs)를 올려 /beta2 묶음 캐시와 열린 화면이 다시 읽게 합니다.
+// beta2.gs가 없으면 아무것도 하지 않고, 실패해도 이미 끝난 저장을 오류로 만들지 않습니다.
+function bumpBeta2_() { try { if (typeof b2Bump_ === 'function') b2Bump_(); } catch (e) { console.log(e); } }
+
+/* 시트 다듬기(beta2.gs b2SlimSheet) 뒤에는 원장 Q열(입력 확인)·반 탭 C/D열이 수식이 아니라 값입니다.
+ * 원장·명부·교육일자를 쓴 뒤 beta2.gs가 다시 계산해 바뀐 칸만 씁니다. 다듬기 전(B2_SLIM 없음)이나 beta2.gs가 없으면 아무것도 하지 않습니다. */
+var __SLIM_HOLD = 0; // onEdit에서 여러 칸을 고치는 동안에는 칸마다 계산하지 않고 끝에 한 번
+function slimOn_() { return typeof b2SlimOn_ === 'function' && b2SlimOn_(); }
+// 이미 문서 잠금 안(upsert_·removeRow_). classes: 그 반 탭 C/D도 다시 씀(출결판을 다시 그리지 않으므로)
+function slimAfter_(classes) { if (!__SLIM_HOLD && slimOn_()) b2SlimRefresh_({ classes: classes }); }
+// Q 다시 계산이 남았다는 표시(B2_SLIM_DIRTY). 계산이 끝나면 b2SlimRefresh_가 지우고, 남아 있으면 다음 동기화·저장이 계산합니다.
+function slimMark_() { if (slimOn_()) PropertiesService.getScriptProperties().setProperty('B2_SLIM_DIRTY', '1'); }
+// 잠금 밖(onEdit, 먼저 slimMark_). 다듬기 전에는 잠금도 잡지 않습니다. 동기화가 잠금을 오래 잡고 있으면 오래 기다리지 않고
+// 표시만 남깁니다(단순 트리거 30초 한도. 다음 동기화가 Q를 계산하고, 이 반 C/D는 출결판을 다시 그릴 때 바뀜).
+function slimLocked_(classes) {
+  if (!slimOn_()) return;
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(5000)) return;
+  try { b2SlimRefresh_({ classes: classes }); } finally { lock.releaseLock(); }
+}
+
 function log_(p, before, after, via) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(CFG.LOG);
@@ -314,7 +355,9 @@ function sum_(r) {
   return (r.type || '') + (t ? ' ' + t : '') + (r.r ? ' (' + r.r + ')' : '');
 }
 
-function fmtDate_(d, tz) { return d instanceof Date ? Utilities.formatDate(d, tz, 'yyyy-MM-dd') : ''; }
+// 원장 한 번 읽기에 수천 번 부르지만 서로 다른 날짜는 몇십 개라 실행 안에서 바꾼 값을 기억합니다.
+var __FMT = {};
+function fmtDate_(d, tz) { if (!(d instanceof Date)) return ''; const k = tz + '|' + d.getTime(); return __FMT[k] || (__FMT[k] = Utilities.formatDate(d, tz, 'yyyy-MM-dd')); }
 function t_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'HH:mm');
   const m = /^(\d{1,2}):(\d{2})/.exec(String(v || '').trim());
@@ -505,9 +548,11 @@ function portalSetStatus(cls, pin, name, status, date) {
   if (i < 0) throw new Error('명부에 없는 학생입니다.');
   const before = (rows[i][3] || '재학') + (rows[i][4] ? ' ' + fmtDate_(rows[i][4] instanceof Date ? rows[i][4] : new Date(rows[i][4]), tz) : '');
   sh.getRange(i + 2, 4, 1, 2).setValues([[status, status === '재학' ? '' : parseDate_(date)]]);
+  bumpBeta2_();
   log_({ cls: cls, name: name, date: date || '' }, '명부 ' + before, '명부 ' + status + (date && status !== '재학' ? ' ' + date : ''), '포털 · ' + (info[4] || '담임'));
   const board = classSheet_(cls);
-  if (board) rebuildBoard_(board, cls, loadBase_());
+  // 시트 다듬기 뒤에는 C/D가 값이라 이름과 함께 다시 써야 합니다(명부 순서가 바뀌었으면 옆 학생 값이 남음): 원장을 K열까지 읽는 loadBase_(true)
+  if (board) rebuildBoard_(board, cls, loadBase_(true));
   touch_();
   return { ok: true };
 }

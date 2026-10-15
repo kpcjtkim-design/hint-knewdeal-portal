@@ -119,6 +119,14 @@ test('sync status text is plain Korean',()=>{
  assert.equal(syncText({window:'6-7 10:00-12:00'},wed).window,'주말 10:00~12:00');
  assert.equal(syncText({cutAt:wed-20*60000,last:{at:wed-30*60000}},wed).cut,'20분 전','a cut after the last finished run is shown');
  assert.equal(syncText({cutAt:wed-40*60000,last:{at:wed-30*60000}},wed).cut,'','an older cut is not');
+ // 끊긴 단계(beta2.gs B2_SYNC_CUT.phase)를 쉬운 말로
+ const cut={cutAt:wed-20*60000,cut:{at:wed-20*60000,phase:'read',ms:95000},last:{at:wed-30*60000}};
+ assert.deepEqual([syncText(cut,wed).cutPhase,syncText(cut,wed).cutText],['출결원장 읽기','시간 초과로 중단(단계: 출결원장 읽기)']);
+ assert.equal(syncText({...cut,cut:{at:cut.cutAt,phase:'boards 3',ms:250000}},wed).cutText,'시간 초과로 중단(단계: 출결판 그리기 3번째 차례)');
+ assert.equal(syncText({...cut,cut:{at:cut.cutAt,phase:'source',ms:1000}},wed).cutText,'시간 초과로 중단(단계: 운영총괄 읽기)');
+ assert.equal(syncText({...cut,cut:{at:cut.cutAt,phase:'slim',ms:290000}},wed).cutText,'시간 초과로 중단(단계: 입력 확인(Q열) 계산)');
+ assert.equal(syncText({cutAt:wed-20*60000,last:{at:wed-30*60000}},wed).cutText,'시간 초과로 중단','an old numeric cut has no phase');
+ assert.deepEqual([syncText({...cut,last:{at:wed-10*60000}},wed).cutText,syncText({},wed).cutPhase],['',''],'nothing once a later run finished');
 });
 
 test('the client and Apps Script agree on the ledger row signature',()=>{

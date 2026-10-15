@@ -72,3 +72,13 @@ test('choosing 출석 on a board deletes the ledger row inside the document lock
  assert.deepEqual(ledger.rows(4,2,1,3)[0],[3,'가상3나','지각']);
  assert.deepEqual(gas.log.outsideLock.filter(x=>/출결원장/.test(x)),[]);
 });
+
+test('a board redraw formats each date once (fmtDate_ remembers within the run)',()=>{
+ const {gas,boards}=setup();
+ const U=gas.ctx.Utilities,real=U.formatDate,calls=[];U.formatDate=(d,z,p)=>{if(p==='yyyy-MM-dd')calls.push(z+'|'+d.getTime());return real(d,z,p);};
+ gas.run('__FMT = {}'); // Apps Script는 실행마다 전역을 새로 만듭니다
+ gas.call('rebuildAll');U.formatDate=real;
+ assert.ok(calls.length>0);
+ assert.equal(new Set(calls).size,calls.length,'no date twice (교육일자 D5 is also in the day list; a leaver\'s date is checked for every day column)');
+ assert.deepEqual(view(gas,boards[5]).cells[2],['','','','출석','출석',''],'the same board as without remembering');
+});
