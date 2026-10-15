@@ -16,6 +16,13 @@ export function localTime(v){
   const m=/(?:^|T|\s)(\d{2}:\d{2}(?::\d{2})?)/.exec(s);return m?normalizeTime(m[1].length===5?m[1]+':00':m[1]):undefined;
 }
 const memo=v=>v===null||v===undefined?'':String(v);
+// 기록 번호(eventId)가 있는 칸만 체크히어에서 지울 수 있습니다. null이면 다른 기록에서 계산된 값입니다.
+const hasId=e=>typeof e?.eventId==='string'&&e.eventId.trim()!=='';
+// 시간 삭제용 표시: 1교시 종류(ATTEND 관리자 입력·PASS 입실에서 계산), 1교시·퇴실·입실(ENTER) 기록 번호 유무.
+// 입실 번호가 있으면 체크인한 학생입니다(1교시에 관리자 사유를 저장해 ATTEND가 되었어도 그 1교시는 지우지 않음, rules.mjs timeDeleteRefusal).
+// 값 비교와 버전(identity.mjs version)에는 넣지 않습니다(넣으면 모든 기록이 바뀐 것으로 보입니다).
+export const DELETE_MARKS=['entryKind','entryEventId','exitEventId','enterEventId'];
+export const marksOf=d=>({entryKind:d.entryKind,entryEventId:d.entryEventId,exitEventId:d.exitEventId,enterEventId:d.enterEventId});
 // One student entry from the page data → the fields an editor read produces, or a reason it cannot be trusted.
 export function readStudent(s){
   const events=Array.isArray(s?.eventList)?s.eventList:[],problems=[];
@@ -28,7 +35,14 @@ export function readStudent(s){
   const times={rawEntry:localTime(enter[0]?.time),entry:localTime(period[0]?.time),exit:localTime(complete[0]?.time)};
   const outings=pairs.map(p=>({start:localTime(p?.startTime),end:localTime(p?.endTimeOrNull),cutoff:localTime(p?.judgedEndTime),recognized:p?.isRecognized===true?true:p?.isRecognized===false?false:null}));
   if(Object.values(times).includes(undefined)||outings.some(o=>[o.start,o.end,o.cutoff].includes(undefined)))problems.push('시간 형식');
-  return {name:String(s?.name??'').trim(),phone:String(s?.phone??'').replace(/\D/g,''),...times,entryMemo:memo(period[0]?.memoByAdmin),exitMemo:memo(complete[0]?.memoByAdmin),outings,problems};
+  return {name:String(s?.name??'').trim(),phone:String(s?.phone??'').replace(/\D/g,''),...times,entryMemo:memo(period[0]?.memoByAdmin),exitMemo:memo(complete[0]?.memoByAdmin),outings,problems,
+    entryKind:period[0]?period[0].type:null,entryEventId:hasId(period[0]),exitEventId:hasId(complete[0]),enterEventId:hasId(enter[0])};
+}
+// 그날 화면 데이터에서 이 학생(이름+전화 키)이 정확히 한 명이고 의심스러운 점이 없을 때만 돌려줍니다. 아니면 null(삭제 잠김).
+export function dayStudent(json,key){
+  const list=json?.data?.eventResultList;if(!Array.isArray(list)||!key)return null;
+  const found=list.map(readStudent).filter(d=>d.phone.length>=9&&studentKey(d.name,d.phone)===key);
+  return found.length===1&&!found[0].problems.length?found[0]:null;
 }
 // Rows come from the visible table. A row is read from page data only when the
 // same student (name + phone key) is there once and every visible value agrees.
@@ -43,7 +57,7 @@ export function planFromPageData(rows,json,{now=()=>new Date().toISOString()}={}
     const agrees=d&&!d.problems.length&&d.name===row.name&&d.rawEntry===row.rawEntry&&d.entry===row.entry&&d.exit===row.exit&&d.outings.length===row.outingCount;
     if(!agrees){fallback.push(row.id);continue;}
     const r={...row,entry:d.entry,exit:d.exit,entryMemo:d.entryMemo,exitMemo:d.exitMemo,outings:d.outings,readState:'complete',collectedAt:now()};
-    delete r.readError;r.version=version(r);byId.set(row.id,r);
+    delete r.readError;r.version=version(r);Object.assign(r,marksOf(d));byId.set(row.id,r);
   }
   if(list.length!==rows.length)return {byId:new Map(),fallback:rows.map(r=>r.id),reason:'화면 데이터와 표의 학생 수가 다릅니다.'};
   return {byId,fallback,reason:fallback.length?`표와 맞지 않는 학생 ${fallback.length}명은 수정창으로 읽습니다.`:''};

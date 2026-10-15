@@ -6,20 +6,23 @@ import {getAuth,GoogleAuthProvider,signInWithPopup,signOut,onAuthStateChanged,se
 import {getFirestore,doc,getDoc,getDocFromServer,collection,query,where,onSnapshot,setDoc,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {latestSnapshots} from './attendance-beta-core.mjs';
 import {judge,normalizeTime} from './checkhere/rules.mjs';
-import {APPROVER,sameRequestTarget} from './checkhere/approval-core.mjs';
+import {APPROVER,resultText,sameRequestTarget} from './checkhere/approval-core.mjs';
 import {canEditCheckHere} from './checkhere/direct-edit.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from './checkhere-current-core.mjs';
 import {loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
 import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 import {within} from './attendance-io.mjs';
 import {ACTIVE,CLASS_IDS,LIVE_STATUS,buildLiveRequest,editorReason,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
-import {createBridgeClient,createLiveRelay} from './checkhere-live-relay.mjs';
+import {TIME_DELETE_RULES,createBridgeClient,createLiveRelay,relaySignal} from './checkhere-live-relay.mjs';
 
 const firebaseConfig={apiKey:'AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE',authDomain:'knewdeal-portal.firebaseapp.com',projectId:'knewdeal-portal',storageBucket:'knewdeal-portal.firebasestorage.app',messagingSenderId:'1054904032053',appId:'1:1054904032053:web:de18246d426776b54bca7c'};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
 const $=s=>document.querySelector(s),app=$('#app'),who=$('#who');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let toastTimer;function toast(text,ms=4000){const t=$('#toast');t.textContent=text;t.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.style.display='none';},ms);}
+// 시험은 수집 PC의 실제 연결 프로그램(8765)과 겹치지 않게 다른 포트를 넣습니다(127.0.0.1만 허용).
+const testBridge=String(window.HINT_TEST_BRIDGE||''),BRIDGE=/^http:\/\/127\.0\.0\.1:\d{4,5}$/.test(testBridge)?testBridge:'http://127.0.0.1:8765';
+const SIGNAL_MS=60000; // 중계 신호는 작동 중 1분에 한 번
 const BOOTSTRAP=[APPROVER,'kpc.jtkim@gmail.com'];
 const adminCache=new Map();
 async function isAdmin(email){
@@ -30,7 +33,8 @@ async function isAdmin(email){
 const hhmm=t=>t?String(t).slice(0,8):'';
 const ago=ms=>{const s=Math.round((Date.now()-ms)/1000);return s<60?'방금':s<3600?`${Math.floor(s/60)}분 전`:`${Math.floor(s/3600)}시간 전`;};
 const chipClass=s=>s==='verified'?'ok':['pending','approved','applying'].includes(s)?'wait':s==='rejected'||s==='withdrawn'?'warn':'bad';
-const changeText=c=>Object.entries(c||{}).map(([k,v])=>`${{entry:'입실',exit:'퇴실',entryMemo:'입실 사유',exitMemo:'퇴실 사유'}[k]||k}: ${v===''?'(비움)':v}`).join(' · ');
+// 시간 칸의 ''는 시간 삭제 요청(deleteTimes, /beta2 출결대조에서 만듦), 사유 칸의 ''는 사유 비우기입니다.
+const changeText=c=>Object.entries(c||{}).map(([k,v])=>`${{entry:'입실',exit:'퇴실',entryMemo:'입실 사유',exitMemo:'퇴실 사유'}[k]||k}: ${v===''?(k==='entry'||k==='exit'?'(삭제)':'(비움)'):v}`).join(' · ');
 
 let disposeView=null;
 onAuthStateChanged(auth,async user=>{
@@ -101,7 +105,7 @@ async function mountLive(user){
     previous=new Map(state.records.map(r=>[r.id,r.version]));
     document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(state.records.find(r=>r.id===b.dataset.edit)));
     const live=[...state.requests].filter(isLiveRequest).sort((a,b)=>stamp(b.createdAt)-stamp(a.createdAt));
-    $('#reqs').innerHTML=live.length?live.map(r=>`<div class="req"><span class="chip ${chipClass(r.status)}">${esc(LIVE_STATUS[r.status]||r.status)}</span><b>${esc(r.name)}</b><span>${esc(changeText(r.changes))}</span><small>근거: ${esc(editorReason(r.reason))} · ${esc(r.createdBy)} · ${r.createdAt?new Date(stamp(r.createdAt)).toLocaleTimeString('ko-KR',{hour12:false}):''}</small>${r.reviewNote?`<small class="error">${esc(r.reviewNote)}</small>`:''}${r.result?.message?`<small>${esc(r.result.message)}</small>`:''}${r.status==='pending'&&r.createdBy===user.email?`<button data-withdraw="${esc(r.id)}" style="padding:2px 8px">요청 취소</button>`:''}</div>`).join(''):'<span class="muted">이 반·날짜에 베타로 보낸 수정이 없습니다.</span>';
+    $('#reqs').innerHTML=live.length?live.map(r=>`<div class="req"><span class="chip ${chipClass(r.status)}">${esc(LIVE_STATUS[r.status]||r.status)}</span><b>${esc(r.name)}</b><span>${esc(changeText(r.changes))}</span><small>근거: ${esc(editorReason(r.reason))} · ${esc(r.createdBy)} · ${r.createdAt?new Date(stamp(r.createdAt)).toLocaleTimeString('ko-KR',{hour12:false}):''}</small>${r.reviewNote?`<small class="error">${esc(r.reviewNote)}</small>`:''}${r.result?.message?`<small>${esc(resultText(r.result.message,r.result.results))}</small>`:''}${r.status==='pending'&&r.createdBy===user.email?`<button data-withdraw="${esc(r.id)}" style="padding:2px 8px">요청 취소</button>`:''}</div>`).join(''):'<span class="muted">이 반·날짜에 베타로 보낸 수정이 없습니다.</span>';
     document.querySelectorAll('[data-withdraw]').forEach(b=>b.onclick=async()=>{
       if(!confirm('이 수정 요청을 취소할까요? 체크히어에는 반영되지 않습니다.'))return;b.disabled=true;
       try{await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',b.dataset.withdraw),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending')throw Error('이미 처리가 시작된 요청입니다.');tx.update(ref,{status:'withdrawn',withdrawnBy:user.email,withdrawnAt:serverTimestamp(),updatedAt:serverTimestamp()});});toast('요청을 취소했습니다.');}
@@ -115,7 +119,7 @@ async function mountLive(user){
       <label for="fEntryMemo">입실 관리자 사유</label><textarea id="fEntryMemo" maxlength="500">${esc(record.entryMemo||'')}</textarea>
       <label for="fExitMemo">퇴실 관리자 사유</label><textarea id="fExitMemo" maxlength="500">${esc(record.exitMemo||'')}</textarea>
       <label for="fReason">수정 근거 (필수)</label><textarea id="fReason" maxlength="900" placeholder="예: 진료확인서 제출, 담임 확인"></textarea>
-      <p class="muted"><small>사유만 입력했는데 그쪽 시간이 비어 있으면 기본 시간(입실 09:00 · 퇴실 18:00)이 함께 입력됩니다. 시간을 비우는 수정은 지원하지 않습니다.</small></p>
+      <p class="muted"><small>사유만 입력했는데 그쪽 시간이 비어 있으면 기본 시간(입실 09:00 · 퇴실 18:00)이 함께 입력됩니다. 시간 칸을 비우는 수정은 여기서 하지 않습니다. 체크히어 시간 삭제는 2기 베타 출결대조(/beta2)에서 결석으로 저장하거나 체크히어 시간 옆 ×로 합니다(기록 번호가 있는 퇴실·관리자가 넣은 1교시만, 실제 입실 기록은 남음).</small></p>
       <p id="editError" class="error"></p>
       <div class="row" style="justify-content:flex-end"><button type="button" id="cancelEdit">취소</button><button type="submit" class="primary" id="submitEdit">체크히어에 반영 요청</button></div></form>`;
     dlg.showModal();$('#cancelEdit').onclick=()=>dlg.close();
@@ -159,9 +163,14 @@ function relayLock(){
   }));
 }
 function mountRelay(user,view){
-  let relay=null,release=null;const logs=[],sleep=workerSleep();
-  const show=s=>{$('#relayStatus').innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중</span>':'<span class="chip warn">꺼져 있음</span>'} 대기 ${s.queue}건 · 처리 ${s.processed}건${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
-  const addLog=e=>{logs.unshift(e);logs.length=Math.min(logs.length,40);$('#relayLog').innerHTML=logs.map(x=>`<li class="${x.level}">${new Date(x.at).toLocaleTimeString('ko-KR',{hour12:false})} ${esc(x.text)}</li>`).join('');};
+  let relay=null,release=null,beat=null,signalAt=0;const logs=[],sleep=workerSleep();
+  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중</span>':'<span class="chip warn">꺼져 있음</span>'} 대기 ${s.queue}건 · 처리 ${s.processed}건${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
+  const addLog=e=>{logs.unshift(e);logs.length=Math.min(logs.length,40);const el=$('#relayLog');if(el)el.innerHTML=logs.map(x=>`<li class="${x.level}">${new Date(x.at).toLocaleTimeString('ko-KR',{hour12:false})} ${esc(x.text)}</li>`).join('');};
+  // 중계 신호(settings/checkhereRelay): /beta2가 중계 작동 여부와 연결 프로그램 능력을 봅니다. 담임도 읽으므로 반·이름·오류 글은 넣지 않습니다(relaySignal).
+  // 시작·멈춤은 바로 쓰고, 작동 중에는 상태가 자주 바뀌어도 1분에 한 번만 씁니다(바뀐 내용은 다음 신호에 담김). 쓰기에 실패해도 경고만 남기고 중계는 계속합니다.
+  const writeSignal=s=>{signalAt=Date.now();const data={...relaySignal(s,{},user.email),at:serverTimestamp()};return Promise.resolve().then(()=>setDoc(doc(db,'settings','checkhereRelay'),data)).catch(e=>addLog({at:new Date().toISOString(),level:'warn',text:'중계 신호를 기록하지 못했습니다(중계는 계속합니다): '+e.message}));};
+  const signalDue=t=>beat===t&&Date.now()>=signalAt+SIGNAL_MS;
+  async function heartbeat(t,r){while(beat===t){await sleep(Math.max(1000,signalAt+SIGNAL_MS-Date.now()));if(!signalDue(t))continue;await r.ping?.();if(signalDue(t))await writeSignal(r.status());}}
   const saveRecords=createCurrentSaver({
     async read(classId,date){const snap=await within(getDocFromServer(doc(db,'classes',classId,'checkhereCurrent',date)),20000);if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('서버 저장 완료를 아직 확인하지 못했습니다.');return snap.exists()?snap.data():null;},
     readLegacy:(classId,date)=>within(loadLegacyCheckHereDay(db,classId,date),30000),
@@ -177,7 +186,9 @@ function mountRelay(user,view){
   const store={
     // applying도 받습니다: 중계가 같은 학생·항목의 처리 중 요청을 보고 새 실시간 요청을 반려합니다.
     watchQueue:(cb,onError)=>onSnapshot(query(collection(db,'checkhereRequests'),where('status','in',['pending','approved','applying'])),snap=>cb(snap.docs.map(d=>({id:d.id,...d.data()}))),onError),
-    approve:(id,approval,r)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 바뀌었습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});}),
+    // 시간 삭제 승인(approval.after의 '')이 권한 거절이면 시간 삭제용 규칙이 아직 게시되지 않은 것입니다(중계가 그 문구로 반려).
+    approve:(id,approval,r)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 바뀌었습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});})
+      .catch(e=>{throw e?.code==='permission-denied'&&r?.deleteTimes?.length?Object.assign(Error(TIME_DELETE_RULES),{code:'permission-denied'}):e;}),
     reject:(id,note)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending')return;tx.update(ref,{status:'rejected',reviewNote:String(note).slice(0,1000),reviewedBy:user.email,updatedAt:serverTimestamp()});}),
     isAdmin,identities:(classId,name)=>loadCheckHereIdentities(db,classId,[{name}]),saveRecords,
   };
@@ -186,15 +197,17 @@ function mountRelay(user,view){
     $('#relayStart').disabled=true;
     try{
       release=await relayLock();
-      relay=createLiveRelay({bridge:createBridgeClient({key}),store,user,log:addLog,sleep});
-      relay.onStatus(show);await relay.start();
-      $('#relayStop').disabled=false;$('#relayNow').disabled=false;$('#relayKey').disabled=true;show(relay.status());
+      const r=relay=createLiveRelay({bridge:createBridgeClient({base:BRIDGE,key}),store,user,log:addLog,sleep}),t={};
+      r.onStatus(s=>{show(s);if(signalDue(t))void writeSignal(s);});await r.start();
+      beat=t;void writeSignal(r.status());void heartbeat(t,r);
+      $('#relayStop').disabled=false;$('#relayNow').disabled=false;$('#relayKey').disabled=true;show(r.status());
     }catch(e){relay=null;release?.();release=null;$('#relayStart').disabled=false;toast(e.message,6000);addLog({at:new Date().toISOString(),level:'error',text:e.message});}
   };
-  $('#relayStop').onclick=()=>{relay?.stop();relay=null;release?.();release=null;$('#relayStart').disabled=false;$('#relayStop').disabled=true;$('#relayNow').disabled=true;$('#relayKey').disabled=false;};
+  $('#relayStop').onclick=()=>{const r=relay;beat=null;r?.stop();if(r)void writeSignal(r.status());relay=null;release?.();release=null;$('#relayStart').disabled=false;$('#relayStop').disabled=true;$('#relayNow').disabled=true;$('#relayKey').disabled=false;};
   $('#relayNow').onclick=()=>{const v=view();relay?.syncNow(v.classId,v.date);toast(`${v.classId}반 ${v.date} 갱신을 예약했습니다.`);};
   window.addEventListener('beforeunload',e=>{if(relay){e.preventDefault();e.returnValue='';}});
-  return()=>{relay?.stop();release?.();};
+  // 로그아웃 때는 신호를 쓸 수 없으므로 멈춤 신호 없이 끝냅니다(신호가 3분 넘게 없으면 /beta2가 꺼짐으로 봄).
+  return()=>{beat=null;relay?.stop();release?.();};
 }
 function sessionStorageGet(k){try{return sessionStorage.getItem(k);}catch{return null;}}
 function sessionStorageSet(k,v){try{sessionStorage.setItem(k,v);}catch{}}

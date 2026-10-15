@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText,isConflictFlag,enrolledOn} from '../../beta2-core.mjs';
+import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText,isConflictFlag,enrolledOn} from '../../beta2-core.mjs';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
@@ -63,6 +63,47 @@ test('CheckHere times are compared with the ledger type',()=>{
  assert.equal(compareCheckHere('출석',null,null).state,'none');
  assert.deepEqual(timesFromRecord({rawEntry:'09:12:30',entry:'09:00:00',exit:'17:40:00',outings:[{start:'13:00:00',end:'14:00:00'}]}),{inT:'09:12',outT:'17:40',oa:'13:00',ob:'14:00'});
  assert.deepEqual(neededTimes('인정조퇴',{inT:'09:00',outT:'15:00',oa:'1',ob:'2'}),{inT:'',outT:'15:00',oa:'',ob:''});
+});
+
+test('출결대조 보정 모드는 연결 프로그램이 고치는 교시 기록으로 보고 남은 실제 입실은 글로 알린다',()=>{
+ const rec=(rawEntry,entry,exit,extra={})=>({rawEntry,entry,exit,outings:[],outingCount:0,...extra}),fix={corrected:true};
+ // 출석 시간 맞추기(교시 09:00) 뒤: 실제 입실 09:25가 남아도 일치
+ const fixed=rec('09:25:00','09:00:00','18:01:00');
+ assert.deepEqual(compareCheckHere('출석',null,fixed,fix),{state:'ok',text:'일치 · 실제 입실 09:25'});
+ assert.deepEqual(compareCheckHere('출석',null,fixed),{state:'diff',text:'체크히어 지각 09:25'},'보정 없이는 지금처럼 실제 입실로 봄');
+ assert.deepEqual(compareCheckHere('지각',{inT:'09:25'},rec('09:30:00','09:25:00','18:01:00'),fix),{state:'ok',text:'일치 · 실제 입실 09:30'});
+ assert.deepEqual(compareCheckHere('지각',{inT:'09:20'},rec('09:25:00','09:00:00','18:01:00'),fix),{state:'diff',text:'체크히어 입실 09:00 · 지각 아님 · 실제 입실 09:25'});
+ assert.deepEqual(compareCheckHere('출석',null,rec('09:02:11','09:02:00','18:01:00'),fix),{state:'ok',text:'일치'},'분이 같으면 실제 입실을 덧붙이지 않음');
+ // 결석 삭제 뒤: 퇴실과 교시가 비고 실제 입실만 남음
+ const deleted=rec('09:02:00',null,null);
+ assert.deepEqual(compareCheckHere('결석',null,deleted,fix),{state:'ok',text:'교시 기록·퇴실 없음 · 실제 입실 09:02 남음'});
+ assert.deepEqual(compareCheckHere('결석',null,deleted),{state:'diff',text:'체크히어 입실 09:02 · 퇴실 - 기록 있음'});
+ assert.deepEqual(compareCheckHere('결석',null,rec('09:02:00',null,'18:00:00'),fix),{state:'diff',text:'체크히어 입실 - · 퇴실 18:00 기록 있음 · 실제 입실 09:02'},'퇴실이 남으면 불일치');
+ assert.deepEqual(compareCheckHere('결석',null,rec(null,null,null),fix),{state:'ok',text:'입퇴실 없음'});
+ assert.deepEqual(compareCheckHere('출석',null,deleted,fix),{state:'diff',text:'교시 기록·퇴실 없음 · 실제 입실 09:02 · 퇴실 미타각인지 확인'});
+ assert.deepEqual(compareCheckHere('출석',null,rec('09:02:00',null,'18:00:00'),fix),{state:'diff',text:'입실 기록 없음 · 실제 입실 09:02'});
+ // 오늘 교시·퇴실이 모두 비면 교시 기록이 늦게 찍힐 수 있어 실제 입실로 돌아감
+ const today={today:'2026-09-03',date:'2026-09-03',now:10*3600,corrected:true};
+ assert.deepEqual(compareCheckHere('출석',null,rec('09:25:00',null,null),today),{state:'diff',text:'체크히어 지각 09:25'});
+ assert.deepEqual(compareCheckHere('출석',null,rec('09:02:00',null,null),today),{state:'pending',text:'진행 중 · 지금까지 일치'});
+ assert.deepEqual(compareCheckHere('출석',null,rec(null,null,null),today),{state:'pending',text:'오늘 입실 기록 아직 없음'});
+ assert.deepEqual(compareCheckHere('결석',null,deleted,today),{state:'diff',text:'체크히어 입실 09:02 · 퇴실 - 기록 있음'},'오늘 퇴실 전 체크인한 학생이 결석으로 적히면 불일치(결석도 실제 입실로 돌아감)');
+ assert.deepEqual(compareCheckHere('결석',null,rec(null,null,null),today),{state:'ok',text:'입퇴실 없음'});
+ assert.deepEqual(compareCheckHere('결석',null,deleted,{...today,today:'2026-09-04'}),{state:'ok',text:'교시 기록·퇴실 없음 · 실제 입실 09:02 남음'},'지난 날은 삭제 뒤 모습이면 일치');
+ // 교시 기록만 있는 저장본(실제 입실 없음)과 예전 저장본(rawEntry 칸 없음)
+ assert.deepEqual(compareCheckHere('출석',null,rec(null,'09:00:00','18:00:00'),fix),{state:'ok',text:'일치'});
+ assert.deepEqual(compareCheckHere('출석',null,{entry:'09:25:00',exit:'18:00:00',outings:[]},fix),{state:'diff',text:'체크히어 지각 09:25'});
+ assert.equal(compareCheckHere('출석',null,rec('9:25','09:00:00','18:00:00'),fix).text,'체크히어 시간 형식 확인 필요');
+});
+
+test('체크히어 메모의 사유 힌트는 시간을 사유로 내놓지 않는다',()=>{
+ assert.equal(memoReason('지각_담임:가상담임(09:25)'),'');
+ assert.equal(memoReason('조퇴_담임:가상담임(17:00)'),'');
+ assert.equal(memoReason('외출_담임:가상담임(13:00~14:00)'),'');
+ assert.equal(memoReason('(인정출석)병원_담임:가상담임'),'병원');
+ assert.equal(memoReason('(인정지각)병원_담임:가상담임(09:40)'),'병원');
+ assert.equal(memoReason('지각_담임:가상담임(교통)'),'교통');
+ assert.equal(memoReason(''),'');assert.equal(memoReason(null),'');
 });
 
 test('sync status text is plain Korean',()=>{

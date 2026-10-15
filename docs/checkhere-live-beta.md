@@ -13,6 +13,16 @@
 4. 평일 08:50~18:40에는 10분마다(2026-10-13 5분 → 10분) 오늘 날짜 1~17반을 `mode:'incremental'`로 갱신한다. 화면에 보이는 행(실제 입실·교시·퇴실·외출)이 마지막 완전 수집과 같으면 수정창을 열지 않고, 바뀐 학생만 상세를 읽어 DB에 저장한다. 오늘 강의가 없는 반은 그날 자동 갱신에서 빠진다('이 반 지금 갱신'은 다시 시도).
 5. 작성자는 처리 전(`pending`) 요청을 취소할 수 있다(기존 withdraw 규칙).
 
+## 2기 베타 출결대조 자동 반영 (2026-10-14)
+
+- /beta2 출결대조에서 행 안의 유형·시간·사유를 저장하면(마스터시트 출결원장), **오늘 날짜만** 3초 되돌리기 뒤 이 실시간 요청이 자동으로 만들어진다. 근거는 `[실시간 베타] [2기 베타] 출결대조 자동 · …[기준:…]`. 지난 날은 행의 「체크히어 맞추기」 버튼을 눌러야 보낸다.
+- 보내는 것은 **메모만**(사용자 결정): 지각·조퇴는 시트의 시간과 `지각_담임:…(HH:MM)` 메모, 인정 유형은 `(인정출석)병원_담임:…` 같은 분류 메모. 학생이 찍지 않은 시간을 만들지 않는다(그런 학생은 '보류'). 대응표는 `beta2-checkhere-core.mjs`, 3초·되돌리기·상태 칩은 `beta2-checkhere-sync.mjs`.
+- 3초 안 「되돌리기」는 요청을 만들지 않고 출결원장도 저장 전 값으로 되돌린다(운영총괄에서 온 값이면 「운영총괄 값으로」).
+- 같은 학생에게 진행 중인 다른 요청이 있으면 보내지 않고 기다린다(내 대기 중 자동 요청은 먼저 취소). 중계도 같은 학생·항목의 처리 중 요청이 있으면 새 실시간 요청을 반려한다.
+- `retry_`·`proposal_` 요청은 중계가 건드리지 않는다. 출결대조 자동·시간 삭제 요청은 1기 '실패 건 다시 처리'에서 빠지고 /beta2 「체크히어 맞추기」로 다시 보낸다.
+- **중계 신호**: 중계 탭이 `settings/checkhereRelay`에 `{state, busy, queue, capabilities, build, lastErrorAt, by, at}`을 시작·멈춤 때와 작동 중 약 1분마다 쓴다(학생 이름·오류 글 없음, 쓰기 전에 연결 프로그램에 다시 닿아 보고 닿지 않으면 capabilities를 비움). /beta2 도구줄이 이것으로 '수집 PC 중계 작동 중 / 중계 꺼짐'을 보인다.
+- **시간 삭제**(기록 번호가 있는 칸만): 켜는 순서는 `docs/checkhere-time-delete-enable.md`. 실시간 화면의 변경 표시는 지운 칸을 `(삭제)`로 보인다.
+
 ## 연결 프로그램 변경 (build 20261012.1)
 
 - `collector.collect(..., {unchanged})`, 행 지문 `tableSignature`(참여시간 총계 제외), `sameTableRow`.
@@ -34,4 +44,6 @@
 
 ## 시험
 
-`checkhere/tests/incremental-sync.test.mjs`, `live-relay.test.mjs`(실제 연결 프로그램 서버 + 가짜 체크히어/Firestore), `live-ui.test.mjs`(브라우저 두 탭: 관리자 수정 → 중계 반영 → 양쪽 화면 갱신, 취소). 가상 학생만 사용했고 실제 체크히어·Firestore에는 쓰지 않았다.
+`checkhere/tests/incremental-sync.test.mjs`, `live-relay.test.mjs`(실제 연결 프로그램 서버 + 가짜 체크히어/Firestore), `live-ui.test.mjs`(브라우저 두 탭: 관리자 수정 → 중계 반영 → 양쪽 화면 갱신, 취소, 중계 신호). 가상 학생만 사용했고 실제 체크히어·Firestore에는 쓰지 않았다.
+`live-ui.test.mjs`는 날짜를 2026-10-12로 고정했고, 연결 프로그램을 18943 포트에서 열어 화면에 `window.HINT_TEST_BRIDGE`로 알려 준다(127.0.0.1만 허용, 8765로 가는 요청은 시험이 막고 0건인지 확인). 그래서 실제 연결 프로그램이 8765에서 돌고 있어도 돌릴 수 있다.
+2기 베타 자동 반영·시간 삭제 시험: `beta2-checkhere-core.test.mjs`, `beta2-checkhere-sync.test.mjs`, `beta2-ui.test.mjs`, `time-delete.test.mjs`, `time-delete-bridge.test.mjs`, `day-data.test.mjs`, `collector.test.mjs`(가짜 수정창의 `삭제`), `firestore-rules-draft.test.mjs`.

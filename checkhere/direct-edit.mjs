@@ -15,6 +15,7 @@ export function createDirectEditor({user,controller,store}){
     if(!await canEditCheckHere(user))throw Error('지정된 관리자만 체크히어를 수정할 수 있습니다.');
     if(!/^[a-f0-9-]{36}$/i.test(operationId||''))throw Error('변경 식별정보가 없습니다. 검수 화면을 다시 열어 주세요.');
     const clean=cleanRequest(input),c=controller();
+    if(clean.deleteTimes)throw Error('시간 삭제는 출결대조 실시간 반영으로만 처리합니다.');
     await c.refresh();
     if(!c.state().capabilities?.includes('approval-current-sync-v1'))throw Error('수집 PC에서 최신 체크히어 시작 프로그램을 실행해 주세요.');
     let request=await store.get(operationId);

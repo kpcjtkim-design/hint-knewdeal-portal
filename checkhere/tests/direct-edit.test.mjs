@@ -40,3 +40,11 @@ test('missing memo time uses configured default only on a capable collector',asy
  const next=setup();next.state.capabilities.push('memo-default-time-v1');next.state.records=[empty];await next.apply(input,empty,op);
  const approval=next.rows.get(op).approval;assert.equal(approval.after.entry,'09:00:00');assert(!Object.hasOwn(approval.after,'exit'));assert.equal(approval.after.entryMemo,'정정 사유');
 });
+// 시간 삭제는 출결대조 실시간 반영(요청 → 승인 → 다시 읽어 확인)으로만 합니다. 직접 수정은 연결 프로그램에 묻기 전에 거절합니다.
+test('direct edits refuse time deletion before refreshing, saving or applying',async()=>{
+ const s=setup();let refreshes=0;s.c.refresh=async()=>{refreshes++;};s.state.capabilities.push('time-delete-v1');
+ await assert.rejects(()=>s.apply({...input,changes:{exit:''},deleteTimes:['exit']},record,op),/시간 삭제는 출결대조 실시간 반영으로만/);
+ await assert.rejects(()=>s.apply({...input,changes:{exit:''}},record,op),/공란으로 지울 수 없습니다/,'a blank without deleteTimes is still refused');
+ assert.equal(refreshes,0);assert.equal(s.rows.size,0);assert.equal(s.calls.length,0);
+ await s.apply(input,record,op);assert.equal(s.rows.size,1,'ordinary edits still work');assert.equal(Object.hasOwn(s.rows.get(op),'deleteTimes'),false);
+});

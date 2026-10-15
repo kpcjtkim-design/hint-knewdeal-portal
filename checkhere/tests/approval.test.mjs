@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {APPROVER,cleanRequest,sameRequestTarget,matchRequest,prepareApproval,proposalFromApproval} from '../approval-core.mjs';
+import {APPROVER,cleanRequest,sameRequestTarget,matchRequest,prepareApproval,proposalFromApproval,requestMatchesRecord,memoDefaultTimes} from '../approval-core.mjs';
 import {createApprovalCloud} from '../cloud-approval.mjs';
 import {PROJECT} from '../firebase-public.mjs';
 const record=()=>({id:'record-id',version:'version',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',source:'live',readState:'complete',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'기존 퇴실 사유'});
@@ -31,4 +31,58 @@ test('request comparison ignores stored map order but preserves identity and exp
  assert(sameRequestTarget(a,{...a,changes:{entryMemo:'',exit:'18:00:00',entry:'09:00'}}));
  for(const patch of [{classId:'3'},{date:'2026-09-14'},{name:'다른학생'},{phoneLast4:'9999'},{reason:'다른 근거'},{changes:{entry:'09:00:00',exit:'18:00:00'}},{changes:{...a.changes,exit:'17:00:00'}}])assert.equal(sameRequestTarget(a,{...a,...patch}),false);
  assert.equal(sameRequestTarget(a,null),false);
+});
+
+// 시간 삭제(deleteTimes): 관리자 요청에서 지정한 쪽만 ''. 삭제가 아닌 요청은 모양이 그대로입니다.
+const removal=(patch={})=>({...request(),reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit'],...patch});
+test('requests without deletions keep exactly the old shape',()=>{
+ const shape={classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'',reason:'수기 확인',changes:{entryMemo:'정정 사유'}};
+ for(const patch of [{},{deleteTimes:[]},{deleteTimes:null},{deleteTimes:undefined}]){const r=cleanRequest({...request(),...patch});assert.deepEqual(r,shape);assert.equal(Object.hasOwn(r,'deleteTimes'),false);}
+});
+test('time deletion requests are accepted and normalized only for the named side',()=>{
+ assert.deepEqual(cleanRequest(removal()),{classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'',reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit']});
+ const both=cleanRequest(removal({changes:{exit:'',entry:'',exitMemo:''},deleteTimes:['exit','entry']}));
+ assert.deepEqual(both.deleteTimes,['entry','exit'],'fixed order');assert.deepEqual(both.changes,{entry:'',exit:'',exitMemo:''});
+ assert.deepEqual(cleanRequest(removal({changes:{entry:'09:10',exit:''}})).changes,{entry:'09:10:00',exit:''},'the other side may still change and no reversed-time check against a blank');
+});
+test('blank times without deleteTimes, mismatched sides and memos on a deleted side are refused',()=>{
+ for(const patch of [{changes:{exit:''},deleteTimes:undefined},{changes:{entry:''},deleteTimes:['exit']},{changes:{entry:'',exit:''},deleteTimes:['exit']}])assert.throws(()=>cleanRequest(removal(patch)),/공란으로 지울 수 없습니다/);
+ for(const patch of [{changes:{exit:'18:00'}},{changes:{exitMemo:''}},{changes:{entry:'09:00'}},{deleteTimes:['exit','exit']},{deleteTimes:['exitMemo']},{deleteTimes:'exit'},{deleteTimes:[1]},{deleteTimes:{exit:true}}])assert.throws(()=>cleanRequest(removal(patch)),/삭제할 시간 항목/,JSON.stringify(patch));
+ assert.throws(()=>cleanRequest(removal({changes:{exit:'',exitMemo:'조퇴_담임:가상(17:00)'}})),/사유는 비워/);
+ assert.doesNotThrow(()=>cleanRequest(removal({changes:{exit:'',entryMemo:'다른 쪽 사유'}})),'the other side memo is unaffected');
+});
+test('approval keeps the requested deletion as an explicit blank and drops untouched blanks',()=>{
+ const a=prepareApproval(removal(),record());
+ assert.equal(a.after.exit,'');assert(Object.hasOwn(a.after,'exit'));assert.equal(a.after.entry,'09:00:00');assert.equal(a.after.exitMemo,'기존 퇴실 사유','memo stays unless requested');
+ const noEntry=prepareApproval(removal(),{...record(),entry:null});assert.equal(Object.hasOwn(noEntry.after,'entry'),false,'an untouched blank is still omitted');assert.equal(noEntry.after.exit,'');
+ assert.throws(()=>prepareApproval(removal(),{...record(),exit:null}),/이미 체크히어 기록과 같습니다/);
+ assert.equal(prepareApproval(removal(),{...record(),exit:null},{allowAlreadyApplied:true}).after.exit,'');
+ assert.equal(prepareApproval(request(),{...record(),exit:null}).after.exit,undefined,'non-deletion approvals are unchanged');
+});
+test('the approved payload must carry the blank for every deleted side',()=>{
+ const r={...removal(),approval:prepareApproval(removal(),record()),approvedBy:APPROVER,status:'approved'};
+ const payload=proposalFromApproval(r);assert.equal(payload.exit,'');assert.equal(payload.entry,'09:00:00');assert.equal(payload.exitMemo,'기존 퇴실 사유');
+ const after=({exit,...rest})=>rest;
+ assert.throws(()=>proposalFromApproval({...r,approval:{...r.approval,after:after(r.approval.after)}}),/일치하지 않습니다/,'missing blank');
+ assert.throws(()=>proposalFromApproval({...r,approval:{...r.approval,after:{...r.approval.after,exit:'18:00:00'}}}),/일치하지 않습니다/);
+ assert.throws(()=>proposalFromApproval({...r,deleteTimes:undefined}),/공란/,'the stored request must still say which side is deleted');
+});
+test('a deleted side matches any blank record time and fails while the time remains',()=>{
+ for(const exit of [null,undefined,'','-'])assert.equal(requestMatchesRecord(removal(),{...record(),exit}),true,String(exit));
+ for(const exit of ['18:00:00','12:00','시간'])assert.equal(requestMatchesRecord(removal(),{...record(),exit}),false,String(exit));
+ const memo=removal({changes:{exit:'',exitMemo:''}});
+ assert.equal(requestMatchesRecord(memo,{...record(),exit:null,exitMemo:''}),true);assert.equal(requestMatchesRecord(memo,{...record(),exit:null,exitMemo:'남은 사유'}),false);
+ assert.equal(requestMatchesRecord(removal({changes:{entry:'09:10',exit:''}}),{...record(),exit:null,entry:'09:00:00'}),false,'the other side is still strict');
+});
+test('requests that differ only in deleteTimes are different targets; deletion order does not matter',()=>{
+ const a=removal({changes:{entry:'',exit:''},deleteTimes:['entry','exit']});
+ assert(sameRequestTarget(a,{...a,deleteTimes:['exit','entry']}));
+ assert.equal(sameRequestTarget(removal(),{...removal(),deleteTimes:undefined}),false);
+ assert.equal(sameRequestTarget(removal({changes:{exit:'',entryMemo:''}}),{...request(),reason:'[가상] 결석 확인',changes:{exit:'18:00',entryMemo:''}}),false);
+ assert.equal(sameRequestTarget(request(),{...request(),deleteTimes:[]}),true,'an empty list is the same as none');
+});
+test('memo default times never fill a side that is explicitly being deleted',()=>{
+ assert.deepEqual(memoDefaultTimes({exit:'',exitMemo:''},{exit:'18:00:00',exitMemo:'사유'}),{});
+ assert.deepEqual(memoDefaultTimes({exit:'',exitMemo:''},{exit:null,exitMemo:'사유'}),{});
+ assert.deepEqual(memoDefaultTimes({exitMemo:''},{exit:null,exitMemo:'사유'}),{exit:'18:00:00'},'a plain memo edit still gets its default');
 });

@@ -80,19 +80,23 @@ export function diseaseReport(stats,checkhere={}){
 }
 
 // 체크히어 기록과 출결원장 유형 대조. record: 체크히어 저장본 한 명(없으면 null)
-export function compareCheckHere(type,rec,record,{today='',date='',now=null}={}){
+// corrected(보정 모드, 출결대조): 연결 프로그램이 고치는 교시 기록(entry)으로 지각·결석을 봅니다. 실제 입실(rawEntry)은 체크히어에서 지울 수 없어 남으므로 글로만 알립니다.
+// 오늘 교시·퇴실이 모두 비면 교시 기록이 늦게 찍힐 수 있어(퇴실을 지우면 1교시도 비므로 퇴실 전엔 빌 수 있음) 유형과 관계없이 실제 입실로 봅니다. 결석도 같음: 퇴실 전 체크인한 학생이 결석으로 잘못 적힌 것을 숨기지 않습니다.
+export function compareCheckHere(type,rec,record,{today='',date='',now=null,corrected=false}={}){
  if(!record)return {state:'none',text:'체크히어 저장본 없음'};
- let entry,exit;
- try{entry=seconds(Object.hasOwn(record,'rawEntry')&&record.rawEntry!==undefined?record.rawEntry:record.entry);exit=seconds(record.exit);}catch{return {state:'diff',text:'체크히어 시간 형식 확인 필요'};}
- const start=seconds(RULES.start),end=seconds(RULES.end);
+ let entry,exit,raw;
+ try{raw=seconds(Object.hasOwn(record,'rawEntry')&&record.rawEntry!==undefined?record.rawEntry:record.entry);exit=seconds(record.exit);entry=corrected?seconds(record.entry):raw;}catch{return {state:'diff',text:'체크히어 시간 형식 확인 필요'};}
+ const start=seconds(RULES.start),end=seconds(RULES.end),absent=type==='결석'||type==='해당없음';
+ if(corrected&&entry===null&&exit===null&&date&&date===today)entry=raw;
  const late=entry!==null&&entry>=start+(RULES.entryGrace+1)*60,early=exit!==null&&exit<end-RULES.exitGrace*60;
  const outing=(record.outings||[]).length>0||Number(record.outingCount)>0;
  const ongoing=date&&date===today&&exit===null&&(now===null||now<end);
  const hhmm=v=>v===null?'':`${String(Math.floor(v/3600)).padStart(2,'0')}:${String(Math.floor(v/60)%60).padStart(2,'0')}`;
+ const real=corrected&&raw!==null&&hhmm(raw)!==hhmm(entry)?` · 실제 입실 ${hhmm(raw)}`:'';
  const base=String(type||'출석').replace(/^인정/,'');
  if(type==='인정출석')return {state:'ok',text:'종일 인정'};
- if(type==='결석'||type==='해당없음')return entry!==null||exit!==null?{state:'diff',text:`체크히어 입실 ${hhmm(entry)||'-'} · 퇴실 ${hhmm(exit)||'-'} 기록 있음`}:{state:'ok',text:'입퇴실 없음'};
- if(entry===null&&exit===null)return ongoing?{state:'pending',text:'오늘 입실 기록 아직 없음'}:{state:'diff',text:'체크히어 입퇴실 없음 · 결석 확인'};
+ if(absent)return entry!==null||exit!==null?{state:'diff',text:`체크히어 입실 ${hhmm(entry)||'-'} · 퇴실 ${hhmm(exit)||'-'} 기록 있음${real}`}:{state:'ok',text:real?`교시 기록·퇴실 없음${real} 남음`:'입퇴실 없음'};
+ if(entry===null&&exit===null)return ongoing?{state:'pending',text:'오늘 입실 기록 아직 없음'}:{state:'diff',text:real?`교시 기록·퇴실 없음${real} · 퇴실 미타각인지 확인`:'체크히어 입퇴실 없음 · 결석 확인'};
  const notes=[];
  if(base==='지각'){if(!late)notes.push(`체크히어 입실 ${hhmm(entry)} · 지각 아님`);else if(rec?.inT&&hhmm(entry)!==rec.inT)notes.push(`입실 시간 다름 (체크히어 ${hhmm(entry)})`);}
  else if(late)notes.push(`체크히어 지각 ${hhmm(entry)}`);
@@ -102,7 +106,12 @@ export function compareCheckHere(type,rec,record,{today='',date='',now=null}={})
  else if(outing)notes.push('체크히어 외출 기록 있음');
  if(exit===null&&!ongoing&&base!=='조퇴')notes.push('퇴실 기록 없음');
  if(entry===null)notes.push('입실 기록 없음');
- return notes.length?{state:'diff',text:notes.join(' · ')}:{state:ongoing?'pending':'ok',text:ongoing?'진행 중 · 지금까지 일치':'일치'};
+ return notes.length?{state:'diff',text:notes.join(' · ')+real}:{state:ongoing?'pending':'ok',text:(ongoing?'진행 중 · 지금까지 일치':'일치')+real};
+}
+// 체크히어 메모에서 사유 힌트: '(인정출석)병원_담임:…' → 병원, '지각_담임:…(교통)' → 교통. 괄호 안이 시간('지각_담임:…(09:25)')이면 사유가 아닙니다.
+export function memoReason(memo){
+ const s=String(memo||''),a=s.match(/^\s*\((?:인정)?[^)]*\)\s*(.+?)_담임:/);if(a)return a[1].trim();
+ const b=s.match(/^(?:지각|조퇴|외출)_담임:[^(]*\((.+)\)$/),r=b?b[1].trim():'';return /^\d{1,2}:\d{2}/.test(r)?'':r;
 }
 
 // 체크히어 시간으로 입력 칸 채우기(HH:mm)

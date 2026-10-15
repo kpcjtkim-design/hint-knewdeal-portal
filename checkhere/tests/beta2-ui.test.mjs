@@ -19,18 +19,28 @@ const DOCS={rev:5,statuses:['접수','처리중','보완 필요','처리완료',
 
 const PORTAL={cls:1,region:'수도권',course:'과정1',teacher:'김지아',place:'본관',mainDay:'2026-09-03',days:['2026-09-03','2026-09-02'],week:[],summary:[{k:'총원',v:2},{k:'출석',v:1}],
  kids:[{name:'고다원',status:'재학',off:''},{name:'김동진',status:'재학',off:''}],recs:{'고다원|2026-09-03':{type:'결석'}},checks:[{label:'오전',items:[{row:5,text:'출석 확인',value:''}]}],closed:'미확인',evals:[],sats:[],vocs:[],officer:{leader:'고다원'}};
+// 체크히어 기록: 수정창까지 다 읽은 실시간 기록(동기화 모듈이 요청을 만들 수 있는 모양 — source·readState·version·전화 끝 4자리·담임·강의시간)
+const rec=o=>({classId:'1',date:'2026-09-03',outings:[],outingCount:0,collectedAt:'1',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',...o});
+const CH_DAYS={'classes/1/checkhereCurrent/2026-09-03':{records:[
+ rec({id:'a',version:'va',phoneLast4:'1111',teacher:'김지아',name:'고다원',rawEntry:'09:02:00',entry:'09:02:00',exit:'18:00:00'}),
+ rec({id:'b',version:'vb',phoneLast4:'2222',teacher:'김지아',name:'김동진',rawEntry:'09:25:00',entry:'09:25:00',exit:'18:00:00',entryMemo:'지각_담임:김지아(09:25)'})]}};
 const SDK_STUB=`
-window.sdkWrites=[];window.sdkLoads=(window.sdkLoads||0)+1;
+window.sdkWrites=[];window.sdkLoads=(window.sdkLoads||0)+1;window.docStore=window.docStore||{};
 const snap=(data)=>({exists:()=>data!==undefined,data:()=>data,metadata:{fromCache:false,hasPendingWrites:false}});
 export const getFirestore=()=>({}),doc=(db,...p)=>({path:p.join('/')}),collection=(db,...p)=>({path:p.join('/')}),query=(c)=>c,where=()=>({}),orderBy=()=>({}),limit=()=>({}),documentId=()=>'id',serverTimestamp=()=>'ts';
 export const getDoc=async ref=>snap(ref.path==='users/teacher@test.kr'?{role:'TEACHER',active:true,primaryClassId:'1'}:ref.path==='classes/1'?{course:'과정1',region:'수도권',coreLinks:{}}:undefined);
-export const getDocFromServer=async ref=>snap(ref.path==='classes/1/checkhereCurrent/2026-09-03'?{records:[
- {id:'a',classId:'1',date:'2026-09-03',name:'고다원',rawEntry:'09:02:00',entry:'09:02:00',exit:'18:00:00',outings:[],outingCount:0,collectedAt:'1'},
- {id:'b',classId:'1',date:'2026-09-03',name:'김동진',rawEntry:'09:25:00',entry:'09:25:00',exit:'18:00:00',outings:[],outingCount:0,collectedAt:'1',entryMemo:'지각_담임:김지아(09:25)'}]}:undefined);
+export const getDocFromServer=async ref=>snap((window.CH_DAYS||${JSON.stringify(CH_DAYS)})[ref.path]);
 export const getDocs=async()=>({docs:[],size:0}),getDocsFromServer=async()=>({docs:[],size:0,metadata:{}});
-export const onSnapshot=(ref,opts,cb)=>{const entry={path:ref.path,cb};(window.snapCbs=window.snapCbs||[]).push(entry);return()=>{window.snapCbs=window.snapCbs.filter(x=>x!==entry);};};
+// onSnapshot(ref,cb,err)와 onSnapshot(ref,opts,cb,err)를 모두 받습니다.
+export const onSnapshot=(ref,a,b,c)=>{const [cb,err]=typeof a==='function'?[a,b]:[b,c],entry={path:ref.path,cb,err};(window.snapCbs=window.snapCbs||[]).push(entry);return()=>{window.snapCbs=window.snapCbs.filter(x=>x!==entry);};};
+// 구독에 문서를 넣는 도우미: 배열이면 컬렉션 조회 결과(체크히어 요청), 객체면 문서 하나(settings·체크히어 그날 문서), null이면 문서 없음
+window.pushSnap=(path,docs)=>{
+ if(Array.isArray(docs))for(const d of docs)window.docStore[path+'/'+d.id]=d;
+ const s=Array.isArray(docs)?{docs:docs.map(({id,...d})=>({id,data:()=>d})),metadata:{fromCache:false,hasPendingWrites:false}}:snap(docs??undefined);
+ (window.snapCbs||[]).filter(x=>x.path===path).forEach(x=>x.cb(s));
+};
 export const setDoc=async(ref,data)=>{window.sdkWrites.push(['set',ref.path,data]);},updateDoc=async(ref,data)=>{window.sdkWrites.push(['update',ref.path,data]);},deleteDoc=async ref=>{window.sdkWrites.push(['delete',ref.path]);},addDoc=async(c,data)=>{window.sdkWrites.push(['add',c.path,data]);return {id:'n'};};
-export const runTransaction=async(db,fn)=>fn({get:async()=>snap(undefined),set:(ref,data)=>{window.sdkWrites.push(['tx.set',ref.path,data]);},update:(ref,data)=>{window.sdkWrites.push(['tx.update',ref.path,data]);},delete:()=>{}});
+export const runTransaction=async(db,fn)=>fn({get:async ref=>snap(window.docStore[ref.path]),set:(ref,data)=>{window.sdkWrites.push(['tx.set',ref.path,data]);},update:(ref,data)=>{window.sdkWrites.push(['tx.update',ref.path,data]);},delete:()=>{}});
 export const writeBatch=()=>({set:(ref,data)=>window.sdkWrites.push(['batch.set',ref.path,data]),update(){},delete(){},commit:async()=>{}});`;
 const AUTH_STUB=email=>`
 export const getAuth=()=>({}),signInWithPopup=async()=>{},reauthenticateWithPopup=async()=>{},signOut=async()=>{},setPersistence=async()=>{},browserLocalPersistence={};
@@ -38,10 +48,13 @@ export class GoogleAuthProvider{setCustomParameters(){}addScope(){}static creden
 export const onAuthStateChanged=(auth,cb)=>{setTimeout(()=>cb(${email?`{email:'${email}',displayName:'운영',uid:'u1',getIdToken:async()=>'tok-1'}`:'null'}),0);return()=>{};};`;
 const TYPES={'.mjs':'text/javascript','.js':'text/javascript','.css':'text/css','.html':'text/html;charset=utf-8','.svg':'image/svg+xml'};
 
-async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/beta2'}={}){
+// clock: 브라우저 시계(한국 날짜가 '오늘'인지 정함), days: 체크히어 그날 문서(getDocFromServer)
+async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/beta2',clock=null,days=null}={}){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[],posts=[],plain=[];
  page.on('pageerror',e=>errors.push(e.message));
  try{
+  if(clock)await page.clock.install({time:clock});
+  if(days)await page.addInitScript(d=>{window.CH_DAYS=d;},days);
   await page.route('**/*',async route=>{
    const url=new URL(route.request().url());
    if(url.href===SDK+'firebase-firestore.js'){plain.push(url.href);return route.fulfill({contentType:'text/javascript',body:SDK_STUB});}
@@ -52,7 +65,7 @@ async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/beta2'}=
    if(url.pathname==='/beta2'||url.pathname==='/')return route.fulfill({contentType:'text/html;charset=utf-8',body:readFileSync(join(base,'index.html'),'utf8')});
    if(url.pathname==='/api/teacher-beta'){
     const body=route.request().postDataJSON();posts.push(body);
-    const custom=api(body);if(custom)return route.fulfill({contentType:'application/json',body:JSON.stringify(custom)});
+    const custom=await api(body);if(custom)return route.fulfill({contentType:'application/json',body:JSON.stringify(custom)});
     const data=body.action==='portalData'?PORTAL:body.action==='b2Bundle'?BUNDLE:body.action==='b2Rev'?{rev:BUNDLE.rev,sync:BUNDLE.sync}:body.action==='b2Docs'?DOCS:body.action==='b2Save'?{ok:true,rev:6,sig:'new-sig',memo:'지각_담임:김지아(09:25)',evApplied:'해당없음',check:''}:body.action==='b2DocCreate'?{id:'D261013-002',mailed:true}:{};
     return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});
    }
@@ -106,54 +119,58 @@ test('on /beta2 shared 1기 data is view-only while CheckHere change requests st
  });
 });
 
-test('출결대조 shows the ledger next to CheckHere, flags mismatches and saves to the master sheet with the row signature',async()=>{
+test('출결대조 shows the ledger next to CheckHere, flags mismatches and saves an inline edit to the master sheet with the row signature',async()=>{
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
   await page.locator('.b2-class').first().click();
   await page.getByRole('heading',{name:'출결대조'}).waitFor();
   const dong=page.locator('tr[data-name="김동진"]');await dong.waitFor();
-  assert.match(await dong.innerText(),/체크히어 지각 09:25/,'implied attendance with a late CheckHere check-in is a mismatch');
-  const go=page.locator('tr[data-name="고다원"]');
-  assert.match(await go.innerText(),/결석/);
+  await dong.getByText(/체크히어 지각 09:25/).waitFor();// implied attendance with a late CheckHere check-in is a mismatch
+  const go=page.locator('tr[data-name="고다원"]'),goType=go.locator('select[data-inline="type"]');
+  assert.equal(await goType.inputValue(),'결석');
   assert.match(await go.innerText(),/체크히어 입실 09:02/,'absence with a CheckHere check-in is a mismatch');
   assert.match(await page.locator('tr[data-name="한수빈"]').innerText(),/재학 기간 아님/);
+  assert.equal(await page.locator('tr[data-name="한수빈"] select[data-inline="type"]').isDisabled(),true);
   await page.getByRole('button',{name:'체크히어 불일치'}).click();
   assert.deepEqual(await page.locator('tbody tr[data-name]').evaluateAll(rs=>rs.map(r=>r.dataset.name)),['고다원','김동진']);
   await page.getByRole('button',{name:'전체'}).click();
-  await dong.getByRole('button',{name:'체크히어 요청'}).click();
+  await dong.getByRole('button',{name:'직접 요청'}).click();
   await page.locator('.proposal-box').first().waitFor();
   assert.equal(await page.locator('.proposal-box').count(),3,'times, entry memo and exit memo request boxes');
-  await dong.getByRole('button',{name:'체크히어 요청'}).click();
+  await page.getByText(/자동 반영: 오늘 출결원장을 저장하면 3초 뒤/).waitFor();
+  await dong.getByRole('button',{name:'직접 요청'}).click();
   assert.equal(await page.locator('.proposal-box').count(),0);
-  await go.getByRole('button',{name:'수정'}).click();
-  await page.locator('[data-editor] [data-type="지각"]').click();
-  await page.getByRole('button',{name:'체크히어 시간 넣기'}).click();
-  assert.equal(await page.locator('[data-editor] input[data-f="inT"]').inputValue(),'09:02');
-  await page.locator('[data-editor] input[data-f="reason"]').fill('교통');
-  await page.getByRole('button',{name:'마스터시트에 저장'}).click();
-  await page.waitForFunction(()=>!document.querySelector('[data-editor]'));
+  // 유형을 바꾸면 아직 저장하지 않고, 필요한 시간을 체크히어 값으로 채운 뒤 「저장」을 기다립니다.
+  await goType.selectOption('지각');
+  assert.equal(await go.locator('input[data-inline="inT"]').inputValue(),'09:02');
+  assert.equal(posts.filter(p=>p.action==='b2Save').length,0);
+  await go.locator('input[data-inline="reason"]').fill('교통');
+  await go.getByRole('button',{name:'저장',exact:true}).click();
+  await go.getByText('베타 수정').waitFor();
   const save=posts.find(p=>p.action==='b2Save');
   assert.deepEqual(save.args,[{cls:'1',name:'고다원',date:'2026-09-03',type:'지각',inT:'09:02',outT:'',oa:'',ob:'',reason:'교통',ev:'',evr:'',before:'sig-고다원-2026-09-03'}]);
-  assert.match(await go.innerText(),/지각/);assert.match(await go.innerText(),/베타 수정/);
+  assert.equal(await goType.inputValue(),'지각');
+  assert.equal(await go.getByRole('button',{name:'저장',exact:true}).count(),0);
+  assert.equal(await page.evaluate(()=>window.sdkWrites.length),0,'a past day is never sent to CheckHere automatically');
   await page.locator('#b2Date').selectOption('2026-09-02');
   await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
-  assert.match(await dong.innerText(),/인정출석/);assert.match(await dong.innerText(),/운영총괄 값: 결석/);
+  assert.equal(await dong.locator('select[data-inline="type"]').inputValue(),'인정출석');assert.match(await dong.innerText(),/운영총괄 값: 결석/);
   assert.equal(await dong.getByRole('button',{name:'운영총괄 값으로'}).count(),1);
  });
 });
 
-test('a conflicting save keeps the edit open and reloads the latest row',async()=>{
+test('a conflicting inline save shows the latest row and sends nothing to CheckHere',async()=>{
  let saves=0;
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
   await page.locator('.b2-class').first().click();
   const go=page.locator('tr[data-name="고다원"]');await go.waitFor();
-  await go.getByRole('button',{name:'수정'}).click();
-  await page.locator('[data-editor] [data-type="출석"]').click();
-  await page.getByRole('button',{name:'마스터시트에 저장'}).click();
-  await page.getByText('최신 값을 불러왔습니다').waitFor();
-  assert.equal(await page.locator('[data-editor]').count(),1);
+  await go.locator('select[data-inline="type"]').selectOption('출석');
+  await go.getByRole('button',{name:'저장',exact:true}).click();
+  await go.getByText('그사이 바뀜 · 최신 값 표시').waitFor();
+  assert.equal(await go.locator('select[data-inline="type"]').inputValue(),'결석','the latest value, not the draft');
   assert.ok(posts.filter(p=>p.action==='b2Bundle').length>=2);
+  assert.equal(await page.evaluate(()=>window.sdkWrites.length),0);
  },{api:body=>body.action==='b2Save'&&++saves?{ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'}:null});
 });
 
@@ -233,7 +250,7 @@ test('the regular portal path keeps the 1기 menu and the real Firestore SDK',as
  },{path:'/'});
 });
 
-test('today\'s live CheckHere subscription keeps updating after the master sheet is reloaded',async()=>{
+test('today\'s live CheckHere subscription keeps updating after the master sheet is reloaded, and past days are watched too',async()=>{
  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  const live={...BUNDLE,today,days:[...BUNDLE.days.filter(d=>d<today),today],ledger:[]};
  await beta(async page=>{
@@ -249,5 +266,451 @@ test('today\'s live CheckHere subscription keeps updating after the master sheet
   await push('18:05:00');
   await page.locator('tr[data-name="고다원"]').getByText('18:05',{exact:true}).waitFor();
   assert.equal(await page.evaluate(p=>window.snapCbs.filter(x=>x.path===p).length,`classes/1/checkhereCurrent/${today}`),1,'one subscription, not re-subscribed by the sheet reload');
+  // 지난 날도 저장본을 먼저 읽고 구독해 검증된 결과가 바로 보입니다.
+  await page.locator('#b2Date').selectOption('2026-09-03');
+  await page.waitForFunction(()=>(window.snapCbs||[]).some(x=>x.path==='classes/1/checkhereCurrent/2026-09-03'));
+  assert.equal(await page.evaluate(p=>window.snapCbs.filter(x=>x.path===p).length,`classes/1/checkhereCurrent/${today}`),0,'the previous day is unsubscribed');
+  await page.locator('tr[data-name="김동진"]').getByText('09:25',{exact:true}).waitFor();
  },{api:body=>body.action==='b2Bundle'?{ok:true,data:live}:body.action==='b2SyncNow'?{ok:true,data:{stats:{added:0,updated:0,removed:0,flagged:0},errors:[]}}:null});
+});
+
+/* ---------- 행 안 편집 → 체크히어 자동 반영 (설계 docs/beta2-instant-edit-plan.md 5장·9장 beta2-ui (1)~(14), 사용자 결정 2026-10-14) ----------
+ * 가상 반: 1반 담임 '가상담임', 학생 이름은 모두 '가상…'. 브라우저 시계를 2026-09-03 18:30(한국)으로 두어 이 날이 '오늘'입니다(오늘만 자동). */
+const D='2026-09-03',CLOCK='2026-09-03T18:30:00+09:00',ME='hint.kpc@gmail.com',CUR=`classes/1/checkhereCurrent/${D}`;
+const V_NAMES=['가상지각','가상메모','가상변경','가상겹침','가상인정','가상출석','가상보정','가상중복','가상증빙','가상취소'];
+const VB={...BUNDLE,classes:BUNDLE.classes.map(c=>c.id==='1'?{...c,teacher:'가상담임'}:c),roster:V_NAMES.map(n=>['1',n,'재학','']),
+ ledger:[row(D,'1','가상지각','지각',{inT:'09:25'}),...['가상메모','가상변경','가상겹침','가상인정'].map(n=>row(D,'1',n,'출석')),row(D,'1','가상중복','중복',{reason:'가상 사유'}),row(D,'1','가상증빙','인정출석',{reason:'병원 진료'}),row(D,'1','가상취소','지각',{inT:'09:25'})]};
+const vrec=(id,name,o={})=>rec({id,version:'v-'+id,phoneLast4:'0000',teacher:'가상담임',name,rawEntry:'09:02:00',entry:'09:02:00',exit:'18:00:00',entryMemo:'',exitMemo:'',...o});
+const LATE_MEMO={rawEntry:'09:25:00',entry:'09:25:00',entryMemo:'지각_담임:가상담임(09:25)'};
+const VDAYS={[CUR]:{records:[vrec('r1','가상지각',LATE_MEMO),vrec('r2','가상메모',LATE_MEMO),vrec('r3','가상변경',{rawEntry:'09:25:31',entry:'09:25:31'}),vrec('r4','가상겹침',{rawEntry:'09:25:31',entry:'09:25:31'}),
+ vrec('r5','가상인정'),vrec('r6','가상출석'),vrec('r7','가상보정',{rawEntry:'09:25:00',entry:'09:00:00'}),vrec('r8','가상중복',{exitMemo:'조퇴_담임:가상담임(교통)'}),vrec('r9','가상증빙'),vrec('r10','가상취소',LATE_MEMO)]}};
+const REQUEST_KEYS=['changes','classId','createdAt','createdBy','date','name','phoneLast4','reason','status','updatedAt'];
+const AUTO_REASON=/^\[실시간 베타\] \[2기 베타\] 출결대조 자동 · .+ \[기준:[0-9a-f]{8}\]$/;
+const virtual=(extra=()=>null)=>({clock:CLOCK,days:VDAYS,api:async body=>(await extra(body))??(body.action==='b2Bundle'?{ok:true,data:VB}:null)});
+const student=(page,name)=>page.locator(`tbody[data-student="${name}"]`);
+const typeOf=(page,name)=>student(page,name).locator('select[data-inline="type"]');
+const chip=(page,name)=>student(page,name).locator('[data-status]');
+const savesOf=(posts,name)=>posts.filter(p=>p.action==='b2Save'&&p.args[0].name===name).map(p=>p.args[0]);
+const requestWrites=page=>page.evaluate(()=>window.sdkWrites.filter(w=>w[0]==='set'&&w[1].startsWith('checkhereRequests/')).map(([,path,data])=>({path,...data})));
+// 요청 목록 구독에 문서를 넣습니다(실제 Firestore의 첫 스냅샷). 시각은 브라우저 시계로 채웁니다.
+const pushRequests=(page,docs)=>page.evaluate(docs=>{const t={seconds:Math.floor(Date.now()/1000),nanoseconds:0};window.pushSnap('checkhereRequests',docs.map(d=>({createdAt:t,updatedAt:t,...d})));},docs);
+async function openLedger(page){
+ await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
+ await page.locator('.b2-class').first().click();
+ await page.getByRole('heading',{name:'출결대조'}).waitFor();
+ await page.locator('#b2Live').getByText(/체크히어 (저장본|실시간) · 10명/).waitFor();
+ await page.waitForFunction(()=>(window.snapCbs||[]).some(x=>x.path==='checkhereRequests'));
+ await pushRequests(page,[]);
+}
+
+test('today: an inline save that already matches sends nothing, a real change sends exactly one guarded request 3 seconds later, and its status follows the request',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  // 도구줄 중계 표시: 신호가 없으면 꺼짐, 작동 중 신호가 오면 '신호 n분 전'
+  await page.locator('#b2Relay').getByText('중계 꺼짐 · 요청은 반영 대기로 남습니다').waitFor();
+  await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1'],build:null,at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
+  await page.locator('#b2Relay').getByText('수집 PC 중계 작동 중 · 신호 방금').waitFor();
+  // 보정 모드: 교시 기록 09:00으로 맞춘 출석은 일치(실제 입실은 글로만). 지각 메모의 시간은 사유 힌트가 아님.
+  await student(page,'가상보정').getByText('일치 · 실제 입실 09:25').waitFor();
+  assert.equal(await student(page,'가상지각').getByRole('button',{name:/체크히어 메모/}).count(),0,'지각_담임:…(09:25) is a time, not a reason');
+  assert.equal(await student(page,'가상중복').getByRole('button',{name:'체크히어 메모: 교통'}).count(),1);
+  // (1) 메모가 이미 맞는 기록을 지각으로 저장 → 체크히어 이미 같음, 요청 없음
+  await typeOf(page,'가상메모').selectOption('지각');
+  assert.equal(await student(page,'가상메모').locator('input[data-inline="inT"]').inputValue(),'09:25','the needed time is filled from CheckHere');
+  await student(page,'가상메모').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상메모').getByText('체크히어 이미 같음').waitFor();
+  assert.deepEqual(savesOf(posts,'가상메모'),[{cls:'1',name:'가상메모',date:D,type:'지각',inT:'09:25',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',before:'sig-가상메모-2026-09-03'}]);
+  // (2) 유형 변경 → 저장 → 3초 뒤 정확히 1건, 메모만 바뀌고(초·기본 시간 변경 없음) 근거는 가드를 거친 실시간 요청 모양
+  await typeOf(page,'가상변경').selectOption('지각');
+  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상변경').getByText('보내기 전').waitFor();
+  assert.equal((await requestWrites(page)).length,0,'nothing is written during the 3 seconds');
+  await chip(page,'가상변경').getByText('반영 대기').waitFor({timeout:6000});
+  await page.waitForTimeout(1500);
+  const sent=await requestWrites(page);
+  assert.equal(sent.length,1,'exactly one request');
+  const [req]=sent;
+  assert.match(req.path,/^checkhereRequests\/b2_[0-9a-f-]{36}$/);
+  assert.deepEqual(Object.keys(req).filter(k=>k!=='path').sort(),REQUEST_KEYS,'only the keys the rules allow, no deleteTimes');
+  assert.match(req.reason,AUTO_REASON);assert.match(req.reason,/출결대조 자동 · 지각 · 일반 출결/);
+  assert.deepEqual([req.classId,req.date,req.name,req.phoneLast4,req.status,req.createdBy],['1',D,'가상변경','0000','pending',ME]);
+  assert.deepEqual(req.changes,{entryMemo:'지각_담임:가상담임(09:25)'},'09:25:31 keeps its seconds and no default time is added');
+  // (4) 요청 상태: 반영 대기 → 반영 중 → 완료
+  const {path,createdAt,updatedAt,...rest}=req,doc={...rest,id:path.split('/')[1]};
+  await pushRequests(page,[doc]);
+  await chip(page,'가상변경').getByText('반영 대기').waitFor();
+  assert.equal(await chip(page,'가상변경').getByRole('button',{name:'요청 취소'}).count(),1,'my pending request can be withdrawn');
+  await pushRequests(page,[{...doc,status:'applying'}]);
+  await chip(page,'가상변경').getByText('반영 중',{exact:true}).waitFor();
+  await pushRequests(page,[{...doc,status:'verified',result:{message:'가상 반영 완료'}}]);
+  await chip(page,'가상변경').getByText('완료',{exact:true}).waitFor();
+  assert.equal((await requestWrites(page)).length,1);
+  // 이미 저장된 행의 사유는 칸을 벗어나면 저장. 인정 아닌 유형의 사유만 바뀐 저장은 체크히어로 자동 전송하지 않음(S5)
+  await student(page,'가상지각').locator('input[data-inline="reason"]').fill('가상 교통');
+  await page.getByRole('heading',{name:'출결대조'}).click();
+  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상지각"] .b2-saving'));
+  await student(page,'가상지각').getByText('베타 수정').waitFor();
+  assert.deepEqual(savesOf(posts,'가상지각'),[{cls:'1',name:'가상지각',date:D,type:'지각',inT:'09:25',outT:'',oa:'',ob:'',reason:'가상 교통',ev:'',evr:'',before:'sig-가상지각-2026-09-03'}]);
+  await chip(page,'가상지각').getByText('체크히어 이미 같음').waitFor();
+  await page.waitForTimeout(3500);
+  assert.equal((await requestWrites(page)).length,1,'a reason-only change of a non-recognized type is not sent');
+ },virtual());
+});
+
+test('undo within 3 seconds writes no request and saves the previous sheet row back; overlapping slow saves never send the older decision',async()=>{
+ let slow=0;
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  // (3) 되돌리기 → 요청 없음, 시트도 저장 전 값으로(before는 방금 받은 sig)
+  await typeOf(page,'가상변경').selectOption('지각');
+  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상변경').getByText('보내기 전').waitFor();
+  await chip(page,'가상변경').getByRole('button',{name:'되돌리기'}).click();
+  await chip(page,'가상변경').getByText('체크히어 반영 취소 · 출결원장도 되돌림').waitFor();
+  assert.deepEqual(savesOf(posts,'가상변경').map(s=>[s.type,s.before]),[['지각','sig-가상변경-2026-09-03'],['출석','new-sig']]);
+  assert.deepEqual(savesOf(posts,'가상변경')[1],{cls:'1',name:'가상변경',date:D,type:'출석',inT:'',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',before:'new-sig'});
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='출석');
+  // (9) 저장 → 3초 안에 사유를 고쳐 Enter(느린 저장) → 앞 보류는 멈추고 예전 값으로 요청이 나가지 않음 → 새 값으로 1건
+  await typeOf(page,'가상겹침').selectOption('지각');
+  await student(page,'가상겹침').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상겹침').getByText('보내기 전').waitFor();
+  await student(page,'가상겹침').locator('input[data-inline="reason"]').fill('교통');
+  await student(page,'가상겹침').locator('input[data-inline="reason"]').press('Enter');
+  await chip(page,'가상겹침').getByText('저장 중 · 체크히어 반영 대기').waitFor();
+  await page.waitForTimeout(3500);
+  assert.equal((await requestWrites(page)).length,0,'the paused countdown does not send while b2Save is slow');
+  await chip(page,'가상겹침').getByText('보내기 전').waitFor({timeout:6000});
+  await chip(page,'가상겹침').getByText('반영 대기').waitFor({timeout:6000});
+  const sent=await requestWrites(page);
+  assert.equal(sent.length,1);assert.equal(sent[0].name,'가상겹침');assert.match(sent[0].reason,/출결대조 자동 · 지각 · 교통 \[기준:/);
+  assert.deepEqual(savesOf(posts,'가상겹침').map(s=>[s.type,s.reason,s.before]),[['지각','','sig-가상겹침-2026-09-03'],['지각','교통','new-sig']]);
+  await page.waitForTimeout(3500);
+  assert.equal((await requestWrites(page)).length,1,'the first decision was never sent');
+ },virtual(async body=>{if(body.action==='b2Save'&&body.args[0].name==='가상겹침'&&++slow===2)await new Promise(r=>setTimeout(r,4500));return null;}));
+});
+
+test('a past day is never sent automatically: 체크히어 맞추기 runs the same 3-second flow, and its undo also restores the sheet',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  // 브라우저 시계는 9/4라 9/3은 지난 날입니다(사용자 결정: 오늘만 자동).
+  await typeOf(page,'가상변경').selectOption('지각');
+  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상변경').getByRole('button',{name:'체크히어 맞추기'}).waitFor();
+  await page.waitForTimeout(3500);
+  assert.equal((await requestWrites(page)).length,0,'saving a past day sends nothing');
+  // 방금 저장한 행의 맞추기 → 같은 3초, 되돌리기는 출결원장도 되돌림
+  await chip(page,'가상변경').getByRole('button',{name:'체크히어 맞추기'}).click();
+  await chip(page,'가상변경').getByText('보내기 전').waitFor();
+  await chip(page,'가상변경').getByRole('button',{name:'되돌리기'}).click();
+  await chip(page,'가상변경').getByText('체크히어 반영 취소 · 출결원장도 되돌림').waitFor();
+  assert.deepEqual(savesOf(posts,'가상변경').map(s=>[s.type,s.before]),[['지각','sig-가상변경-2026-09-03'],['출석','new-sig']]);
+  // 이 화면에서 저장하지 않은 행도 지금 시트·기록으로 계산한 맞추기를 누르면 3초 뒤 보냄
+  await chip(page,'가상메모').getByRole('button',{name:'체크히어 맞추기'}).click();
+  await chip(page,'가상메모').getByText('보내기 전').waitFor();
+  await page.waitForFunction(()=>window.sdkWrites.some(w=>w[0]==='set'&&w[2]?.name==='가상메모'),null,{timeout:6000});
+  const sent=await requestWrites(page);
+  assert.equal(sent.length,1);assert.deepEqual([sent[0].name,sent[0].date,sent[0].changes],['가상메모',D,{entryMemo:''}]);assert.match(sent[0].reason,/출결대조 자동 · 출석 · 일반 출결 \[기준:/);
+  assert.equal(savesOf(posts,'가상메모').length,0,'no sheet save for a plain suggestion');
+ },{...virtual(),clock:'2026-09-04T10:00:00+09:00'});
+});
+
+test('holds, disabled time deletion, explicit save, keyboard type changes, 중복 rows and attendance rows without a record',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  // (6) ×는 꺼져 있고 이유를 보임. 지각 행의 입실 ×는 유형 안내
+  const entryX=student(page,'가상지각').locator('[data-ch-del="entry"]'),exitX=student(page,'가상지각').locator('[data-ch-del="exit"]');
+  assert.equal(await entryX.isDisabled(),true);assert.equal(await exitX.isDisabled(),true);
+  const entryTitle=await entryX.getAttribute('title'),exitTitle=await exitX.getAttribute('title');
+  assert.match(entryTitle,/Firestore 규칙 게시 필요/);assert.match(entryTitle,/수집 PC 중계가 꺼져 있습니다/);assert.match(entryTitle,/1교시 기록 번호를 확인하지 못했습니다/);
+  assert.match(entryTitle,/유형을 먼저 바꿔 주세요 \(결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다\)/);
+  assert.match(exitTitle,/퇴실 기록 번호를 확인하지 못했습니다/);assert.doesNotMatch(exitTitle,/유형을 먼저/);
+  assert.equal(await page.locator('[data-ch-del]:not([disabled])').count(),0,'time deletion is off until the rules flag and the relay capability are on');
+  // 결석 저장 → 시간 삭제가 꺼져 있어 보류
+  await typeOf(page,'가상보정').selectOption('결석');
+  await student(page,'가상보정').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상보정').getByText('보류 · 체크히어 시간 삭제는 Firestore 규칙 게시·수집 PC 업데이트 후 가능').waitFor();
+  assert.equal(savesOf(posts,'가상보정')[0].before,'','a row without a ledger record sends before:\'\'');
+  // (5) 인정 유형: 사유 없이 저장 → 입력 필요·포커스, 하나로 분류되지 않는 사유 → 보류
+  await typeOf(page,'가상인정').selectOption('인정출석');
+  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await student(page,'가상인정').getByText('입력 필요: 사유').waitFor();
+  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.inline),'reason');
+  assert.equal(savesOf(posts,'가상인정').length,0);
+  await page.keyboard.type('개인일정');await page.keyboard.press('Enter');
+  await chip(page,'가상인정').getByText(/보류 · 인정 사유를 하나로 확인하지 못했습니다/).waitFor();
+  assert.deepEqual(savesOf(posts,'가상인정').map(s=>[s.type,s.reason]),[['인정출석','개인일정']]);
+  // (12) 닫힌 select에서 키보드로 유형을 바꿔도 저장 전에는 b2Save 없음, Esc는 되돌림
+  await typeOf(page,'가상변경').focus();
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='지각');
+  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상변경/type','focus stays on the select after the row redraws');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='조퇴');
+  assert.equal(await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).count(),1);
+  assert.equal(await student(page,'가상변경').locator('input[data-inline="outT"]').count(),1,'only the time the type needs');
+  assert.equal(savesOf(posts,'가상변경').length,0);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='출석');
+  assert.equal(await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).count(),0);
+  // (13) 중복 행: '유형 선택 필요', 유효한 유형을 고르기 전에는 사유도 저장하지 않음
+  assert.equal(await typeOf(page,'가상중복').inputValue(),'');
+  assert.match(await typeOf(page,'가상중복').locator('option:checked').innerText(),/유형 선택 필요/);
+  await student(page,'가상중복').locator('input[data-inline="reason"]').fill('가상 사유 고침');
+  await student(page,'가상중복').locator('input[data-inline="reason"]').press('Enter');
+  await student(page,'가상중복').getByText('입력 필요: 유형').waitFor();
+  assert.equal(savesOf(posts,'가상중복').length,0);
+  await student(page,'가상중복').getByRole('button',{name:'취소',exact:true}).click();
+  // (11) 기록 없는 출석 행: 사유 칸 꺼짐, unchanged 응답이면 요청 없음
+  const noReason=student(page,'가상출석').locator('input[data-inline="reason"]');
+  assert.equal(await noReason.isDisabled(),true);assert.match(await noReason.getAttribute('placeholder'),/출석은 사유를 저장하지 않습니다\(유형을 바꾸면 저장\)/);
+  await typeOf(page,'가상출석').selectOption('지각');
+  assert.equal(await student(page,'가상출석').locator('input[data-inline="reason"]').isDisabled(),false);
+  await student(page,'가상출석').getByRole('button',{name:'저장',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상출석"] select[data-inline="type"]')?.value==='출석');
+  assert.equal(savesOf(posts,'가상출석')[0].before,'');
+  await chip(page,'가상출석').getByText('체크히어 이미 같음').waitFor();
+  // (7) 체크히어 기록이 새로 와도 입력 중인 사유 칸의 값과 포커스는 그대로, Esc 뒤에 새 기록이 보임
+  const reason=student(page,'가상지각').locator('input[data-inline="reason"]');
+  await reason.click();await page.keyboard.type('abc');
+  await page.evaluate(([path,days])=>window.pushSnap(path,{records:days[path].records.map(r=>r.name==='가상지각'?{...r,exit:'17:30:00',version:'v-r1b',collectedAt:'2'}:r)}),[CUR,VDAYS]);
+  await page.locator('#b2Live').getByText('체크히어 실시간 · 10명').waitFor();
+  assert.equal(await reason.inputValue(),'abc');
+  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상지각/reason');
+  await page.keyboard.press('Escape');
+  await student(page,'가상지각').getByText('17:30',{exact:true}).waitFor();
+  assert.equal(await reason.inputValue(),'');
+  assert.equal(savesOf(posts,'가상지각').length,0);
+  await page.waitForTimeout(3500);
+  assert.equal((await requestWrites(page)).length,0,'none of these rows sends a request');
+ },virtual(body=>body.action==='b2Save'&&body.args[0].name==='가상출석'?{ok:true,data:{ok:true,unchanged:true,rev:5}}:null));
+});
+
+// 시간 삭제 ×: 기록 번호 표시(entryKind·entryEventId·exitEventId)는 연결 프로그램이 그날 화면 데이터에서 붙입니다. 가상출석은 체크인한 학생(1교시 PASS),
+// 가상지각은 관리자가 1교시를 넣은 학생(ATTEND). 켜지는 조건은 가짜 settings 문서(규칙 게시 깃발·중계 신호의 time-delete-v1)로 켭니다.
+const DEL_DAYS={[CUR]:{records:VDAYS[CUR].records.map(r=>r.name==='가상출석'?{...r,entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true}:r.name==='가상지각'?{...r,entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false}:r)}};
+test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, and with the gate on × asks, counts down and writes one deletion request',async()=>{
+ await beta(async(page,posts)=>{
+  const asked=[];let answer=false;page.on('dialog',d=>{asked.push(d.message());void(answer?d.accept():d.dismiss());});
+  const askedAt=async n=>{for(let i=0;i<100&&asked.length<n;i++)await page.waitForTimeout(50);assert.equal(asked.length,n);};
+  await openLedger(page);
+  const x=(name,side)=>student(page,name).locator(`[data-ch-del="${side}"]`);
+  // 기본: 모두 꺼짐, title에 이유(규칙 게시 깃발·중계 꺼짐). PASS 1교시는 그 이유도 보임
+  assert.equal(await page.locator('[data-ch-del]:not([disabled])').count(),0);
+  assert.match(await x('가상출석','exit').getAttribute('title'),/퇴실 시간 삭제 불가 · Firestore 규칙 게시 필요 · 수집 PC 중계가 꺼져 있습니다$/);
+  assert.match(await x('가상출석','entry').getAttribute('title'),/입실에서 계산된 1교시는 지울 수 없습니다/);
+  // 입실(교시) ×는 실제 입실 옆이 아니라 지울 대상인 '교시 기록' 옆에 있습니다(1교시가 실제 입실과 같아도 따로 보임).
+  assert.equal(await student(page,'가상지각').locator('span',{hasText:'교시 기록 09:25'}).locator('[data-ch-del="entry"]').count(),1);
+  // 깃발과 중계 능력이 오면 기록 번호가 있고 유형이 쓰지 않는 칸만 켜짐
+  await page.evaluate(()=>{window.pushSnap('settings/checkhereFeatures',{timeDeleteRules:true});window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1','time-delete-v1'],build:'20261014.2',at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}});});
+  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상출석"] [data-ch-del="exit"]')?.disabled);
+  assert.equal(await x('가상출석','entry').isDisabled(),true,'PASS 1교시는 계속 잠김');
+  assert.equal(await x('가상출석','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 입실에서 계산된 1교시는 지울 수 없습니다. 퇴실을 지우면 함께 비워집니다.');
+  assert.equal(await x('가상지각','entry').isDisabled(),true);
+  assert.equal(await x('가상지각','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)');
+  assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음');
+  assert.equal(await x('가상메모','exit').isDisabled(),true,'기록 번호가 없는 칸');
+  // 확인창 아니오: 아무것도 시작하지 않음
+  await x('가상출석','exit').click();
+  await askedAt(1);
+  assert.match(asked[0],/가상출석 · 2026-09-03 체크히어 시간을 지웁니다: 퇴실 18:00/);assert.match(asked[0],/1교시\(09:02\)와 총 참여 시간도 비워집니다/);assert.match(asked[0],/체크히어 실제 입실 기록은 남습니다/);
+  await page.waitForTimeout(300);assert.equal(await chip(page,'가상출석').getByText('보내기 전').count(),0);
+  // 예: 3초 되돌리기 → 시간 삭제 요청 1건(출결원장 저장 없음)
+  answer=true;await x('가상출석','exit').click();
+  await chip(page,'가상출석').getByText('보내기 전').waitFor();
+  assert.equal((await requestWrites(page)).length,0,'nothing is written during the 3 seconds');
+  await chip(page,'가상출석').getByText('반영 대기').waitFor({timeout:6000});
+  const sent=await requestWrites(page);assert.equal(sent.length,1);
+  assert.deepEqual(Object.keys(sent[0]).filter(k=>k!=='path').sort(),[...REQUEST_KEYS,'deleteTimes'].sort());
+  assert.deepEqual([sent[0].changes,sent[0].deleteTimes],[{exit:''},['exit']]);
+  assert.match(sent[0].reason,/^\[실시간 베타\] \[2기 베타\] 출결대조 시간 삭제 · 퇴실 \[기준:[0-9a-f]{8}\]$/);
+  assert.equal(asked.length,2);assert.equal(savesOf(posts,'가상출석').length,0,'the master sheet is not saved');
+ },{...virtual(),days:DEL_DAYS});
+});
+
+test('changing the date during the 3 seconds asks first: no sends nothing, yes sends with the saved class and date (S10)',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  const dialogs=[];
+  await typeOf(page,'가상변경').selectOption('지각');
+  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상변경').getByText('보내기 전').waitFor();
+  page.once('dialog',d=>{dialogs.push(d.message());void d.dismiss();});
+  await page.locator('#b2Date').selectOption('2026-09-02');
+  await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
+  await page.waitForTimeout(3500);
+  assert.deepEqual(dialogs,['체크히어 반영 대기 1건을 지금 보낼까요?']);
+  assert.equal((await requestWrites(page)).length,0,'no: nothing is sent and nothing moves to the new date');
+  await page.locator('#b2Date').selectOption(D);
+  await page.locator('#b2Live').getByText(/체크히어 (저장본|실시간) · 10명/).waitFor();
+  await pushRequests(page,[]);
+  await typeOf(page,'가상인정').selectOption('인정출석');
+  await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
+  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상인정').getByText('보내기 전').waitFor();
+  page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
+  await page.locator('#b2Date').selectOption('2026-09-02');
+  await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
+  const sent=await requestWrites(page);
+  assert.equal(dialogs.length,2);assert.equal(sent.length,1);
+  assert.deepEqual([sent[0].name,sent[0].date,sent[0].classId],['가상인정',D,'1'],'sent with the saved class and date, not the new one');
+  assert.deepEqual(sent[0].changes,{entryMemo:'(인정출석)병원_담임:가상담임'});assert.match(sent[0].reason,AUTO_REASON);
+  // 3초 안에 화면을 떠나면(S15) 확인 후 지금 보내고 떠납니다.
+  await page.locator('#b2Date').selectOption(D);
+  await page.locator('#b2Live').getByText(/체크히어 (저장본|실시간) · 10명/).waitFor();
+  await pushRequests(page,[]);
+  await typeOf(page,'가상겹침').selectOption('지각');
+  await student(page,'가상겹침').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상겹침').getByText('보내기 전').waitFor();
+  page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
+  await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
+  await page.getByRole('heading',{name:'출결 현황'}).waitFor();
+  assert.equal(dialogs.at(-1),'체크히어 반영 대기 1건이 있습니다. 지금 보내고 화면을 떠날까요?');
+  await page.waitForFunction(()=>window.sdkWrites.some(w=>w[0]==='set'&&w[2]?.name==='가상겹침'));
+  const left=(await requestWrites(page)).filter(w=>w.name==='가상겹침');
+  assert.equal(left.length,1);assert.equal(left[0].date,D);assert.deepEqual(left[0].changes,{entryMemo:'지각_담임:가상담임(09:25)'});
+ },virtual());
+});
+
+test('an evidence-only save never sends automatically but offers 체크히어 맞추기; my pending auto request is withdrawn before a new decision is sent',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  // (14) 내 승인 대기 자동 요청이 있는 학생을 출석으로 되돌림 → 그 요청을 먼저 취소(트랜잭션)하고 새 요청
+  const old={id:'b2_old',classId:'1',date:D,name:'가상취소',phoneLast4:'0000',status:'pending',createdBy:ME,changes:{entryMemo:'지각_담임:가상담임(09:25)'},reason:'[실시간 베타] [2기 베타] 출결대조 자동 · 지각 · 일반 출결 [기준:0123abcd]'};
+  await pushRequests(page,[old]);
+  await chip(page,'가상취소').getByText('반영 대기').waitFor();
+  assert.equal(await chip(page,'가상취소').getByRole('button',{name:'요청 취소'}).count(),1);
+  await typeOf(page,'가상취소').selectOption('출석');
+  await student(page,'가상취소').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상취소').getByText('보내기 전').waitFor();
+  assert.match(await chip(page,'가상취소').innerText(),/대기 중인 자동 요청 취소/);
+  await page.waitForFunction(()=>window.sdkWrites.some(w=>w[0]==='set'&&w[1].startsWith('checkhereRequests/b2_')),null,{timeout:6000});
+  const order=await page.evaluate(()=>window.sdkWrites.map(w=>[w[0],w[1],w[2]?.status,w[2]?.changes]));
+  const withdrawn=order.findIndex(w=>w[0]==='tx.update'&&w[1]==='checkhereRequests/b2_old'&&w[2]==='withdrawn'),created=order.findIndex(w=>w[0]==='set');
+  assert.ok(withdrawn>=0&&withdrawn<created,'withdraw first, then the new request');
+  assert.deepEqual(order[created][3],{entryMemo:''});
+  // (10) 증빙만 저장 → 자동 요청 없음, 체크히어가 다르면 '체크히어 맞추기'(누르면 같은 3초 흐름)
+  await chip(page,'가상증빙').getByRole('button',{name:'체크히어 맞추기'}).waitFor();
+  await student(page,'가상증빙').getByRole('button',{name:'증빙',exact:true}).click();
+  await student(page,'가상증빙').locator('select[data-f="ev"]').selectOption('확인');
+  await student(page,'가상증빙').getByRole('button',{name:'증빙 저장'}).click();
+  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상증빙"] [data-editor]'));
+  assert.deepEqual(savesOf(posts,'가상증빙'),[{cls:'1',name:'가상증빙',date:D,type:'인정출석',inT:'',outT:'',oa:'',ob:'',reason:'병원 진료',ev:'확인',evr:'',before:'sig-가상증빙-2026-09-03'}]);
+  await page.waitForTimeout(3500);
+  assert.equal((await requestWrites(page)).filter(w=>w.name==='가상증빙').length,0,'evidence only: no automatic request');
+  await chip(page,'가상증빙').getByRole('button',{name:'체크히어 맞추기'}).click();
+  await chip(page,'가상증빙').getByText('보내기 전').waitFor();
+  await page.waitForFunction(()=>window.sdkWrites.some(w=>w[0]==='set'&&w[2]?.name==='가상증빙'),null,{timeout:6000});
+  const mine=(await requestWrites(page)).filter(w=>w.name==='가상증빙');
+  assert.equal(mine.length,1);assert.deepEqual(mine[0].changes,{entryMemo:'(인정출석)병원_담임:가상담임'});assert.match(mine[0].reason,AUTO_REASON);
+ },virtual());
+});
+
+test('the 3-second undo survives a press across a second boundary and keyboard focus, the 불일치 filter keeps edited rows, and leaving says waiting holds stop',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  await page.getByRole('button',{name:'체크히어 불일치'}).click();
+  await student(page,'가상변경').waitFor();
+  // 불일치 필터에서 고친 행은 저장 뒤 일치가 되어도 남아 3초·되돌리기를 보입니다.
+  await typeOf(page,'가상변경').selectOption('지각');
+  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  const undo=chip(page,'가상변경').getByRole('button',{name:'되돌리기'});
+  await undo.waitFor();
+  assert.equal(await student(page,'가상변경').count(),1);
+  assert.equal(await student(page,'가상지각').count(),0,'the filter still hides untouched matching rows');
+  // 누르고 있는 사이 1초가 넘어가도(칩의 초가 바뀌어도) 되돌리기가 사라지지 않음
+  const box=await undo.boundingBox();
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.waitForTimeout(1100);await page.mouse.up();
+  await chip(page,'가상변경').getByText('체크히어 반영 취소 · 출결원장도 되돌림').waitFor();
+  assert.deepEqual(savesOf(posts,'가상변경').map(s=>s.type),['지각','출석']);
+  // 키보드: 되돌리기에 둔 포커스가 초가 바뀌어도 그대로라 Enter가 먹힘
+  await typeOf(page,'가상겹침').selectOption('지각');
+  await student(page,'가상겹침').getByRole('button',{name:'저장',exact:true}).click();
+  const undo2=chip(page,'가상겹침').getByRole('button',{name:'되돌리기'});
+  await undo2.focus();
+  const sec=await chip(page,'가상겹침').locator('.b2-sec').innerText();
+  await page.waitForTimeout(1100);
+  assert.notEqual(await chip(page,'가상겹침').locator('.b2-sec').innerText(),sec,'the seconds still count down');
+  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.act+'/'+document.activeElement?.closest('tbody')?.dataset.student),'undo/가상겹침');
+  await page.keyboard.press('Enter');
+  await chip(page,'가상겹침').getByText('체크히어 반영 취소 · 출결원장도 되돌림').waitFor();
+  assert.deepEqual(savesOf(posts,'가상겹침').map(s=>s.type),['지각','출석']);
+  // 떠날 때: 진행 중 요청을 기다리는 보류는 보내지 못하고 멈춘다고 따로 알림
+  await page.getByRole('button',{name:'전체'}).click();
+  await pushRequests(page,[{id:'other_1',classId:'1',date:D,name:'가상인정',phoneLast4:'0000',status:'pending',createdBy:'other@example.com',changes:{exitMemo:'가상 메모'},reason:'[2기 베타] 가상 직접 요청'}]);
+  await typeOf(page,'가상인정').selectOption('인정출석');
+  await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
+  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await chip(page,'가상인정').getByText('보류 · 진행 중 요청이 끝나면 자동 반영').waitFor();
+  const dialogs=[];page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
+  await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
+  await page.getByRole('heading',{name:'출결 현황'}).waitFor();
+  assert.deepEqual(dialogs,['진행 중 요청·기록을 기다리는 체크히어 반영 1건은 보내지 못하고 멈춥니다(돌아와서 「체크히어 맞추기」로 보낼 수 있음).\n화면을 떠날까요?']);
+  await page.waitForTimeout(500);
+  assert.equal((await requestWrites(page)).length,0);
+ },virtual());
+});
+
+test('changing the class keeps the current class until the new ledger arrives; if it fails the rows and the class stay as they were',async()=>{
+ let fail=false;
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  fail=true;await page.clock.fastForward(21000);// 묶음 캐시(20초)가 지나 새 반을 서버에서 읽어야 함
+  await page.locator('#b2Class').selectOption('2');
+  await page.locator('#b2Msg').getByText(/2반을 불러오지 못해 1반을 그대로 보입니다/).waitFor();
+  assert.equal(await page.locator('#b2Class').inputValue(),'1');
+  assert.equal(await page.locator('#b2Table').evaluate(t=>t.inert),false);
+  assert.equal(await page.locator('tbody[data-student]').count(),10);
+  fail=false;
+  await typeOf(page,'가상인정').selectOption('결석');
+  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await student(page,'가상인정').getByText('베타 수정').waitFor();
+  assert.equal(savesOf(posts,'가상인정')[0].cls,'1','saved to the class on screen');
+ },virtual(body=>fail&&['b2Rev','b2Bundle'].includes(body.action)?{ok:false,error:'가상 연결 실패'}:null));
+});
+
+test('an evidence save that conflicts keeps the editor and the chosen values while the latest row loads',async()=>{
+ let n=0;
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  const s=student(page,'가상증빙');
+  await s.getByRole('button',{name:'증빙',exact:true}).click();
+  await s.locator('select[data-f="ev"]').selectOption('반려');
+  await s.locator('input[data-f="evr"]').fill('가상 반려 사유');
+  await s.getByRole('button',{name:'증빙 저장'}).click();
+  await s.getByText('그사이 바뀐 기록이 있어 최신 값을 불러왔습니다. 확인 후 다시 저장해 주세요.').waitFor();
+  assert.equal(await s.locator('[data-editor]').count(),1);
+  assert.equal(await s.locator('select[data-f="ev"]').inputValue(),'반려');
+  assert.equal(await s.locator('input[data-f="evr"]').inputValue(),'가상 반려 사유');
+  assert.ok(posts.filter(p=>p.action==='b2Bundle').length>=2,'the latest ledger was read');
+  await s.getByRole('button',{name:'증빙 저장'}).click();
+  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상증빙"] [data-editor]'));
+  assert.deepEqual(savesOf(posts,'가상증빙').map(x=>[x.ev,x.evr]),[['반려','가상 반려 사유'],['반려','가상 반려 사유']]);
+ },virtual(body=>body.action==='b2Save'&&body.args[0].name==='가상증빙'&&++n===1?{ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'}:null));
+});
+
+test('a blur save started by picking another date finishes first, then the date changes',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  await student(page,'가상지각').locator('input[data-inline="reason"]').fill('가상 교통');
+  await page.locator('#b2Date').focus();// 칸을 벗어나며 blur 저장 시작(느린 저장)
+  await student(page,'가상지각').locator('.b2-saving').waitFor();
+  await page.locator('#b2Date').selectOption('2026-09-02');
+  await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
+  assert.equal(await page.locator('#b2Date').inputValue(),'2026-09-02');
+  assert.deepEqual(savesOf(posts,'가상지각').map(s=>s.reason),['가상 교통']);
+  assert.equal(await page.getByText('출결원장 저장 중입니다').count(),0,'not refused');
+ },virtual(async body=>{if(body.action==='b2Save')await new Promise(r=>setTimeout(r,1500));return null;}));
+});
+
+// 같은 날 결석: 수업 중에는 교시가 늦게 찍힐 수 있어 실제 입실만 남은 기록을 '기록 있음'으로 보지만, 그 학생의 시간 삭제가 확인되면 맞는 것으로 봅니다(⚠가 남지 않게).
+test('same-day 결석 compares as matching once the time deletion is verified (the actual entry stays)',async()=>{
+ const VB2={...VB,ledger:[...VB.ledger,row(D,'1','가상출석','결석')]};
+ const DAYS2={[CUR]:{records:VDAYS[CUR].records.map(r=>r.name==='가상출석'?{...r,entry:null,exit:null,version:'v-r6b'}:r)}};
+ await beta(async page=>{
+  await openLedger(page);
+  await student(page,'가상출석').getByText('체크히어 입실 09:02 · 퇴실 - 기록 있음').waitFor();
+  await pushRequests(page,[{id:'b2_00000000-0000-4000-8000-0000000000aa',classId:'1',date:D,name:'가상출석',phoneLast4:'0000',reason:'[실시간 베타] [2기 베타] 출결대조 자동 · 결석 · 일반 출결 [기준:0123abcd]',changes:{exit:''},deleteTimes:['exit'],status:'verified',createdBy:ME,result:{message:'체크히어 반영·원본 확인·플랫폼 DB 저장 완료'}}]);
+  await student(page,'가상출석').getByText('교시 기록·퇴실 없음 · 실제 입실 09:02 남음').waitFor();
+  assert.equal(await student(page,'가상출석').locator('.b2-match.diff').count(),0);
+ },{...virtual(body=>body.action==='b2Bundle'?{ok:true,data:VB2}:null),clock:'2026-09-03T15:00:00+09:00',days:DAYS2});
 });

@@ -4,11 +4,18 @@ import {existsSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {loadPlaywright} from '../collector.mjs';
 import {firestore} from './retry-fixture.mjs';
-test('retry storage is idempotent, preserves original history, reconciles first, and batches resolution reads',async()=>{
- const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),base=join(import.meta.dirname,'../..');
+const base=join(import.meta.dirname,'../..');
+// 가짜 Firestore 위에 재처리 모듈만 올린 빈 페이지를 엽니다.
+async function open(){
+ const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage();
  try{
   await page.route('**/*',route=>{const u=new URL(route.request().url()),file=join(base,u.pathname.slice(1));if(u.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:firestore});if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<script type="module">import * as store from '/checkhere-retry-store.mjs';import * as core from '/checkhere-retry-core.mjs';import {cachedRead} from '/session-read-cache.mjs';window.cachedRead=cachedRead;window.db={};window.store=store;window.core=core;window.trace=[];window.docs={};window.user={email:'hint.kpc@gmail.com',getIdTokenResult:async()=>({claims:{email_verified:true,firebase:{sign_in_provider:'google.com'}}})};window.parent={id:'failed-request-000001',classId:'2',date:'2026-09-14',name:'가상',phoneLast4:'',reason:'기존 근거',changes:{entryMemo:'요청 사유'},status:'failed',updatedAt:{seconds:10},createdAt:{seconds:1},createdBy:'staff@example.test'};window.docs['checkhereRequests/'+parent.id]=structuredClone(parent);window.ready=true;</script>`});if(/\.mjs$/.test(file)&&existsSync(file))return route.fulfill({contentType:'text/javascript',body:readFileSync(file,'utf8')});return route.abort();});
-  await page.goto('https://fixture.test/');await page.waitForFunction(()=>window.ready);
+  await page.goto('https://fixture.test/');await page.waitForFunction(()=>window.ready);return {browser,page};
+ }catch(e){await browser.close();throw e;}
+}
+test('retry storage is idempotent, preserves original history, reconciles first, and batches resolution reads',async()=>{
+ const {browser,page}=await open();
+ try{
   const result=await page.evaluate(async()=>{
    let cacheLoads=0;const readCount=()=>cachedRead(db,user,'operations:requests',async()=>++cacheLoads);await readCount();await readCount();
    const before=JSON.stringify(docs['checkhereRequests/'+parent.id]);const a=await Promise.all([store.ensureRetryRequest(db,user,parent),store.ensureRetryRequest(db,user,parent)]);
@@ -34,5 +41,25 @@ test('retry storage is idempotent, preserves original history, reconciles first,
    const child=await core.retryRequestId(blocked);return {failureInvalidated,failed,count,running,createdForRunning:!!docs['checkhereRequests/'+child]};
   });
   assert.deepEqual(recovery,{failureInvalidated:true,failed:true,count:1,running:true,createdForRunning:false});
+ }finally{await browser.close();}
+});
+test('출결대조 자동·시간 삭제 실패 요청은 재처리 요청을 만들지 않고 출결대조에서 다시 보내기를 안내한다',async()=>{
+ const {browser,page}=await open();
+ try{
+  const result=await page.evaluate(async()=>{
+   const auto={...parent,id:'failed-auto-ledger-0001',reason:'[실시간 베타] [2기 베타] 출결대조 자동 · 지각 · 가상 사유 [기준:0123abcd]'},removal={...parent,id:'failed-time-delete-0001',changes:{exit:''},deleteTimes:['exit']};
+   for(const r of [auto,removal])docs['checkhereRequests/'+r.id]=structuredClone(r);
+   const stored=()=>JSON.stringify([auto,removal].map(r=>docs['checkhereRequests/'+r.id])),before=stored(),errors=[],reconciled=[];trace.length=0;
+   const attempt=async fn=>{try{await fn();errors.push('');}catch(e){errors.push(e.message);}};
+   await attempt(()=>store.ensureRetryRequest(db,user,auto));await attempt(()=>store.ensureRetryRequest(db,user,removal));
+   // 화면이 들고 있던 사본에 deleteTimes가 없어도 저장된 원래 요청을 다시 봅니다.
+   await attempt(()=>store.ensureRetryRequest(db,user,{...removal,deleteTimes:undefined}));
+   await attempt(()=>store.resolveRetryRequest(db,user,auto,{reconcile:async r=>{reconciled.push(r.id);return {status:'failed'};}}));
+   const blockedSets=trace.filter(r=>r[0]==='set').length,plain=await store.ensureRetryRequest(db,user,parent);
+   return {errors,reconciled,blockedSets,unchanged:before===stored(),retryDocs:Object.keys(docs).filter(p=>p.includes('/retry_')),plainId:plain.id};
+  });
+  assert.equal(result.errors.length,4);for(const e of result.errors)assert.match(e,/출결대조\(\/beta2\)에서 그 학생 행의 「체크히어 맞추기」/);
+  assert.deepEqual(result.reconciled,[],'no reconcile or copy for ledger requests');assert.equal(result.blockedSets,0);assert.equal(result.unchanged,true);
+  assert.deepEqual(result.retryDocs,['checkhereRequests/'+result.plainId],'an ordinary failed request is still copied once');
  }finally{await browser.close();}
 });

@@ -82,7 +82,7 @@
 ## 수집 PC 로컬 세션에서 시험할 때
 
 - 먼저 `checkhere` 폴더에서 `node --test tests/*.test.mjs`. 가짜 체크히어·가짜 Firestore·가상 학생만 쓴다. 쓰기 경로(반영, 삭제)는 이 시험으로만 확인한다(`live-relay.test.mjs`, `live-ui.test.mjs`). 코드를 바꾸기 전에 이 PC의 기준선(통과·실패 목록)을 먼저 적어 둔다(`docs/local-session-start.md` 4절).
-- **`live-ui.test.mjs`는 실제 포트 127.0.0.1:8765를 직접 연다**(`checkhere/tests/live-ui.test.mjs:75-76`). 실제 연결 프로그램이 켜져 있으면 포트가 겹쳐 이 시험은 실패한다. 이 시험만 빼고 돌리거나(PowerShell 예: `node --test (Get-ChildItem tests\*.test.mjs | Where-Object Name -ne 'live-ui.test.mjs').FullName`), 수집·반영이 없는 시간에 연결 프로그램을 끄고 돌린다(다시 켜면 연결 키가 바뀌므로 위 빌드 절차 4번).
+- (2026-10-14에 고침) `live-ui.test.mjs`는 이제 18943 포트에서 연결 프로그램을 열고 화면에 `window.HINT_TEST_BRIDGE`로 알려 준다. 8765로 가는 요청은 시험이 막는다. 그래서 실제 연결 프로그램이 켜져 있어도 돌릴 수 있다.
 - 새 시험 6개(`batch-sync`, `batch-ui`, `incremental-sync`, `live-ui`, `page-data`, `probe`)는 설치된 Chrome(`channel:'chrome'`)이 아니라 Playwright 자체 Chromium을 띄운다. 이 PC에 그 브라우저가 없으면 시작하자마자 실패하는데 코드 문제가 아니다. `checkhere` 폴더에서 `npx playwright install chromium`으로 받으면 된다(저장소는 바뀌지 않음). 나머지 화면 시험은 설치된 Chrome을 쓴다.
 - 실제 연결 프로그램으로 해도 되는 것: 읽기 전용 수집(`/api/sync`, `/api/sync-batch`), `/api/state`, 409 응답, 수집 중단. 이것들은 체크히어를 읽고 `checkhere/data/attendance.sqlite`에만 쓴다. 단 운영포털 1기 체크히어 탭이 열려 있으면 끝난 날짜가 `checkhereCurrent`에 자동 저장되고, 중계가 켜져 있으면 오늘 바뀐 기록도 저장된다(정상 경로지만 실제 Firestore 쓰기임을 알고 할 것).
 - 진단 도구: `체크히어 진단_자동실행.cmd`(`verify-fast.ps1`)는 2반 9/1~9/4를 실제로 정밀 → 빠른 일괄 수집한다(체크히어 읽기 전용, SQLite에 기록 추가, 운영포털 체크히어 탭이 열려 있으면 Firestore에도 저장). `체크히어 데이터진단.cmd`는 연결 프로그램과 같은 크롬 프로필을 쓰므로 연결 프로그램의 전용 크롬이 열려 있으면 실행을 거부한다. 진단 결과 `checkhere/data/probe/*.json`에는 실제 이름이 들어 있다.
@@ -273,7 +273,7 @@
 
 **우선순위**: 지금(한 줄).
 
-### 8. live-ui 시험 날짜 · 확인됨 · 지금(10-22 전)
+### 8. live-ui 시험 날짜 · 확인됨 · 지금(10-22 전) · 2026-10-14 고침(DATE 2026-10-12 고정, 포트 18943)
 
 **판정**: 2명 인정. 이 시험만의 문제이고 제품 코드는 그대로 둔다.
 

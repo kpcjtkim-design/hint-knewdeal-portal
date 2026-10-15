@@ -24,29 +24,43 @@ export function baseTag(record,fields){return fnv(JSON.stringify([record.id,[...
 export const tagOf=reason=>/\[기준:([0-9a-f]{8})\]\s*$/.exec(String(reason||''))?.[1]||null;
 export const isLiveRequest=r=>typeof r?.reason==='string'&&r.reason.startsWith(LIVE_MARK)&&!!tagOf(r.reason);
 export const editorReason=reason=>String(reason||'').replace(LIVE_MARK,'').replace(/\s*\[기준:[0-9a-f]{8}\]\s*$/,'').trim();
+// 2기 베타 출결대조가 만든 자동 요청(근거에 이 글이 들어감). 1기 재처리와 2기 출결대조가 함께 씁니다.
+export const AUTO_TEXT='출결대조 자동';
+export const isAutoLedgerRequest=r=>typeof r?.reason==='string'&&r.reason.includes(AUTO_TEXT);
+// 출결대조 자동 요청과 시간 삭제 요청(deleteTimes)은 [기준] 지문으로 관리자가 본 값을 지킵니다. 1기 '실패 건 다시 처리'는
+// 요청을 그대로 복사해 기준 확인 없이 며칠 뒤에도 적용하므로 빼고, 2기 베타 출결대조에서 지금 값으로 다시 계산해 보냅니다.
+export const RETRY_IN_LEDGER='출결대조에서 다시 보내기';
+export const RETRY_IN_LEDGER_HELP='출결대조 자동·시간 삭제 요청은 여기서 다시 처리하지 않습니다. 2기 베타 출결대조(/beta2)에서 그 학생 행의 「체크히어 맞추기」(오늘은 「다시 보내기」)로 지금 값을 다시 계산해 보내 주세요. 체크히어 시간 옆 ×로 지운 요청은 ×를 다시 눌러 주세요.';
+export const retryInLedger=r=>(isLiveRequest(r)&&isAutoLedgerRequest(r))||(Array.isArray(r?.deleteTimes)?r.deleteTimes.length>0:!!r?.deleteTimes);
 
 // The relay and the server approve requests with the request rules (requested:true).
-export function checkLiveEdit(record,changes,capabilities){
+// deletions: 시간 삭제 요청이 지우는 쪽(cleanRequest(r).deleteTimes). 삭제가 아니면 비워 둡니다.
+export function checkLiveEdit(record,changes,capabilities,deletions=[]){
   const defaults=memoDefaultTimes(changes,record);
-  const judgement=assertChangeAllowed(record,{...changes,...defaults},{capabilities,requested:true});
+  const judgement=assertChangeAllowed(record,{...changes,...defaults},{capabilities,requested:true,deletions});
   return {...judgement,defaults};
 }
-export function buildLiveRequest(record,form,reason){
+// deleteTimes: 지울 쪽('entry'·'exit'). 그쪽 폼 시간은 비워 두고, 체크히어에 시간이 있으면 changes[k]=''로 보냅니다(이미 비었으면 건너뜀).
+export function buildLiveRequest(record,form,reason,{deleteTimes=[]}={}){
   if(!record?.id||record.source!=='live'||record.readState!=='complete')throw Error('이 학생은 상세 기록이 아직 없습니다. 다음 자동 갱신 후 다시 수정해 주세요.');
+  if(!Array.isArray(deleteTimes)||deleteTimes.some(k=>k!=='entry'&&k!=='exit'))throw Error('삭제할 시간 항목을 확인해 주세요.');
   const changes={};
   for(const k of ['entry','exit']){
     const raw=String(form[k]??'').trim();
-    if(!raw){if(normalizeTime(record[k]))throw Error('시간을 비우는 수정은 지원하지 않습니다.');continue;}
+    if(deleteTimes.includes(k)){if(raw)throw Error('삭제할 시간 칸은 비워 주세요.');if(normalizeTime(record[k]))changes[k]='';continue;}
+    if(!raw){if(normalizeTime(record[k]))throw Error('시간을 비우는 수정은 「시간 삭제」로만 할 수 있습니다.');continue;}
     if(!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(raw))throw Error('시간은 09:00 또는 09:00:00 형식으로 입력해 주세요.');
     const t=raw.length===5?raw+':00':raw;if(t!==(normalizeTime(record[k])||''))changes[k]=t;
   }
   for(const k of ['entryMemo','exitMemo']){const v=String(form[k]??'');if(v!==(record[k]??''))changes[k]=v;}
   if(!Object.keys(changes).length)throw Error('바뀐 값이 없습니다.');
   const text=String(reason||'').trim();if(!text)throw Error('수정 근거를 입력해 주세요.');
+  // [기준] 지문은 바뀌는 항목(지우는 시간 포함)의 지금 값을 덮습니다.
   const fields=Object.keys(changes),suffix=` [기준:${baseTag(record,fields)}]`,full=`${LIVE_MARK} ${text}${suffix}`;
   if(full.length>1000)throw Error('수정 근거가 너무 깁니다.');
-  const request=cleanRequest({classId:String(record.classId),date:record.date,name:record.name,phoneLast4:record.phoneLast4||'',reason:full,changes});
-  checkLiveEdit(record,request.changes);
+  const removing=['entry','exit'].filter(k=>changes[k]==='');
+  const request=cleanRequest({classId:String(record.classId),date:record.date,name:record.name,phoneLast4:record.phoneLast4||'',reason:full,changes,...(removing.length?{deleteTimes:removing}:{})});
+  checkLiveEdit(record,request.changes,undefined,request.deleteTimes);
   return request;
 }
 // 전화 끝 4자리가 한쪽에 없으면(운영포털 양식은 선택 칸) 같은 학생으로 봅니다.

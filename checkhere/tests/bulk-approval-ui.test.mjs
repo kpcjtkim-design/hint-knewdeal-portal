@@ -19,3 +19,33 @@ test('column approval waits for verified completion, preserves other fields, fil
   assert.deepEqual(errors,[]);await page.close();
  }}finally{await browser.close();}
 });
+// 시간 삭제 요청은 일괄 승인에서 빠지고(체크히어도 읽지 않음) '시간 삭제는 개별 승인'으로 보입니다.
+test('column approval leaves time deletion requests for one-by-one approval',async()=>{
+ const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),base=join(import.meta.dirname,'../..');
+ try{
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',route=>{
+   const u=new URL(route.request().url());
+   if(u.hostname==='www.gstatic.com')return route.fulfill({contentType:'text/javascript',body:`export const collection=(...x)=>x,doc=(...x)=>({id:x.at(-1)}),query=(...x)=>x,where=(...x)=>x,orderBy=(...x)=>x,limit=x=>x,serverTimestamp=()=>({seconds:1});export const getDocFromServer=(...a)=>getDoc(...a);export async function getDoc(){return{data:()=>undefined};}export async function setDoc(){}export async function getDocs(){return{docs:window.rows.map(r=>({id:r.id,data:()=>r}))};}export async function runTransaction(db,fn){return fn({get:async ref=>({data:()=>window.rows.find(r=>r.id===ref.id)}),update(ref,data){Object.assign(window.rows.find(r=>r.id===ref.id),data);}});}`});
+   if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">import {mountCheckHereRequests} from '/checkhere-requests.mjs';const common={classId:'2',date:'2026-09-03',phoneLast4:'1234',status:'pending',createdAt:{seconds:1}};
+    window.rows=[{...common,id:'b2_00000000-0000-4000-8000-000000000002',name:'가상가',reason:'[실시간 베타] [2기 베타] 출결대조 시간 삭제 · 퇴실 [기준:0123abcd]',changes:{exit:''},deleteTimes:['exit']},{...common,id:'plain-times-0001',name:'가상나',reason:'수기 확인',changes:{entry:'09:00:00'}}];
+    window.records=['가상가','가상나'].map((name,i)=>({...common,id:'record-'+i,name,version:'v1',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'09:20:00',entry:'09:20:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],entryKind:'ATTEND',entryEventId:true,exitEventId:true}));window.previews=[];window.calls=[];const jobs=[];
+    const controller={state:()=>({records:window.records,jobs,capabilities:['approval-current-sync-v1','live-approval-preview-v1','approved-requests-v1','time-delete-v1']}),refresh:async()=>{for(const j of jobs)if(j.status==='running'){j.status='verified';const r=window.rows.find(x=>x.id===j.id);Object.assign(window.records.find(x=>x.name===r.name),r.approval.after,{version:'v2'});}},
+     api:async(path,input)=>{const r=window.rows.find(r=>r.id===input.approvalId);if(path==='preview-request'){window.previews.push(r.id);return{record:window.records.find(x=>x.name===r.name)};}window.calls.push({path,id:r.id});if(path==='apply'){r.status='applying';jobs.push({id:r.id,status:'running'});return{};}if(path==='reconcile'){r.status='verified';return{status:'verified',platformSaved:true};}}};
+    await mountCheckHereRequests(document.querySelector('#host'),{db:{},user:{email:'hint.kpc@gmail.com',getIdTokenResult:async()=>({claims:{firebase:{sign_in_provider:'google.com'}}}),getIdToken:async()=>'fixture'},classes:[{id:'2'}],admin:true,controller:()=>controller});</script>`});
+   const file=u.pathname.slice(1);if(u.hostname==='fixture.test'&&/^(?:[\w.-]+\/)*[\w.-]+\.(?:mjs|css|json)$/.test(file)&&!file.split('/').includes('..')&&existsSync(join(base,file)))return route.fulfill({contentType:file.endsWith('.css')?'text/css':file.endsWith('.json')?'application/json':'text/javascript',body:readFileSync(join(base,file),'utf8')});return route.abort();
+  });
+  await page.goto('https://fixture.test/');
+  await page.locator('[data-bulk-approve="times"]').click();await page.locator('#bulkApproveNow').waitFor();
+  assert.match(await page.locator('#bulkApproveNow').innerText(),/^1건 /);
+  const review=await page.locator('#review').innerText();
+  assert.match(review,/승인 가능 1건 · 제외 1건/);assert.match(review,/2반 2026-09-03 가상가: 시간 삭제는 개별 승인/);assert.doesNotMatch(await page.locator('#review table').innerText(),/가상가/);
+  assert.deepEqual(await page.evaluate(()=>window.previews),['plain-times-0001'],'the deletion is not even previewed');
+  await page.locator('#bulkApproveNow').click();await page.locator('#batchResult').filter({hasText:'검증 완료 1건 / 1건'}).waitFor();
+  const result=await page.evaluate(()=>({rows:window.rows,records:window.records,calls:window.calls}));
+  assert.deepEqual(result.calls.map(c=>c.id),['plain-times-0001','plain-times-0001']);
+  assert.equal(result.rows[0].status,'pending','the deletion waits for its own approval');assert.equal(result.records[0].exit,'18:00:00');
+  assert.equal(result.records[1].entry,'09:00:00');
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});

@@ -7,7 +7,7 @@ export const sameRecord=(a,b)=>JSON.stringify(sourceRecord(a))===JSON.stringify(
 export function reasonCategory(reason){
   const text=String(reason||'').trim();
   if(!text||/확인\s*필요|불명|미정|아님|취소/.test(text))return '';
-  const found=[['병원',/병원|병결|진료|치료|질병/],['면접',/면접/],['인적성',/인적성/],['예비군',/예비군/],['민방위',/민방위/],['시험',/시험|응시/],['외조모상',/외조모상/],['외조부상',/외조부상/],['조모상',/(?<!외)조모상/],['조부상',/(?<!외)조부상/],['모친상',/모친상/],['부친상',/부친상/]].filter(([,re])=>re.test(text));
+  const found=[['병원',/병원|병결|병가|진료|치료|질병|입원|통원|수술|검진/],['면접',/면접/],['인적성',/인적성/],['예비군',/예비군/],['민방위',/민방위/],['시험',/시험|응시/],['외조모상',/외조모상/],['외조부상',/외조부상/],['조모상',/(?<!외)조모상/],['조부상',/(?<!외)조부상/],['모친상',/모친상/],['부친상',/부친상/]].filter(([,re])=>re.test(text));
   // An aptitude examination is a single category even when described as an exam.
   const kinds=found.map(([k])=>k).filter(k=>!(k==='시험'&&found.some(([v])=>v==='인적성')));
   return kinds.length===1?kinds[0]:'';

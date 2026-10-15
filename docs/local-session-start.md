@@ -189,7 +189,12 @@ Cowork 보고서: `docs/cowork/2026-10-13-checkhere-delete-report.md`. 원본과
   - 남는 점: 평일 09:10 전에는 오늘 열이 출결판에 없다(첫 동기화가 그림, 메뉴로 바로 그릴 수 있음). 2기 마스터처럼 동기화가 없는 시트는 하루 한 번 그리는 트리거가 따로 필요하다.
 - ④ 사용자 결정(2026-10-14): 체크히어 쓰기는 **수정창 버튼** 방식, 자동 반영은 **메모만**(`memo-only`), **오늘만 자동**(지난 날은 `체크히어 맞추기` 버튼), 3초 되돌리기는 **출결원장과 요청 모두**. `docs/beta2-instant-edit-plan.md` 10장에 적음.
 - ④ 먼저 할 일(삭제 전 필수, 검토 문서): 1번 작업 잠금 경쟁, 3번 중복 요청 검사, 4번 `retry_` 가로채기, 6번 수집 중단 — 고치고 커밋함(사용자 확인 2026-10-14), 연결 프로그램 build `20261014.1`. 운영 중인 연결 프로그램(`Documents\Codex\2026-09-07\gk\hint-attendance-beta`)은 바꾸지 않았다.
-- ④ 순수 대응표 모듈 `beta2-checkhere-core.mjs`(시험 `checkhere/tests/beta2-checkhere-core.test.mjs`)와 병원 분류 넓히기(`checkhere-proposal-core.mjs`)도 작업 중이며 커밋 전.
+- ④ 본 작업(1~3차, 커밋 전, 연결 프로그램 build `20261014.2`):
+  - 1차 대응표·자동 반영: `beta2-checkhere-core.mjs`(메모만 대응표, 삭제 가능 판단, 삭제 관문 G1~G3), `beta2-checkhere-sync.mjs`(3초 되돌리기·보류·상태 칩·중계 표시), `beta2-ledger.mjs` 행 안 바로 고치기, 병원 분류 넓히기(`checkhere-proposal-core.mjs`).
+  - 2차 중계 신호·재처리 제외: `settings/checkhereRelay` 신호(연결 프로그램에 다시 닿아 본 뒤), 출결대조 자동·삭제 요청은 1기 '실패 건 다시 처리'에서 빠짐.
+  - 3차 시간 삭제(기록 번호가 있는 칸만, PASS·ENTER 금지): `checkhere/rules.mjs` `timeDeleteRefusal`, 수정창 `삭제` 버튼과 다시 열어 확인(`writeback.mjs`), 능력 `time-delete-v1`, 규칙 초안 `checkhere-time-delete.rules.txt`(게시는 사용자), 켜는 순서 `docs/checkhere-time-delete-enable.md`.
+  - 관리자가 넣은 1교시(ATTEND) 삭제는 코드상 허용이지만 실제 체크히어에서 확인하지 않았다(켜는 문서 경고 참고).
+  - 운영 중인 연결 프로그램은 바꾸지 않았다. 새 build로 바꾸는 것은 커밋·사용자 확인 뒤.
 - ②·③은 커밋했고 Apps Script 반영은 Cowork(요청서 아래)로 한다. 반영 전에는 운영 중인 Apps Script가 그대로다.
 - 반영 순서·Cowork 요청서: `apps-script/beta2/README.md` 「동기화 실행 시간 줄이기 반영 순서」, `docs/cowork/2026-10-14-sync-runtime-deploy.md`.
 
@@ -215,13 +220,13 @@ node --test tests/*.test.mjs
 
 - 클라우드에서는 `NODE_PATH=/opt/node22/lib/node_modules`로 돌렸고 환경 탓 실패 7건이 기준선이었다. 이 PC는 환경이 달라 결과가 다를 수 있으니 **코드를 바꾸기 전에 이 PC의 기준선을 먼저 기록**한다.
 - 브라우저 시험은 Playwright가 설치된 Chrome을 쓴다.
-- `checkhere/tests/live-ui.test.mjs`는 오늘 날짜를 써서 2026-10-23부터 실패한다(검토 문서 참고, 날짜 고정으로 고칠 것).
+- `checkhere/tests/live-ui.test.mjs`는 2026-10-14에 날짜를 2026-10-12로 고정하고 연결 프로그램을 18943 포트에서 열도록 고쳤다(실제 연결 프로그램 8765와 겹치지 않음).
 
 ### 4-1. 수집 PC 기준선 (2026-10-14, 코드 바꾸기 전 6889025)
 
 - 이 PC에는 PATH에 Node가 없다. `Start.ps1`이 쓰는 Codex 런타임 Node를 쓴다: `%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`(v24.19.0). playwright 1.62.1도 같은 런타임에 있어 `collector.mjs`의 `loadPlaywright`가 찾는다(`npm install` 안 함). Chrome 155.
 - 실행: `checkhere`에서 `"<위 node.exe>" --test tests/*.test.mjs` (약 14분).
-- **실제 연결 프로그램이 8765에서 돌고 있으면** `live-ui.test.mjs`는 같은 포트를 열지 못해 실패한다(EADDRINUSE). 실제 연결 프로그램에는 아무 요청도 가지 않는다. 이 시험은 실제 연결 프로그램을 끈 때만 돌리거나 포트를 바꿔야 한다.
+- (기준선 당시) 실제 연결 프로그램이 8765에서 돌고 있으면 `live-ui.test.mjs`는 같은 포트를 열지 못해 실패했다(EADDRINUSE). 지금은 18943 포트를 쓰므로 돌려도 된다. `probe.test.mjs`는 브라우저 실행 실패 뒤 멈추므로 빼고 돌린다.
 - 결과: **380개 중 361 통과, 19 실패**. 실패는 모두 환경·날짜 때문이다.
   - Playwright 내장 Chromium 없음(`chromium.launch`에 `channel:'chrome'` 없음) 10건: `batch-sync`(1), `batch-ui`(1), `incremental-sync`(1), `page-data`(3), `probe`(4). `probe.test.mjs`는 브라우저 실행 실패 뒤 멈춰 있어 그 시험 프로세스만 끝냈다.
   - 화면 요소를 30초 기다리다 실패 6건(혼자 돌려도 같음, Chrome 155의 로컬 네트워크 접근 확인 때문으로 추정): `attendance-beta-ui`, `portal-navigation-ui`, `proposal-source-ui`, `proposal-ui`, `review-ui`, `survey-ui`. 클라우드 기준선 7건 중 6건과 같다.

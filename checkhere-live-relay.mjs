@@ -1,9 +1,10 @@
 // Relay for the live beta. Runs in the designated administrator's portal tab on
 // the collector PC: it turns marked admin requests into verified CheckHere
 // writes and keeps today's `checkhereCurrent` documents fresh. One task at a time.
-import {cleanRequest,matchRequest,requestMatchesRecord,prepareApproval} from './checkhere/approval-core.mjs';
+import {cleanRequest,matchRequest,requestMatchesRecord,prepareApproval,deletedNote} from './checkhere/approval-core.mjs';
 import {ACTIVE,CLASS_IDS,LIVE_INTERVAL_MS,NO_LECTURE,baseTag,checkLiveEdit,inLiveWindow,isLiveRequest,koreaClock,stamp,tagOf} from './checkhere-live-core.mjs';
 import {requestsOverlap} from './checkhere-proposal-core.mjs';
+import {TIME_DELETE_CAPABILITY} from './checkhere/rules.mjs';
 
 export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(...a)=>fetch(...a)}){
   async function call(path,body){
@@ -16,18 +17,38 @@ export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(
   return {state:cursor=>call('state?delta=1'+(cursor?'&cursor='+encodeURIComponent(cursor):'')),api:(name,body)=>call(name,body||{})};
 }
 
+// 중계 신호(settings/checkhereRelay)에 쓸 내용. 담임도 읽는 문서라 status.current(반·학생 이름)와 lastError 글은 넣지 않습니다.
+const SIGNAL_NAME=/^[\w.-]{1,80}$/;
+export function relaySignal(status,{capabilities=status?.capabilities,build=status?.build}={},by=null){
+  const s=status||{},running=s.state==='running',reachable=s.bridgeOk!==false;
+  // busy: 중계가 요청·갱신을 처리 중이거나 연결 프로그램이 다른 작업 중(멈춘 중계는 바쁘지 않음).
+  return {state:running?'running':'stopped',busy:running&&(Boolean(s.current)||s.bridgeBusy===true),queue:Number(s.queue)||0,
+    // 연결 프로그램에 닿지 않으면(bridgeOk false) 능력을 알리지 않습니다(/beta2가 시간 삭제를 켜지 않게).
+    capabilities:[...new Set((reachable&&Array.isArray(capabilities)?capabilities:[]).filter(c=>typeof c==='string'&&SIGNAL_NAME.test(c)))],
+    build:typeof build==='string'&&SIGNAL_NAME.test(build)?build:null,lastErrorAt:Number.isFinite(s.lastErrorAt)?s.lastErrorAt:null,by:typeof by==='string'&&by?by:null};
+}
+
 const REQUIRED=['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1'],MAX_ATTEMPTS=5;
+// 시간 삭제 요청(deleteTimes): 연결 프로그램이 time-delete-v1을 모르면 대기 중 요청은 체크히어를 읽지 않고 반려하고,
+// 이미 승인된 요청은 규칙상 반려할 수 없어 업데이트를 기다립니다(BRIDGE_OLD). 규칙이 게시되지 않아 승인 저장이 거절되면 반려합니다.
+export const TIME_DELETE_OLD='수집 PC 프로그램이 아직 체크히어 시간 삭제를 지원하지 않습니다. 「체크히어 시작.cmd」를 최신으로 실행한 뒤 다시 요청해 주세요.';
+export const TIME_DELETE_RULES='시간 삭제용 Firestore 규칙이 아직 게시되지 않았습니다. 규칙을 게시한 뒤 다시 요청해 주세요.';
+// 모양이 이상해도 deleteTimes가 있으면 삭제로 봅니다(능력이 없으면 막는 쪽이 안전).
+const deletesTime=r=>{try{return !!cleanRequest(r).deleteTimes;}catch{return r?.deleteTimes!=null&&!(Array.isArray(r.deleteTimes)&&!r.deleteTimes.length);}};
 export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,intervalMs=LIVE_INTERVAL_MS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow}){
   const queue=new Map(),retryAt=new Map(),attempts=new Map(),ignored=new Set(),mirror=new Map(),saved=new Map(),noLecture=new Map(),manual=[];
   let cursor=null,capabilities=[],cycle=null,nextCycleAt=0,running=false,wake=null,unwatch=null,listeners=new Set(),active=[];
-  const status={state:'stopped',lastCycle:null,lastError:null,processed:0,saves:0,queue:0,current:null};
+  const status={state:'stopped',lastCycle:null,lastError:null,lastErrorAt:null,processed:0,saves:0,queue:0,current:null,capabilities:[],build:null,bridgeBusy:false,bridgeOk:null};
   const emit=()=>{status.queue=[...queue.values()].length;for(const f of listeners)f({...status});};
-  const note=(text,level='info')=>{log({at:now().toISOString(),level,text});if(level==='error')status.lastError=text;emit();};
+  const note=(text,level='info')=>{log({at:now().toISOString(),level,text});if(level==='error'){status.lastError=text;status.lastErrorAt=now().getTime();}emit();};
   const today=()=>koreaClock(now()).date;
   const recKey=r=>`${r.version}|${r.collectedAt}`;
 
   async function refresh(){
     const s=await bridge.state(cursor);capabilities=s.capabilities||[];
+    // 중계 신호용으로 연결 프로그램의 능력·build·바쁨을 상태에 보입니다(바뀔 때만 알림).
+    const build=typeof s.build==='string'&&s.build?s.build:null,busy=Boolean(s.busy);
+    if(String(status.capabilities)!==String(capabilities)||status.build!==build||status.bridgeBusy!==busy){Object.assign(status,{capabilities:[...capabilities],build,bridgeBusy:busy});emit();}
     if(s.recordsMode==='replace')mirror.clear();
     for(const r of s.records||[])mirror.set(r.id,r);
     cursor=s.cursor;return s;
@@ -64,13 +85,16 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
   }
 
   async function reject(r,text){await store.reject(r.id,text);queue.delete(r.id);note(`${r.classId}반 ${r.name}: 자동 반영하지 않음 — ${text}`,'warn');}
+  // 능력 목록이 오래됐을 수 있어 없으면 한 번 새로 봅니다(체크히어 읽기 없음).
+  async function bridgeDeletes(){if(!capabilities.includes(TIME_DELETE_CAPABILITY))await refresh();return capabilities.includes(TIME_DELETE_CAPABILITY);}
   async function finishApply(r,idToken){
     const job=await waitJob(r.id);
     let result=job;
     if(job.status==='verified'&&job.platformSaved!==true)result=await bridge.api('reconcile',{approvalId:r.id,idToken:await user.getIdToken()});
     for(const rec of [job.current].filter(Boolean)){mirror.set(rec.id,rec);if(result.platformSaved===true)saved.set(rec.id,recKey(rec));}
     queue.delete(r.id);status.processed++;
-    note(`${r.classId}반 ${r.name}: ${result.status==='verified'&&result.platformSaved===true?'체크히어 반영·확인·DB 저장 완료':`${result.status} · ${result.message||job.message||'결과를 확인해 주세요.'}`}`,result.status==='verified'?'info':'warn');
+    // 삭제 확인은 작업 글이 아니라 반영 결과(results[].deleted)로 봅니다(플랫폼 저장이 완료 문구를 새로 씀).
+    note(`${r.classId}반 ${r.name}: ${result.status==='verified'&&result.platformSaved===true?`체크히어 반영·확인·DB 저장 완료${deletedNote(job.results)}`:`${result.status} · ${result.message||job.message||'결과를 확인해 주세요.'}`}`,result.status==='verified'?'info':'warn');
   }
   async function processRequest(r){
     status.current=`${r.classId}반 ${r.name}`;emit();
@@ -78,8 +102,12 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
     if(!REQUIRED.every(c=>capabilities.includes(c))){await refresh();if(!REQUIRED.every(c=>capabilities.includes(c)))throw Object.assign(Error('수집 PC에서 최신 「체크히어 시작.cmd」를 다시 실행해 주세요.'),{code:'BRIDGE_OLD'});}
     const idToken=await user.getIdToken();
     // Approved earlier but not started (e.g. the tab closed): the bridge re-reads before writing.
-    if(r.status==='approved'){await bridge.api('apply',{approvalId:r.id,idToken});return finishApply(r,idToken);}
+    if(r.status==='approved'){
+      if(deletesTime(r)&&!await bridgeDeletes())throw Object.assign(Error(`승인된 시간 삭제 요청은 연결 프로그램 업데이트를 기다립니다. ${TIME_DELETE_OLD}`),{code:'BRIDGE_OLD'});
+      await bridge.api('apply',{approvalId:r.id,idToken});return finishApply(r,idToken);
+    }
     let clean;try{clean=cleanRequest(r);}catch(e){return reject(r,e.message);}
+    if(clean.deleteTimes&&!await bridgeDeletes())return reject(r,TIME_DELETE_OLD);
     // 같은 학생·항목에 처리 중인 다른 요청(운영포털 수정 요청 포함)이 있으면 덮어쓰지 않고 반려합니다.
     if(active.some(o=>o.id!==r.id&&ACTIVE.includes(o.status)&&o.changes&&requestsOverlap(o,clean)))return reject(r,'같은 학생·항목에 처리 중인 다른 수정 요청이 있습니다. 운영 포털 수정 요청에서 먼저 정리해 주세요.');
     const identities=await store.identities(clean.classId,clean.name);
@@ -93,11 +121,13 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
       if(res.status==='verified'&&res.platformSaved===true){queue.delete(r.id);status.processed++;note(`${r.classId}반 ${r.name}: 이미 같은 값 · 원본 확인 완료`);return;}
       return finishApply(r,idToken);
     }
+    // [기준] 지문은 바뀌는 항목 전부(지우는 시간 포함, clean.changes에 ''로 들어 있음)의 지금 값과 같아야 합니다.
     if(tagOf(r.reason)!==baseTag(record,Object.keys(clean.changes)))return reject(r,'수정 화면을 연 뒤 체크히어 값이 바뀌었습니다. 새 값을 확인하고 다시 수정해 주세요.');
-    let judgement;try{judgement=checkLiveEdit(record,clean.changes,capabilities);}catch(e){return reject(r,e.message);}
+    let judgement;try{judgement=checkLiveEdit(record,clean.changes,capabilities,clean.deleteTimes);}catch(e){return reject(r,e.message);}
     if(Object.keys(judgement.defaults).length&&!capabilities.includes('memo-default-time-v1'))throw Object.assign(Error('수집 PC에서 최신 「체크히어 시작.cmd」를 다시 실행해 주세요.'),{code:'BRIDGE_OLD'});
     let approval;try{approval=prepareApproval(r,record,{identities});}catch(e){return reject(r,e.message);}
-    await store.approve(r.id,approval,r);
+    try{await store.approve(r.id,approval,r);}
+    catch(e){if(clean.deleteTimes&&e?.code==='permission-denied')return reject(r,TIME_DELETE_RULES);throw e;}
     await bridge.api('apply',{approvalId:r.id,idToken});
     return finishApply(r,idToken);
   }
@@ -151,12 +181,14 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
   }
   return {
     status:()=>({...status}),
+    // 중계 신호를 쓰기 전에 부릅니다. 일이 없을 때도 연결 프로그램의 능력·바쁨·연결 여부를 새로 봅니다(실패해도 던지지 않음).
+    async ping(){let ok;try{await refresh();ok=true;}catch{ok=false;}if(status.bridgeOk!==ok){status.bridgeOk=ok;emit();}return ok;},
     onStatus(f){listeners.add(f);return()=>listeners.delete(f);},
     async start({loop:autoLoop=true}={}){
       if(running)return;
       await refresh();
       if(!REQUIRED.every(c=>capabilities.includes(c)))throw Error('수집 PC의 연결 프로그램이 오래된 버전입니다. 「체크히어 시작.cmd」를 다시 실행해 주세요.');
-      running=true;status.state='running';status.lastError=null;
+      running=true;status.state='running';status.lastError=null;status.lastErrorAt=null;
       unwatch=store.watchQueue(list=>{
         active=list;
         // retry_·proposal_ 요청은 운영포털 재처리·제안 흐름이 처리합니다(근거 표시를 복사해도 가져가지 않음).

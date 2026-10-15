@@ -73,16 +73,39 @@ export function judge(r,rules=RULES,now=new Date()){
   const canApplyMemo=r.source==='live'&&r.readState==='complete'&&!!teacher&&!ongoing&&!periodMismatch&&!r.exception&&!issues.some(i=>['SCHEDULE','INVALID_TIME','OUTING_REVERSED','REVERSED_TIME'].includes(i.code));
   return{labels,issues,suggestions,ongoing,periodMismatch,exception:r.exception||null,minutes:minutes===null?null:Math.round(minutes*100)/100,canApply:canApplyMemo&&!multiple,canApplyMemo,ruleVersion:rules.version};
 }
+// 체크히어 시간 삭제를 할 수 있는 연결 프로그램이 알리는 능력(11단계 전에는 아무도 알리지 않음).
+export const TIME_DELETE_CAPABILITY='time-delete-v1';
+// 지울 수 있는 칸인지(기록 번호가 있는 칸만, 사용자 결정 2026-10-14). 지울 수 있으면 '', 아니면 이유. 표시는 연결 프로그램이 그날 화면 데이터에서 붙입니다(day-data.mjs DELETE_MARKS):
+// exitEventId 퇴실(COMPLETE) 번호, entryKind 'ATTEND'(관리자 1교시)·'PASS'(입실에서 계산), entryEventId 1교시 번호, enterEventId 입실(ENTER) 번호.
+// 체크인한 학생(입실 번호 있음)은 1교시에 사유를 저장해 ATTEND가 되었어도 퇴실만 지웁니다(그 1교시 삭제는 확인하지 않은 동작). 표시가 없으면 잠급니다.
+export function timeDeleteRefusal(record,side){
+  if(side==='exit')return record?.exitEventId?'':'퇴실 기록 번호를 확인하지 못했습니다(다시 수집 필요).';
+  if(record?.entryKind==='PASS')return '입실에서 계산된 1교시는 지울 수 없습니다. 퇴실을 지우면 함께 비워집니다.';
+  if(record?.enterEventId)return '체크인한 학생은 퇴실만 지웁니다(1교시는 관리자 사유를 저장한 기록이라 남깁니다).';
+  return record?.entryKind==='ATTEND'&&record.entryEventId&&record.enterEventId===false?'':'1교시 기록 번호를 확인하지 못했습니다(다시 수집 필요).';
+}
 // Human-reviewed memo edits may describe overlapping attendance without changing its times.
-export function assertChangeAllowed(record,changes,{capabilities,requested=false}={}){
-  const fields=Object.keys(changes||{}),memoOnly=fields.length>0&&fields.every(k=>['entryMemo','exitMemo'].includes(k));
+// deletions: 승인된 시간 삭제 요청이 지우는 쪽. 비우는 시간 칸은 이것과 정확히 같아야 하고, 능력 검사는 삭제할 때만 합니다.
+export function assertChangeAllowed(record,changes,{capabilities,requested=false,deletions=[]}={}){
+  const fields=Object.keys(changes||{}),memoOnly=fields.length>0&&fields.every(k=>['entryMemo','exitMemo'].includes(k)),del=deletions||[];
   if(!fields.length||fields.some(k=>!['entry','exit','entryMemo','exitMemo'].includes(k)))throw Error('변경할 항목을 확인해 주세요.');
+  const blanks=['entry','exit'].filter(k=>Object.hasOwn(changes,k)&&!normalizeTime(changes[k]));
+  if(blanks.some(k=>!del.includes(k)))throw Error('시간을 비우는 변경은 「시간 삭제」 요청으로만 처리합니다.');
+  if(del.some(k=>!blanks.includes(k)))throw Error('삭제할 시간 항목을 확인해 주세요.');
+  if(del.length&&!requested)throw Error('시간 삭제는 승인된 「시간 삭제」 요청으로만 처리합니다.');
+  if(del.length&&capabilities&&!capabilities.includes(TIME_DELETE_CAPABILITY))throw Error('수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요. 체크히어 시간 삭제 지원이 필요합니다.');
+  if(del.some(k=>Object.hasOwn(changes,k+'Memo')&&changes[k+'Memo']!==''))throw Error('삭제하는 시간의 관리자 사유는 비워 주세요.');
+  // 사용자 결정(2026-10-14): 기록 번호가 있는 칸만 지웁니다(PASS 1교시·입실은 지우지 않음).
+  for(const k of del){const why=timeDeleteRefusal(record,k);if(why)throw Error(why);}
   const judgement=judge(record);
   if(requested){
     if(record.source!=='live'||record.readState!=='complete')throw Error('학생의 현재 기록을 읽지 못했습니다. 연결 상태를 확인해 주세요.');
     const target={...record,...changes},entry=normalizeTime(target.entry),exit=normalizeTime(target.exit);
-    if((fields.some(k=>k==='entry'||k==='entryMemo')&&!entry)||(fields.some(k=>k==='exit'||k==='exitMemo')&&!exit)||(entry&&exit&&exit<entry))throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 변경하는 항목에는 시간이 필요합니다.');
-    return{...judgement,memoOnly,warning:memoOnly?'사유만 변경하며 입퇴실 시간은 유지합니다.':''};
+    const needs=side=>!del.includes(side)&&fields.some(k=>k===side||k===side+'Memo');
+    if((needs('entry')&&!entry)||(needs('exit')&&!exit)||(entry&&exit&&exit<entry))throw Error('반영할 입실·퇴실 시간을 확인해 주세요. 변경하는 항목에는 시간이 필요합니다.');
+    // 삭제 경고: 체크인한 학생(PASS)의 퇴실을 지우면 1교시·총 참여 시간도 비고(Cowork 확인), 관리자 1교시를 지우면 그것에서 계산된 입실도 빌 수 있습니다.
+    const side=(del.includes('exit')&&record.entryKind==='PASS'?' 퇴실을 지우면 1교시·총 참여 시간도 비워집니다.':'')+(del.includes('entry')?' 관리자가 넣은 1교시를 지우면 그것에서 계산된 입실도 비워질 수 있습니다.':'');
+    return{...judgement,memoOnly,warning:del.length?'체크히어 입실(교시)/퇴실 시간을 삭제합니다. 실제 입실 기록은 남을 수 있습니다.'+side:memoOnly?'사유만 변경하며 입퇴실 시간은 유지합니다.':''};
   }
   if(!(memoOnly?judgement.canApplyMemo:judgement.canApply)){
     if(!memoOnly&&judgement.canApplyMemo)throw Error('지각·조퇴·외출이 겹친 기록은 시간을 자동 변경할 수 없습니다. 사유만 변경요청할 수 있습니다.');

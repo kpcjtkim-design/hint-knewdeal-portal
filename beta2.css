@@ -50,6 +50,27 @@
 .b2 .b2-editor{display:grid;gap:10px;padding:12px;border:1px solid #bae6fd;border-radius:12px;background:#fff}
 .b2 .b2-editor .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
 .b2 .b2-err{color:var(--b2-red);font-size:12px;font-weight:700}
+/* 출결대조 행 안 편집(beta2-ledger.mjs): 유형·필요한 시간·사유 입력칸, 저장 안내, 체크히어 상태 칩, 시간 삭제 × */
+.b2 .b2-inline{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.b2 .b2-inline select,.b2 .b2-inline input{font:inherit;font-size:12px;color:var(--b2-ink);border:1px solid #cbd5e1;border-radius:8px;padding:5px 7px;background:#fff}
+.b2 .b2-inline select{min-width:96px;font-weight:800}
+.b2 .b2-inline input[type="time"]{width:108px}
+.b2 .b2-inline .b2-reason{flex:1 1 150px;min-width:130px}
+.b2 .b2-inline select:focus,.b2 .b2-inline input:focus{outline:2px solid #93c5fd;outline-offset:0;border-color:#60a5fa}
+.b2 .b2-inline select:disabled,.b2 .b2-inline input:disabled{background:#f8fafc;color:#94a3b8;cursor:not-allowed}
+.b2 .b2-mini{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:var(--b2-sub)}
+.b2 .b2-inline-msg{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px}.b2 .b2-inline-msg:empty{display:none}
+.b2 .b2-saving{font-size:11px;font-weight:800;color:var(--b2-blue)}
+.b2 .b2-x{width:20px;height:20px;margin:0 4px 0 3px;padding:0;border:1px solid #fecaca;border-radius:6px;background:#fff;color:var(--b2-red);font:inherit;font-size:13px;font-weight:900;line-height:16px;vertical-align:middle;cursor:pointer}
+.b2 .b2-x:disabled{border-color:var(--b2-line);color:#cbd5e1;cursor:not-allowed}
+.b2 .b2-status{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:6px}.b2 .b2-status:empty{display:none}
+.b2 .b2-status .b2-sub{flex-basis:100%;margin-top:0}
+.b2 .b2-st{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#eff6ff;color:#1d4ed8;white-space:nowrap}
+.b2 .b2-st.ok{background:#dcfce7;color:#166534}.b2 .b2-st.warn{background:#fff7ed;color:#9a3412}.b2 .b2-st.bad{background:#fef2f2;color:#991b1b}.b2 .b2-st.muted{background:#f1f5f9;color:#64748b}
+.b2 .b2-st[data-kind="countdown"]{background:#fef3c7;color:#92400e}
+.b2 .b2-sec{display:inline-block;min-width:1.3em;text-align:center;font-size:13px;font-variant-numeric:tabular-nums}
+.b2 .b2-st[data-kind="paused"]{background:#fef3c7;color:#92400e}
+.b2 .b2-table[inert]{opacity:.55;transition:opacity .15s}
 .b2 .b2-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .b2 .b2-class{padding:13px 14px;cursor:pointer;text-align:left;border:1px solid var(--b2-line);font:inherit;width:100%}
 .b2 .b2-class:hover{border-color:#93c5fd}

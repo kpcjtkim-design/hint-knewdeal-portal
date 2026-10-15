@@ -5,18 +5,26 @@ import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
 import {randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
 import {CheckHereCollector,sameTableRow} from './collector.mjs';
-import {judge,RULES} from './rules.mjs';
+import {DELETE_MARKS} from './day-data.mjs';
+import {judge,RULES,TIME_DELETE_CAPABILITY} from './rules.mjs';
 import {applyVerified,confirmAlreadyApplied} from './writeback.mjs';
 import {createApprovalCloud} from './cloud-approval.mjs';
 import {readRequestRecord} from './request-record.mjs';
-import {proposalFromApproval,prepareApproval} from './approval-core.mjs';
+import {proposalFromApproval,prepareApproval,resultText} from './approval-core.mjs';
 import {runProbe} from './probe-network.mjs';
 import {summarize} from './probe-core.mjs';
 import {writeFileSync} from 'node:fs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
-const CAPABILITIES=['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1'];
+// build는 Start.ps1의 값과 같아야 합니다(다르면 「체크히어 시작.cmd」가 쉬고 있는 연결 프로그램을 다시 띄웁니다).
+const BUILD='20261014.2';
+// time-delete-v1: 수정창 '삭제'로 기록 번호가 있는 칸(퇴실 COMPLETE·관리자 1교시 ATTEND)만 지웁니다(collector.deleteTime).
+export const CAPABILITIES=Object.freeze(['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1',TIME_DELETE_CAPABILITY]);
 const NO_LECTURE=/강의가 없습니다/;
-export function createBridge({dataDir=join(here,'data'),collector=null,port=8765,approvalCloud=createApprovalCloud()}={}){
+// 시간 삭제 요청(deleteTimes가 비어 있지 않음). 모양이 이상해도 삭제로 봅니다(능력 없으면 거절하는 쪽이 안전).
+const deletionRequest=r=>r?.deleteTimes!==undefined&&r?.deleteTimes!==null&&!(Array.isArray(r.deleteTimes)&&!r.deleteTimes.length);
+// 플랫폼 저장(finish)이 돌려준 완료 문구에는 시간 삭제 확인이 없어, 이 PC 작업 글에 반영 결과로 다시 붙입니다(중계 기록에 남게).
+const withDeleted=(message,j)=>resultText(message,j.results);
+export function createBridge({dataDir=join(here,'data'),collector=null,port=8765,approvalCloud=createApprovalCloud(),capabilities=CAPABILITIES}={}){
   mkdirSync(dataDir,{recursive:true});const db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS snapshot_id ON snapshots(id,seq); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS journal(seq INTEGER PRIMARY KEY, job TEXT, payload TEXT);');
   const key=randomBytes(32).toString('hex'),adapter=collector||new CheckHereCollector(dataDir),jobs=new Map();let busy=null,connecting=false;
@@ -51,7 +59,8 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
     for(const [k,v] of current)upsert.run(k,v,now);for(const row of db.prepare('SELECT key FROM places').all())if(!current.has(row.key))drop.run(row.key);
   };
   // Same student, same complete content as the last stored read (memos included).
-  const sameStored=r=>{const old=snapshots.get(r.id)?.record;return !!old&&old.source==='live'&&old.readState==='complete'&&old.version===r.version&&old.tableSignature===r.tableSignature&&old.studentKey===r.studentKey;};
+  // 시간 삭제 표시(기록 번호)가 다르거나 옛 build의 저장본이라 없으면 한 번 다시 저장합니다(버전은 그대로).
+  const sameStored=r=>{const old=snapshots.get(r.id)?.record;return !!old&&old.source==='live'&&old.readState==='complete'&&old.version===r.version&&old.tableSignature===r.tableSignature&&old.studentKey===r.studentKey&&DELETE_MARKS.every(k=>old[k]===r[k]);};
   const journal=(job,event)=>db.prepare('INSERT INTO journal(job,payload) VALUES(?,?)').run(job,JSON.stringify({at:new Date().toISOString(),...event}));
   const authorized=req=>{const raw=req.headers['x-hint-key'];return typeof raw==='string'&&raw.length===key.length&&timingSafeEqual(Buffer.from(raw),Buffer.from(key));};
   const localOrigin=o=>!o||o===`http://127.0.0.1:${port}`||o===`http://localhost:${port}`;
@@ -67,7 +76,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         res.writeHead(204,{'Access-Control-Allow-Origin':origin||`http://127.0.0.1:${port}`,'Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-hint-key','Access-Control-Allow-Private-Network':'true','Vary':'Origin'});return res.end();
       }
       if(url.pathname==='/api/session'&&req.method==='GET'){
-        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:'20261014.1',capabilities:CAPABILITIES,pid:process.pid});
+        if(!localOrigin(origin))return send(res,403,{error:'연결 키는 이 PC 화면에서 확인해 주세요.'});return send(res,200,{key,local:true,build:BUILD,capabilities,pid:process.pid});
       }
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
@@ -75,7 +84,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         if(req.method==='GET'&&url.pathname==='/api/state'){
           const connected=await adapter.loggedIn();
           // Take records, cursor and job progress together, after the await.
-          return send(res,200,{rules:RULES,capabilities:CAPABILITIES,busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
+          return send(res,200,{rules:RULES,capabilities,build:BUILD,busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
         }
         if(req.method==='GET'&&url.pathname==='/api/history'){const id=url.searchParams.get('id');return send(res,200,{snapshots:db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 20').all(id).map(x=>JSON.parse(x.payload))});}
         if(req.method!=='POST')return send(res,405,{error:'지원하지 않는 요청입니다.'});const input=await body(req);
@@ -180,6 +189,8 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           let j,record,proposal,request,confirmed,identities;
           try{
             let approved=await approvalCloud.get(approvalId,input.idToken);
+            // 시간 삭제를 지원하지 않는 연결 프로그램은 읽기·승인(approveExisting)·잡기(claim) 전에 거절합니다. 요청 상태는 그대로 둡니다.
+            if(deletionRequest(approved.data)&&!capabilities.includes(TIME_DELETE_CAPABILITY))throw Error('이 연결 프로그램은 체크히어 시간 삭제를 지원하지 않습니다. 수집 PC에서 최신 「체크히어 시작.cmd」를 다시 실행해 주세요.');
             await adapter.requireLogin();
             if(url.pathname==='/api/confirm-existing'){
               if(approved.data.status!=='pending'){if(busy===approvalId)busy=null;return send(res,200,{status:approved.data.status,...approved.data.result});}
@@ -198,7 +209,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           const idToken=input.idToken;
           void(async()=>{try{const result=confirmed?{status:'verified',alreadyApplied:true,message:'이미 반영 · 원본 확인 완료',results:[],current:confirmed}:await applyVerified(adapter,record,proposal,async e=>journal(j.id,e),request,identities);Object.assign(j,result);if(result.current&&!confirmed)put(result.current);}catch(e){j.status='failed';j.message=e.message;}finally{
             j.finishedAt=new Date().toISOString();saveJob(j);
-            try{const result=await approvalCloud.finish(approvalId,idToken,j.attemptId,j);j.cloudSaved=true;j.platformSaved=result?.platformSaved===true;if(result?.message)j.message=result.message;delete j.cloudError;}catch(e){j.cloudSaved=false;j.platformSaved=false;j.cloudError='체크히어 원본 확인 후 플랫폼 DB 저장을 완료하지 못했습니다. 결과 확인을 누르면 재입력 없이 저장을 다시 확인합니다. '+e.message;}
+            try{const result=await approvalCloud.finish(approvalId,idToken,j.attemptId,j);j.cloudSaved=true;j.platformSaved=result?.platformSaved===true;if(result?.message)j.message=withDeleted(result.message,j);delete j.cloudError;}catch(e){j.cloudSaved=false;j.platformSaved=false;j.cloudError='체크히어 원본 확인 후 플랫폼 DB 저장을 완료하지 못했습니다. 결과 확인을 누르면 재입력 없이 저장을 다시 확인합니다. '+e.message;}
             saveJob(j);if(busy===approvalId)busy=null;
           }})();return send(res,202,j);
         }
@@ -209,7 +220,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           const result=j?.approvalId===input.approvalId?j:{id:input.approvalId,status:'unknown',message:'이 PC에 반영 완료 기록이 없습니다. 처리한 PC와 체크히어 원본을 확인해 주세요.'};
           if(j&&j.attemptId!==doc.data.attemptId)throw Error('다른 PC의 작업입니다. 처리한 PC에서 결과를 확인해 주세요.');
           if(!j)throw Error('이 PC에서 시작한 작업이 아닙니다. 처리한 수집 PC에서 결과 확인을 눌러 주세요.');
-          const saved=await approvalCloud.finish(input.approvalId,input.idToken,doc.data.attemptId,result);j.cloudSaved=true;j.platformSaved=saved?.platformSaved===true;if(saved?.message)j.message=saved.message;delete j.cloudError;saveJob(j);return send(res,200,j);
+          const saved=await approvalCloud.finish(input.approvalId,input.idToken,doc.data.attemptId,result);j.cloudSaved=true;j.platformSaved=saved?.platformSaved===true;if(saved?.message)j.message=withDeleted(saved.message,j);delete j.cloudError;saveJob(j);return send(res,200,j);
         }
         return send(res,404,{error:'지원하지 않는 기능입니다.'});
       }

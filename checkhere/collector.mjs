@@ -2,8 +2,8 @@ import {createRequire} from 'node:module';
 import {join} from 'node:path';
 import {homedir} from 'node:os';
 import {studentKey,recordId,version} from './identity.mjs';
-import {normalizeTime,RULES} from './rules.mjs';
-import {planFromPageData,sampleIds,sameReading} from './day-data.mjs';
+import {normalizeTime,RULES,timeDeleteRefusal} from './rules.mjs';
+import {planFromPageData,sampleIds,sameReading,dayStudent,marksOf,DELETE_MARKS} from './day-data.mjs';
 const settle=(promise,ms)=>{let t;return Promise.race([promise,new Promise(r=>{t=setTimeout(()=>r(null),ms);})]).finally(()=>clearTimeout(t));};
 const require=createRequire(import.meta.url);
 export function loadPlaywright(){
@@ -175,7 +175,15 @@ export class CheckHereCollector{
       }
       record.readState='complete';
     }catch(e){record.readState='partial';record.readError=e.message;await this.closeModal();}
-    record.version=version(record);record.collectedAt=new Date().toISOString();return record;
+    record.version=version(record);record.collectedAt=new Date().toISOString();this.markDeletable(record);return record;
+  }
+  // 시간 삭제 표시는 그날 화면 데이터에 같은 학생이 한 명뿐이고 1교시·퇴실 시간이 수정창 값과 같을 때만 붙입니다.
+  // 확인하지 못하면 붙이지 않습니다(그러면 삭제가 잠깁니다 — 안전한 쪽).
+  markDeletable(record){
+    for(const k of DELETE_MARKS)delete record[k];
+    const d=record.readState==='complete'?dayStudent(this.dayData,record.studentKey):null;
+    if(d&&d.name===record.name&&d.rawEntry===record.rawEntry&&d.entry===record.entry&&d.exit===record.exit)Object.assign(record,marksOf(d));
+    return record;
   }
   // `unchanged(row)` lets an incremental collection skip students whose visible
   // row matches their last complete live read; only changed rows open editors.
@@ -215,8 +223,15 @@ export class CheckHereCollector{
     return this.readDetails({...rows[0],reference:record.reference,exception:record.exception});
   }
   async read(record){const rows=await this.openDay(record.classId,record.date,record.url);return this.readOpened(record,rows);}
-  async write(record,field,change,{requestedFields}={}){
+  async write(record,field,change,{requestedFields,deleteFields=[]}={}){
     const before=await this.modal(record,field);
+    // 시간 삭제는 승인된 요청이 지정한 쪽만. 이미 비어 있으면 누를 것이 없습니다(다시 시도해도 안전).
+    if(deleteFields.includes(field)){
+      if(!requestedFields?.includes(field)){await this.closeModal();throw new Error('TIME_DELETE_REFUSED: 요청하지 않은 시간 삭제입니다.');}
+      if(change?.time){await this.closeModal();throw new Error('TIME_DELETE_REFUSED: 삭제할 시간 칸에 시간이 들어 있습니다.');}
+      if(!before.time){await this.closeModal();return {time:null,memo:before.memo};}
+      return this.deleteTime(record,field,before);
+    }
     let automaticTime;
     if(requestedFields){
       const requestedMemo=requestedFields.includes(field+'Memo');
@@ -228,5 +243,21 @@ export class CheckHereCollector{
     await this.page.locator('#modifyTime').fill(change.time);await this.page.locator('#memoByAdmin').fill(change.memo);
     this.saving=true;
     try{await this.page.getByRole('button',{name:'변경',exact:true}).click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});return {...change,...(automaticTime?{automaticTime}:{})};}finally{this.saving=false;await this.closeModal();}
+  }
+  // 수정창이 열린 채로 부릅니다. 그날 화면 데이터로 이 학생·이 칸의 기록 번호(eventId)를 지금 다시 확인합니다:
+  // 퇴실은 COMPLETE 번호, 1교시는 관리자가 넣은 ATTEND 번호(입실 번호가 없는 학생만). PASS(입실에서 계산)·번호 없음·확인 불가·시간 다름은 지우지 않습니다.
+  // 표시를 붙일 때(markDeletable)와 같은 기준으로, 화면 데이터의 실제 입실·1교시·퇴실이 지금 기록과 모두 같을 때만 믿습니다.
+  // 체크히어 '삭제'는 확인창 없이 바로 지우고 수정창을 닫습니다(Cowork 확인). 열린 수정창 안에 정확히 하나일 때 한 번만 누릅니다.
+  async deleteTime(record,field,before){
+    const refuse=async message=>{await this.closeModal();throw new Error('TIME_DELETE_REFUSED: '+message);};
+    const d=dayStudent(this.dayData,record.studentKey);
+    const agree=!!d&&d.name===record.name&&d.rawEntry===record.rawEntry&&d.entry===record.entry&&d.exit===record.exit&&d[field]===before.time;
+    if(!agree||timeDeleteRefusal(d,field))return refuse(agree&&field==='entry'&&d.entryKind==='ATTEND'&&d.enterEventId?'체크인한 학생의 1교시는 지우지 않습니다(퇴실만).':'기록 번호가 없는 칸은 지우지 않습니다.');
+    // '삭제'는 수정창 안에서만 찾습니다. 수정창이 하나, 그 안에 하나, 화면 전체에도 하나일 때만 누릅니다(강의·학생 삭제 같은 다른 버튼을 누르지 않게).
+    const box=this.page.locator('div.react-draggable').filter({has:this.page.locator('#modifyTime')}),button=box.getByRole('button',{name:'삭제',exact:true});
+    if(await box.count()!==1||await button.count()!==1||await this.page.getByRole('button',{name:'삭제',exact:true}).count()!==1)return refuse('수정창의 삭제 버튼을 하나로 확인하지 못했습니다.');
+    this.saving=true;
+    // 지운 뒤 메모는 다시 읽어 확인합니다(비어 있지 않으면 반영 결과가 failed로 끝납니다).
+    try{await button.click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});return {time:null,memo:''};}finally{this.saving=false;await this.closeModal();}
   }
 }
