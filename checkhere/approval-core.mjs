@@ -13,6 +13,8 @@ export function cleanRequest(input){
   if(!/^(?:[1-9]|1[0-7])$/.test(classId))throw Error('반을 확인해 주세요.');
   if(!/^2026-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date||date<'2026-07-27'||date>'2026-10-22')throw Error('교육 기간 안의 날짜를 선택해 주세요.');
   if(!name||name.length>60||!reason||reason.length>1000)throw Error('학생 이름과 수정 근거(1,000자 이내)를 입력해 주세요.');
+  // 체크히어 가린 이름(가**)으로는 요청하지 않습니다(가린 값이 학생 이름이 되지 않게).
+  if(name.includes('*'))throw Error('학생 이름에 가린 글자(*)가 있습니다. 체크히어 원문 이름으로 요청해 주세요.');
   if(phoneLast4&&!/^\d{4}$/.test(phoneLast4))throw Error('동명이인 구분 번호는 전화번호 끝 4자리입니다.');
   const del=input.deleteTimes??[];
   if(!Array.isArray(del)||new Set(del).size!==del.length||del.some(k=>k!=='entry'&&k!=='exit'))throw Error('삭제할 시간 항목을 확인해 주세요.');

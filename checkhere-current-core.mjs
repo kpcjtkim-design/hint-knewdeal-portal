@@ -23,6 +23,8 @@ export function createCurrentSaver({read,readLegacy,commit,onSaved=()=>{}}){
   for(const original of records){
    const {audit,...rest}=original,r=JSON.parse(JSON.stringify(rest));r.classId=String(r.classId);
    if(!/^(?:[1-9]|1[0-7])$/.test(r.classId)||!/^2026-\d{2}-\d{2}$/.test(r.date)||!r.id||!r.version||!Number.isFinite(Date.parse(r.collectedAt))||r.source!=='live')throw Error('PC에서 수집한 반·날짜·시간이 확인된 기록만 저장할 수 있습니다.');
+   // 체크히어 가린 글자(*)가 든 이름·담임·학생 키·끝 4자리는 플랫폼 DB에 올리지 않습니다.
+   if(['name','teacher','studentKey','phoneLast4'].some(k=>String(r[k]??'').includes('*')))throw Error('가린 글자(*)가 든 학생 기록은 저장하지 않습니다. 수집 PC에서 다시 수집해 주세요.');
    const key=r.classId+'/'+r.date;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);
   }
   let verifiedRecords=0,verifiedBatches=0;

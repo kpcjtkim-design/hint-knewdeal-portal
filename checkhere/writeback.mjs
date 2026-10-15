@@ -27,6 +27,8 @@ export async function applyVerified(adapter,record,input,journal,request=null,id
   let current=await adapter.read(record);
   if(current.id!==record.id||current.studentKey!==record.studentKey||String(current.classId)!==String(record.classId)||current.date!==record.date)return{status:'conflict',message:'다른 학생 또는 날짜가 열려 중단했습니다. 다시 수집해 주세요.',results};
   if(request&&confirmAlreadyApplied(request,record,current,identities))return{status:'verified',alreadyApplied:true,message:'이미 반영 · 체크히어 원본에서 요청값을 확인했습니다.',results,current};
+  // 잡은 뒤 화면이 다시 가려졌으면(해제 시간 끝남 등) 아무것도 누르지 않고 끝냅니다(연결 프로그램이 잡기 전에도 같은 확인을 합니다).
+  const blocked=adapter.writeBlocked?.(current);if(blocked)return{status:'failed',message:`${blocked} · 체크히어에 아무것도 쓰지 않았습니다.`,results,current};
   const clean=request?cleanRequest(request):null,requested=clean?clean.changes:null,deletions=clean?.deleteTimes||[];
   // 시간 삭제: 아직 시간이 있는 쪽은 쓰기 전에 봅니다. 승인 때 본 시간(approval.before)과 같아야 하고(승인 뒤 바뀐 시간은 지우지 않음,
   // 반영이 미뤄졌다 다시 시도될 때), 지금 기록에 기록 번호 표시가 있어야 합니다. 아니면 아무것도 누르지 않고 끝냅니다.

@@ -59,9 +59,13 @@ export function deletionGate({features=null,relay=null,denied=false,now=Date.now
   const at=typeof relay?.at==='number'?relay.at:stamp(relay?.at),fresh=relay?.state==='running'&&at>0&&now-at<=RELAY_STALE_MS;
   if(!fresh)reasons.push('수집 PC 중계가 꺼져 있습니다');
   else if(!(relay.capabilities||[]).includes(TIME_DELETE_CAPABILITY))reasons.push(`수집 PC 프로그램 업데이트 필요 (${TIME_DELETE_CAPABILITY})`);
+  // 체크히어 가림 때문에 기다리는 요청이 있으면 새 삭제를 쌓지 않습니다(수집 PC에서 해제 뒤 처리).
+  else if(unmaskNote(relay))reasons.push(unmaskNote(relay));
   if(denied)reasons.push('시간 삭제용 Firestore 규칙이 아직 게시되지 않았습니다');
   return {enabled:!reasons.length,reasons};
 }
+// 중계 신호의 needsUnmask(가림 때문에 기다리는 요청 수, 이름 없음) → 알림 글. 없으면 ''.
+export const unmaskNote=relay=>Number(relay?.needsUnmask)>0?'체크히어 해제 필요':'';
 
 /* 3장 대응표. row = 방금 b2Save에 보낸 값 {type, reason, inT, outT, oa, ob}, record = 그 학생의 최신 체크히어 기록,
  * sheetTeacher = 반정보 담임, active = 이 학생의 체크히어 요청들, me = 지금 사용자 이메일.

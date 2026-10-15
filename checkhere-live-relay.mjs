@@ -20,26 +20,39 @@ export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(
 // 중계 신호(settings/checkhereRelay)에 쓸 내용. 담임도 읽는 문서라 status.current(반·학생 이름)와 lastError 글은 넣지 않습니다.
 const SIGNAL_NAME=/^[\w.-]{1,80}$/;
 export function relaySignal(status,{capabilities=status?.capabilities,build=status?.build}={},by=null){
-  const s=status||{},running=s.state==='running',reachable=s.bridgeOk!==false;
+  const s=status||{},running=s.state==='running',reachable=s.bridgeOk!==false,unmask=Math.max(0,Math.floor(Number(s.needsUnmask)||0));
   // busy: 중계가 요청·갱신을 처리 중이거나 연결 프로그램이 다른 작업 중(멈춘 중계는 바쁘지 않음).
   return {state:running?'running':'stopped',busy:running&&(Boolean(s.current)||s.bridgeBusy===true),queue:Number(s.queue)||0,
     // 연결 프로그램에 닿지 않으면(bridgeOk false) 능력을 알리지 않습니다(/beta2가 시간 삭제를 켜지 않게).
     capabilities:[...new Set((reachable&&Array.isArray(capabilities)?capabilities:[]).filter(c=>typeof c==='string'&&SIGNAL_NAME.test(c)))],
-    build:typeof build==='string'&&SIGNAL_NAME.test(build)?build:null,lastErrorAt:Number.isFinite(s.lastErrorAt)?s.lastErrorAt:null,by:typeof by==='string'&&by?by:null};
+    build:typeof build==='string'&&SIGNAL_NAME.test(build)?build:null,lastErrorAt:Number.isFinite(s.lastErrorAt)?s.lastErrorAt:null,by:typeof by==='string'&&by?by:null,
+    // 체크히어 마스킹 해제를 기다리는 요청 수(이름 없음). 0이면 넣지 않습니다(신호 모양은 그대로).
+    ...(unmask?{needsUnmask:unmask}:{})};
 }
 
 const REQUIRED=['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1'],MAX_ATTEMPTS=5;
+// 해제로 풀리지 않는 MASKED_* (같은 첫 글자·끝 4자리 학생, 연결 충돌, 저장 요청 확인 실패)
+const NOT_UNMASK=/\bMASKED_(?:AMBIGUOUS|CONFLICT|GUARD)\b/;
+const textOf=e=>`${String(e?.message||'')} ${String(e?.code||'')}`;
+// 체크히어 가림 때문에 못 한 일(연결 프로그램의 MASKED_* 글, 옛 build의 전화번호 글): 요청 탓이 아니라 시도 횟수에 넣지 않고 반려하지 않습니다.
+export const maskedFailure=e=>(/\bMASKED_[A-Z]+|전화번호 표시가 필요합니다/.test(String(e?.message||''))||/^MASKED_/.test(String(e?.code||'')))&&!NOT_UNMASK.test(textOf(e));
+// 수집 PC에서 사람이 풀어야 하는 일(연결 충돌 정리·연결 프로그램 다시 시작): 요청 탓이 아니므로 세지 않고, 해제 대기 수에도 넣지 않고 길게 쉬었다 봅니다.
+// 같은 첫 글자·끝 4자리(MASKED_AMBIGUOUS)는 자동으로 풀리지 않아 보통 실패처럼 세고 반려합니다(체크히어에서 직접 고침).
+export const stuckFailure=e=>/\bMASKED_(?:CONFLICT|GUARD)\b/.test(textOf(e));
+// 모든 반에 걸리는 가림 문제(섞인 화면, 사람이 해제 창을 쓰는 중, 옛 build): 이번 자동 갱신 한 바퀴를 멈춥니다.
+const maskedEveryClass=e=>/\bMASKED_(?:MIXED|UNMASKING)|전화번호 표시가 필요합니다/.test(String(e?.message||''));
 // 시간 삭제 요청(deleteTimes): 연결 프로그램이 time-delete-v1을 모르면 대기 중 요청은 체크히어를 읽지 않고 반려하고,
 // 이미 승인된 요청은 규칙상 반려할 수 없어 업데이트를 기다립니다(BRIDGE_OLD). 규칙이 게시되지 않아 승인 저장이 거절되면 반려합니다.
 export const TIME_DELETE_OLD='수집 PC 프로그램이 아직 체크히어 시간 삭제를 지원하지 않습니다. 「체크히어 시작.cmd」를 최신으로 실행한 뒤 다시 요청해 주세요.';
 export const TIME_DELETE_RULES='시간 삭제용 Firestore 규칙이 아직 게시되지 않았습니다. 규칙을 게시한 뒤 다시 요청해 주세요.';
 // 모양이 이상해도 deleteTimes가 있으면 삭제로 봅니다(능력이 없으면 막는 쪽이 안전).
 const deletesTime=r=>{try{return !!cleanRequest(r).deleteTimes;}catch{return r?.deleteTimes!=null&&!(Array.isArray(r.deleteTimes)&&!r.deleteTimes.length);}};
-export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,intervalMs=LIVE_INTERVAL_MS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow}){
-  const queue=new Map(),retryAt=new Map(),attempts=new Map(),ignored=new Set(),mirror=new Map(),saved=new Map(),noLecture=new Map(),manual=[];
-  let cursor=null,capabilities=[],cycle=null,nextCycleAt=0,running=false,wake=null,unwatch=null,listeners=new Set(),active=[];
-  const status={state:'stopped',lastCycle:null,lastError:null,lastErrorAt:null,processed:0,saves:0,queue:0,current:null,capabilities:[],build:null,bridgeBusy:false,bridgeOk:null};
-  const emit=()=>{status.queue=[...queue.values()].length;for(const f of listeners)f({...status});};
+// maskedRetryMs: 가림 때문에 기다리는 요청은 길게 쉬었다 봅니다(검토 10). 연결 프로그램 탭이 해제되면 바로 다시 봅니다.
+export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,intervalMs=LIVE_INTERVAL_MS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,maskedRetryMs=5*60000,inWindow=inLiveWindow}){
+  const queue=new Map(),retryAt=new Map(),attempts=new Map(),ignored=new Set(),mirror=new Map(),saved=new Map(),noLecture=new Map(),manual=[],maskedWait=new Set();
+  let cursor=null,capabilities=[],cycle=null,nextCycleAt=0,running=false,wake=null,unwatch=null,listeners=new Set(),active=[],unmaskedSeenAt=0,maskCheckAt=0;
+  const status={state:'stopped',lastCycle:null,lastError:null,lastErrorAt:null,processed:0,saves:0,queue:0,current:null,capabilities:[],build:null,bridgeBusy:false,bridgeOk:null,needsUnmask:0};
+  const emit=()=>{status.queue=[...queue.values()].length;for(const id of maskedWait)if(!queue.has(id))maskedWait.delete(id);status.needsUnmask=maskedWait.size;for(const f of listeners)f({...status});};
   const note=(text,level='info')=>{log({at:now().toISOString(),level,text});if(level==='error'){status.lastError=text;status.lastErrorAt=now().getTime();}emit();};
   const today=()=>koreaClock(now()).date;
   const recKey=r=>`${r.version}|${r.collectedAt}`;
@@ -49,6 +62,10 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
     // 중계 신호용으로 연결 프로그램의 능력·build·바쁨을 상태에 보입니다(바뀔 때만 알림).
     const build=typeof s.build==='string'&&s.build?s.build:null,busy=Boolean(s.busy);
     if(String(status.capabilities)!==String(capabilities)||status.build!==build||status.bridgeBusy!==busy){Object.assign(status,{capabilities:[...capabilities],build,bridgeBusy:busy});emit();}
+    // 연결 프로그램 탭이 가림에서 '원문 표시 중'으로 바뀌는 순간에만 가림 때문에 쉬던 요청을 바로 다시 봅니다(해제 중 계속 막히는 요청이 되풀이되지 않게).
+    const unmasked=s.masking?.header==='unmasked';maskCheckAt=now().getTime();
+    if(unmasked&&!unmaskedSeenAt&&maskedWait.size){for(const id of maskedWait)retryAt.delete(id);wake?.();}
+    unmaskedSeenAt=unmasked?unmaskedSeenAt||maskCheckAt:0;
     if(s.recordsMode==='replace')mirror.clear();
     for(const r of s.records||[])mirror.set(r.id,r);
     cursor=s.cursor;return s;
@@ -126,6 +143,8 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
     let judgement;try{judgement=checkLiveEdit(record,clean.changes,capabilities,clean.deleteTimes);}catch(e){return reject(r,e.message);}
     if(Object.keys(judgement.defaults).length&&!capabilities.includes('memo-default-time-v1'))throw Object.assign(Error('수집 PC에서 최신 「체크히어 시작.cmd」를 다시 실행해 주세요.'),{code:'BRIDGE_OLD'});
     let approval;try{approval=prepareApproval(r,record,{identities});}catch(e){return reject(r,e.message);}
+    // 연결 프로그램 탭이 가려져 있거나 해제 시간이 모자라면 승인하지 않습니다: 요청은 대기로 남고 해제 뒤 다시 봅니다(시도 횟수에 넣지 않음).
+    if(preview.writeBlocked)throw Object.assign(Error(String(preview.writeBlocked.message||'MASKED_WRITE: 체크히어 마스킹 해제 후 반영합니다')),{code:String(preview.writeBlocked.code||'MASKED_WRITE')});
     try{await store.approve(r.id,approval,r);}
     catch(e){if(clean.deleteTimes&&e?.code==='permission-denied')return reject(r,TIME_DELETE_RULES);throw e;}
     await bridge.api('apply',{approvalId:r.id,idToken});
@@ -137,15 +156,20 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
     return [...queue.values()].filter(r=>!ignored.has(r.id)&&(retryAt.get(r.id)||0)<=t).sort((a,b)=>stamp(a.createdAt)-stamp(b.createdAt));
   }
   async function step(){
+    // 가림 때문에 쉬는 요청이 있으면 연결 프로그램 탭이 해제되었는지 가끔(15초) 봅니다.
+    if(maskedWait.size&&now().getTime()-maskCheckAt>15000)await refresh().catch(()=>{});
     const next=eligible()[0];
     if(next){
-      try{await processRequest(next);retryAt.delete(next.id);attempts.delete(next.id);}
+      try{await processRequest(next);retryAt.delete(next.id);attempts.delete(next.id);maskedWait.delete(next.id);}
       catch(e){
         // Bridge/login problems wait indefinitely; a request that keeps failing on its own is closed.
-        const infra=['BRIDGE_OFFLINE','BRIDGE_BUSY','BRIDGE_KEY','BRIDGE_OLD'].includes(e.code)||/LOGIN_REQUIRED/.test(e.message);
+        // 체크히어 가림(MASKED_*·옛 build의 전화번호 글)도 요청 탓이 아니므로 반려하지 않고 길게 쉬었다 봅니다(해제되면 바로).
+        const masked=maskedFailure(e),stuck=stuckFailure(e),infra=masked||stuck||['BRIDGE_OFFLINE','BRIDGE_BUSY','BRIDGE_KEY','BRIDGE_OLD'].includes(e.code)||/LOGIN_REQUIRED/.test(e.message);
         const n=infra?0:(attempts.get(next.id)||0)+1;attempts.set(next.id,n);
+        // 바빠서 돌아온 요청(해제 직후 연결 확인 수집 중 등)은 해제 대기 수에서 빼지 않습니다(/beta2 삭제 관문이 잠깐 열리지 않게).
+        if(masked)maskedWait.add(next.id);else if(e.code!=='BRIDGE_BUSY')maskedWait.delete(next.id);
         if(n>=MAX_ATTEMPTS&&next.status==='pending'){await store.reject(next.id,`자동 반영을 ${n}번 시도했지만 처리하지 못했습니다: ${e.message}`).catch(()=>{});queue.delete(next.id);note(`${next.classId}반 ${next.name}: ${n}번 실패해 자동 반영을 중단했습니다 — ${e.message}`,'error');}
-        else{retryAt.set(next.id,now().getTime()+retryMs);note(`${next.classId}반 ${next.name}: ${e.message} (잠시 후 다시 시도)`,'error');}
+        else{retryAt.set(next.id,now().getTime()+(masked||stuck?maskedRetryMs:retryMs));note(`${next.classId}반 ${next.name}: ${e.message} (${masked?'체크히어 마스킹 해제 뒤 다시 시도':stuck?'수집 PC에서 정리한 뒤 다시 시도':'잠시 후 다시 시도'})`,masked?'warn':'error');}
       }
       finally{status.current=null;emit();}
       return 'request';
@@ -158,8 +182,8 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
       let result;try{result=await syncClass(classId,cycle.date);}
       catch(e){
         result='error';note(e.message,'error');
-        // Logged out or bridge closed: stop this round instead of failing 17 times.
-        if(e.code==='BRIDGE_OFFLINE'||e.code==='BRIDGE_KEY'||/LOGIN_REQUIRED/.test(e.message)){cycle=null;nextCycleAt=t+retryMs;status.current=null;emit();return 'idle';}
+        // Logged out or bridge closed: stop this round instead of failing 17 times. 섞인 화면·옛 build의 가림 오류도 모든 반에 걸리므로 멈춥니다.
+        if(e.code==='BRIDGE_OFFLINE'||e.code==='BRIDGE_KEY'||/LOGIN_REQUIRED/.test(e.message)||maskedEveryClass(e)){cycle=null;nextCycleAt=t+retryMs;status.current=null;emit();return 'idle';}
       }
       finally{status.current=null;}
       if(result==='busy'){emit();return 'busy';}
@@ -174,7 +198,7 @@ export function createLiveRelay({bridge,store,user,log=()=>{},now=()=>new Date()
       let did;try{did=await step();}catch(e){did='idle';note(e.message,'error');}
       if(!running)break;
       if(did==='idle'||did==='busy'){
-        const t=now().getTime(),soon=Math.min(...[...retryAt.values(),nextCycleAt].filter(x=>x>t).map(x=>x-t),did==='busy'?5000:60000);
+        const t=now().getTime(),soon=Math.min(...[...retryAt.values(),nextCycleAt].filter(x=>x>t).map(x=>x-t),did==='busy'?5000:maskedWait.size?15000:60000);
         await new Promise(r=>{wake=r;sleep(Math.max(1000,soon)).then(r);});wake=null;
       }
     }

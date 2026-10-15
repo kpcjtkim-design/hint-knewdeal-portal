@@ -53,8 +53,8 @@ test('a bridge without time-delete-v1 refuses deletion requests before reading, 
   const b=await bridge(18797,record,docs,OLD);
   try{
     const session=await (await fetch('http://127.0.0.1:18797/api/session')).json();
-    assert.equal(session.build,'20261015.2');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
-    const state=await b.get('state?delta=1');assert.equal(state.build,'20261015.2','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
+    assert.equal(session.build,'20261015.3');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
+    const state=await b.get('state?delta=1');assert.equal(state.build,'20261015.3','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
     const applied=await b.post('apply','fixture-delete-approved-01');
     assert.equal(applied.code,400);assert.match(applied.body.error,/시간 삭제를 지원하지 않습니다/);
     assert.equal(docs.get('fixture-delete-approved-01').status,'approved','an approved deletion stays approved (not claimed)');
@@ -75,7 +75,7 @@ test('a bridge with time-delete-v1 deletes an approved exit, verifies it by re-r
   const b=await bridge(18798,record,docs);
   try{
     const session=await (await fetch('http://127.0.0.1:18798/api/session')).json();
-    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261015.2');
+    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261015.3');
     const started=await b.post('apply','fixture-delete-approved-02');assert.equal(started.code,202,JSON.stringify(started.body));
     const j=await b.job('fixture-delete-approved-02');
     assert.equal(j.status,'verified',j.message);assert.equal(j.results[0].deleted,true);assert.equal(j.results[0].field,'exit');

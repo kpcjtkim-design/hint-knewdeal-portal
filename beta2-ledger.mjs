@@ -163,8 +163,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  }
  function paintRelay(){
   const el=$('#b2Relay');if(!el)return;const r=sync.relay();
-  const title=[r.on?`수집 PC 중계 대기 ${r.queue}건${r.busy?' · 작업 중':''}`:'수집 PC의 체크히어 실시간 화면에서 중계를 켜면 반영 대기 요청이 자동 처리됩니다.',r.requestsError?`체크히어 요청 목록 읽기 실패: ${r.requestsError}`:''].filter(Boolean).join('\n');
-  const html=`<span class="b2-pill ${r.on?'live':'wait'}" title="${esc(title)}">${esc(r.text)}</span>`;if(shown.get('relay')!==html){el.innerHTML=html;shown.set('relay',html);}
+  const title=[r.on?`수집 PC 중계 대기 ${r.queue}건${r.busy?' · 작업 중':''}`:'수집 PC의 체크히어 실시간 화면에서 중계를 켜면 반영 대기 요청이 자동 처리됩니다.',r.needsUnmask?`체크히어 개인정보 가림 때문에 ${r.needsUnmask}건이 기다립니다. 수집 PC 연결 프로그램 화면에서 「마스킹 해제 시작」을 눌러 주세요.`:'',r.requestsError?`체크히어 요청 목록 읽기 실패: ${r.requestsError}`:''].filter(Boolean).join('\n');
+  const html=`<span class="b2-pill ${r.on&&!r.needsUnmask?'live':'wait'}" title="${esc(title)}">${esc(r.text)}</span>`;if(shown.get('relay')!==html){el.innerHTML=html;shown.set('relay',html);}
  }
  function showEmpty(html){let el=table.querySelector('tbody[data-empty]');if(!el){el=document.createElement('tbody');el.dataset.empty='';table.append(el);}el.innerHTML=`<tr><td colspan="5">${html}</td></tr>`;}
  function renderRows(){

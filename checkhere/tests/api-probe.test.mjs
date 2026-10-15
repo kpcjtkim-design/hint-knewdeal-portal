@@ -218,7 +218,7 @@ test('the bridge runs the diagnosis as a keyed job and saves only the value-free
     const app=createBridge({dataDir,collector,port:18941});await new Promise(r=>app.server.listen(18941,'127.0.0.1',r));
     try{
       const call=async(path,body,key=app.key)=>{const res=await fetch('http://127.0.0.1:18941/api/'+path,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(key?{'x-hint-key':key}:{}),connection:'close'},body:body&&JSON.stringify(body)});return {status:res.status,body:await res.json()};};
-      const session=(await call('session',null,null)).body;assert(session.capabilities.includes('api-probe-v1'));assert.equal(session.build,'20261015.2');
+      const session=(await call('session',null,null)).body;assert(session.capabilities.includes('api-probe-v1'));assert.equal(session.build,'20261015.3');
       const ok={classId:'2',date1:'2026-10-14',date2:'2026-10-13'};
       assert.equal((await call('api-probe',ok,'0'.repeat(64))).status,401,'wrong key');assert.equal((await call('api-probe',ok,null)).status,401,'no key');
       for(const bad of [{...ok,classId:'99'},{...ok,date2:'2026-10-14'},{...ok,date1:'2026-13-01'},{...ok,url:'https://evil.example/history/lecture/modify'}])assert.equal((await call('api-probe',bad)).status,400,JSON.stringify(bad));

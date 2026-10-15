@@ -164,7 +164,7 @@ function relayLock(){
 }
 function mountRelay(user,view){
   let relay=null,release=null,beat=null,signalAt=0;const logs=[],sleep=workerSleep();
-  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중</span>':'<span class="chip warn">꺼져 있음</span>'} 대기 ${s.queue}건 · 처리 ${s.processed}건${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
+  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중</span>':'<span class="chip warn">꺼져 있음</span>'} 대기 ${s.queue}건 · 처리 ${s.processed}건${s.needsUnmask?` · <span class="chip warn" title="수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 누르고 메일의 인증번호를 넣어 주세요. 연장·종료는 체크히어 창에서 직접 누릅니다.">체크히어 해제 필요 ${s.needsUnmask}건</span>`:''}${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
   const addLog=e=>{logs.unshift(e);logs.length=Math.min(logs.length,40);const el=$('#relayLog');if(el)el.innerHTML=logs.map(x=>`<li class="${x.level}">${new Date(x.at).toLocaleTimeString('ko-KR',{hour12:false})} ${esc(x.text)}</li>`).join('');};
   // 중계 신호(settings/checkhereRelay): /beta2가 중계 작동 여부와 연결 프로그램 능력을 봅니다. 담임도 읽으므로 반·이름·오류 글은 넣지 않습니다(relaySignal).
   // 시작·멈춤은 바로 쓰고, 작동 중에는 상태가 자주 바뀌어도 1분에 한 번만 씁니다(바뀐 내용은 다음 신호에 담김). 쓰기에 실패해도 경고만 남기고 중계는 계속합니다.

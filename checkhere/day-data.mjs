@@ -46,20 +46,22 @@ export function dayStudent(json,key){
 }
 // Rows come from the visible table. A row is read from page data only when the
 // same student (name + phone key) is there once and every visible value agrees.
-export function planFromPageData(rows,json,{now=()=>new Date().toISOString()}={}){
+// entryFor(row): 표 순번으로 이미 맞춘 학생 항목(가린 화면은 이것만 씀 — 가린 이름·전화로 키를 만들지 않음).
+// 그때는 맞추기가 표와 데이터의 학생 수·순번을 이미 확인했으므로 아래 학생 수 비교를 하지 않습니다. memoOk(row,d): 메모를 믿을지.
+export function planFromPageData(rows,json,{now=()=>new Date().toISOString(),entryFor=null,memoOk=null}={}){
   const list=json?.data?.eventResultList;
   if(!Array.isArray(list))return {byId:new Map(),fallback:rows.map(r=>r.id),reason:'화면 데이터 형식이 예상과 다릅니다.'};
   const byKey=new Map();
-  for(const s of list){const d=readStudent(s);if(d.phone.length<9)continue;const k=studentKey(d.name,d.phone);byKey.set(k,byKey.has(k)?null:d);}
+  if(!entryFor)for(const s of list){const d=readStudent(s);if(d.phone.length<9)continue;const k=studentKey(d.name,d.phone);byKey.set(k,byKey.has(k)?null:d);}
   const byId=new Map(),fallback=[];
   for(const row of rows){
-    const d=byKey.get(row.studentKey);
-    const agrees=d&&!d.problems.length&&d.name===row.name&&d.rawEntry===row.rawEntry&&d.entry===row.entry&&d.exit===row.exit&&d.outings.length===row.outingCount;
+    const e=entryFor?entryFor(row):null,d=entryFor?(e?readStudent(e):null):byKey.get(row.studentKey);
+    const agrees=d&&!d.problems.length&&(entryFor||d.name===row.name)&&d.rawEntry===row.rawEntry&&d.entry===row.entry&&d.exit===row.exit&&d.outings.length===row.outingCount&&(!memoOk||memoOk(row,d));
     if(!agrees){fallback.push(row.id);continue;}
     const r={...row,entry:d.entry,exit:d.exit,entryMemo:d.entryMemo,exitMemo:d.exitMemo,outings:d.outings,readState:'complete',collectedAt:now()};
     delete r.readError;r.version=version(r);Object.assign(r,marksOf(d));byId.set(row.id,r);
   }
-  if(list.length!==rows.length)return {byId:new Map(),fallback:rows.map(r=>r.id),reason:'화면 데이터와 표의 학생 수가 다릅니다.'};
+  if(!entryFor&&list.length!==rows.length)return {byId:new Map(),fallback:rows.map(r=>r.id),reason:'화면 데이터와 표의 학생 수가 다릅니다.'};
   return {byId,fallback,reason:fallback.length?`표와 맞지 않는 학생 ${fallback.length}명은 수정창으로 읽습니다.`:''};
 }
 // Editors to open as a daily sample: a student with a memo, one with an outing, else the first.

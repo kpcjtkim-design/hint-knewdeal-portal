@@ -6,7 +6,7 @@
 // import한 함수를 넘겨야 가드(beta2-firestore-guard.mjs)를 거쳐 근거에 [2기 베타]가 붙습니다. 이 파일은 https 주소를 import하지 않습니다(Node 시험).
 import {memoDefaultTimes,resultText} from './checkhere/approval-core.mjs';
 import {ACTIVE,LIVE_STATUS,buildLiveRequest,isAutoLedgerRequest,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
-import {RELAY_STALE_MS,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,sheetToCheckHere} from './beta2-checkhere-core.mjs';
+import {RELAY_STALE_MS,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
 import {B2_EVIDENCE,B2_TYPES,neededTimes,recognizedType} from './beta2-core.mjs';
 
 // firestore.rules checkhereRequests create 허용 키 중 요청 내용(나머지는 status·createdBy·createdAt·updatedAt).
@@ -444,8 +444,9 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     gate,
     relay(){
       const s=relayDoc,at=typeof s?.at==='number'?s.at:stamp(s?.at),t=now(),on=s?.state==='running'&&at>0&&t-at<=RELAY_STALE_MS,min=Math.floor((t-at)/60000);
-      return {on,at:at||null,busy:!!s?.busy,queue:Number(s?.queue)||0,capabilities:[...(s?.capabilities||[])],build:s?.build||null,requestsError:reqError,
-        text:on?`수집 PC 중계 작동 중 · 신호 ${min<1?'방금':min+'분 전'}`:'중계 꺼짐 · 요청은 반영 대기로 남습니다'};
+      const unmask=on?unmaskNote(s):'';
+      return {on,at:at||null,busy:!!s?.busy,queue:Number(s?.queue)||0,capabilities:[...(s?.capabilities||[])],build:s?.build||null,requestsError:reqError,needsUnmask:on?Number(s?.needsUnmask)||0:0,
+        text:on?`수집 PC 중계 작동 중 · 신호 ${min<1?'방금':min+'분 전'}${unmask?` · ${unmask} ${Number(s.needsUnmask)}건`:''}`:'중계 꺼짐 · 요청은 반영 대기로 남습니다'};
     },
     // needsConfirm: 확인창(S8)을 거치지 않은 시간 삭제라 지금 보내기(떠남·반·날짜 이동)로는 보내지 않는 결정
     holds:()=>[...holds.values()].map(h=>({key:h.key,cls:h.cls,date:h.date,name:h.name,phase:h.phase,sendable:sendable(h),needsConfirm:needsConfirm(h),retryWhen:h.retryWhen||null,deadline:h.deadline||null})),

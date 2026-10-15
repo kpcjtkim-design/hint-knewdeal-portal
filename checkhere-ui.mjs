@@ -20,6 +20,7 @@ export async function mountCheckHere(host,ctx={}){
     <details id="pairing" class="card connection"><summary>수집 연결 프로그램 설정</summary><p class="muted">Windows에서는 ‘체크히어 시작.cmd’, macOS에서는 ‘체크히어 시작.command’를 실행하세요. 플랫폼에서는 로컬 화면에 표시된 연결 키를 아래에 입력하면 됩니다. 프로그램을 재시작하면 키가 바뀝니다.</p><div class="line"><input id="keyInput" type="password" autocomplete="off" aria-label="로컬 연결 키" placeholder="연결 키"><button id="pair">연결</button></div><div id="localKey"></div></details>
     <section class="toolbar"><div><label for="class">반</label><select id="class"><option value="all">전체 17개 반</option>${Array.from({length:17},(_,i)=>`<option value="${i+1}" ${i===1?'selected':''}>${i+1}반</option>`).join('')}<option value="multi">여러 반 선택…</option></select></div><div><label for="from">시작 날짜</label><input id="from" type="date" min="2026-07-27" value="2026-09-03"></div><div><label for="to">종료 날짜</label><input id="to" type="date" min="2026-07-27" value="2026-09-03"></div><div><label for="mode">수집 방식</label><select id="mode"><option value="incremental">빠른 수집 · 화면 데이터로 한 번에 읽고 표본 대조</option><option value="full">정밀 수집 · 모든 학생 수정창 다시 읽기</option></select></div><button id="bulkPreset">전체반 · 7/27~오늘</button><button id="sync" class="primary">체크히어에서 수집</button><button id="refresh">저장된 기록 조회</button><button id="cancel" hidden>수집 중단</button>${ctx.load?'<button id="loadCloud">플랫폼 저장본 조회</button><button id="saveCloud">플랫폼에 저장</button>':''}</section>
     <div id="classPicker" class="card" hidden><div class="line"><strong>수집·조회할 반</strong><button id="pickAll" type="button">전체 선택</button><button id="pickNone" type="button">선택 해제</button><span id="pickCount" class="muted"></span></div><div class="line" style="flex-wrap:wrap;gap:6px 14px;margin-top:8px">${Array.from({length:17},(_,i)=>`<label style="display:inline-flex;align-items:center;gap:4px;font-weight:500"><input type="checkbox" data-pick="${i+1}" ${i===1?'checked':''}>${i+1}반</label>`).join('')}</div><p class="muted">빠른 수집은 체크히어 출결상세 화면이 받는 데이터로 그날 반 전체의 시간·메모·외출을 한 번에 읽습니다. 표의 시간과 하나하나 대조하고, 매일 학생 1~2명은 수정창을 열어 값이 같은지 확인합니다. 하나라도 다르면 그날은 수정창 방식으로 다시 읽습니다. 정밀 수집은 모든 학생의 수정창을 엽니다.</p></div>
+    <section id="maskPanel" class="card connection" hidden><div class="line"><strong id="maskView">체크히어 화면 확인 전</strong><span id="maskCounts" class="muted"></span></div><div id="maskControls"></div><p class="muted">해제 사유는 기다리는 일로 넣고, 인증번호는 메일에서 직접 확인해 여기에 넣습니다. 연장·종료는 체크히어 창에서 직접 누르세요.</p></section>
     <div class="notice">기준 09:00–18:00 · 점심 12:00–13:00 제외 · 09:11부터 지각 · 17:50 이전 조퇴. 시간만으로 인정출석을 확정하지 않습니다. 저장본과 상세 수집 실패는 별도로 표시합니다.</div>
     <div id="cloudSaveStatus" role="status" aria-live="polite"></div><div id="bulkStatus" role="status"></div><div id="jobStatus" role="status" aria-live="polite"></div><section id="stats" class="stats"></section><div class="filters"><div class="line"><select id="filter" aria-label="검수 상태"><option value="all">전체 기록</option><option value="review">확인 필요</option><option value="memo">사유 확인</option><option value="partial">재수집 필요</option></select><input id="search" placeholder="학생 이름 검색" aria-label="학생 이름 검색"></div><button id="export">검수 결과 내보내기</button></div><div id="table"></div><div class="foot">시간 판정은 검토를 돕는 결과입니다. 정상 시간으로 임의 보정하지 않습니다. 중복 출결은 반영에서 제외합니다.<br>반영 완료는 체크히어를 다시 읽어 시간과 메모가 일치한 경우에만 표시합니다. Google Sheet 및 출결 파일을 수정·삭제하지 않습니다.</div><details><summary>최근 작업 결과</summary><div id="jobs"></div></details></div><div id="overlay"></div><div id="alerts"></div>`;
   const $=s=>root.querySelector(s);
@@ -52,7 +53,29 @@ export async function mountCheckHere(host,ctx={}){
     root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditor(state.records.find(r=>r.id===b.dataset.edit)));
     if($('#pagePrevious'))$('#pagePrevious').onclick=()=>{page--;render();};if($('#pageNext'))$('#pageNext').onclick=()=>{page++;render();};
     }
-    $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':/probe$/.test(j.kind)?'진단':'반영')} · ${esc(({verified:j.cloudError?'DB 저장 재확인':j.platformSaved?(j.alreadyApplied?'이미 반영 · DB 저장 완료':'반영·DB 저장 완료'):'DB 저장 확인 중',complete:/probe$/.test(j.kind)?'진단 완료':'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.cloudError||j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
+    paintMask();
+    $('#jobs').innerHTML=state.jobs.slice(0,10).map(j=>`<p><span class="badge">${esc(j.kind==='sync'?'수집':/probe$/.test(j.kind)?'진단':j.kind==='unmask'?'체크히어 해제':'반영')} · ${esc(({verified:j.cloudError?'DB 저장 재확인':j.platformSaved?(j.alreadyApplied?'이미 반영 · DB 저장 완료':'반영·DB 저장 완료'):'DB 저장 확인 중',complete:/probe$/.test(j.kind)?'진단 완료':'수집 완료',running:'진행 중',partial:'일부 실패',failed:'실패',unknown:'결과 미확인',conflict:'충돌',cancelled:'중단'})[j.status]||j.status)}</span> ${esc(j.cloudError||j.message)}</p>`).join('')||'<p class="muted">아직 작업이 없습니다.</p>';
+  }
+  // 체크히어 개인정보 가림(이 PC 화면에서만, 이름 없이 수만): 해제는 사람이 시작하고 인증번호도 사람이 넣습니다.
+  let maskStep='',maskReason='',maskControls='';
+  function paintMask(){
+    const el=$('#maskPanel'),m=state.masking;if(!el)return;
+    if(!local()||!m||(!m.view&&!m.header)){el.hidden=true;return;}el.hidden=false;
+    // 해제 중인데 남은 시간을 읽지 못하면 쓰지 않으므로(안전한 쪽) 그렇게 보입니다.
+    const left=Number.isFinite(m.remaining)?` · 남은 ${Math.floor(m.remaining/60)}분 ${m.remaining%60}초`:m.header==='unmasked'?' · 남은 시간 읽지 못함(쓰기 멈춤)':'';
+    $('#maskView').textContent='체크히어 화면: '+(m.header==='unmasked'?'원문 표시 중'+left:m.view==='masked'?'개인정보 가림':m.view==='mixed'?'가림 상태 섞임':m.view==='plain'?'원문':'확인 전');
+    $('#maskCounts').textContent=` · 연결 안 된 학생 ${m.unlinked||0}명 · 가림 때문에 기다리는 수정 ${m.waitingWrites||0}건${m.pendingLinks?` · 원문 확인 전 연결 ${m.pendingLinks}명`:''}${m.conflicts?` · 연결 충돌 ${m.conflicts}명`:''}${m.learning?` · 연결 확인 수집 대기 ${m.learning}반`:''}`;
+    if(!m.unmasking&&maskStep==='code'&&!state.busy)maskStep='';const coding=maskStep==='code'||m.unmasking;
+    // 입력 중인 칸이 지워지지 않게 단추 모양이 바뀔 때만 다시 그립니다.
+    const html=coding?`<div class="line"><span class="muted">사유: ${esc(m.reason||maskReason||'기다리는 일')}</span></div><div class="line"><input id="maskCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="메일의 인증번호 6자리" aria-label="체크히어 인증번호"><button id="maskCodeSend" class="primary">인증번호 넣기</button><button id="maskCancel">취소</button></div>`
+      // 누르기 전에 체크히어에 넣을 사유를 그대로 보입니다(누른 사람이 체크히어 기록의 이 글을 책임짐).
+      :`<div class="line">${m.header!=='unmasked'&&m.reasonPreview?`<button id="maskStart" class="primary">마스킹 해제 시작</button><span class="muted">체크히어에 넣을 사유: ${esc(m.reasonPreview)}</span>`:''}${m.conflicts?'<button id="maskConflicts">연결 충돌 정리</button>':''}</div>`;
+    if(html===maskControls)return;maskControls=html;$('#maskControls').innerHTML=html;
+    // 본 사유를 함께 보냅니다. 그 사이 기다리는 일이 바뀌었으면 연결 프로그램이 거절하고(409) 새 사유를 다시 보여 줍니다.
+    if($('#maskStart'))$('#maskStart').onclick=handle(async()=>{$('#maskStart').disabled=true;let r;try{r=await api('unmask/start',{reason:m.reasonPreview});}catch(e){maskControls='';await refresh().catch(()=>{});throw e;}maskReason=r.reason||'';maskStep=r.stage==='code'?'code':'';await refresh();if(r.stage==='done')alertMessage('체크히어 해제됨','이미 원문 표시 중입니다.');});
+    if($('#maskCodeSend'))$('#maskCodeSend').onclick=handle(async()=>{const code=$('#maskCode').value.trim();if(!/^\d{6}$/.test(code))throw Error('메일로 받은 인증번호 6자리 숫자를 넣어 주세요.');$('#maskCodeSend').disabled=true;try{const r=await api('unmask/code',{code});maskStep='';await refresh();alertMessage('체크히어 해제됨',`원문 표시 중${Number.isFinite(r.remaining)?` · 남은 ${Math.floor(r.remaining/60)}분 ${r.remaining%60}초`:''}. 기다리던 수정은 중계가 반영하고, 연결 안 된 반은 연결 프로그램이 원문으로 다시 읽습니다. 연장·종료는 체크히어 창에서 직접 누르세요.`);}finally{if($('#maskCodeSend'))$('#maskCodeSend').disabled=false;}});
+    if($('#maskCancel'))$('#maskCancel').onclick=handle(async()=>{maskStep='';await api('unmask/cancel',{});await refresh();});
+    if($('#maskConflicts'))$('#maskConflicts').onclick=handle(async()=>{const r=await api('links/clear-conflicts',{});await refresh();alertMessage('연결 충돌 정리',`연결 ${r.cleared}개를 지웠습니다. 해제된 화면에서 그 반을 다시 수집하면 새로 연결합니다.`);});
   }
   function showBatch(j){
     const bad=(j.results||[]).filter(r=>['failed','partial','cancelled'].includes(r.status)),none=(j.results||[]).filter(r=>r.status==='no-lecture'),saveFails=[...batchSaveErrors];
@@ -103,7 +126,11 @@ export async function mountCheckHere(host,ctx={}){
         if(batch.length)try{await saveCloud(batch,j);}catch(e){alertMessage('수집 완료 · 플랫폼 저장 실패',`PC에는 수집 결과가 남아 있습니다. 플랫폼 저장을 다시 시도해 주세요.\n${e.message}`);}
       }
     }
+    // 해제된 동안(이 PC 화면)은 남은 시간·연결 확인 수집을 보이려고 5초마다 다시 봅니다.
     if(state.busy&&!batchRunning&&host.isConnected&&!disposed)pollTimer=setTimeout(()=>refresh().catch(e=>alertMessage('연결 확인',e.message)),3000);
+    else if(local()&&(state.masking?.header==='unmasked'||state.masking?.learning)&&!batchRunning&&host.isConnected&&!disposed)pollTimer=setTimeout(()=>refresh().catch(()=>{}),5000);
+    // 가린 동안(이 PC 화면)은 15초마다 다시 봅니다: 열어 둔 화면이 '기다리는 수정 0건'에 멈춰 「마스킹 해제 시작」이 안 보이는 일이 없게.
+    else if(local()&&state.masking?.view==='masked'&&!batchRunning&&host.isConnected&&!disposed)pollTimer=setTimeout(()=>refresh().catch(()=>{}),15000);
     return state;
     })();try{return await refreshPromise;}finally{refreshPromise=null;}
   }
