@@ -6,6 +6,7 @@ import {CheckHereCollector} from '../collector.mjs';
 import {createBridge} from '../server.mjs';
 import {studentKey,recordId,version} from '../identity.mjs';
 import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mjs';
+import {ATTEND_DELETE} from '../rules.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
 import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
 import {TIME_DELETE_OLD,TIME_DELETE_RULES,createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
@@ -27,6 +28,7 @@ test('Korean clock, live window and request tags',()=>{
 const live={id:'r1',classId:'2',date:DATE,name:'가상학생',phoneLast4:'0001',studentKey:'k',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'09:12:00',entry:'09:12:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0};
 // 시간 삭제는 기록 번호 표시가 있는 기록에서만: 관리자가 1교시를 넣은 학생(입실 번호 없음)의 표시
 const LIVE=live,MARKS={entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false};
+const ATTEND_OFF='관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).';
 test('editor builds only changed fields and refuses blanks, no-ops and missing reasons',()=>{
   const req=buildLiveRequest(live,{entry:'09:12',exit:'18:00:00',entryMemo:'지각_교통',exitMemo:''},'버스 지연');
   assert.deepEqual(req.changes,{entryMemo:'지각_교통'});assert.equal(req.phoneLast4,'0001');assert(req.reason.startsWith(LIVE_MARK));assert.equal(tagOf(req.reason),baseTag(live,['entryMemo']));
@@ -51,14 +53,22 @@ test('time deletion builds a blank for the named side, tags it and skips a side 
   const memo={...live,exitMemo:'조퇴_담임:가상(17:00)'},cleared=buildLiveRequest(memo,form,'결석 확인',{deleteTimes:['exit']});
   assert.deepEqual(cleared.changes,{exit:'',exitMemo:''},'clearing that side memo is optional');assert.equal(tagOf(cleared.reason),baseTag(memo,['exit','exitMemo']));
   assert.deepEqual(buildLiveRequest(memo,{...form,exitMemo:memo.exitMemo},'결석 확인',{deleteTimes:['exit']}).changes,{exit:''},'or the memo is left alone');
-  const both=buildLiveRequest({...live,exit:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']});
-  assert.deepEqual([both.changes,both.deleteTimes],[{entry:''},['entry']],'the already blank exit is skipped');
+  const both=buildLiveRequest({...live,entry:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']});
+  assert.deepEqual([both.changes,both.deleteTimes],[{exit:''},['exit']],'the already blank entry is skipped');
+  // 관리자가 넣은 1교시(ATTEND)는 실제 체크히어에서 확인하기 전까지 지우지 않습니다(2026-10-15, rules.mjs ATTEND_DELETE).
+  assert.throws(()=>buildLiveRequest({...live,exit:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']}),{message:ATTEND_OFF});
+  assert.throws(()=>buildLiveRequest(live,{...form,entry:''},'결석 확인',{deleteTimes:['entry','exit']}),{message:ATTEND_OFF},'퇴실만 지우는 일부 요청으로 바꾸지 않음');
   assert.throws(()=>buildLiveRequest({...live,exit:null},form,'결석 확인',{deleteTimes:['exit']}),/바뀐 값이 없습니다/);
   assert.throws(()=>buildLiveRequest(live,{...form,exit:'18:00'},'결석 확인',{deleteTimes:['exit']}),/삭제할 시간 칸은 비워/);
   assert.throws(()=>buildLiveRequest(live,{...form,exitMemo:'남길 사유'},'결석 확인',{deleteTimes:['exit']}),/사유는 비워/);
   assert.throws(()=>buildLiveRequest(live,form,'결석 확인',{deleteTimes:['exitMemo']}),/삭제할 시간 항목/);
   assert.throws(()=>buildLiveRequest({...live,entryKind:'PASS'},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),/계산된 1교시/);
   assert.throws(()=>buildLiveRequest({...live,enterEventId:true},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),/체크인한 학생은 퇴실만/);
+});
+// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 같은 시험). rules.mjs ATTEND_DELETE가 true가 되면 저절로 돕니다.
+test('with ATTEND_DELETE on, the admin 1st period is deleted and an already blank exit is skipped',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},()=>{
+  const both=buildLiveRequest({...LIVE,...MARKS,exit:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']});
+  assert.deepEqual([both.changes,both.deleteTimes],[{entry:''},['entry']],'the already blank exit is skipped');
 });
 
 // ---- A small CheckHere + Firestore world wired to the real bridge server ----
@@ -261,6 +271,12 @@ test('with time-delete-v1 a live deletion is approved, deleted through the bridg
     assert.equal(exitOf(w,'가상하나'),null,'CheckHere exit deleted');assert.equal([...w.truth.values()].find(t=>t.name==='가상하나').entry,'09:00:00','the other side stays');
     assert.equal(w.day('2').find(r=>r.name==='가상하나').exit,null,'live document shows the deletion');
     assert.match(h.logs.join('\n'),/가상하나: 체크히어 반영·확인·DB 저장 완료 · 퇴실 시간 삭제 확인/);
+    // 관리자가 넣은 1교시 삭제 요청(화면을 거치지 않고 만든 것)은 승인하지 않고 그 이유로 반려합니다. 체크히어 1교시는 그대로
+    const other=w.day('2').find(r=>r.name==='가상둘');
+    w.add('live-delete-000000005',{classId:'2',date:DATE,name:'가상둘',phoneLast4:other.phoneLast4,reason:`${LIVE_MARK} 결석 확인 [기준:${baseTag(other,['entry'])}]`,changes:{entry:''},deleteTimes:['entry']});
+    assert.equal(await h.relay.step(),'request');
+    assert.deepEqual([w.requests.get('live-delete-000000005').status,w.requests.get('live-delete-000000005').reviewNote],['rejected',ATTEND_OFF]);
+    assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entry,'09:20:00','CheckHere 1st period untouched');
   }finally{h.close();}
 });
 // 중계 신호(settings/checkhereRelay)는 담임도 읽으므로 반·학생 이름과 오류 글이 들어가면 안 됩니다.

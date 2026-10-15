@@ -2,7 +2,7 @@
 // 실제 체크히어·연결 프로그램(8765)에는 닿지 않습니다. 학생은 모두 가상입니다.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TIME_DELETE_CAPABILITY,assertChangeAllowed,timeDeleteRefusal} from '../rules.mjs';
+import {ATTEND_DELETE,TIME_DELETE_CAPABILITY,assertChangeAllowed,timeDeleteRefusal} from '../rules.mjs';
 import {validateProposal,applyVerified} from '../writeback.mjs';
 import {prepareApproval,deletedNote} from '../approval-core.mjs';
 import {version} from '../identity.mjs';
@@ -13,13 +13,17 @@ const TODAY=['memo-default-time-v1','approved-requests-v1','memo-only-requests-v
 const base=(patch={})=>{const r={id:'fixture-del',studentKey:'fixture-del-key',classId:'9',date:'2026-09-10',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,entryKind:'PASS',exitEventId:'ev-exit',enterEventId:true,...patch};r.version=version(r);return r;};
 const admin=patch=>base({entryKind:'ATTEND',entryEventId:'ev-period',enterEventId:false,rawEntry:'09:00:00',...patch});
 const req=(changes={exit:''},deleteTimes=['exit'])=>({classId:'9',date:'2026-09-10',name:'가상삭제',phoneLast4:'',reason:'[가상] 결석 확인',changes,...(deleteTimes?{deleteTimes}:{})});
+// 2026-10-15부터 관리자 1교시(ATTEND) 삭제는 실제 체크히어에서 확인하기 전까지 꺼져 있습니다(rules.mjs ATTEND_DELETE).
+// 켰을 때의 경로는 아래 skip 시험들이 덮습니다(ATTEND_DELETE가 true가 되면 저절로 돕니다).
+const ATTEND_OFF='관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).';
 
 test('rules: a requested deletion may blank exactly the named side; everything else is refused',()=>{
   const r=admin();
-  const ok=assertChangeAllowed(r,{entry:'',entryMemo:''},{requested:true,deletions:['entry']});
+  const ok=assertChangeAllowed(r,{exit:'',exitMemo:''},{requested:true,deletions:['exit']});
   assert.match(ok.warning,/체크히어 입실\(교시\)\/퇴실 시간을 삭제합니다/);
   assert.doesNotThrow(()=>assertChangeAllowed(r,{exit:null},{requested:true,deletions:['exit']}),'null from validateProposal is a blank too');
-  assert.doesNotThrow(()=>assertChangeAllowed(r,{entry:'',exit:''},{requested:true,deletions:['entry','exit']}));
+  assert.throws(()=>assertChangeAllowed(r,{entry:'',entryMemo:''},{requested:true,deletions:['entry']}),{message:ATTEND_OFF},'관리자 1교시는 지금 지우지 않음');
+  assert.throws(()=>assertChangeAllowed(r,{entry:'',exit:''},{requested:true,deletions:['entry','exit']}),{message:ATTEND_OFF},'퇴실만 지우는 일부 삭제로 바꾸지 않음');
   assert.throws(()=>assertChangeAllowed(r,{entry:''},{requested:true}),/「시간 삭제」 요청으로만/,'no deletions');
   assert.throws(()=>assertChangeAllowed(r,{entry:'',exit:''},{requested:true,deletions:['entry']}),/「시간 삭제」 요청으로만/,'a blank that was not named');
   assert.throws(()=>assertChangeAllowed(r,{entry:'09:10:00'},{requested:true,deletions:['entry']}),/삭제할 시간 항목/,'a named side that is not blank');
@@ -115,9 +119,9 @@ test('applyVerified: an already blank side is skipped, so retrying is safe',asyn
   // 1교시는 이미 지워졌고 퇴실만 남은 상태에서 다시 시도: 퇴실만 지웁니다.
   const half=admin({entry:null}),h=fake(half),both=await run(h,half,req({entry:'',exit:''},['entry','exit']));
   assert.equal(both.status,'verified',both.message);assert.deepEqual(h.writes.map(w=>w.field),['exit']);assert.match(both.message,/퇴실 시간 삭제 확인/);
+  // 관리자 1교시가 아직 있으면(지금은 꺼짐) 아무것도 누르지 않고 끝냅니다. 퇴실만 먼저 지우지 않습니다.
   const full=admin(),g=fake(full),all=await run(g,full,req({entry:'',exit:''},['entry','exit']));
-  assert.equal(all.status,'verified',all.message);assert.deepEqual(g.writes.map(w=>w.field),['entry','exit']);assert.match(all.message,/ · 입실·퇴실 시간 삭제 확인/);
-  assert.deepEqual(all.results.map(x=>x.deleted),[true,true]);
+  assert.equal(all.status,'conflict');assert.equal(all.message,ATTEND_OFF);assert.equal(g.writes.length,0);assert.deepEqual([g.current.entry,g.current.exit],['09:00:00','18:00:00']);
 });
 test('applyVerified: a time that changed after approval is never deleted (a retried approved request), and missing record numbers stop before any click',async()=>{
   // 승인 때 퇴실 13:00을 보았는데 반영이 미뤄진 사이 학생이 18:00에 퇴실함 → 18:00은 지우지 않고 conflict로 끝냄
@@ -130,8 +134,8 @@ test('applyVerified: a time that changed after approval is never deleted (a retr
   // 승인 뒤 반영 전에 바뀐 경우(첫 읽기에서 보임)도 같음
   const moved=fake(now,{between:{exit:'18:05:00'}}),m=await run(moved,now,req());
   assert.equal(m.status,'conflict');assert.equal(moved.writes.length,0);assert.equal(moved.current.exit,'18:05:00');
-  // 기록 번호 표시가 없거나(다시 수집 전·화면 데이터와 다름) 체크인한 학생의 1교시면 누르지 않음
-  for(const [record,request,why] of [[admin({exitEventId:undefined,entryKind:undefined}),req(),/퇴실 기록 번호를 확인하지 못했습니다/],[admin({enterEventId:undefined}),req({entry:''},['entry']),/1교시 기록 번호를 확인하지 못했습니다/],[admin({enterEventId:true}),req({entry:''},['entry']),/체크인한 학생은 퇴실만 지웁니다/]]){
+  // 기록 번호 표시가 없거나(다시 수집 전·화면 데이터와 다름) 체크인한 학생의 1교시·관리자 1교시(지금은 꺼짐)면 누르지 않음
+  for(const [record,request,why] of [[admin({exitEventId:undefined,entryKind:undefined}),req(),/퇴실 기록 번호를 확인하지 못했습니다/],[admin({enterEventId:undefined}),req({entry:''},['entry']),/1교시 기록 번호를 확인하지 못했습니다/],[admin({enterEventId:true}),req({entry:''},['entry']),/체크인한 학생은 퇴실만 지웁니다/],[admin(),req({entry:''},['entry']),/관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다/]]){
     const g=fake(record),out=await run(g,record,request);
     assert.equal(out.status,'conflict',JSON.stringify(record));assert.match(out.message,why);assert.equal(g.writes.length,0);
   }
@@ -141,9 +145,9 @@ test('applyVerified: the actual entry (ENTER) must survive an exit deletion; a d
   const r=base(),gone=fake(r,{touch:{rawEntry:null}}),out=await run(gone,r,req());
   assert.equal(out.status,'conflict');assert.match(out.results[0].error,/실제 입실 기록이 바뀌었습니다/);assert.equal(out.results[0].deleted,undefined);
   assert.equal(out.results[0].rawEntryBefore,'08:55:00');assert.equal(out.results[0].rawEntryAfter,null);
-  // 관리자가 넣은 1교시를 지우면 그것에서 계산된 입실이 함께 비어도 됩니다(입실 번호 없음).
-  const a=admin(),derived=fake(a,{touch:{rawEntry:null}}),ok=await run(derived,a,req({entry:''},['entry']));
-  assert.equal(ok.status,'verified',ok.message);assert.match(ok.message,/ · 입실 시간 삭제 확인/);
+  // 관리자가 넣은 1교시 삭제는 지금 꺼져 있어 누르기 전에 끝납니다(켜면 그것에서 계산된 입실이 함께 비어도 되는 경우, writeback.mjs enterKept).
+  const a=admin(),derived=fake(a,{touch:{rawEntry:null}}),off=await run(derived,a,req({entry:''},['entry']));
+  assert.equal(off.status,'conflict');assert.equal(off.message,ATTEND_OFF);assert.equal(derived.writes.length,0);assert.equal(derived.current.rawEntry,'09:00:00');
   // 지운 뒤 수정창 닫힘 대기가 시간 초과: 다시 읽은 값(시간·사유 없음)으로 확인합니다. 지운 쪽 사유는 기록과 함께 사라지는 것이 맞음.
   const m=admin({exitMemo:'조퇴_담임:가상담임(17:00)'}),late=fake(m,{throwsAfter:'Timeout 12000ms exceeded'}),res=await run(late,m,req());
   assert.equal(res.status,'verified',res.message);assert.equal(res.results[0].deleted,true);assert.match(res.results[0].error,/Timeout/);assert.equal(res.current.exitMemo,'');
@@ -156,9 +160,40 @@ test('deletedNote and the request warning say what else empties',()=>{
   assert.equal(deletedNote([{field:'exit',state:'conflict'},{field:'entry',state:'verified'}]),'');assert.equal(deletedNote(undefined),'');
   assert.match(assertChangeAllowed(base(),{exit:''},{requested:true,deletions:['exit']}).warning,/퇴실을 지우면 1교시·총 참여 시간도 비워집니다/);
   assert.doesNotMatch(assertChangeAllowed(admin(),{exit:''},{requested:true,deletions:['exit']}).warning,/총 참여 시간|계산된 입실/);
-  assert.match(assertChangeAllowed(admin(),{entry:''},{requested:true,deletions:['entry']}).warning,/관리자가 넣은 1교시를 지우면 그것에서 계산된 입실도 비워질 수 있습니다/);
-  assert.equal(timeDeleteRefusal(admin(),'entry'),'');assert.equal(timeDeleteRefusal(base(),'exit'),'');
+  assert.throws(()=>assertChangeAllowed(admin(),{entry:''},{requested:true,deletions:['entry']}),{message:ATTEND_OFF});
+  assert.equal(timeDeleteRefusal(base(),'exit'),'');assert.equal(timeDeleteRefusal(admin(),'exit'),'');
   assert.match(timeDeleteRefusal(admin({enterEventId:true}),'entry'),/체크인한 학생은 퇴실만/);
+});
+test('timeDeleteRefusal: the admin period stays off by default; the switch only opens that one case',()=>{
+  assert.equal(ATTEND_DELETE,false,'2026-10-15: 실제 체크히어 확인 전');
+  assert.equal(timeDeleteRefusal(admin(),'entry'),ATTEND_OFF);assert.equal(timeDeleteRefusal(admin(),'entry',{}),ATTEND_OFF);
+  assert.equal(timeDeleteRefusal(admin(),'entry',{attend:true}),'','the mechanism for later');
+  // 스위치를 켜도 PASS·체크인한 학생·번호 없음·퇴실 규칙은 그대로
+  for(const attend of [false,true]){
+    assert.match(timeDeleteRefusal(base(),'entry',{attend}),/입실에서 계산된 1교시는 지울 수 없습니다/);
+    assert.match(timeDeleteRefusal(admin({enterEventId:true}),'entry',{attend}),/체크인한 학생은 퇴실만 지웁니다/);
+    assert.match(timeDeleteRefusal(admin({enterEventId:undefined}),'entry',{attend}),/1교시 기록 번호를 확인하지 못했습니다/);
+    assert.match(timeDeleteRefusal(admin({entryEventId:false}),'entry',{attend}),/1교시 기록 번호를 확인하지 못했습니다/);
+    assert.equal(timeDeleteRefusal(admin(),'exit',{attend}),'');
+    assert.match(timeDeleteRefusal(admin({exitEventId:false}),'exit',{attend}),/퇴실 기록 번호를 확인하지 못했습니다/);
+  }
+});
+// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 같은 파일). 운영 호출은 스위치만 따르므로 켜야 이 경로에 닿습니다.
+const ATTEND_ON={skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'};
+test('with ATTEND_DELETE on, rules allow the admin period and warn that the derived entry may empty',ATTEND_ON,()=>{
+  const r=admin();
+  assert.equal(timeDeleteRefusal(r,'entry'),'');
+  assert.doesNotThrow(()=>assertChangeAllowed(r,{entry:'',entryMemo:''},{requested:true,deletions:['entry']}));
+  assert.doesNotThrow(()=>assertChangeAllowed(r,{entry:'',exit:''},{requested:true,deletions:['entry','exit']}));
+  assert.match(assertChangeAllowed(r,{entry:''},{requested:true,deletions:['entry']}).warning,/관리자가 넣은 1교시를 지우면 그것에서 계산된 입실도 비워질 수 있습니다/);
+});
+test('with ATTEND_DELETE on, applyVerified deletes entry before exit and accepts the derived entry going blank',ATTEND_ON,async()=>{
+  const full=admin(),g=fake(full),all=await run(g,full,req({entry:'',exit:''},['entry','exit']));
+  assert.equal(all.status,'verified',all.message);assert.deepEqual(g.writes.map(w=>w.field),['entry','exit']);assert.match(all.message,/ · 입실·퇴실 시간 삭제 확인/);
+  assert.deepEqual(all.results.map(x=>x.deleted),[true,true]);
+  // 관리자가 넣은 1교시를 지우면 그것에서 계산된 입실이 함께 비어도 됩니다(입실 번호 없음, writeback.mjs enterKept).
+  const a=admin(),derived=fake(a,{touch:{rawEntry:null}}),ok=await run(derived,a,req({entry:''},['entry']));
+  assert.equal(ok.status,'verified',ok.message);assert.match(ok.message,/ · 입실 시간 삭제 확인/);
 });
 test('applyVerified: non-deletion requests keep the old write options and journal entries',async()=>{
   const r=admin(),f=fake(r),result=await run(f,r,req({exitMemo:'조퇴_담임:가상담임(17:00)'},null));

@@ -4,6 +4,7 @@ import {createCheckHereSync,rowCheckHereStatus,requestStatus,resultStatus,REQUES
 import {holdKey,AUTO_TEXT} from '../../beta2-checkhere-core.mjs';
 import {baseTag,isLiveRequest,tagOf} from '../../checkhere-live-core.mjs';
 import {beta2RequestData} from '../../beta2-guard-core.mjs';
+import {ATTEND_DELETE} from '../rules.mjs';
 
 // 가상 학생만 씁니다. 가짜 Firestore 함수·시계·타이머로 동기화 모듈(설계 4.2 S1~S15)을 시험합니다.
 const TODAY='2026-10-14',PAST='2026-10-13',CLS='2',ME='admin@example.com',NAME='가상학생';
@@ -305,6 +306,8 @@ test('write errors: permission-denied without deletions is a plain send failure 
 const gateOn=h=>{h.pushSetting('checkhereFeatures',{timeDeleteRules:true});h.pushSetting('checkhereRelay',{state:'running',at:{seconds:h.now/1000,nanoseconds:0},capabilities:['time-delete-v1']});};
 // 체크인한 학생: 1교시는 입실에서 계산(PASS, 번호 없음), 퇴실만 기록 번호가 있음 / 관리자가 1교시를 넣은 학생: ATTEND 번호 있음
 const CHECKED_IN={entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true},ADMIN_ENTRY={entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false};
+// 2026-10-15부터 관리자 1교시 삭제는 실제 체크히어에서 확인하기 전까지 꺼짐(checkhere/rules.mjs ATTEND_DELETE)
+const ATTEND_OFF='관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).';
 test('결석 holds while time deletion is off; with the gate on it asks first (S8), 아니오 writes nothing, 예 writes one deleteTimes request',async()=>{
  const h=harness();await h.open();
  let s=h.save(PRESENT,row('결석'),'sig-1');
@@ -333,11 +336,10 @@ test('결석 holds while time deletion is off; with the gate on it asks first (S
  assert.deepEqual([data.changes,data.deleteTimes],[{exit:''},['exit']],'PASS 1교시는 지우지 않음');
  assert.equal(data.reason,`[실시간 베타] ${AUTO_TEXT} · 결석 · 일반 출결 [기준:${baseTag(captured,['exit'])}]`,'[기준]은 지우는 퇴실을 덮음');
  const stored=beta2RequestData(path,data);assert.ok(isLiveRequest(stored));assert.deepEqual(stored.deleteTimes,['exit']);
- // 관리자가 넣은 1교시(ATTEND 번호)와 퇴실은 함께 지움
+ // 관리자가 넣은 1교시(ATTEND 번호): 실제 체크히어에서 확인하기 전까지 지우지 않음(2026-10-15). 결석은 보류, 퇴실만 지우는 일부 삭제도 보내지 않음(퇴실도 남는다고 알림)
  const a=harness({rec:record(ADMIN_ENTRY)});await a.open();gateOn(a);
- a.save(PRESENT,row('결석'),'sig-1');await a.advance(3000);
- assert.match(a.st.confirms[0],/입실\(교시\) 09:02 · 퇴실 18:00/);assert.doesNotMatch(a.st.confirms[0],/총 참여 시간/);
- assert.deepEqual([a.writes()[0][2].changes,a.writes()[0][2].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
+ assert.equal(a.save(PRESENT,row('결석'),'sig-1').label,'보류 · '+ATTEND_OFF+' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)');
+ await a.advance(5000);assert.deepEqual([a.writes().length,a.st.confirms.length],[0,0]);
  // 퇴실 기록 번호가 없으면(다시 수집 전) 보류
  const n=harness({rec:record({entryKind:'PASS'})});await n.open();gateOn(n);
  assert.equal(n.save(PRESENT,row('결석'),'sig-1').label,'보류 · 퇴실 기록 번호를 확인하지 못했습니다(다시 수집 필요).');
@@ -393,18 +395,19 @@ test('× deletes one CheckHere time: gate, record numbers and the sheet type dec
 
 test('× follows the sheet type and asks again when the record changes during the 3 seconds',async()=>{
  const h=harness({rec:record(ADMIN_ENTRY)});await h.open();gateOn(h);
- // 지각은 입실 시간을 출결원장이 쓰므로 유형부터(퇴실은 지울 수 있음). 조퇴는 반대.
+ // 지각은 입실 시간을 출결원장이 쓰므로 유형부터(퇴실은 지울 수 있음). 조퇴는 반대. 관리자 1교시는 지금 꺼져 있어 그 이유도 함께 보임
  h.st.rows[NAME]=row('지각',{inT:'09:25'});
- assert.deepEqual((await h.sync.send(h.key,{deleteTimes:['entry']})).reasons,['유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)']);
+ assert.deepEqual((await h.sync.send(h.key,{deleteTimes:['entry']})).reasons,[ATTEND_OFF,'유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)']);
  h.st.rows[NAME]=row('인정조퇴',{outT:'16:00',reason:'병원'});
  assert.match((await h.sync.send(h.key,{deleteTimes:['exit']})).reasons.join(),/유형을 먼저 바꿔 주세요/);
  h.st.rows[NAME]=row('출석');
- assert.equal((await h.sync.send(h.key,{deleteTimes:['entry']})).ok,true);assert.equal(h.st.confirms.length,1);
+ assert.deepEqual((await h.sync.send(h.key,{deleteTimes:['entry']})).reasons,[ATTEND_OFF]);assert.equal(h.st.confirms.length,0);
+ assert.equal((await h.sync.send(h.key,{deleteTimes:['exit']})).ok,true);assert.equal(h.st.confirms.length,1);
  // 3초 안에 기록이 바뀜(다시 수집): 새 기록으로 3초를 다시 보이고, 보내기 직전에 다시 물음(S3·S8)
- h.st.rec=record({...ADMIN_ENTRY,version:'v2',entry:'09:05:00'});await h.advance(3000);
+ h.st.rec=record({...ADMIN_ENTRY,version:'v2',exit:'17:55:00'});await h.advance(3000);
  assert.equal(h.sync.statusFor(h.key).kind,'countdown');assert.equal(h.writes().length,0);
  h.st.confirm=()=>false;await h.advance(3000);
- assert.equal(h.st.confirms.length,2);assert.match(h.st.confirms[1],/입실\(교시\) 09:05/);
+ assert.equal(h.st.confirms.length,2);assert.match(h.st.confirms[1],/퇴실 17:55/);
  const s=h.sync.statusFor(h.key);assert.deepEqual([s.label,s.actions],['체크히어 시간 삭제 취소',[]],'× 결정은 ×를 다시 눌러야 함');assert.equal(h.writes().length,0);
 });
 
@@ -613,18 +616,45 @@ test('a hold note is dropped when the deletion gate or the record numbers change
 });
 
 test('× is refused outside enrolment and where the sheet type keeps its memo on the entry; the confirm names memos that go with the time',async()=>{
- const h=harness({rec:record({...ADMIN_ENTRY,entryMemo:'(인정출석)병원_담임:가상담임'})});await h.open();gateOn(h);
+ const h=harness({rec:record({...ADMIN_ENTRY,entryMemo:'(인정출석)병원_담임:가상담임',exitMemo:'조퇴_담임:가상담임(17:00)'})});await h.open();gateOn(h);
  h.st.rows[NAME]={type:'해당없음'};
  assert.deepEqual(await h.sync.send(h.key,{deleteTimes:['exit']}),{ok:false,reasons:['재학 기간이 아닌 학생입니다']});
  for(const type of ['외출','인정외출','인정출석','인정지각'])assert.match((h.st.rows[NAME]=row(type),await h.sync.send(h.key,{deleteTimes:['entry']})).reasons.join(),/유형을 먼저 바꿔 주세요/,type);
  assert.deepEqual(h.st.confirms,[]);
  h.st.rows[NAME]=row('출석');h.st.confirm=()=>false;
- assert.deepEqual(await h.sync.send(h.key,{deleteTimes:['entry']}),{ok:false,cancelled:true});
- assert.match(h.st.confirms[0],/입실\(교시\) 칸의 관리자 사유\(「\(인정출석\)병원_담임:가상담임」\)도 함께 지워집니다/);
- assert.match(h.st.confirms[0],/관리자가 넣은 1교시를 지우면 그것에서 계산된 입실도 비워질 수 있습니다/);assert.doesNotMatch(h.st.confirms[0],/실제 입실 기록은 남습니다/);
+ // 관리자 1교시 ×는 지금 잠김(묻지도 않음). 퇴실 ×는 그 칸의 관리자 사유도 함께 지워진다고 묻고, 1교시 칸은 말하지 않음
+ assert.deepEqual(await h.sync.send(h.key,{deleteTimes:['entry']}),{ok:false,reasons:[ATTEND_OFF]});assert.deepEqual(h.st.confirms,[]);
+ assert.deepEqual(await h.sync.send(h.key,{deleteTimes:['exit']}),{ok:false,cancelled:true});
+ assert.match(h.st.confirms[0],/퇴실 칸의 관리자 사유\(「조퇴_담임:가상담임\(17:00\)」\)도 함께 지워집니다/);assert.doesNotMatch(h.st.confirms[0],/입실\(교시\)/);
+ assert.match(h.st.confirms[0],/체크히어 실제 입실 기록은 남습니다/);
  // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 기록: 1교시 ×는 잠기고 퇴실 ×만
  const r=harness({rec:record({...ADMIN_ENTRY,enterEventId:true})});await r.open();gateOn(r);
  assert.deepEqual((await r.sync.send(r.key,{deleteTimes:['entry']})).reasons,['체크인한 학생은 퇴실만 지웁니다(1교시는 관리자 사유를 저장한 기록이라 남깁니다).']);
+});
+
+// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 결석·× 시험). rules.mjs ATTEND_DELETE가 true가 되면 저절로 돕니다.
+test('with ATTEND_DELETE on: 결석 deletes the admin 1st period with the exit, × on it asks again when the entry changes and names its memo',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},async()=>{
+ // 결석: 관리자가 넣은 1교시(ATTEND 번호)와 퇴실을 함께 지움
+ const a=harness({rec:record(ADMIN_ENTRY)});await a.open();gateOn(a);
+ a.save(PRESENT,row('결석'),'sig-1');await a.advance(3000);
+ assert.match(a.st.confirms[0],/입실\(교시\) 09:02 · 퇴실 18:00/);assert.doesNotMatch(a.st.confirms[0],/총 참여 시간/);
+ assert.deepEqual([a.writes()[0][2].changes,a.writes()[0][2].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
+ // ×: 지각은 입실 시간을 출결원장이 쓰므로 유형부터. 출석이면 묻고, 3초 안에 1교시가 바뀌면 새 기록으로 다시 물음(S3·S8)
+ const h=harness({rec:record(ADMIN_ENTRY)});await h.open();gateOn(h);
+ h.st.rows[NAME]=row('지각',{inT:'09:25'});
+ assert.deepEqual((await h.sync.send(h.key,{deleteTimes:['entry']})).reasons,['유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)']);
+ h.st.rows[NAME]=row('출석');
+ assert.equal((await h.sync.send(h.key,{deleteTimes:['entry']})).ok,true);assert.equal(h.st.confirms.length,1);
+ h.st.rec=record({...ADMIN_ENTRY,version:'v2',entry:'09:05:00'});await h.advance(3000);
+ assert.equal(h.sync.statusFor(h.key).kind,'countdown');assert.equal(h.writes().length,0);
+ h.st.confirm=()=>false;await h.advance(3000);
+ assert.equal(h.st.confirms.length,2);assert.match(h.st.confirms[1],/입실\(교시\) 09:05/);assert.equal(h.writes().length,0);
+ // 확인창은 1교시 칸의 관리자 사유도 함께 지워진다고 알림
+ const m=harness({rec:record({...ADMIN_ENTRY,entryMemo:'(인정출석)병원_담임:가상담임'})});await m.open();gateOn(m);
+ m.st.rows[NAME]=row('출석');m.st.confirm=()=>false;
+ assert.deepEqual(await m.sync.send(m.key,{deleteTimes:['entry']}),{ok:false,cancelled:true});
+ assert.match(m.st.confirms[0],/입실\(교시\) 칸의 관리자 사유\(「\(인정출석\)병원_담임:가상담임」\)도 함께 지워집니다/);
+ assert.match(m.st.confirms[0],/관리자가 넣은 1교시를 지우면 그것에서 계산된 입실도 비워질 수 있습니다/);assert.doesNotMatch(m.st.confirms[0],/실제 입실 기록은 남습니다/);
 });
 
 test('timesDeleted: the newest live request of the student is a verified deletion',async()=>{

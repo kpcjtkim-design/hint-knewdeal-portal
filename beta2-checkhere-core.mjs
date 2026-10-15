@@ -120,7 +120,8 @@ export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabl
       // 체크인한 학생: 지울 수 있는 것은 퇴실뿐이고, 퇴실을 지우면 계산된 1교시도 비워집니다. 입실(실제 입실)은 남습니다.
       const del=sides.filter(k=>canDeleteTime(record,k).ok);
       const left=sides.filter(k=>!del.includes(k)&&!(k==='entry'&&record.entryKind==='PASS'&&del.includes('exit')));
-      if(left.length)return hold(canDeleteTime(record,left.includes('exit')?'exit':left[0]).reason); // 퇴실을 못 지우면 그게 먼저인 이유
+      // 퇴실을 못 지우면 그게 먼저인 이유. 1교시만 못 지우면 퇴실도 남기므로(일부 삭제 없음) 그렇게 알립니다('퇴실만 지웁니다'를 지웠다로 읽지 않게).
+      if(left.length){const why=canDeleteTime(record,left.includes('exit')?'exit':left[0]).reason;return hold(del.includes('exit')?why+' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)':why);}
       for(const k of del)changes[k]='';
       out.deleteTimes=['entry','exit'].filter(k=>del.includes(k));
       out.warnings.push(deleteLeaves(out.deleteTimes));

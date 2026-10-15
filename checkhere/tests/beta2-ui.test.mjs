@@ -505,8 +505,9 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상출석"] [data-ch-del="exit"]')?.disabled);
   assert.equal(await x('가상출석','entry').isDisabled(),true,'PASS 1교시는 계속 잠김');
   assert.equal(await x('가상출석','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 입실에서 계산된 1교시는 지울 수 없습니다. 퇴실을 지우면 함께 비워집니다.');
+  // 관리자 1교시는 실제 체크히어에서 확인하기 전까지 잠김(2026-10-15, rules.mjs ATTEND_DELETE)
   assert.equal(await x('가상지각','entry').isDisabled(),true);
-  assert.equal(await x('가상지각','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)');
+  assert.equal(await x('가상지각','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다). · 유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)');
   assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음');
   assert.equal(await x('가상메모','exit').isDisabled(),true,'기록 번호가 없는 칸');
   // 확인창 아니오: 아무것도 시작하지 않음

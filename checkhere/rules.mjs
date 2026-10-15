@@ -78,11 +78,15 @@ export const TIME_DELETE_CAPABILITY='time-delete-v1';
 // 지울 수 있는 칸인지(기록 번호가 있는 칸만, 사용자 결정 2026-10-14). 지울 수 있으면 '', 아니면 이유. 표시는 연결 프로그램이 그날 화면 데이터에서 붙입니다(day-data.mjs DELETE_MARKS):
 // exitEventId 퇴실(COMPLETE) 번호, entryKind 'ATTEND'(관리자 1교시)·'PASS'(입실에서 계산), entryEventId 1교시 번호, enterEventId 입실(ENTER) 번호.
 // 체크인한 학생(입실 번호 있음)은 1교시에 사유를 저장해 ATTEND가 되었어도 퇴실만 지웁니다(그 1교시 삭제는 확인하지 않은 동작). 표시가 없으면 잠급니다.
-export function timeDeleteRefusal(record,side){
+// 사용자 결정 2026-10-15: 관리자 1교시(ATTEND) 삭제는 실제 체크히어에서 확인하지 않아 막음. 확인 뒤 켬, 그때까지 퇴실만 지웁니다(docs/checkhere-time-delete-enable.md 4절 끝).
+export const ATTEND_DELETE=false;
+// attend: 시험에서만 넘깁니다. 운영 호출은 넘기지 않아 위 스위치를 따릅니다.
+export function timeDeleteRefusal(record,side,{attend=ATTEND_DELETE}={}){
   if(side==='exit')return record?.exitEventId?'':'퇴실 기록 번호를 확인하지 못했습니다(다시 수집 필요).';
   if(record?.entryKind==='PASS')return '입실에서 계산된 1교시는 지울 수 없습니다. 퇴실을 지우면 함께 비워집니다.';
   if(record?.enterEventId)return '체크인한 학생은 퇴실만 지웁니다(1교시는 관리자 사유를 저장한 기록이라 남깁니다).';
-  return record?.entryKind==='ATTEND'&&record.entryEventId&&record.enterEventId===false?'':'1교시 기록 번호를 확인하지 못했습니다(다시 수집 필요).';
+  if(!(record?.entryKind==='ATTEND'&&record.entryEventId&&record.enterEventId===false))return '1교시 기록 번호를 확인하지 못했습니다(다시 수집 필요).';
+  return attend?'':'관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).';
 }
 // Human-reviewed memo edits may describe overlapping attendance without changing its times.
 // deletions: 승인된 시간 삭제 요청이 지우는 쪽. 비우는 시간 칸은 이것과 정확히 같아야 하고, 능력 검사는 삭제할 때만 합니다.

@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {loadPlaywright,CheckHereCollector} from '../collector.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {loadPlaywright,CheckHereCollector} from '../collector.mjs';import {ATTEND_DELETE} from '../rules.mjs';
 test('real DOM adapter reads both memos and outings; writes only Change',async()=>{
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
   try{
@@ -21,16 +21,16 @@ const STUDENTS=[
   {name:'가상사유저장',phone:'01000000015',eventList:[ev('ENTER','09:20:00','ev-enter-5'),ev('ATTEND','09:20:00','ev-attend-5','지각_담임:가상담임(09:20)'),ev('COMPLETE','17:55:00','ev-exit-5')]},
 ].map((s,i)=>({sequence:i+1,attendeeId:'a'+i,typeAttendee:'STUDENT',userName:s.name,identifier:'가상',duration:'PT9H',seconds:32400,leaveEvents:{totalLeavedDuration:'PT0S',totalLeavedSeconds:0,pairs:[]},...s}));
 const DELETE_PAGE=`<!doctype html><html><body><div id="t"></div><div id="modal"></div><script>
-window.students=${JSON.stringify(STUDENTS)};window.clicks={change:0,remove:0,passRemoved:0};
+window.students=${JSON.stringify(STUDENTS)};window.clicks={change:0,remove:0,passRemoved:0,attendRemoved:0};
 const hms=v=>v?v.slice(11,19):'-',of=(s,types)=>s.eventList.find(e=>types.includes(e.type));
 function draw(){document.querySelector('#t').innerHTML='<table><tr><td>대상자</td></tr><tr><td></td><td>순번</td><td>성명</td><td>전화번호</td><td>메모</td></tr>'+students.map((s,i)=>'<tr><td></td><td>'+(i+1)+'</td><td>'+s.name+'</td><td>'+s.phone+'</td><td></td></tr>').join('')+'<tr><td>출석인원</td></tr></table><table><tr><td>강의시간</td></tr><tr><td>입실</td><td>09:00 ~ 18:00</td><td>퇴실</td><td>총 외출 시간(외출횟수)</td><td>총 강의 참여 시간</td></tr>'+students.map((s,i)=>'<tr><td>'+hms(of(s,['ENTER'])?.time)+'</td><td onclick="edit('+i+',\\'entry\\')">'+hms(of(s,['ATTEND','PASS'])?.time)+'</td><td onclick="edit('+i+',\\'exit\\')">'+hms(of(s,['COMPLETE'])?.time)+'</td><td>0분 (-)</td><td>'+(of(s,['COMPLETE'])?'9시간':'-')+'</td></tr>').join('')+'<tr><td>1</td></tr></table>';}
 function edit(i,f){const s=students[i],e=of(s,f==='exit'?['COMPLETE']:['ATTEND','PASS']);
   document.querySelector('#modal').innerHTML='<div class="react-draggable"><p>'+(f==='entry'?'1교시':'퇴실')+' 시간 수정</p><input id="name" disabled value="'+s.name+'"><input id="prevTime" disabled value="'+hms(e?.time)+'"><input id="modifyTime" value="'+(e?hms(e.time):'00:00:00')+'"><input id="memoByAdmin" value="'+(e?.memoByAdmin??'')+'">'+(e&&!window.noRemove?'<button id="remove">삭제</button>':'')+'<button id="change">변경</button><button onclick="closeModal()">취소</button></div>';
   document.querySelector('#change').onclick=()=>{clicks.change++;closeModal();};
-  if(e&&!window.noRemove)document.querySelector('#remove').onclick=()=>{clicks.remove++;if(e.type==='PASS')clicks.passRemoved++;s.eventList=s.eventList.filter(x=>x!==e&&!(f==='exit'&&x.type==='PASS'));closeModal();draw();};}
+  if(e&&!window.noRemove)document.querySelector('#remove').onclick=()=>{clicks.remove++;if(e.type==='PASS')clicks.passRemoved++;if(e.type==='ATTEND')clicks.attendRemoved++;s.eventList=s.eventList.filter(x=>x!==e&&!(f==='exit'&&x.type==='PASS'));closeModal();draw();};}
 function closeModal(){document.querySelector('#modal').innerHTML='';}
 draw();</script></body></html>`;
-test('time delete presses 삭제 once only for a numbered exit or admin period; PASS, number-less, unrequested and stale cells are refused before any click',async()=>{
+test('time delete presses 삭제 once only for a numbered exit; the admin period (off for now), PASS, number-less, unrequested and stale cells are refused before any click',async()=>{
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
   try{
     await page.setContent(DELETE_PAGE);page.setDefaultTimeout(3000);
@@ -48,8 +48,9 @@ test('time delete presses 삭제 once only for a numbered exit or admin period; 
     const saved=c.dayData;c.dayData=null;const unknown=await c.readDetails(by('가상관리자'));
     assert.equal(Object.hasOwn(unknown,'exitEventId'),false,'no page data: no marks, so deletion stays locked');assert.equal(unknown.version,admin.version,'marks never change the version');c.dayData=saved;
     // 거절: PASS 1교시, 번호 없는 퇴실, 요청하지 않은 삭제, 화면 데이터 없음·시간 다름, '삭제' 버튼이 둘.
-    await assert.rejects(()=>c.write(checkedIn,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 기록 번호가 없는 칸은 지우지 않습니다/);await closed();
-    await assert.rejects(()=>c.write(none,'exit',blank,del('exit')),/TIME_DELETE_REFUSED: 기록 번호가 없는 칸/);await closed();
+    // 화면 데이터와 맞는 칸의 거절 이유는 규칙(rules.mjs timeDeleteRefusal)의 문장 그대로입니다.
+    await assert.rejects(()=>c.write(checkedIn,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 입실에서 계산된 1교시는 지울 수 없습니다/);await closed();
+    await assert.rejects(()=>c.write(none,'exit',blank,del('exit')),/TIME_DELETE_REFUSED: 퇴실 기록 번호를 확인하지 못했습니다/);await closed();
     await assert.rejects(()=>c.write(admin,'exit',blank,{requestedFields:['exitMemo'],deleteFields:['exit']}),/TIME_DELETE_REFUSED: 요청하지 않은 시간 삭제/);await closed();
     await assert.rejects(()=>c.write(admin,'exit',blank,{deleteFields:['exit']}),/요청하지 않은 시간 삭제/);await closed();
     await assert.rejects(()=>c.write(admin,'exit',{time:'18:00:00',memo:''},del('exit')),/삭제할 시간 칸에 시간이/);await closed();
@@ -57,7 +58,9 @@ test('time delete presses 삭제 once only for a numbered exit or admin period; 
     c.dayData=structuredClone(saved);c.dayData.data.eventResultList[1].eventList[2].time=iso('17:00:00');
     await assert.rejects(()=>c.write(admin,'exit',blank,del('exit')),/기록 번호가 없는 칸/,'page data that disagrees with the editor is not trusted');await closed();c.dayData=saved;
     // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 칸: 번호가 있어도 지우지 않음(확인하지 않은 동작)
-    await assert.rejects(()=>c.write(resaved,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 체크인한 학생의 1교시는 지우지 않습니다/);await closed();
+    await assert.rejects(()=>c.write(resaved,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 체크인한 학생은 퇴실만 지웁니다/);await closed();
+    // 관리자가 넣은 1교시(ATTEND): 실제 체크히어에서 확인하기 전까지 꺼짐(2026-10-15, rules.mjs ATTEND_DELETE). 그 이유를 보이고 누르지 않음
+    await assert.rejects(()=>c.write(admin,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다\(지금은 퇴실만 지웁니다\)/);await closed();
     // 화면 데이터의 실제 입실만 1초 달라도 믿지 않음(표시를 붙일 때와 같은 기준)
     c.dayData=structuredClone(saved);c.dayData.data.eventResultList[1].eventList[0].time=iso('08:50:04');
     await assert.rejects(()=>c.write(admin,'exit',blank,del('exit')),/기록 번호가 없는 칸/);await closed();c.dayData=saved;
@@ -68,19 +71,34 @@ test('time delete presses 삭제 once only for a numbered exit or admin period; 
     await page.evaluate(()=>{window.noRemove=false;document.querySelector('#lecture').remove();});
     await page.evaluate(()=>document.body.insertAdjacentHTML('beforeend','<button id="other">삭제</button>'));
     await assert.rejects(()=>c.write(admin,'exit',blank,del('exit')),/삭제 버튼을 하나로/);await closed();await page.evaluate(()=>document.querySelector('#other').remove());
-    assert.deepEqual(await clicks(),{change:0,remove:0,passRemoved:0},'neither 변경 nor 삭제 was pressed');
+    assert.deepEqual(await clicks(),{change:0,remove:0,passRemoved:0,attendRemoved:0},'neither 변경 nor 삭제 was pressed');
     // 이미 빈 칸은 누를 것이 없습니다.
-    assert.deepEqual(await c.write(empty,'exit',blank,del('exit')),blank);await closed();assert.deepEqual(await clicks(),{change:0,remove:0,passRemoved:0});
+    assert.deepEqual(await c.write(empty,'exit',blank,del('exit')),blank);await closed();assert.deepEqual(await clicks(),{change:0,remove:0,passRemoved:0,attendRemoved:0});
     // 퇴실 삭제: 한 번 누르고, 수정창이 닫히고, 1교시(PASS)도 '-'가 되며 입실은 남습니다.
     assert.deepEqual(await c.write(checkedIn,'exit',blank,del('exit')),blank);await closed();assert.equal(c.saving,false);
-    assert.deepEqual(await clicks(),{change:0,remove:1,passRemoved:0});
+    assert.deepEqual(await clicks(),{change:0,remove:1,passRemoved:0,attendRemoved:0});
     await fresh();const gone=await c.readDetails(by('가상체크인'));
     assert.deepEqual([gone.rawEntry,gone.entry,gone.exit,gone.exitMemo],['08:55:31',null,null,'']);assert.equal(gone.exitEventId,false);
-    // 관리자가 넣은 1교시(ATTEND) 삭제: 그 칸만 지워지고 퇴실은 남습니다.
-    assert.deepEqual(await c.write(admin,'entry',blank,del('entry')),blank);await closed();
+    // 관리자가 1교시를 넣은 학생: 퇴실만 지워지고 1교시(ATTEND)와 그 사유는 남습니다(가짜 수정창의 가정. 실제 체크히어에서는 아직 확인하지 않음, 켜는 문서 4절).
+    assert.deepEqual(await c.write(admin,'exit',blank,del('exit')),blank);await closed();
     await fresh();const adminAfter=await c.readDetails(by('가상관리자'));
-    assert.deepEqual([adminAfter.entry,adminAfter.entryMemo,adminAfter.exit],[null,'','18:00:00']);
-    assert.deepEqual(await clicks(),{change:0,remove:2,passRemoved:0},'two deletions, one click each, never a PASS');
+    assert.deepEqual([adminAfter.entry,adminAfter.entryMemo,adminAfter.exit,adminAfter.exitEventId,adminAfter.entryEventId],['08:50:03','시스템오류_담임:가상담임',null,false,true]);
+    assert.deepEqual(await clicks(),{change:0,remove:2,passRemoved:0,attendRemoved:0},'two exit deletions, one click each, never the 1st period');
+  }finally{await browser.close();}
+});
+// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 같은 시험). rules.mjs ATTEND_DELETE가 true가 되면 저절로 돕니다.
+test('with ATTEND_DELETE on, the admin period is deleted with one click and the exit stays',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},async()=>{
+  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
+  try{
+    await page.setContent(DELETE_PAGE);page.setDefaultTimeout(3000);
+    const c=new CheckHereCollector('',{page});c.day={classId:'2',date:DAY,teacher:'가상담임'};
+    let rows;const fresh=async()=>{c.dayData=await page.evaluate(()=>({code:'OK',data:{eventResultList:structuredClone(window.students)}}));rows=await c.tableRecords();return rows;};
+    const by=name=>rows.find(r=>r.name===name),blank={time:null,memo:''};
+    await fresh();const admin=await c.readDetails(by('가상관리자'));
+    assert.deepEqual(await c.write(admin,'entry',blank,{requestedFields:['entry'],deleteFields:['entry']}),blank);assert.equal(await page.locator('#modifyTime').count(),0,'the editor is closed');
+    await fresh();const after=await c.readDetails(by('가상관리자'));
+    assert.deepEqual([after.entry,after.entryMemo,after.exit],[null,'','18:00:00']);
+    assert.deepEqual(await page.evaluate(()=>({...window.clicks})),{change:0,remove:1,passRemoved:0,attendRemoved:1},'one click, on the ATTEND cell');
   }finally{await browser.close();}
 });
 

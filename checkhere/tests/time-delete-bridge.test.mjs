@@ -1,5 +1,5 @@
 // 연결 프로그램의 시간 삭제 게이트(설계 docs/beta2-instant-edit-plan.md 6장 4·11단계): 능력이 없으면 읽기·승인·잡기 전에 거절하고,
-// 능력이 있으면 승인된 삭제 요청이 다시 읽어 확인한 뒤 플랫폼 저장까지 갑니다. 가짜 체크히어·가짜 클라우드만 씁니다(포트 18797~18799).
+// 능력이 있으면 승인된 삭제 요청이 다시 읽어 확인한 뒤 플랫폼 저장까지 갑니다. 가짜 체크히어·가짜 클라우드만 씁니다(포트 18797~18799, 18965, 18966).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync,mkdtempSync} from 'node:fs';
@@ -53,8 +53,8 @@ test('a bridge without time-delete-v1 refuses deletion requests before reading, 
   const b=await bridge(18797,record,docs,OLD);
   try{
     const session=await (await fetch('http://127.0.0.1:18797/api/session')).json();
-    assert.equal(session.build,'20261014.2');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
-    const state=await b.get('state?delta=1');assert.equal(state.build,'20261014.2','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
+    assert.equal(session.build,'20261015.1');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
+    const state=await b.get('state?delta=1');assert.equal(state.build,'20261015.1','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
     const applied=await b.post('apply','fixture-delete-approved-01');
     assert.equal(applied.code,400);assert.match(applied.body.error,/시간 삭제를 지원하지 않습니다/);
     assert.equal(docs.get('fixture-delete-approved-01').status,'approved','an approved deletion stays approved (not claimed)');
@@ -75,7 +75,7 @@ test('a bridge with time-delete-v1 deletes an approved exit, verifies it by re-r
   const b=await bridge(18798,record,docs);
   try{
     const session=await (await fetch('http://127.0.0.1:18798/api/session')).json();
-    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261014.2');
+    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261015.1');
     const started=await b.post('apply','fixture-delete-approved-02');assert.equal(started.code,202,JSON.stringify(started.body));
     const j=await b.job('fixture-delete-approved-02');
     assert.equal(j.status,'verified',j.message);assert.equal(j.results[0].deleted,true);assert.equal(j.results[0].field,'exit');
@@ -114,5 +114,19 @@ test('an approved deletion whose time changed after approval ends as conflict wi
     assert.equal(b.f.calls.writes.length,0);assert.equal(b.f.current.exit,'18:00:00','the unconfirmed 18:00 exit stays');
     assert.equal(docs.get('fixture-delete-stale-0001').status,'conflict','the request ends instead of being retried forever');
     assert.equal(b.c.calls.finish[0].exit,'18:00:00','the platform gets the current read');
+  }finally{b.close();}
+});
+
+// 2026-10-15부터 관리자가 넣은 1교시(ATTEND) 삭제는 실제 체크히어에서 확인하기 전까지 꺼져 있습니다(rules.mjs ATTEND_DELETE).
+// 앞 build에서 이미 승인된 1교시 삭제 요청도 '삭제'를 누르지 않고 원본 변경(conflict)으로 끝냅니다.
+test('an approved deletion of the admin 1st period ends as conflict without pressing 삭제 while ATTEND_DELETE is off',async()=>{
+  const record=base({rawEntry:'09:00:00',entry:'09:00:00',entryKind:'ATTEND',entryEventId:true,enterEventId:false}),docs=new Map([['fixture-delete-attend-001',request(record,'approved',{changes:{entry:''},deleteTimes:['entry']})]]);
+  const b=await bridge(18966,record,docs);
+  try{
+    const started=await b.post('apply','fixture-delete-attend-001');assert.equal(started.code,202,JSON.stringify(started.body));
+    const j=await b.job('fixture-delete-attend-001');
+    assert.equal(j.status,'conflict',j.message);assert.match(j.message,/관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다\(지금은 퇴실만 지웁니다\)/);
+    assert.equal(b.f.calls.writes.length,0);assert.deepEqual([b.f.current.entry,b.f.current.rawEntry],['09:00:00','09:00:00'],'the 1st period stays');
+    assert.equal(docs.get('fixture-delete-attend-001').status,'conflict');
   }finally{b.close();}
 });

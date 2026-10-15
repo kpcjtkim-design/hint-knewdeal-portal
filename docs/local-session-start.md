@@ -154,6 +154,7 @@ Cowork 보고서: `docs/cowork/2026-10-13-checkhere-delete-report.md`. 원본과
 
 **삭제 안전 규칙 (사용자 결정, 꼭 반영)**
 - 지우기는 **`eventId`가 있는 칸에만** 허용한다. 퇴실 COMPLETE와 관리자가 넣은 1교시 ATTEND가 해당한다.
+  - 2026-10-15부터 관리자 1교시(ATTEND)는 실제 체크히어 확인 전까지 막음(`checkhere/rules.mjs` `ATTEND_DELETE=false`, 지금은 퇴실만). 아래 ④ 참고.
 - PASS 1교시(번호 없음)와 ENTER(입실)는 절대 지우지 않는다.
   - ENTER는 화면에서 되돌릴 방법이 없다.
   - PASS를 지울 때 서버가 어떻게 동작하는지 모른다.
@@ -189,11 +190,11 @@ Cowork 보고서: `docs/cowork/2026-10-13-checkhere-delete-report.md`. 원본과
   - 남는 점: 평일 09:10 전에는 오늘 열이 출결판에 없다(첫 동기화가 그림, 메뉴로 바로 그릴 수 있음). 2기 마스터처럼 동기화가 없는 시트는 하루 한 번 그리는 트리거가 따로 필요하다.
 - ④ 사용자 결정(2026-10-14): 체크히어 쓰기는 **수정창 버튼** 방식, 자동 반영은 **메모만**(`memo-only`), **오늘만 자동**(지난 날은 `체크히어 맞추기` 버튼), 3초 되돌리기는 **출결원장과 요청 모두**. `docs/beta2-instant-edit-plan.md` 10장에 적음.
 - ④ 먼저 할 일(삭제 전 필수, 검토 문서): 1번 작업 잠금 경쟁, 3번 중복 요청 검사, 4번 `retry_` 가로채기, 6번 수집 중단 — 고치고 커밋함(사용자 확인 2026-10-14), 연결 프로그램 build `20261014.1`. 운영 중인 연결 프로그램(`Documents\Codex\2026-09-07\gk\hint-attendance-beta`)은 바꾸지 않았다.
-- ④ 본 작업(1~3차, 커밋 전, 연결 프로그램 build `20261014.2`):
+- ④ 본 작업(1~3차는 커밋 `da44f48`·연결 프로그램 build `20261014.2`, 관리자 1교시 막음은 build `20261015.1`·커밋 전):
   - 1차 대응표·자동 반영: `beta2-checkhere-core.mjs`(메모만 대응표, 삭제 가능 판단, 삭제 관문 G1~G3), `beta2-checkhere-sync.mjs`(3초 되돌리기·보류·상태 칩·중계 표시), `beta2-ledger.mjs` 행 안 바로 고치기, 병원 분류 넓히기(`checkhere-proposal-core.mjs`).
   - 2차 중계 신호·재처리 제외: `settings/checkhereRelay` 신호(연결 프로그램에 다시 닿아 본 뒤), 출결대조 자동·삭제 요청은 1기 '실패 건 다시 처리'에서 빠짐.
   - 3차 시간 삭제(기록 번호가 있는 칸만, PASS·ENTER 금지): `checkhere/rules.mjs` `timeDeleteRefusal`, 수정창 `삭제` 버튼과 다시 열어 확인(`writeback.mjs`), 능력 `time-delete-v1`, 규칙 초안 `checkhere-time-delete.rules.txt`(게시는 사용자), 켜는 순서 `docs/checkhere-time-delete-enable.md`.
-  - 관리자가 넣은 1교시(ATTEND) 삭제는 코드상 허용이지만 실제 체크히어에서 확인하지 않았다(켜는 문서 경고 참고).
+  - 관리자가 넣은 1교시(ATTEND) 삭제는 실제 체크히어에서 확인하지 않았다. 2026-10-15: 확인 전까지 막음(`checkhere/rules.mjs` `ATTEND_DELETE=false`, 지금은 퇴실만), 연결 프로그램 build `20261015.1`. 켜는 순서는 켜는 문서 4절 끝.
   - 운영 중인 연결 프로그램은 바꾸지 않았다. 새 build로 바꾸는 것은 커밋·사용자 확인 뒤.
 - ②·③은 커밋했고 Apps Script 반영은 Cowork(요청서 아래)로 한다. 반영 전에는 운영 중인 Apps Script가 그대로다.
 - 반영 순서·Cowork 요청서: `apps-script/beta2/README.md` 「동기화 실행 시간 줄이기 반영 순서」, `docs/cowork/2026-10-14-sync-runtime-deploy.md`.

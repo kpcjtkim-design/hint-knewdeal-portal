@@ -16,8 +16,8 @@ import {summarize} from './probe-core.mjs';
 import {writeFileSync} from 'node:fs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
 // build는 Start.ps1의 값과 같아야 합니다(다르면 「체크히어 시작.cmd」가 쉬고 있는 연결 프로그램을 다시 띄웁니다).
-const BUILD='20261014.2';
-// time-delete-v1: 수정창 '삭제'로 기록 번호가 있는 칸(퇴실 COMPLETE·관리자 1교시 ATTEND)만 지웁니다(collector.deleteTime).
+const BUILD='20261015.1';
+// time-delete-v1: 수정창 '삭제'로 기록 번호가 있는 칸(퇴실 COMPLETE·관리자 1교시 ATTEND)만 지웁니다(collector.deleteTime). 관리자 1교시는 지금 꺼짐(rules.mjs ATTEND_DELETE).
 export const CAPABILITIES=Object.freeze(['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1',TIME_DELETE_CAPABILITY]);
 const NO_LECTURE=/강의가 없습니다/;
 // 시간 삭제 요청(deleteTimes가 비어 있지 않음). 모양이 이상해도 삭제로 봅니다(능력 없으면 거절하는 쪽이 안전).

@@ -245,14 +245,16 @@ export class CheckHereCollector{
     try{await this.page.getByRole('button',{name:'변경',exact:true}).click();await this.page.locator('#modifyTime').waitFor({state:'hidden'});return {...change,...(automaticTime?{automaticTime}:{})};}finally{this.saving=false;await this.closeModal();}
   }
   // 수정창이 열린 채로 부릅니다. 그날 화면 데이터로 이 학생·이 칸의 기록 번호(eventId)를 지금 다시 확인합니다:
-  // 퇴실은 COMPLETE 번호, 1교시는 관리자가 넣은 ATTEND 번호(입실 번호가 없는 학생만). PASS(입실에서 계산)·번호 없음·확인 불가·시간 다름은 지우지 않습니다.
+  // 퇴실은 COMPLETE 번호, 1교시는 관리자가 넣은 ATTEND 번호(입실 번호가 없는 학생만, 지금은 rules.mjs ATTEND_DELETE로 꺼짐). PASS(입실에서 계산)·번호 없음·확인 불가·시간 다름은 지우지 않습니다.
   // 표시를 붙일 때(markDeletable)와 같은 기준으로, 화면 데이터의 실제 입실·1교시·퇴실이 지금 기록과 모두 같을 때만 믿습니다.
   // 체크히어 '삭제'는 확인창 없이 바로 지우고 수정창을 닫습니다(Cowork 확인). 열린 수정창 안에 정확히 하나일 때 한 번만 누릅니다.
   async deleteTime(record,field,before){
     const refuse=async message=>{await this.closeModal();throw new Error('TIME_DELETE_REFUSED: '+message);};
     const d=dayStudent(this.dayData,record.studentKey);
     const agree=!!d&&d.name===record.name&&d.rawEntry===record.rawEntry&&d.entry===record.entry&&d.exit===record.exit&&d[field]===before.time;
-    if(!agree||timeDeleteRefusal(d,field))return refuse(agree&&field==='entry'&&d.entryKind==='ATTEND'&&d.enterEventId?'체크인한 학생의 1교시는 지우지 않습니다(퇴실만).':'기록 번호가 없는 칸은 지우지 않습니다.');
+    if(!agree)return refuse('기록 번호가 없는 칸은 지우지 않습니다.');
+    // 거절 이유는 규칙의 문장 그대로(관리자 1교시 삭제가 꺼져 있을 때도 그 이유를 보입니다).
+    const why=timeDeleteRefusal(d,field);if(why)return refuse(why);
     // '삭제'는 수정창 안에서만 찾습니다. 수정창이 하나, 그 안에 하나, 화면 전체에도 하나일 때만 누릅니다(강의·학생 삭제 같은 다른 버튼을 누르지 않게).
     const box=this.page.locator('div.react-draggable').filter({has:this.page.locator('#modifyTime')}),button=box.getByRole('button',{name:'삭제',exact:true});
     if(await box.count()!==1||await button.count()!==1||await this.page.getByRole('button',{name:'삭제',exact:true}).count()!==1)return refuse('수정창의 삭제 버튼을 하나로 확인하지 못했습니다.');
