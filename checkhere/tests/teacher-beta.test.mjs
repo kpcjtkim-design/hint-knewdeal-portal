@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {loadPlaywright} from '../collector.mjs';
-import handler,{resolveClass,teacherClassIds,b2Args} from '../../api/teacher-beta.js';
+import handler,{resolveClass,teacherClassIds,b2Args,vocForTeacher} from '../../api/teacher-beta.js';
 
 const base=join(import.meta.dirname,'../..');
 const SHEET='https://script.test/exec',KEY='secret-key-123',ADMIN_EMAIL='hint.kpc@gmail.com';
@@ -50,7 +50,7 @@ test('teacher class rules stay ready for the later rollout: only assigned classe
  assert.deepEqual(teacher.classIds,['3','7'],'legacy classIds are ignored once tempClassIds exists');
  assert.deepEqual(teacherClassIds(PROFILES['legacy@test.kr']),['4'],'numeric classId works like index.html');
  assert.equal(resolveClass(teacher,{cls:5},'portalData',[5,'']),3);
- assert.equal(resolveClass(teacher,{cls:7},'portalCheck',[7,'',12,'완료']),7,'temporary class is allowed');
+ assert.equal(resolveClass(teacher,{cls:7},'portalClose',[7,'','확인']),7,'temporary class is allowed');
  assert.equal(resolveClass(teacher,{cls:8},'portalData',[8,'']),3);
  assert.equal(resolveClass(teacher,{},'portalSave',[{cls:9}]),3);
  assert.throws(()=>resolveClass({role:'TEACHER',classIds:[]},{cls:1},'portalData',[1,'']),/NO_CLASS/);
@@ -73,9 +73,10 @@ test('administrators choose the preview class, and bad input never reaches the s
  assert.deepEqual(calls.at(-1).body.args,[1,'']);
  await call({action:'portalSave',args:[{cls:2,name:'김철수'}],cls:2},{email:'kpc.jtkim@gmail.com'});
  assert.deepEqual(calls.at(-1).body.args,[{cls:2,name:'김철수',pin:''}]);
- await call({action:'portalCheck',args:[9,'1234',12,'완료'],cls:4},{email:'kpc.jtkim@gmail.com',header:false});
- assert.deepEqual(calls.at(-1).body.args,[4,'',12,'완료'],'body idToken works like other api routes and the PIN is always blank');
+ await call({action:'portalClose',args:[9,'1234','확인'],cls:4},{email:'kpc.jtkim@gmail.com',header:false});
+ assert.deepEqual(calls.at(-1).body.args,[4,'','확인'],'body idToken works like other api routes and the PIN is always blank');
  const before=calls.length;
+ assert.equal((await call({action:'portalCheck',args:[4,'',53,'완료'],cls:4},{email:'hint.kpc@gmail.com'})).body.code,'BAD_ACTION','현장운영 체크리스트 is gone (2026-10-16)');
  assert.equal((await call({action:'portalData',args:[18,''],cls:18},{email:'hint.kpc@gmail.com'})).statusCode,400);
  assert.equal((await call({action:'portalClasses',args:[]},{email:'hint.kpc@gmail.com'})).body.code,'BAD_ACTION');
  assert.equal((await call({action:'portalData',args:[3,'']},{email:null})).statusCode,401);
@@ -121,6 +122,16 @@ test('2기 베타 sheet actions carry the verified user, are administrator-only 
  assert.deepEqual(b2Args(teacher,'b2Bundle',['7']),['7']);
  assert.deepEqual(b2Args(teacher,'b2Docs',[{}]),[{cls:'3'}]);
  assert.deepEqual(b2Args(teacher,'b2DocCreate',[{cls:'9',name:'가'}]),[{cls:'3',name:'가'}]);
+ // 민원·이슈: 담임은 늘 자기 반(Apps Script가 그 건의 반과 맞는지 확인), 관리자는 전체·고른 반
+ assert.deepEqual(b2Args(teacher,'b2Vocs',[{}]),[{cls:'3'}]);
+ assert.deepEqual(b2Args(teacher,'b2VocCreate',[{cls:'9',type:'안전',detail:'가'}]),[{cls:'3',type:'안전',detail:'가'}]);
+ assert.deepEqual(b2Args(teacher,'b2VocReply',[{key:'V261016-001',text:'답'}]),[{key:'V261016-001',text:'답',cls:'3'}]);
+ assert.deepEqual(b2Args(teacher,'b2VocSeen',[{key:'V261016-001',cls:'7'}]),[{key:'V261016-001',cls:'7'}]);
+ assert.deepEqual(b2Args(admin,'b2Vocs',[{}]),[{}]);
+ assert.deepEqual(b2Args(admin,'b2VocReply',[{key:'V1',status:'완료'}]),[{key:'V1',status:'완료'}]);
+ assert.deepEqual(b2Args(admin,'b2VocReply',[{key:'V1',cls:'5'}]),[{key:'V1',cls:'5'}]);
+ assert.throws(()=>b2Args(admin,'b2VocReply',[{key:'V1',cls:'18'}]),/BAD_CLASS/);
+ assert.deepEqual(vocForTeacher({rev:4,at:1,admin:9,open:{'3':2,'5':1},teacher:{'3':1,'7':2,'9':4}},['3','7']),{rev:4,at:1,teacher:{'3':1,'7':2},open:{'3':2}},'a teacher sees only their own classes and not the admin count');
  assert.deepEqual(b2Args(admin,'b2Docs',[{}]),[{}]);
  assert.deepEqual(b2Args(admin,'b2SyncNow',[{}]),[{}]);
  assert.deepEqual(b2Args(admin,'b2SyncNow',[{cls:'5'}]),[{cls:'5'}]);
@@ -182,9 +193,9 @@ test('the beta view leaves duplicated portal sections to their existing tabs',as
  await workspace(()=>({body:JSON.stringify({ok:true,data:DATA})}),async page=>{
   await page.getByRole('button',{name:'2기 베타',exact:true}).click();
   await page.getByText('오늘 출결 (10/12(월))').waitFor();
-  for(const removed of ['금주교육','2기 베타 담임화면','기본 정보'])assert.equal(await page.getByText(removed).count(),0,removed);
-  await page.getByRole('button',{name:'학습자 평가',exact:true}).click();
-  await page.getByText('「만족도조사」 탭에서').waitFor();
+  for(const removed of ['금주교육','2기 베타 담임화면','기본 정보','현장운영 체크리스트','출석 확인'])assert.equal(await page.getByText(removed).count(),0,removed);
+  // 2026-10-16 회의: 학습자 평가는 없어지고, 민원·이슈는 2기 베타 담임 화면의 beta2-voc.mjs로 옮김
+  for(const gone of ['학습자 평가','민원·이슈'])assert.equal(await page.getByRole('button',{name:gone,exact:true}).count(),0,gone);
   assert.equal(await page.getByText('만족도 평가').count(),0);
   await page.getByRole('button',{name:'출결판',exact:true}).click();
   assert.equal(await page.locator('table.g select').count(),4);

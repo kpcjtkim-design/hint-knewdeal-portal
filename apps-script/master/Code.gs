@@ -141,12 +141,17 @@ function onEdit(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet(), name = sh.getName();
   try {
-    // /beta2가 읽는 탭을 직접 고쳤으면 변경 번호를 올립니다(출결판 칸 고치기는 아래 upsert_·removeRow_가 올림). 교육일자는 시간표에서 올 수 있습니다.
-    if ([CFG.LEDGER, CFG.ROSTER, CFG.DAYS, CFG.INFO, '시간표'].indexOf(name) >= 0) bumpBeta2_();
-    // 시트 다듬기 뒤에는 교육일자(시간표에서 올 수 있음)·명부·원장을 고치면 원장 Q열(입력 확인)도 다시 계산합니다(slimLocked_, 그 전에는 아무것도 안 함).
+    // 민원이슈를 시트에서 직접 고치면 2기 베타 알림 건수만 다시 셉니다(출결 변경 번호는 그대로).
+    if (name === SUB.VOC) { vocChanged_(); return; }
+    // 교육일자는 교육일정(개편 전에는 시간표) C열 교육일에서 옵니다. 교육일정의 분야·강사(D열부터)만 고쳤으면 출결과 상관없습니다.
+    const days = name === CFG.DAYS || name === '시간표' || (name === SCHED.tab && e.range.getColumn() <= 3);
+    if (name === SCHED.tab && !days) return;
+    // /beta2가 읽는 탭을 직접 고쳤으면 변경 번호를 올립니다(출결판 칸 고치기는 아래 upsert_·removeRow_가 올림).
+    if (days || [CFG.LEDGER, CFG.ROSTER, CFG.INFO].indexOf(name) >= 0) bumpBeta2_();
+    // 시트 다듬기 뒤에는 교육일자·명부·원장을 고치면 원장 Q열(입력 확인)도 다시 계산합니다(slimLocked_, 그 전에는 아무것도 안 함).
     // 다시 계산할 것을 먼저 적어 둡니다(slimMark_): 출결판 그리기에서 단순 트리거 한도(30초)로 끊기거나 잠금을 못 잡아도 다음 동기화·저장이 계산.
-    if ([CFG.LEDGER, CFG.ROSTER, CFG.DAYS, '시간표'].indexOf(name) >= 0) slimMark_();
-    if (name === '시간표' || name === CFG.DAYS) { rebuildBoards_(null); slimLocked_(null); return; }
+    if (days || [CFG.LEDGER, CFG.ROSTER].indexOf(name) >= 0) slimMark_();
+    if (days) { rebuildBoards_(null); slimLocked_(null); return; }
     // 명부·원장은 고친 행의 반만 다시 그립니다(17개 반을 모두 그리면 단순 트리거 30초 한도에 걸릴 수 있음).
     if (name === CFG.ROSTER) { rebuildBoards_(editedClasses_(e.range, 1)); slimLocked_(null); return; }
     if (name === CFG.LEDGER) { touch_(); rebuildBoards_(editedClasses_(e.range, 2)); slimLocked_(null); return; }
@@ -373,8 +378,14 @@ function parseDate_(s) { const p = s.split('-').map(Number); return new Date(p[0
 // 담임은 반 + PIN(반정보 P열)으로 들어옵니다. 포털에서 하는 모든 저장은 '담임' 권한으로 처리됩니다(증빙은 바꾸지 않음).
 
 var __PORTAL = false;
-const CHECK_ROWS = { first: 53, last: 71, sections: [['강의 시작 전', 53, 58], ['강의 중', 59, 65], ['강의 종료 후', 66, 71]] };
-const SUB = { EVAL: '학습자평가', SAT: '만족도평가', VOC: '민원이슈', OFFICER: '반운영정보' };
+// 2026-10-16 회의: 반 탭 '라. 현장운영 체크리스트'·'바. 학습자 평가'·'사. 만족도 평가'와 학습자평가·만족도평가 탭을 없앴습니다.
+// 예전 담임 포털(Portal.html, 배포 ②)은 그 칸을 그대로 그리므로 portalData는 빈 목록(checks·evals·sats)을 보냅니다.
+const SUB = { VOC: '민원이슈' };
+// 반장·부반장·총무·반 운영 비고·수정일: 반정보 Q~U(반운영정보 탭을 반정보에 합침). 시트 개편(restructure.gs) 전이면 예전 반운영정보 탭을 씁니다.
+const OFFICER = { col: 17, oldTab: '반운영정보' };
+// 교육일정 탭(시간표·교육일자·운영총괄 교육일정표를 합침): 8행 머리글, 9행부터 날짜 한 줄씩, C 교육일(O·휴일), D열부터 반마다 2칸(분야·강사).
+// beta2.gs B2.SCHED와 같은 값입니다. 시트 개편 전이면 예전 시간표 탭을 씁니다.
+const SCHED = { tab: '교육일정', head: 8, first: 9, firstCol: 4, perClass: 2 };
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Portal')
@@ -415,32 +426,32 @@ function portalData(cls, pin) {
   const sh = classSheet_(cls);
   const sumHdr = sh ? sh.getRange('A12:K12').getDisplayValues()[0] : [];
   const sumVal = sh ? sh.getRange('A13:K13').getDisplayValues()[0] : [];
-  const checks = [];
-  if (sh) {
-    const txt = sh.getRange(CHECK_ROWS.first, 2, CHECK_ROWS.last - CHECK_ROWS.first + 1, 1).getDisplayValues();
-    const val = sh.getRange(CHECK_ROWS.first, 5, CHECK_ROWS.last - CHECK_ROWS.first + 1, 1).getDisplayValues();
-    CHECK_ROWS.sections.forEach(([label, a, b]) => {
-      const items = [];
-      for (let r = a; r <= b; r++) items.push({ row: r, text: txt[r - CHECK_ROWS.first][0], value: val[r - CHECK_ROWS.first][0] });
-      checks.push({ label: label, items: items });
-    });
-  }
   return {
     cls: cls, region: info[1], course: info[2], teacher: info[4] || '', place: info[6] || '',
     mainDay: base.mainDay, days: base.days, kids: kids, recs: recs,
     week: week_(cls, info, base, tz),
     summary: sumHdr.map((h, i) => ({ k: h, v: sumVal[i] })).filter(x => x.k),
-    closed: sumVal[10] || '', checks: checks,
-    evals: subRows_(SUB.EVAL, cls, 0, 8, tz),
-    sats: subRows_(SUB.SAT, cls, 0, 7, tz),
+    closed: sumVal[10] || '', checks: [], evals: [], sats: [], // 없어진 기능(예전 Portal.html이 빈 칸으로 그리게)
     vocs: subRows_(SUB.VOC, cls, 1, 10, tz),
     officer: officer_(cls)
   };
 }
 
+// 이번 주 월~금 일정. 교육일정 탭이 있으면 그 반 분야·강사(place 칸에 강사), 없으면(시트 개편 전) 예전 시간표 탭.
 function week_(cls, info, base, tz) {
   const m = parseDate_(base.mainDay), dow = (m.getDay() + 6) % 7;
   const mon = new Date(m.getFullYear(), m.getMonth(), m.getDate() - dow);
+  const sched = SpreadsheetApp.getActive().getSheetByName(SCHED.tab);
+  if (sched) {
+    const c = SCHED.firstCol + (cls - 1) * SCHED.perClass, last = lastRow_(sched);
+    const rows = last >= SCHED.first && c + 1 <= sched.getMaxColumns() ? sched.getRange(SCHED.first, 1, last - SCHED.first + 1, c + 1).getValues() : [];
+    const week = [];
+    for (let i = 0; i < 5; i++) {
+      const ds = fmtDate_(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i), tz), hit = rows.filter(r => fmtDate_(r[0], tz) === ds);
+      week.push({ date: ds, off: hit.some(r => String(r[2]).trim() === '휴일'), subj: hit.map(r => r[c - 1]).filter(Boolean).join(' / '), place: hit.map(r => r[c]).filter(Boolean).join(' / '), survey: '' });
+    }
+    return week;
+  }
   const track = String(info[2] || '').replace(/\(\d\)$/, '');
   const rows = SpreadsheetApp.getActive().getSheetByName('시간표').getRange('A2:H1500').getValues().filter(r => r[0] instanceof Date);
   const out = [];
@@ -466,8 +477,15 @@ function subRows_(name, cls, clsCol, ncol, tz) {
   return out.reverse();
 }
 
+// 반정보 Q3 머리글이 '반장'이면 합친 뒤(Q~U), 아니면 예전 반운영정보 탭(A반·B반명·C반장·D부반장·E총무·F비고·G수정일)
+function officerMerged_(info) { return !!info && info.getMaxColumns() >= OFFICER.col + 4 && String(info.getRange(3, OFFICER.col).getValue()).trim() === '반장'; }
 function officer_(cls) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(SUB.OFFICER);
+  const ss = SpreadsheetApp.getActive(), info = ss.getSheetByName(CFG.INFO);
+  if (officerMerged_(info)) {
+    const k = OFFICER.col - 7, r = info.getRange(4, 7, 17, k + 5).getValues().find(x => String(x[0]) === cls + '반') || [];
+    return { leader: r[k] || '', sub: r[k + 1] || '', treasurer: r[k + 2] || '', note: r[k + 3] || '' };
+  }
+  const sh = ss.getSheetByName(OFFICER.oldTab);
   if (!sh) return {};
   const r = sh.getRange('A2:G18').getValues().find(x => Number(x[0]) === Number(cls)) || [];
   return { leader: r[2] || '', sub: r[3] || '', treasurer: r[4] || '', note: r[5] || '' };
@@ -491,31 +509,23 @@ function portalSave(p) {
   } finally { __PORTAL = false; }
 }
 
-function portalCheck(cls, pin, row, value) {
-  checkPin_(Number(cls), pin);
-  if (row < CHECK_ROWS.first || row > CHECK_ROWS.last) throw new Error('잘못된 항목입니다.');
-  classSheet_(cls).getRange(row, 5).setValue(value || '');
-  return { ok: true };
-}
-
 function portalClose(cls, pin, value) {
   checkPin_(Number(cls), pin);
   classSheet_(cls).getRange('K13').setValue(value === '확인' ? '확인' : '미확인');
   return { ok: true };
 }
 
+// 예전 담임 포털(Portal.html)의 민원·이슈 접수. 학습자 평가·만족도 평가(EVAL·SAT)는 2026-10-16 회의로 없어졌습니다.
+// 2기 베타 화면은 beta2.gs b2VocCreate_·b2VocReply_로 주고받습니다(번호·기록·알림). 여기서 쓴 것도 알림 건수에 넣습니다.
 function portalAddRow(cls, pin, kind, vals) {
   checkPin_(Number(cls), pin);
-  const ss = SpreadsheetApp.getActive(), name = SUB[kind];
-  if (!name) throw new Error('잘못된 요청입니다.');
-  const sh = ss.getSheetByName(name), row = lastRow_(sh) + 1;
+  if (kind === 'EVAL' || kind === 'SAT') throw new Error('학습자 평가·만족도 평가는 2026-10-16 회의 결정으로 없어졌습니다.');
+  if (kind !== 'VOC') throw new Error('잘못된 요청입니다.');
+  const sh = SpreadsheetApp.getActive().getSheetByName(SUB.VOC), row = lastRow_(sh) + 1;
   const d = s => s ? parseDate_(s) : '';
-  let line;
-  if (kind === 'EVAL') line = [Number(cls), d(vals.date), vals.subj || '', num_(vals.n), num_(vals.avg), num_(vals.max), num_(vals.min), vals.note || ''];
-  else if (kind === 'SAT') line = [Number(cls), vals.period || '', vals.kind || '전체', vals.teacher || '', num_(vals.score), num_(vals.n), vals.note || ''];
-  else if (kind === 'VOC') { sh.getRange(row, 1, 1, 2).setValues([[d(vals.date), Number(cls)]]); sh.getRange(row, 5, 1, 5).setValues([[vals.type || '기타', vals.detail || '', vals.status || '접수', vals.action || '', d(vals.done)]]); return { ok: true }; }
-  else throw new Error('잘못된 요청입니다.');
-  sh.getRange(row, 1, 1, line.length).setValues([line]);
+  sh.getRange(row, 1, 1, 2).setValues([[d(vals.date), Number(cls)]]);
+  sh.getRange(row, 5, 1, 5).setValues([[vals.type || '기타', vals.detail || '', vals.status || '접수', vals.action || '', d(vals.done)]]);
+  vocChanged_();
   return { ok: true };
 }
 
@@ -524,20 +534,29 @@ function portalUpdateVoc(cls, pin, row, vals) {
   const sh = SpreadsheetApp.getActive().getSheetByName(SUB.VOC);
   if (Number(sh.getRange(row, 2).getValue()) !== Number(cls)) throw new Error('다른 반 기록입니다.');
   sh.getRange(row, 7, 1, 3).setValues([[vals.status || '접수', vals.action || '', vals.done ? parseDate_(vals.done) : (vals.status === '완료' ? new Date() : '')]]);
+  vocChanged_();
   return { ok: true };
 }
+
+// 민원이슈 탭을 고친 뒤 2기 베타 알림 건수(beta2.gs B2_VOC_STATE)를 다시 셉니다. beta2.gs가 없거나 실패해도 저장은 그대로 둡니다.
+function vocChanged_() { try { if (typeof b2VocRefresh_ === 'function') b2VocRefresh_(); } catch (e) { console.log(e); } }
 
 function portalSaveOfficer(cls, pin, o) {
   checkPin_(Number(cls), pin);
-  const sh = SpreadsheetApp.getActive().getSheetByName(SUB.OFFICER);
+  const ss = SpreadsheetApp.getActive(), info = ss.getSheetByName(CFG.INFO), line = [o.leader || '', o.sub || '', o.treasurer || '', o.note || '', new Date()];
+  if (officerMerged_(info)) {
+    const i = info.getRange('G4:G20').getValues().flat().map(String).indexOf(Number(cls) + '반');
+    if (i < 0) throw new Error('반정보에 반이 없습니다.');
+    info.getRange(i + 4, OFFICER.col, 1, 5).setValues([line]);
+    return { ok: true };
+  }
+  const sh = ss.getSheetByName(OFFICER.oldTab);
   const ids = sh.getRange('A2:A18').getValues().flat().map(Number);
   const i = ids.indexOf(Number(cls));
   if (i < 0) throw new Error('반운영정보에 반이 없습니다.');
-  sh.getRange(i + 2, 3, 1, 5).setValues([[o.leader || '', o.sub || '', o.treasurer || '', o.note || '', new Date()]]);
+  sh.getRange(i + 2, 3, 1, 5).setValues([line]);
   return { ok: true };
 }
-
-function num_(x) { const n = Number(x); return x === '' || x === null || isNaN(n) ? '' : n; }
 
 /* --- 교육생 상태 · 중도포기(예정)일 (담임 설정) --- */
 function portalSetStatus(cls, pin, name, status, date) {
@@ -578,7 +597,7 @@ function doPost(e) {
     if (!key || body.key !== key) return out({ ok: false, error: 'unauthorized' });
     const A = Object.assign({
       portalClasses: portalClasses, portalData: portalData, portalSave: portalSave,
-      portalCheck: portalCheck, portalClose: portalClose, portalAddRow: portalAddRow,
+      portalClose: portalClose, portalAddRow: portalAddRow, // portalCheck(현장운영 체크리스트)는 2026-10-16 회의로 없어짐
       portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus,
       portalRoster: portalRoster_ // 끝이 '_'인 함수는 google.script.run으로 부를 수 없음(생년월일·성별)
     }, typeof B2_ACTIONS === 'object' ? B2_ACTIONS : {}); // beta2.gs가 있으면 2기 베타 기능도 받습니다.

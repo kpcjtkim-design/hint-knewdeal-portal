@@ -15,7 +15,7 @@ function doPost(e) {
     if (!key || body.key !== key) return out({ ok: false, error: 'unauthorized' });
     const A = Object.assign({
       portalClasses: portalClasses, portalData: portalData, portalSave: portalSave,
-      portalCheck: portalCheck, portalClose: portalClose, portalAddRow: portalAddRow,
+      portalClose: portalClose, portalAddRow: portalAddRow, // portalCheck(현장운영 체크리스트)는 2026-10-16 회의로 없어짐
       portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus,
       portalRoster: portalRoster_ // 끝이 '_'인 함수는 google.script.run으로 부를 수 없음(생년월일·성별)
     }, typeof B2_ACTIONS === 'object' ? B2_ACTIONS : {}); // beta2.gs가 있으면 2기 베타 기능도 받습니다.

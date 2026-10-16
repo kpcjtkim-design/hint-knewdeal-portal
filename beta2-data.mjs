@@ -5,6 +5,11 @@ import {readAttendanceSummary} from './attendance-derived-store.mjs';
 
 const bundles=new Map();
 export function forgetBeta2Cache(){bundles.clear();}
+// 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
+// 민원·이슈 알림(beta2-admin.mjs·담임 화면)은 다른 화면이 방금 확인한 값을 그대로 써서 Apps Script 호출을 늘리지 않습니다.
+const revListeners=new Set();let lastRev={at:0,value:null};
+export function onBeta2Rev(fn){revListeners.add(fn);if(lastRev.value)queueMicrotask(()=>{if(revListeners.has(fn))fn(lastRev.value);});return ()=>revListeners.delete(fn);}
+export const lastBeta2Rev=()=>lastRev;
 export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(...a)=>fetch(...a),db=null}={}){
  async function call(action,...args){
   const token=await user.getIdToken();
@@ -14,7 +19,12 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   if(!j.ok){const text=String(j.error||'마스터시트 요청을 처리하지 못했습니다.');throw Object.assign(Error(text.replace(/^CONFLICT:\s*/,'')),{code:j.code||(text.startsWith('CONFLICT')?'CONFLICT':'')});}
   return j.data;
  }
- const rev=()=>call('b2Rev');
+ async function rev(){
+  const r=await call('b2Rev');
+  lastRev={at:Date.now(),value:r};
+  for(const fn of [...revListeners]){try{fn(r);}catch(e){console.warn(e);}}
+  return r;
+ }
  async function bundle(cls='all',{fresh=false,maxAge=20000}={}){
   const key=String(cls),hit=bundles.get(key)||(key!=='all'?bundles.get('all'):null);
   if(hit&&!fresh){
@@ -61,6 +71,10 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   docs:p=>call('b2Docs',p||{}),
   docCreate:p=>call('b2DocCreate',p),
   docUpdate:p=>call('b2DocUpdate',p),
+  vocs:p=>call('b2Vocs',p||{}),
+  vocCreate:p=>call('b2VocCreate',p),
+  vocReply:p=>call('b2VocReply',p),
+  vocSeen:p=>call('b2VocSeen',p),
   roster:cls=>call('portalRoster',Number(cls),'')
  };
 }

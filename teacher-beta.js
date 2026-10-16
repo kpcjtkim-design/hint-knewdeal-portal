@@ -26,7 +26,8 @@ export function mountTeacherBeta(el, OPT) {
   }
   async function reload(keep){try{S.d=await run('portalData',S.cls,S.pin);if(!keep)S.sel=null;render();}catch(e){toast(e.message);}}
 
-  const TABS=[['today','오늘'],['board','출결판'],['reason','출결사유'],['eval','학습자 평가'],['voc','민원·이슈'],['info','반 정보']];
+  // 2026-10-16 회의: 학습자 평가·현장운영 체크리스트는 없앴고, 민원·이슈는 운영팀과 주고받는 beta2-voc.mjs로 옮겼습니다(2기 베타 담임 화면 '민원·만족도').
+  const TABS=[['today','오늘'],['board','출결판'],['reason','출결사유'],['info','반 정보']];
   function render(){
     const d=S.d;
     // 반·과정·담임은 포털 머리글에 이미 있으므로 하위 메뉴와 기준일만 한 줄로 둡니다.
@@ -35,7 +36,7 @@ export function mountTeacherBeta(el, OPT) {
     app().innerHTML=h;
     $('#rf').onclick=()=>reload(true);
     R.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{flush();S.tab=b.dataset.tab;render();});
-    ({today:vToday,board:vBoard,reason:vReason,eval:vEval,voc:vVoc,info:vInfo})[S.tab]();
+    ({today:vToday,board:vBoard,reason:vReason,info:vInfo})[S.tab]();
   }
 
   function vToday(){
@@ -43,10 +44,8 @@ export function mountTeacherBeta(el, OPT) {
     let h='<div class="card"><div class="sec">오늘 출결 ('+md(d.mainDay)+')</div><div class="sum">'+d.summary.filter(x=>x.k!=='당일 마감').map(x=>'<div><b>'+esc(x.v)+'</b><span>'+esc(x.k)+'</span></div>').join('')+'</div>';
     const todo=d.kids.filter(k=>!(k.off&&d.mainDay>k.off)&&!d.recs[k.name+'|'+d.mainDay]).length;h+='<div class="note" style="margin-top:8px">오늘 아직 입력 전(해당없음): <b style="color:var(--orange)">'+todo+'명</b> · 출결판에서 출석까지 모두 체크해 주세요.</div>';
     h+='<div class="lab">당일 마감 (학습 종료 직후 숫자 확인)</div><div class="chips"><button class="chip g" data-close="확인" aria-pressed="'+(d.closed==='확인')+'">확인</button><button class="chip n" data-close="미확인" aria-pressed="'+(d.closed!=='확인')+'">미확인</button></div></div>';
-    h+='<div class="card"><div class="sec">현장운영 체크리스트</div>'+d.checks.map(s=>'<div class="lab" style="font-weight:700;color:var(--ink)">'+esc(s.label)+'</div>'+s.items.map(it=>'<div class="ck"><span>'+esc(it.text)+'</span><span class="chips">'+[['완료','g'],['미완료','r'],['해당없음','n']].map(([v,c])=>'<button class="chip '+c+'" data-row="'+it.row+'" data-v="'+v+'" aria-pressed="'+(it.value===v)+'">'+v+'</button>').join('')+'</span></div>').join('')).join('')+'</div>';
     $('#v').innerHTML=h;
     R.querySelectorAll('[data-close]').forEach(b=>b.onclick=async()=>{const v=b.dataset.close;S.d.closed=v;vToday();try{await run('portalClose',S.cls,S.pin,v);toast('당일 마감: '+v);}catch(e){toast(e.message);}});
-    R.querySelectorAll('[data-row]').forEach(b=>b.onclick=async()=>{const row=+b.dataset.row,v=b.dataset.v;let nv='';S.d.checks.forEach(s=>s.items.forEach(it=>{if(it.row===row){it.value=it.value===v?'':v;nv=it.value;}}));vToday();try{await run('portalCheck',S.cls,S.pin,row,nv);}catch(e){toast(e.message);}});
   }
 
   function cellVal(n,day){const k=S.d.kids.find(x=>x.name===n);if(k&&k.off&&day>k.off)return null;const r=S.d.recs[n+'|'+day];return r?r.type:'해당없음';}
@@ -115,27 +114,6 @@ export function mountTeacherBeta(el, OPT) {
     $('#v').innerHTML=h;
     $('#all').onclick=()=>{S.onlyMissing=false;vReason();};$('#mis').onclick=()=>{S.onlyMissing=true;vReason();};
     R.querySelectorAll('tr.click').forEach(tr=>tr.onclick=()=>{S.tab='board';S.sel={n:tr.dataset.n,day:tr.dataset.d};S.f=Object.assign({},S.d.recs[S.sel.n+'|'+S.sel.day]);render();if(OPT.onTab)OPT.onTab('board');});
-  }
-
-  function vEval(){
-    const d=S.d;
-    let h='<div class="card"><div class="sec">학습자 평가</div><div class="form"><label>평가일<input class="in" type="date" id="e_date"></label><label class="wide">평가 과목<input class="in" id="e_subj" placeholder="직무특화_자동차개론"></label><label>응시인원<input class="in" type="number" id="e_n"></label><label>평균점수<input class="in" type="number" step="0.1" id="e_avg"></label><label>최고점<input class="in" type="number" id="e_max"></label><label>최저점<input class="in" type="number" id="e_min"></label><label class="wide">비고<input class="in" id="e_note"></label><button class="btn" id="e_add">추가</button></div>';
-    h+='<div style="overflow-x:auto"><table class="list" style="margin-top:12px"><thead><tr><th>평가일</th><th>과목</th><th>응시</th><th>평균</th><th>최고</th><th>최저</th><th>비고</th></tr></thead><tbody>'+(d.evals.length?d.evals.map(x=>'<tr><td>'+md(x.v[1])+'</td><td>'+esc(x.v[2])+'</td><td>'+esc(x.v[3])+'</td><td>'+esc(x.v[4])+'</td><td>'+esc(x.v[5])+'</td><td>'+esc(x.v[6])+'</td><td>'+esc(x.v[7])+'</td></tr>').join(''):'<tr><td colspan="7" class="note">아직 기록이 없습니다.</td></tr>')+'</tbody></table></div><div class="note" style="margin-top:8px">만족도 결과는 「만족도조사」 탭에서 설문 응답으로 자동 집계되므로 여기서 따로 입력하지 않습니다.</div></div>';
-    $('#v').innerHTML=h;
-    const g=id=>$('#'+id).value;
-    $('#e_add').onclick=()=>{if(!g('e_subj')){toast('평가 과목을 적어 주세요');return;}addRow('EVAL',{date:g('e_date'),subj:g('e_subj'),n:g('e_n'),avg:g('e_avg'),max:g('e_max'),min:g('e_min'),note:g('e_note')});};
-  }
-  async function addRow(kind,vals){R.host.classList.add('busy');try{await run('portalAddRow',S.cls,S.pin,kind,vals);toast('추가했습니다');await reload(true);}catch(e){toast(e.message);}R.host.classList.remove('busy');}
-
-  function vVoc(){
-    const d=S.d,today=new Date().toLocaleDateString('sv-SE');
-    let h='<div class="card"><div class="sec">민원·이슈 접수</div><div class="form"><label>접수일<input class="in" type="date" id="v_date" value="'+today+'"></label><label>유형<select class="in" id="v_type">'+['해당없음','수업·강사','시설·환경','출결','행정·서류','교육생 고충','안전','기타'].map(x=>'<option>'+x+'</option>').join('')+'</select></label><label>상태<select class="in" id="v_status"><option>접수</option><option>처리중</option><option>완료</option><option>보류</option><option>해당없음</option></select></label><label class="wide">상세내용<textarea class="in" id="v_detail" rows="2"></textarea></label><label class="wide">조치내용<textarea class="in" id="v_action" rows="2"></textarea></label><button class="btn" id="v_add">접수</button></div></div>';
-    h+='<div class="card"><div class="sec">접수 내역</div><div style="overflow-x:auto"><table class="list"><thead><tr><th>접수일</th><th>유형</th><th>내용</th><th>상태</th><th>조치</th><th>경과</th></tr></thead><tbody>'+(d.vocs.length?d.vocs.map(x=>'<tr><td>'+md(x.v[0])+'</td><td>'+esc(x.v[4])+'</td><td>'+esc(x.v[5])+'</td><td><select class="in" data-vr="'+x.row+'" style="padding:3px">'+['접수','처리중','완료','보류','해당없음'].map(s=>'<option'+(x.v[6]===s?' selected':'')+'>'+s+'</option>').join('')+'</select></td><td><input class="in" data-va="'+x.row+'" value="'+esc(x.v[7])+'" placeholder="조치내용" style="padding:4px 6px"></td><td>'+esc(x.v[9])+(x.v[9]!==''?'일':'')+'</td></tr>').join(''):'<tr><td colspan="6" class="note">접수된 민원·이슈가 없습니다.</td></tr>')+'</tbody></table></div><div class="note" style="margin-top:6px">상태를 바꾸거나 조치내용을 적으면 바로 저장됩니다. 완료로 바꾸면 처리일이 오늘로 들어갑니다.</div></div>';
-    $('#v').innerHTML=h;
-    $('#v_add').onclick=()=>{const g=id=>$('#'+id).value;if(!g('v_detail')){toast('상세내용을 적어 주세요');return;}addRow('VOC',{date:g('v_date'),type:g('v_type'),status:g('v_status'),detail:g('v_detail'),action:g('v_action')});};
-    const upd=async row=>{const s=R.querySelector('[data-vr="'+row+'"]').value,a=R.querySelector('[data-va="'+row+'"]').value;try{await run('portalUpdateVoc',S.cls,S.pin,Number(row),{status:s,action:a});toast('저장했습니다');}catch(e){toast(e.message);}};
-    R.querySelectorAll('[data-vr]').forEach(el=>el.onchange=()=>upd(el.dataset.vr));
-    R.querySelectorAll('[data-va]').forEach(el=>el.onchange=()=>upd(el.dataset.va));
   }
 
   function vInfo(){

@@ -83,7 +83,7 @@ async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/beta2',c
 test('/beta2 opens the compressed administrator menu on the beta home without being indexed',async()=>{
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
-  assert.deepEqual(await page.locator('.admin-major button').allInnerTexts(),['홈','출결','서류발급','교육 운영','공지·설정','미리보기']);
+  assert.deepEqual(await page.locator('.admin-major button').allInnerTexts(),['홈','출결','서류발급','민원·이슈','교육 운영','공지·설정','미리보기']);
   assert.equal(await page.locator('meta[name="robots"]').getAttribute('content'),'noindex,nofollow');
   assert.equal(await page.title(),'HINT 2기 베타');
   assert.match(await page.locator('.portal-role').innerText(),/2기 베타/);
@@ -222,7 +222,7 @@ test('the teacher preview merges 1기 and 2기 teacher tabs into six tabs with a
   await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
   await page.getByRole('button',{name:'미리보기',exact:true}).click();
   await page.locator('[data-main]').first().waitFor();
-  assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘','출결','서류발급','평가·민원','시간표·자료','반 정보']);
+  assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘','출결','서류발급','민원·만족도','시간표·자료','반 정보']);
   await page.locator('.b2-alertbar:not([hidden])').waitFor();
   assert.match(await page.locator('.b2-alertbar').innerText(),/고다원 4\/6회/);
   await page.locator('[data-main="attendance"]').click();

@@ -9,6 +9,7 @@ import {createGas} from './gas-fake.mjs';
 // 모든 최상위 함수를 누구나 google.script.run으로 부를 수 있습니다(웹 앱은 소유자로 실행, 방문자 이메일은 빈 칸이거나 다른 계정).
 const CODE=fileURLToPath(new URL('../../apps-script/master/Code.gs',import.meta.url));
 const GS=fileURLToPath(new URL('../../apps-script/beta2/beta2.gs',import.meta.url));
+const RS=fileURLToPath(new URL('../../apps-script/beta2/restructure.gs',import.meta.url)); // 마스터시트 개편(2026-10-16), 같은 프로젝트의 세 번째 파일
 const SNIPPET=fileURLToPath(new URL('../../apps-script/teacher-beta-api.gs',import.meta.url));
 const VERCEL=fileURLToPath(new URL('../../api/teacher-beta.js',import.meta.url));
 const OWNER='owner@example.com',KEY='k'.repeat(64);
@@ -19,7 +20,8 @@ const plain=x=>JSON.parse(JSON.stringify(x));
 // 이름 끝이 '_'가 아닌 최상위 함수 전부와 누가 부르는지. 함수를 더하면 여기에 넣고, 웹 앱 방문자가 불러도 되는지 정합니다.
 const OPEN={
  // Portal.html(run('portal…')) · 웹 앱 입구. portal* 읽기·저장은 반정보 P열 PIN을 확인합니다(checkPin_). portalClasses는 반 이름과 PIN 유무만.
- portal:['doGet','portalClasses','portalData','portalSave','portalCheck','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus'],
+ // portalCheck(현장운영 체크리스트)는 2026-10-16 회의로 없어졌습니다.
+ portal:['doGet','portalClasses','portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus'],
  // Sidebar.html이 0.7초마다 부르는 읽기. 웹 앱에서는 고른 칸이 없어 안내 문구와 역할(담임)만 돌려줍니다.
  sidebarRead:['getSelectionKey','getContext'],
  // 메뉴·단순 트리거. 웹 앱에는 화면(getUi)이 없어 아무 일도 못 하고, onEdit은 e.range(함수)가 있어야 해 JSON 인자로는 못 부릅니다.
@@ -27,12 +29,12 @@ const OPEN={
  api:['doPost'] // API 키 확인
 };
 const GUARDED={
- editor:['saveRecord','rebuildAll','setApiKey','b2SlimCheck','b2SlimSheet','b2RestoreFormulas','b2Setup','b2ImportAll','b2InstallTrigger','b2RemoveTrigger'],
+ editor:['saveRecord','rebuildAll','setApiKey','b2SlimCheck','b2SlimSheet','b2RestoreFormulas','b2Setup','b2ImportAll','b2InstallTrigger','b2RemoveTrigger','b2RestructureCheck','b2RestructureSheet'],
  trigger:['b2SyncTick']
 };
 
 function setup(){
- const gas=createGas({now:'2026-10-14T10:00:00+09:00',files:[CODE,GS]}),d=iso=>gas.date(...iso.split('-').map(Number));
+ const gas=createGas({now:'2026-10-14T10:00:00+09:00',files:[CODE,GS,RS]}),d=iso=>gas.date(...iso.split('-').map(Number));
  const m=gas.book('master-test','마스터',true);
  m.add('홈',50,10);
  m.add('교육일자',200,6).fill(1,1,[['교육일']]).fill(2,1,DAYS.map(x=>[d(x)])).fill(5,4,[[d('2026-10-14')]]);
@@ -59,14 +61,14 @@ const post=(gas,body)=>JSON.parse(gas.call('doPost',{postData:{contents:JSON.str
 const usageRuns=gas=>(JSON.parse(gas.scriptProps.getProperty('B2_RUN_USAGE')||'null')||{runs:0}).runs;
 
 test('every top-level function a web-app page can call is on the list: portal, sidebar reads, menus and doPost stay open, the rest is guarded',()=>{
- const names=[CODE,GS].flatMap(f=>[...readFileSync(f,'utf8').matchAll(/^function ([A-Za-z0-9$]+)\s*\(/gm)].map(m=>m[1])).filter(n=>!n.endsWith('_'));
+ const names=[CODE,GS,RS].flatMap(f=>[...readFileSync(f,'utf8').matchAll(/^function ([A-Za-z0-9$]+)\s*\(/gm)].map(m=>m[1])).filter(n=>!n.endsWith('_'));
  assert.deepEqual(names.sort(),[...Object.values(OPEN),...Object.values(GUARDED)].flat().sort());
 });
 
 test('the data-API functions (portalRoster, b2Bundle, b2Save, b2Docs …) are not reachable through google.script.run any more',()=>{
  const {gas}=setup();as(gas,'');
  const moved=['portalRoster',...Object.keys(gas.run('B2_ACTIONS'))];
- assert.deepEqual(moved.sort(),['b2Bundle','b2DocCreate','b2DocUpdate','b2Docs','b2Release','b2Rev','b2Save','b2Status','b2SyncNow','portalRoster']);
+ assert.deepEqual(moved.sort(),['b2Bundle','b2DocCreate','b2DocUpdate','b2Docs','b2Release','b2Rev','b2Save','b2Status','b2SyncNow','b2VocCreate','b2VocReply','b2VocSeen','b2Vocs','portalRoster']);
  for(const n of moved){
   assert.throws(()=>scriptRun(gas,n,'1'),/Script function not found/,n);
   assert.equal(typeof gas.ctx[n+'_'],'function',n+'_');
@@ -127,7 +129,7 @@ test('doPost needs the API key; with it every action Vercel sends still resolves
  gas.scriptProps.setProperty('API_KEY',KEY);
  const src=readFileSync(VERCEL,'utf8'),set=name=>[...src.match(new RegExp(`const ${name}=new Set\\(\\[([^\\]]*)\\]`))[1].matchAll(/'([A-Za-z0-9]+)'/g)].map(x=>x[1]);
  const actions=[...new Set([...set('ALLOWED'),...set('B2_ACTIONS')])];
- assert.equal(actions.length,18);
+ assert.equal(actions.length,21); // portal 8 + 2기 베타 13(민원·이슈 4 포함), portalCheck는 빠짐(2026-10-16)
  for(const action of actions)assert.notEqual(post(gas,{key:KEY,action,args:[]}).error,'unknown action',action);
  for(const action of ['portalRoster_','b2Save_','saveRecord','setApiKey','rebuildAll','b2SyncTick','b2Setup'])assert.deepEqual(post(gas,{key:KEY,action}),{ok:false,error:'unknown action'},action);
  assert.deepEqual(post(gas,{key:KEY,action:'portalRoster',args:[1]}),{ok:true,data:[{name:'가상1가',status:'재학',birth:'2000-01-01',gender:'남성'},{name:'가상1나',status:'재학',birth:'2001-02-03',gender:'여성'}]});

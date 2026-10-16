@@ -92,6 +92,23 @@
 .b2-alertbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;margin:0 0 12px;border-radius:12px;border:2px solid #f97316;background:#fff7ed;color:#9a3412;font-size:13px;font-weight:800}
 .b2-alertbar.hard{border-color:#dc2626;background:#fef2f2;color:#991b1b}
 .b2-alertbar button{margin-left:auto;border:0;border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;font-weight:800;background:#fff;color:inherit;cursor:pointer}
+.b2-vocbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;margin:0 0 12px;border-radius:12px;border:2px solid #2456df;background:#eef2ff;color:#1e3a8a;font-size:13px;font-weight:800}
+.b2-alertbar[hidden],.b2-vocbar[hidden]{display:none}
+.b2-vocbar button{margin-left:auto;border:0;border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;font-weight:800;background:#fff;color:inherit;cursor:pointer}
+/* 민원·이슈(beta2-voc.mjs) */
+.b2 .b2-voc{display:grid;gap:8px;padding:12px 14px;text-align:left;cursor:pointer;border:1px solid var(--b2-line);font:inherit;width:100%}
+.b2 .b2-voc.open{border-color:#93c5fd;box-shadow:0 0 0 3px rgba(37,99,235,.08);cursor:default}
+.b2 .b2-voc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.b2 .b2-voc-preview{font-size:13px;color:#334155;white-space:pre-wrap;word-break:break-word}
+.b2 .b2-voc-thread{display:grid;gap:8px;margin-bottom:10px}
+.b2 .b2-msg{max-width:min(640px,92%);padding:9px 12px;border-radius:12px;background:var(--b2-soft);border:1px solid var(--b2-line)}
+.b2 .b2-msg.ops{background:#eef2ff;border-color:#c7d2fe}
+.b2 .b2-msg.mine{justify-self:end}
+.b2 .b2-msg-head{display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--b2-sub)}.b2 .b2-msg-head span{margin-left:auto}
+.b2 .b2-msg-text{margin-top:4px;font-size:13px;white-space:pre-wrap;word-break:break-word}
+.b2-vocpill{position:fixed;right:18px;bottom:18px;z-index:50;display:flex;align-items:center;gap:8px;padding:10px 14px;border:0;border-radius:999px;background:#0f172a;color:#fff;font:inherit;font-size:13px;font-weight:800;box-shadow:0 8px 24px rgba(15,23,42,.25);cursor:pointer}
+.b2-vocpill.hot{background:#2456df;animation:b2voc 1.2s ease-in-out 3}
+@keyframes b2voc{50%{transform:translateY(-4px)}}
 @media(max-width:760px){.b2 .b2-form{grid-template-columns:1fr}.b2 .b2-doc{grid-template-columns:1fr}.b2 .b2-toolbar{padding:10px}}
 /* 체크히어 수정 요청 상자(checkhere-proposals.mjs 마크업) */
 .b2 .btn{border:0;border-radius:8px;padding:5px 9px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;background:#eef2f7;color:#0f172a}

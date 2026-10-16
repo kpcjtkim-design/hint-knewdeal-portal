@@ -25,7 +25,14 @@ var B2 = {
   COURSE_START: '2026-07-27',
   // 운영총괄 반 탭: M18 머리글(이름·출석률·출석일수·지/조/외/중복·날짜…), 19~48행 학생, 50행 사유 날짜, 51행 사유
   GRID: { headerRow: 18, lastRow: 51, nameCol: 13, dateOffset: 4, studentRows: 30, reasonHead: 32, reasonText: 33 },
-  SHEETS: { ledger: '출결원장', roster: '명부', days: '교육일자', info: '반정보', docs: '서류발급', people: '교육생정보', log: '변경이력', srcDocs: '서류발급요청' },
+  SHEETS: { ledger: '출결원장', roster: '명부', days: '교육일자', info: '반정보', docs: '서류발급', people: '교육생정보', log: '변경이력', srcDocs: '서류발급요청',
+    voc: '민원이슈', sched: '교육일정', srcSched: '전국 교육일정관리' },
+  // 교육일정 탭(2026-10-16 회의: 시간표·교육일자·운영총괄 교육일정표를 한 탭으로): 8행 머리글, 9행부터 날짜 한 줄씩.
+  // A 날짜 · B 요일 · C 교육일(O·휴일, 마스터가 정함) · D열부터 반마다 2칸(분야 · 강사). Code.gs SCHED와 같은 값입니다.
+  SCHED: { head: 8, first: 9, firstCol: 4, perClass: 2 },
+  // 민원·이슈(민원이슈 탭): A~J는 예전 그대로(C·D·J는 1행 배열 수식), K~P에 주고받기 기록을 둡니다.
+  VOC_STATUS: ['접수', '처리중', '완료', '보류'],
+  VOC_TYPES: ['수업·강사', '시설·환경', '출결', '행정·서류', '교육생 고충', '안전', '기타'],
   // 출결원장: A~K 입력, L~Q 수식(1행 ARRAYFORMULA), R 출처, S 동기화 지문, T 동기화 확인
   COL: { input: 11, prov: 18, sig: 19, flag: 20, width: 20 },
   TYPES: ['지각', '조퇴', '외출', '결석', '인정출석', '인정지각', '인정조퇴', '인정외출'],
@@ -578,6 +585,7 @@ function b2Summary_(r) {
  * 바꾼 뒤(B2_SLIM=1)에만 출결원장·명부·교육일자를 쓰는 곳(동기화·b2Save·Code.gs 저장·직접 수정)이 Q값을 다시 계산해 바뀐 칸만 쓰고,
  * 출결판을 그리거나 한 칸 저장할 때 그 반 C·D값을 씁니다(수식을 값으로 바꾼 반 B2_SLIM_TABS만). 바꾸기 전에는 이 코드가 시트를 읽지도 쓰지도 않습니다. */
 var B2_SLIM_Q = 17, B2_SLIM_BACKUP = '수식백업';
+// 시트 개편(restructure.gs, 2026-10-16 회의) 뒤에는 대시보드 E27:H43이 직접 참조라 바꿀 것이 없고 누적관리 탭은 없습니다(탭 없음 메모도 남기지 않음).
 var B2_SLIM_INDIRECT = [['운영총괄(1기) 대시보드', 'E6:J22'], ['운영총괄(1기) 대시보드', 'E27:H43'], ['운영총괄(1기) 누적관리', 'D12:H28']];
 var B2_TIME_LATE = 33000 / 86400, B2_TIME_EARLY = 64200 / 86400; // TIME(9,10,0), TIME(17,50,0)
 
@@ -877,7 +885,7 @@ function b2SlimPlan_(strict) {
   var cache = {}, left = [], guarded = [], hasSheet = function (name) { return !!ss.getSheetByName(name); };
   B2_SLIM_INDIRECT.forEach(function (t) {
     var sh = ss.getSheetByName(t[0]);
-    if (!sh) { plan.notes.push(t[0] + ' 탭 없음'); return; }
+    if (!sh) { if (!b2Props_().getProperty('B2_RESTRUCTURE')) plan.notes.push(t[0] + ' 탭 없음'); return; }
     var rg = sh.getRange(t[1]), r0 = rg.getRow(), c0 = rg.getColumn(), rej = rejects(rg);
     var resolve = function (ref) {
       var p = b2RefParts_(ref); if (!p) return null;
@@ -1137,13 +1145,13 @@ function b2Pad2d_(rows, h, w) {
   return out;
 }
 
-// 운영총괄 값 읽기. Google Sheets API 서비스(Sheets)가 추가돼 있으면 반 17개·서류·반정보를 한 번에 읽고,
-// 없으면 반마다 읽습니다. extras: 서류발급요청·반정보도 읽을지(전체 동기화)
+// 운영총괄 값 읽기. Google Sheets API 서비스(Sheets)가 추가돼 있으면 반 17개·서류·반정보·교육일정표를 한 번에 읽고,
+// 없으면 반마다 읽습니다. extras: 서류발급요청·반정보·전국 교육일정관리도 읽을지(전체 동기화)
 // fallback: API가 일시 오류로 실패했을 때도 반마다 읽기로 넘어갈지(전체 다시 맞추기, 또는 지난 실행도 API가 실패함). 10분 실행은 반마다
 // 17번 읽다 6분 한도에 걸리기 쉬우므로 처음 한 번은 mode 없이 apiError만 돌려주고 다음 실행이 API로 다시 읽습니다.
 // 일시 오류가 아니면(권한 없음·API 꺼짐 등) 다음 실행도 같으므로 바로 반마다 읽습니다. 반마다 읽기는 반마다 남은 시간을 봅니다.
 function b2ReadSource_(sourceId, classes, extras, fallback) {
-  var G = B2.GRID, h = G.lastRow - G.headerRow + 1, out = { mode: '', grids: {}, docs: null, info: null, errors: [], apiError: '', src: null };
+  var G = B2.GRID, h = G.lastRow - G.headerRow + 1, out = { mode: '', grids: {}, docs: null, info: null, sched: null, errors: [], apiError: '', src: null };
   if (typeof Sheets !== 'undefined' && Sheets.Spreadsheets && Sheets.Spreadsheets.Values) {
     try {
       // 없는 탭이 하나라도 있으면 batchGet 전체가 실패하므로, 탭 이름을 먼저 보고 있는 탭만 읽습니다.
@@ -1151,9 +1159,10 @@ function b2ReadSource_(sourceId, classes, extras, fallback) {
       ((b2Retry_('운영총괄 탭 목록(API)', function () { return Sheets.Spreadsheets.get(sourceId, { fields: 'sheets.properties.title' }); }) || {}).sheets || [])
         .forEach(function (s) { titles[s.properties && s.properties.title] = true; });
       var found = classes.filter(function (c) { if (titles[B2.SOURCE_TABS[c]]) return true; out.errors.push(c + '반: 운영총괄 탭을 찾지 못했습니다.'); return false; });
-      var extra = extras ? [B2.SHEETS.srcDocs, B2.SHEETS.info].filter(function (n) { if (titles[n]) return true; out.errors.push(n + ': 운영총괄 탭을 찾지 못했습니다.'); return false; }) : [];
+      // 교육일정표는 있으면 가져오는 자료라 탭이 없어도 오류로 세지 않습니다(교육일정 탭의 분야·강사만 채움).
+      var extra = extras ? [B2.SHEETS.srcDocs, B2.SHEETS.info, B2.SHEETS.srcSched].filter(function (n) { if (titles[n]) return true; if (n !== B2.SHEETS.srcSched) out.errors.push(n + ': 운영총괄 탭을 찾지 못했습니다.'); return false; }) : [];
       var ranges = found.map(function (c) { return b2A1Tab_(B2.SOURCE_TABS[c]) + '!' + G.headerRow + ':' + G.lastRow; });
-      extra.forEach(function (n) { ranges.push(b2A1Tab_(n) + (n === B2.SHEETS.srcDocs ? '!A1:Z' : '!G4:N20')); });
+      extra.forEach(function (n) { ranges.push(b2A1Tab_(n) + (n === B2.SHEETS.srcDocs ? '!A1:Z' : n === B2.SHEETS.info ? '!G4:N20' : '!A1:CZ500')); });
       var vr = ranges.length ? b2Retry_('운영총괄 읽기(API)', function () { return Sheets.Spreadsheets.Values.batchGet(sourceId, { ranges: ranges, valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' }); }).valueRanges || [] : [];
       found.forEach(function (c, i) {
         var rows = (vr[i] && vr[i].values) || [], grid = [];
@@ -1162,11 +1171,11 @@ function b2ReadSource_(sourceId, classes, extras, fallback) {
       });
       extra.forEach(function (n, j) {
         var v = (vr[found.length + j] && vr[found.length + j].values) || [];
-        if (n === B2.SHEETS.srcDocs) out.docs = v; else out.info = b2Pad2d_(v, 17, 8);
+        if (n === B2.SHEETS.srcDocs) out.docs = v; else if (n === B2.SHEETS.info) out.info = b2Pad2d_(v, 17, 8); else out.sched = v;
       });
       out.mode = 'api';
       return out;
-    } catch (e) { out.apiError = b2Msg_(e); out.errors = []; out.grids = {}; out.docs = out.info = null; if (!fallback && B2_TRANSIENT.test(out.apiError)) return out; }
+    } catch (e) { out.apiError = b2Msg_(e); out.errors = []; out.grids = {}; out.docs = out.info = out.sched = null; if (!fallback && B2_TRANSIENT.test(out.apiError)) return out; }
   }
   var src = out.src = b2Retry_('운영총괄 열기', function () { return SpreadsheetApp.openById(sourceId); });
   classes.forEach(function (c) {
@@ -1184,6 +1193,9 @@ function b2ReadSource_(sourceId, classes, extras, fallback) {
   if (extras) {
     try { out.docs = b2Retry_('서류발급요청 읽기', function () { return src.getSheetByName(B2.SHEETS.srcDocs).getDataRange().getDisplayValues(); }); } catch (e) { out.errors.push('서류발급요청: ' + b2Msg_(e)); }
     try { out.info = b2Retry_('반정보 읽기', function () { return src.getSheetByName(B2.SHEETS.info).getRange('G4:N20').getDisplayValues(); }); } catch (e) { out.errors.push('반정보: ' + b2Msg_(e)); }
+    try {
+      out.sched = b2Retry_('전국 교육일정관리 읽기', function () { var s = src.getSheetByName(B2.SHEETS.srcSched); return s ? s.getDataRange().getDisplayValues() : null; });
+    } catch (e) { out.errors.push(B2.SHEETS.srcSched + ': ' + b2Msg_(e)); }
   }
   out.mode = 'sheet';
   return out;
@@ -1310,6 +1322,9 @@ function b2SyncRun_(opts) {
   var docsKey = read.docs ? b2Hash_(b2GridKey_(read.docs)) : '', infoKey = read.info ? b2Hash_(b2GridKey_(read.info)) : '';
   var docsChanged = !!read.docs && (full || props.getProperty('B2_SRC_DOCS') !== docsKey);
   var infoChanged = !!read.info && (full || props.getProperty('B2_SRC_INFO') !== infoKey);
+  // 교육일정표: 마스터에 교육일정 탭이 있을 때만(시트 개편 뒤) 분야·강사를 채웁니다. 교육일(C열)은 건드리지 않습니다.
+  var schedTab = read.sched ? b2Ss_().getSheetByName(B2.SHEETS.sched) : null, schedKey = schedTab ? b2Hash_(b2GridKey_(read.sched)) : '';
+  var schedChanged = !!schedTab && (full || props.getProperty('B2_SRC_SCHED') !== schedKey);
   var remember = function (done) {
     Object.keys(nextHash).forEach(function (c) { hashes[c] = nextHash[c]; });
     Object.keys(nextColor).forEach(function (c) { colors[c] = nextColor[c]; });
@@ -1318,6 +1333,7 @@ function b2SyncRun_(opts) {
     if (all) props.setProperty('B2_COLOR_CURSOR', String(rot.next));
     if (read.docs) props.setProperty('B2_SRC_DOCS', docsKey);
     if (read.info) props.setProperty('B2_SRC_INFO', infoKey);
+    if (schedTab && !schedFailed) props.setProperty('B2_SRC_SCHED', schedKey);
     if (done.length) {
       var left = b2JsonProp_('B2_DIRTY', []).filter(function (c) { return done.indexOf(c) < 0; });
       if (left.length) props.setProperty('B2_DIRTY', JSON.stringify(left)); else props.deleteProperty('B2_DIRTY');
@@ -1336,7 +1352,8 @@ function b2SyncRun_(opts) {
     props.setProperty('B2_SYNC_CHECKED', String(Date.now()));
     props.deleteProperty('B2_SYNC_ERROR');
   };
-  if (!short && !process.length && !docsChanged && !infoChanged && !drawAll && !pendingAtStart) {
+  var schedFailed = false;
+  if (!short && !process.length && !docsChanged && !infoChanged && !schedChanged && !drawAll && !pendingAtStart) {
     var quiet = LockService.getDocumentLock();
     if (quiet.tryLock(10000)) { try { remember([]); } finally { quiet.releaseLock(); } }
     var slimNothing = b2SlimPending_();
@@ -1405,6 +1422,13 @@ function b2SyncRun_(opts) {
     }
     var infoFilled = infoChanged ? b2Retry_('반정보 채우기', function () { return b2FillInfo_(read.info); }) : 0;
     var docsAdded = docsChanged ? b2Retry_('서류발급 가져오기', function () { return b2ImportDocs_(read.docs); }) : 0;
+    // 교육일정 분야·강사는 출결과 상관없어 실패해도 경고로만 남기고(지문을 기억하지 않아 다음 실행이 다시 채움) 변경 번호를 올리지 않습니다.
+    var sched = null;
+    if (schedChanged) {
+      try { sched = b2Retry_('교육일정 채우기', function () { return b2FillSchedule_(schedTab, read.sched); }); }
+      catch (e) { schedFailed = true; warnings.push('교육일정: ' + b2Msg_(e)); }
+      if (sched && sched.missing.length) warnings.push('교육일정 탭에 없는 날짜 ' + sched.missing.length + '개(운영총괄에는 일정이 있음): ' + sched.missing.slice(0, 5).join(', '));
+    }
     var s = merged.stats, changes = s.added + s.updated + s.removed + rm.updates.length + rm.appends.length + infoFilled + docsAdded;
     if (adoptNow.length) {
       var legacyAll = b2JsonProp_('B2_LEGACY_DONE', []); adoptNow.forEach(function (c) { if (legacyAll.indexOf(c) < 0) legacyAll.push(c); });
@@ -1421,7 +1445,7 @@ function b2SyncRun_(opts) {
     result = {
       at: Date.now(), ms: t.total, reason: opts.reason || '', mode: read.mode, apiError: read.apiError, classes: wanted.length, processed: done, colorChecked: rot.pick,
       stats: s, legacyAdopted: adopted, writes: { patched: plan.patches.length, appended: plan.appends.length, cleared: plan.clears.length, boards: boardClasses.length },
-      roster: { updated: rm.updates.length, added: rm.appends.length }, info: infoFilled, docs: docsAdded, errors: errors, warnings: warnings, retries: __B2_RETRIES.slice(), t: t
+      roster: { updated: rm.updates.length, added: rm.appends.length }, info: infoFilled, docs: docsAdded, sched: sched ? sched.cells : 0, errors: errors, warnings: warnings, retries: __B2_RETRIES.slice(), t: t
     };
     // 출결원장 반영은 여기서 끝났으므로 기록을 먼저 남깁니다. 출결판을 그리다 실패해도 다음 실행이 같은 반영을 되풀이하지 않습니다.
     props.setProperty('B2_SYNC_LAST', JSON.stringify(result));
@@ -1556,6 +1580,62 @@ function b2ImportDocs_(srcValues) {
   }
   if (add.length) sh.getRange(last + 1, 1, add.length, B2_DOC_FIELDS.length).setValues(add);
   return add.length + updated;
+}
+
+/* 교육일정표: 운영총괄 '전국 교육일정관리' → 마스터 교육일정 탭의 반별 분야·강사(2026-10-16 회의, 사용자 결정: 운영총괄에서 자동)
+ * 원본은 '교육장소' 줄에 반 이름(앞 번호 '1.임베디드AI-HW(서울대)'), '날짜' 줄 아래로 날짜마다 한 줄, 반마다 4칸(분야·시간·강사·강사연락처)입니다.
+ * 강사연락처는 가져오지 않습니다. 같은 날짜가 두 줄이면 ' / '로 잇고, 시간이 8이 아니면 분야 뒤에 '(n시간)'을 붙입니다.
+ * 돌려주는 값: {iso: {반: [분야, 강사]}} */
+function b2ParseSchedule_(values) {
+  var head = -1, place = -1;
+  for (var i = 0; i < values.length; i++) {
+    var a = String((values[i] || [])[0] || '').trim();
+    if (a === '교육장소' && place < 0) place = i;
+    if (a === '날짜') { head = i; break; }
+  }
+  if (head < 0) throw new Error("운영총괄 교육일정표에서 '날짜' 머리글 줄을 찾지 못했습니다.");
+  var hr = values[head] || [], cols = {}, order = 0;
+  for (var c = 2; c < hr.length; c++) {
+    if (String(hr[c] || '').trim() !== '분야') continue;
+    order++;
+    var m = String(place >= 0 ? (values[place] || [])[c] || '' : '').trim().match(/^(\d{1,2})\s*\./), n = m ? String(+m[1]) : String(order);
+    if (B2.SOURCE_TABS[n] && cols[n] === undefined) cols[n] = c;
+  }
+  var out = {}, add = function (list, v) { if (v && list.indexOf(v) < 0) list.push(v); };
+  for (var r = head + 1; r < values.length; r++) {
+    var row = values[r] || [], iso = b2Iso_(row[0]);
+    if (!iso) continue;
+    Object.keys(cols).forEach(function (n) {
+      var c0 = cols[n], subj = String(row[c0] || '').trim(), hours = String(row[c0 + 1] || '').trim(), who = String(row[c0 + 2] || '').trim();
+      if (!subj && !who) return;
+      var day = out[iso] || (out[iso] = {}), cell = day[n] || (day[n] = [[], []]);
+      add(cell[0], subj + (subj && hours && hours !== '8' ? ' (' + hours + '시간)' : ''));
+      add(cell[1], who);
+    });
+  }
+  Object.keys(out).forEach(function (iso) { Object.keys(out[iso]).forEach(function (n) { out[iso][n] = [out[iso][n][0].join(' / '), out[iso][n][1].join(' / ')]; }); });
+  return out;
+}
+// 교육일정 탭의 반별 분야·강사 칸을 원본 값으로 맞춥니다. 원본에 일정이 있는 날짜만 고치고(없는 날은 그대로), 바뀐 칸이 있을 때만 한 번에 씁니다.
+// 날짜·교육일(A~C)은 쓰지 않습니다. 돌려주는 값: {cells: 바뀐 칸 수, missing: 원본에는 일정이 있는데 탭에 없는 날짜}
+function b2FillSchedule_(sh, srcValues) {
+  var S = B2.SCHED, parsed = b2ParseSchedule_(srcValues || []), last = b2LastRow_(sh, 1);
+  var width = 17 * S.perClass, out = { cells: 0, missing: [] };
+  if (sh.getMaxColumns() < S.firstCol + width - 1) throw new Error('교육일정 탭 열이 모자랍니다(반 17개 × 2칸).');
+  var dates = last >= S.first ? sh.getRange(S.first, 1, last - S.first + 1, 1).getValues().map(function (r) { return b2Iso_(r[0]); }) : [];
+  var at = {}; dates.forEach(function (iso, i) { if (iso && at[iso] === undefined) at[iso] = i; });
+  Object.keys(parsed).sort().forEach(function (iso) { if (at[iso] === undefined) out.missing.push(iso); });
+  if (!dates.length) return out;
+  var cur = sh.getRange(S.first, S.firstCol, dates.length, width).getValues(), next = cur.map(function (r) { return r.slice(); });
+  dates.forEach(function (iso, i) {
+    var day = parsed[iso]; if (!day) return;
+    Object.keys(B2.SOURCE_TABS).forEach(function (n) {
+      var want = day[n] || ['', ''], c = (+n - 1) * S.perClass;
+      for (var k = 0; k < 2; k++) if (String(next[i][c + k] == null ? '' : next[i][c + k]) !== want[k]) { next[i][c + k] = want[k]; out.cells++; }
+    });
+  });
+  if (out.cells) sh.getRange(S.first, S.firstCol, dates.length, width).setValues(next);
+  return out;
 }
 
 // 10분 트리거가 부릅니다. 정한 시간(B2.SYNC.window, 기본 평일 09:10~18:00) 밖이면 바로 끝나고,
@@ -1751,7 +1831,12 @@ function b2Bundle_(cls) {
   if (!parts) parts = b2BundleParts_();
   return b2BundleFrom_(parts, cls, { rev: rev, today: b2Today_(), sync: b2SyncState_(all) });
 }
-function b2Rev_() { var all = b2Props_().getProperties(); return { rev: +all.B2_REV || 0, sync: b2SyncState_(all) }; }
+// voc: 민원·이슈 알림 건수(B2_VOC_STATE, 글을 쓸 때마다 바뀜). 화면이 이 값만 보고 새 글을 알립니다(시트를 읽지 않음).
+function b2Rev_() {
+  var all = b2Props_().getProperties(), voc = null;
+  try { voc = all.B2_VOC_STATE ? JSON.parse(all.B2_VOC_STATE) : null; } catch (e) { }
+  return { rev: +all.B2_REV || 0, sync: b2SyncState_(all), voc: voc };
+}
 function b2Status_() {
   var triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'b2SyncTick'; }).length;
   var updated = 0, sourceId = b2SourceId_(); try { if (sourceId) updated = DriveApp.getFileById(sourceId).getLastUpdated().getTime(); } catch (e) { }
@@ -1900,9 +1985,177 @@ function b2DocUpdate_(p) {
   return { ok: true, rev: b2Bump_() };
 }
 
+/* 민원·이슈 주고받기 (2026-10-16 회의: 관리자·담임 화면에서 주고받고 처리현황을 보고 알림. 사용자 결정: 포털 알림 + 운영팀 메일)
+ * 민원이슈 탭 A~J는 예전 그대로입니다(접수일자·반·권역·분반·민원유형·상세내용·처리상태·조치내용·처리일·경과일, C·D·J는 1행 배열 수식이라 쓰지 않음).
+ * K~P를 더합니다: 번호 · 접수자 · 주고받은 기록 · 마지막 글(담임/운영) · 마지막 글 시각 · 담임 확인 시각. 머리글은 처음 쓸 때 붙입니다.
+ * 처음 글은 F(상세내용)이고, 그 뒤 답글·처리 상태 변경은 M에 한 줄씩 쌓습니다: '[2026-10-16 14:03 운영 hint.kpc@gmail.com] 내용'
+ * (글 안 줄바꿈은 ' ↵ '). 시트에서 바로 읽을 수 있게 글자로 둡니다. H(조치내용)에는 운영팀의 마지막 답글이 들어갑니다(시트·예전 화면용).
+ * 알림: 운영 쪽은 '끝나지 않았고 마지막 글이 담임'(답변 대기), 담임 쪽은 '마지막 글이 운영이고 담임이 아직 열어 보지 않음'.
+ * 건수는 쓸 때마다 스크립트 속성 B2_VOC_STATE에 두고 b2Rev가 함께 돌려줍니다(화면이 시트를 다시 읽지 않고 알 수 있게).
+ * 출결 변경 번호(B2_REV)는 올리지 않습니다(열린 출결 화면이 민원 글 때문에 묶음을 다시 읽지 않게). */
+var B2_VOC_HEAD = ['번호', '접수자', '주고받은 기록', '마지막 글', '마지막 글 시각', '담임 확인 시각'];
+var B2_VOC_LINE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (담임|운영) ([^\]]*)\] ?(.*)$/;
+var B2_VOC_TEXT_MAX = 2000;
+// 담임 화면에서 쓰면 '담임', 처리함에서 쓰면 '운영'. 담임 계정은 언제나 담임이고, 관리자는 담임 화면 미리보기에서 담임 쪽으로 써 볼 수 있습니다.
+function b2VocSide_(p) { return __ACTOR_ROLE === 'TEACHER' || (p && p.side === '담임') ? '담임' : '운영'; }
+function b2VocLine_(at, side, text) { return '[' + b2Fmt_(at, 'yyyy-MM-dd HH:mm') + ' ' + side + ' ' + b2Actor_().replace(/[\]\n]/g, '') + '] ' + String(text).replace(/\r?\n/g, ' ↵ '); }
+function b2VocThread_(raw) {
+  return String(raw || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean).map(function (s) {
+    var m = s.match(B2_VOC_LINE);
+    return m ? { at: m[1], side: m[2], who: m[3], text: m[4].replace(/ ↵ /g, '\n') } : { at: '', side: '', who: '', text: s };
+  });
+}
+function b2VocSig_(r) { return b2Hash_([r.date, r.cls, r.detail].join('|')); }
+function b2VocRead_() {
+  var sh = b2Ss_().getSheetByName(B2.SHEETS.voc), out = [];
+  if (!sh) return { sh: null, rows: out };
+  var last = b2LastRow_(sh, 1), w = Math.min(16, sh.getMaxColumns());
+  if (last < 2) return { sh: sh, rows: out };
+  sh.getRange(2, 1, last - 1, w).getValues().forEach(function (v, i) {
+    var g = function (k) { return k < w && v[k] != null ? v[k] : ''; };
+    var t = function (k) { var x = g(k); return x instanceof Date ? b2Fmt_(x, 'yyyy-MM-dd HH:mm:ss') : String(x).trim(); };
+    if (!b2Iso_(g(0)) && !t(1) && !t(5)) return;
+    out.push({ row: i + 2, date: b2Iso_(g(0)), cls: t(1), region: t(2), course: t(3), type: t(4), detail: t(5), status: t(6) || '접수', action: t(7), done: b2Iso_(g(8)), days: t(9),
+      id: t(10), author: t(11), raw: t(12), lastBy: t(13), lastAt: t(14), seen: t(15) });
+  });
+  return { sh: sh, rows: out };
+}
+function b2VocOpen_(r) { return r.status !== '완료' && r.status !== '해당없음'; }
+// 예전 기록(번호·마지막 글 없음)은 담임이 접수한 것으로 봅니다(예전 담임 포털·시트 직접 입력).
+function b2VocState_(rows) {
+  var st = { admin: 0, open: {}, teacher: {} };
+  rows.forEach(function (r) {
+    if (!B2.SOURCE_TABS[r.cls]) return;
+    var open = b2VocOpen_(r);
+    if (open) st.open[r.cls] = (st.open[r.cls] || 0) + 1;
+    if (open && r.lastBy !== '운영') st.admin++;
+    if (r.lastBy === '운영' && r.lastAt > r.seen) st.teacher[r.cls] = (st.teacher[r.cls] || 0) + 1;
+  });
+  return st;
+}
+function b2VocSaveState_(rows) {
+  var prev = b2JsonProp_('B2_VOC_STATE', null), st = b2VocState_(rows);
+  st.rev = (prev && +prev.rev || 0) + 1; st.at = Date.now();
+  b2Props_().setProperty('B2_VOC_STATE', JSON.stringify(st));
+  return st;
+}
+// 시트를 직접 고쳤거나(Code.gs onEdit) 예전 담임 포털로 접수·처리했을 때 알림 건수를 다시 셉니다.
+function b2VocRefresh_() { return b2VocSaveState_(b2VocRead_().rows); }
+// 쓰기 전에 민원이슈 탭 K~P 머리글을 확인합니다(없으면 붙임).
+function b2VocSheet_() {
+  var sh = b2Sheet_(B2.SHEETS.voc);
+  if (sh.getMaxColumns() < 16) sh.insertColumnsAfter(sh.getMaxColumns(), 16 - sh.getMaxColumns());
+  if (String(sh.getRange(1, 11).getValue()).trim() !== B2_VOC_HEAD[0]) sh.getRange(1, 11, 1, B2_VOC_HEAD.length).setValues([B2_VOC_HEAD]);
+  return sh;
+}
+// key: 번호(V…) 또는 번호가 없는 예전 기록이면 'R행번호'(sig로 그 행이 그대로인지 확인).
+function b2VocFind_(rows, p) {
+  var key = String(p && p.key || ''), hit = null;
+  if (/^V/.test(key)) hit = rows.filter(function (r) { return r.id === key; })[0];
+  else if (/^R\d+$/.test(key)) hit = rows.filter(function (r) { return !r.id && 'R' + r.row === key && b2VocSig_(r) === String(p.sig || ''); })[0];
+  if (!hit) throw new Error('민원·이슈를 찾지 못했습니다(그사이 시트가 바뀌었을 수 있습니다). 새로고침해 주세요.');
+  if (__ACTOR_ROLE === 'TEACHER' && hit.cls !== String(p.cls || '')) throw new Error('다른 반 민원·이슈입니다.');
+  return hit;
+}
+function b2VocNewId_(rows, now) {
+  var day = b2Fmt_(now, 'yyMMdd'), n = rows.filter(function (r) { return r.id.indexOf('V' + day + '-') === 0; }).length + 1;
+  return 'V' + day + '-' + ('00' + n).slice(-3);
+}
+function b2VocOut_(r, admin) {
+  return {
+    key: r.id || 'R' + r.row, sig: r.id ? '' : b2VocSig_(r), id: r.id, date: r.date, cls: r.cls, region: r.region, course: r.course, type: r.type, detail: r.detail,
+    status: r.status, action: r.action, done: r.done, days: r.days, author: admin ? r.author : '', lastBy: r.lastBy || '담임', lastAt: r.lastAt, seen: r.seen,
+    thread: b2VocThread_(r.raw).map(function (x) { return { at: x.at, side: x.side, who: admin ? x.who : '', text: x.text }; })
+  };
+}
+function b2VocMail_(kind, r, text, side) {
+  var info = b2Info_().filter(function (c) { return c.id === r.cls; })[0] || {};
+  try {
+    MailApp.sendEmail({
+      to: B2.MAIL.join(','), name: 'HINT 운영포털',
+      subject: '[HINT 민원·이슈] ' + r.cls + '반 · ' + (r.type || '민원') + ' · ' + kind,
+      body: [kind === '새 접수' ? '새 민원·이슈가 접수됐습니다.' : side + ' 쪽에서 답글을 남겼습니다.', '',
+        '번호: ' + (r.id || '-'), '반: ' + r.cls + '반' + (info.teacher ? ' (담임 ' + info.teacher + ')' : ''), '유형: ' + (r.type || '-'), '처리 상태: ' + (r.status || '접수'),
+        (kind === '새 접수' ? '내용: ' : '답글: ') + text, '작성: ' + b2Actor_(), '',
+        '처리함: ' + B2.BETA_URL + '#vocs', '마스터시트: ' + b2Ss_().getUrl() + '#gid=' + b2Sheet_(B2.SHEETS.voc).getSheetId()].join('\n')
+    });
+    return true;
+  } catch (e) { return false; }
+}
+// p: {cls} 없으면 전체(관리자). 담임에게는 작성자 이메일을 보내지 않습니다.
+function b2Vocs_(p) {
+  var cls = p && p.cls ? String(p.cls) : '', admin = __ACTOR_ROLE === 'ADMIN' || !__ACTOR_ROLE;
+  var rows = b2VocRead_().rows.filter(function (r) { return B2.SOURCE_TABS[r.cls] && (!cls || r.cls === cls); });
+  rows.sort(function (a, b) { return (b.lastAt || b.date).localeCompare(a.lastAt || a.date) || b.row - a.row; });
+  return { statuses: B2.VOC_STATUS, types: B2.VOC_TYPES, state: b2JsonProp_('B2_VOC_STATE', null), rows: rows.map(function (r) { return b2VocOut_(r, admin); }) };
+}
+// 새 민원·이슈. p: {cls, type, detail, side}. 담임 쪽 글이면 운영팀에 메일을 보냅니다.
+function b2VocCreate_(p) {
+  p = p || {};
+  var cls = String(p.cls || '').trim(), type = String(p.type || '').trim(), detail = String(p.detail || '').trim(), side = b2VocSide_(p);
+  if (!B2.SOURCE_TABS[cls]) throw new Error('반을 골라 주세요.');
+  if (B2.VOC_TYPES.indexOf(type) < 0) throw new Error('유형을 골라 주세요.');
+  if (!detail) throw new Error('내용을 적어 주세요.');
+  if (detail.length > B2_VOC_TEXT_MAX) throw new Error('내용은 ' + B2_VOC_TEXT_MAX + '자 이하로 적어 주세요.');
+  var lock = LockService.getDocumentLock(), now = new Date(), rec, state; lock.waitLock(20000);
+  try {
+    var sh = b2VocSheet_(), rows = b2VocRead_().rows, row = b2LastRow_(sh, 1) + 1;
+    rec = { row: row, id: b2VocNewId_(rows, now), date: b2Iso_(now), cls: cls, type: type, detail: detail, status: '접수' };
+    if (sh.getMaxRows() < row) sh.insertRowsAfter(sh.getMaxRows(), row - sh.getMaxRows());
+    sh.getRange(row, 1, 1, 2).setValues([[b2DateValue_(rec.date), Number(cls)]]);
+    sh.getRange(row, 5, 1, 5).setValues([[type, detail, '접수', '', '']]);
+    sh.getRange(row, 11, 1, 6).setValues([[rec.id, b2Actor_(), '', side, now, '']]);
+    SpreadsheetApp.flush();
+    state = b2VocRefresh_();
+  } finally { lock.releaseLock(); }
+  var mailed = side === '담임' ? b2VocMail_('새 접수', rec, detail, side) : false;
+  return { id: rec.id, mailed: mailed, state: state };
+}
+// 답글·처리 상태. p: {key, sig, cls, text, status, side}. 처리 상태를 바꾸면 그 줄도 기록에 남습니다. 담임 쪽 답글이면 운영팀에 메일을 보냅니다.
+function b2VocReply_(p) {
+  p = p || {};
+  var side = b2VocSide_(p), text = String(p.text || '').trim(), status = String(p.status || '').trim();
+  if (status && B2.VOC_STATUS.indexOf(status) < 0) throw new Error('처리 상태를 골라 주세요.');
+  if (text.length > B2_VOC_TEXT_MAX) throw new Error('답글은 ' + B2_VOC_TEXT_MAX + '자 이하로 적어 주세요.');
+  if (!text && !status) throw new Error('답글이나 처리 상태를 넣어 주세요.');
+  var lock = LockService.getDocumentLock(), now = new Date(), r, state, changed; lock.waitLock(20000);
+  try {
+    var sh = b2VocSheet_(), rows = b2VocRead_().rows;
+    r = b2VocFind_(rows, p); changed = !!status && status !== r.status;
+    if (!text && !changed) return { ok: true, unchanged: true, state: b2JsonProp_('B2_VOC_STATE', null) };
+    var add = [];
+    if (changed) add.push(b2VocLine_(now, side, '처리 상태: ' + r.status + ' → ' + status));
+    if (text) add.push(b2VocLine_(now, side, text));
+    var st = changed ? status : r.status, done = st === '완료' ? b2DateValue_(r.done || b2Iso_(now)) : '';
+    var action = side === '운영' && text ? text.replace(/\r?\n/g, ' ').slice(0, 500) : r.action;
+    r.id = r.id || b2VocNewId_(rows, now); r.status = st;
+    sh.getRange(r.row, 7, 1, 3).setValues([[st, action, done]]);
+    sh.getRange(r.row, 11, 1, 5).setValues([[r.id, r.author, (r.raw ? r.raw + '\n' : '') + add.join('\n'), side, now]]);
+    SpreadsheetApp.flush();
+    state = b2VocRefresh_();
+  } finally { lock.releaseLock(); }
+  var mailed = side === '담임' && text ? b2VocMail_('답글', r, text, side) : false;
+  return { ok: true, id: r.id, mailed: mailed, state: state };
+}
+// 담임이 운영팀 답글을 열어 봄(담임 쪽 알림 끄기). 담임 계정일 때만 적습니다(관리자가 담임 화면 미리보기에서 열어도 담임 알림은 그대로).
+function b2VocSeen_(p) {
+  p = p || {};
+  if (__ACTOR_ROLE !== 'TEACHER') return { ok: true, unchanged: true };
+  var lock = LockService.getDocumentLock(), state; lock.waitLock(20000);
+  try {
+    var sh = b2VocSheet_(), r = b2VocFind_(b2VocRead_().rows, p);
+    if (!(r.lastBy === '운영' && r.lastAt > r.seen)) return { ok: true, unchanged: true };
+    sh.getRange(r.row, 16).setValue(new Date());
+    SpreadsheetApp.flush();
+    state = b2VocRefresh_();
+  } finally { lock.releaseLock(); }
+  return { ok: true, state: state };
+}
+
 // doPost(Code.gs)가 API 키를 확인한 뒤에만 부르는 표. 왼쪽은 Vercel(api/teacher-beta.js)이 보내는 동작 이름(그대로), 오른쪽 함수는 모두 끝이 '_'입니다.
 // 끝이 '_'가 아니면 같은 프로젝트 웹 앱(담임 PIN 포털)이 연 화면에서 누구나 google.script.run으로 키 없이 부를 수 있었습니다(2026-10-15 고침).
 var B2_ACTIONS = {
   b2Bundle: b2Bundle_, b2Rev: b2Rev_, b2Status: b2Status_, b2SyncNow: b2SyncNow_, b2Save: b2Save_, b2Release: b2Release_,
-  b2Docs: b2Docs_, b2DocCreate: b2DocCreate_, b2DocUpdate: b2DocUpdate_
+  b2Docs: b2Docs_, b2DocCreate: b2DocCreate_, b2DocUpdate: b2DocUpdate_,
+  b2Vocs: b2Vocs_, b2VocCreate: b2VocCreate_, b2VocReply: b2VocReply_, b2VocSeen: b2VocSeen_
 };

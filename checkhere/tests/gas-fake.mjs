@@ -77,6 +77,10 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   clearContent(){this._write('clear');for(let i=0;i<this.nr;i++)for(let j=0;j<this.nc;j++)this.sh.put(this.r+i,this.c+j,'');ev({op:'write',range:this});return this;}
   setNumberFormat(f){this._write('format');for(let i=0;i<this.nr;i++)for(let j=0;j<this.nc;j++)this.sh.fmt.set(this.sh.key(this.r+i,this.c+j),f);return this;}
   setDataValidation(){this._write('validation');return this;}
+  clearDataValidations(){this._write('validation');for(let i=0;i<this.nr;i++)for(let j=0;j<this.nc;j++)this.sh.dv.delete(this.sh.key(this.r+i,this.c+j));return this;}
+  // 글꼴·배경·병합은 기록만 합니다(시트 개편 restructure.gs의 꾸미기).
+  setFontWeight(){this._write('style');return this;} setFontColor(){this._write('style');return this;} setFontSize(){this._write('style');return this;}
+  setBackground(){this._write('style');return this;} merge(){this._write('merge');return this;}
   getRow(){return this.r;} getColumn(){return this.c;} getNumRows(){return this.nr;} getNumColumns(){return this.nc;} getSheet(){return this.sh;}
  }
  class Sheet{
@@ -113,6 +117,9 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   insertRowsAfter(after,n){this._shift(after,n);this.maxRows+=n;}
   insertColumnsAfter(after,n){this.maxCols+=n;}
   deleteRow(r){maybeFail(this.name,'write');log.writes.push({seq:++log.seq,book:this.book.id,sheet:this.name,r,c:1,nr:1,nc:this.maxCols,kind:'deleteRow'});if(this.book.master&&!lock.depth)log.outsideLock.push(this.name+' deleteRow '+r);this._shift(r,-1);this.maxRows--;}
+  // 실제 Sheets와 달리 다른 칸 수식의 참조는 고치지 않습니다(시험은 지운 줄과 남은 줄의 값·수식 위치만 봄).
+  deleteRows(r,n){maybeFail(this.name,'write');if(!(r>=1&&n>=1&&r+n-1<=this.maxRows))throw new Error(`Exception: 지울 줄이 시트 밖입니다 (${this.name} ${r}+${n})`);log.writes.push({seq:++log.seq,book:this.book.id,sheet:this.name,r,c:1,nr:n,nc:this.maxCols,kind:'deleteRows'});if(this.book.master&&!lock.depth)log.outsideLock.push(this.name+' deleteRows '+r);for(let i=0;i<n;i++)this._shift(r,-1);this.maxRows-=n;}
+  setColumnWidth(){} setFrozenColumns(){} getIndex(){return this.book.sheets.indexOf(this)+1;}
   _shift(at,n){for(const m of [this.v,this.bg,this.fmt,this.f,this.dv]){const e=[...m];m.clear();for(const [k,v] of e){const r=Math.floor(k/100000),c=k%100000;if(n<0&&r===at)continue;m.set(this.key(r>at?r+n:r,c),v);}}}
   appendRow(row){const at=this.getLastRow()+1;if(at>this.maxRows)this.insertRowsAfter(this.maxRows,at-this.maxRows);if(row.length>this.maxCols)this.maxCols=row.length;this.getRange(at,1,1,row.length).setValues([row]);return this;}
   getSheetId(){return this.id;} getName(){return this.name;} setFrozenRows(){} activate(){}
@@ -131,7 +138,7 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   touch(){this.updated=clock.t;}
   getSheetByName(n){return this.sheets.find(s=>s.name===n)||null;}
   getSheets(){return [...this.sheets];}
-  insertSheet(n){if(this.getSheetByName(n))throw new Error('Exception: 이미 있는 탭 이름입니다: '+n);log.writes.push({seq:++log.seq,book:this.id,sheet:n,kind:'insertSheet'});if(this.master&&!lock.depth)log.outsideLock.push('insertSheet '+n);return this.add(n,1000,26);}
+  insertSheet(n,at){if(this.getSheetByName(n))throw new Error('Exception: 이미 있는 탭 이름입니다: '+n);log.writes.push({seq:++log.seq,book:this.id,sheet:n,kind:'insertSheet'});if(this.master&&!lock.depth)log.outsideLock.push('insertSheet '+n);const s=this.add(n,1000,26);if(at!==undefined){this.sheets.pop();this.sheets.splice(at,0,s);}return s;}
   deleteSheet(s){log.writes.push({seq:++log.seq,book:this.id,sheet:s.name,kind:'deleteSheet'});if(this.master&&!lock.depth)log.outsideLock.push('deleteSheet '+s.name);this.sheets.splice(this.sheets.indexOf(s),1);}
   getSpreadsheetTimeZone(){return tz;}
   getUrl(){return 'https://docs.google.com/spreadsheets/d/'+this.id+'/edit';}

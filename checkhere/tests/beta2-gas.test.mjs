@@ -158,7 +158,7 @@ test('1기 document requests map onto the master 서류발급 columns',()=>{
  const d=g('b2DocFromSource_')(['','20260813','4반','이경수','2001.06.23','2026년 7월 27일 ~ 8월 14일','출석부','취업','국민취업제도 운영기관','20260818','처리완료','개인 톡 전달'],6);
  assert.deepEqual(plain(g('B2_DOC_FIELDS').map(k=>d[k])),['1기-6','2026-08-13','4반','이경수','2001.06.23','기간: 2026년 7월 27일 ~ 8월 14일 · 목적: 취업','국민취업제도 운영기관','2026-08-18','처리완료','개인 톡 전달','출석부','','','1기 운영총괄','','','','']);
  assert.equal(g('b2DocFromSource_')(['','','','','x'],7),null);
- assert.equal(Object.keys(g('B2_ACTIONS')).length,9);
+ assert.equal(Object.keys(g('B2_ACTIONS')).length,13); // 서류발급·출결 9 + 민원·이슈 4(2026-10-16)
 });
 
 test('reasons carrying times move into the time columns and board cells use the Code.gs notation',()=>{

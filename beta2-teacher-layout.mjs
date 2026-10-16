@@ -1,12 +1,13 @@
 // 2기 베타 담임 화면: 1기 담임 8개 탭과 2기 베타 6개 탭을 하루 업무 순서대로 6개 탭으로 합쳤습니다(관리자 미리보기 전용).
-// 출결판·사유·평가·민원·반 정보는 teacher-beta.js 한 개를 띄워 두고 탭에 따라 옮겨 씁니다(마스터시트 읽기 1번).
-import {createBeta2Client} from './beta2-data.mjs';
+// 출결판·사유·반 정보는 teacher-beta.js 한 개를 띄워 두고 탭에 따라 옮겨 씁니다(마스터시트 읽기 1번).
+// 2026-10-16 회의: 학습자 평가·현장운영 체크리스트는 없앴고, 민원·이슈는 운영팀과 주고받습니다(beta2-voc.mjs, 운영팀 답글 알림).
+import {createBeta2Client,onBeta2Rev} from './beta2-data.mjs';
 import {studentStats,diseaseReport} from './beta2-core.mjs';
 import {ensureBeta2Css,esc} from './beta2-ui.mjs';
 
-export const TEACHER_TABS=[['today','오늘'],['attendance','출결'],['documents','서류발급'],['feedback','평가·민원'],['schedule','시간표·자료'],['info','반 정보']];
-export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결사유'],['stats','통계'],['evidence','증빙서류'],['disease','질병 인정']],feedback:[['eval','학습자 평가'],['voc','민원·이슈'],['surveys','만족도조사']],schedule:[['timetable','전체 시간표'],['materials','강의자료'],['links','바로가기']]};
-const BETA_PANES=new Set(['today','board','reason','eval','voc','info']);
+export const TEACHER_TABS=[['today','오늘'],['attendance','출결'],['documents','서류발급'],['feedback','민원·만족도'],['schedule','시간표·자료'],['info','반 정보']];
+export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결사유'],['stats','통계'],['evidence','증빙서류'],['disease','질병 인정']],feedback:[['voc','민원·이슈'],['surveys','만족도조사']],schedule:[['timetable','전체 시간표'],['materials','강의자료'],['links','바로가기']]};
+const BETA_PANES=new Set(['today','board','reason','info']);
 
 export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
  ensureBeta2Css();
@@ -16,7 +17,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
  const bar=document.createElement('section');bar.className='teacher-context-bar';hero.before(bar);hero.classList.add('teacher-header-class');bar.append(hero);
  const switcher=parent.querySelector('.preview-controls');if(switcher){switcher.classList.add('teacher-header-switch');bar.prepend(switcher);}
  const wrap=document.createElement('div');wrap.className='b2';bar.after(wrap);
- wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><nav class="b2-tabs" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button class="b2-tab" data-main="${k}">${l}</button>`).join('')}</nav><nav class="b2-tabs" id="t2Sub" hidden></nav>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" hidden></section>`).join('')}`;
+ wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button class="b2-tab" data-main="${k}">${l}</button>`).join('')}</nav><nav class="b2-tabs" id="t2Sub" hidden></nav>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" hidden></section>`).join('')}`;
  const $=s=>wrap.querySelector(s),panel=k=>wrap.querySelector(`[data-panel="${k}"]`);
  // 기존 1기 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다.
  const tasks=following.find(e=>e.classList.contains('task-grid')),taskHead=tasks?.previousElementSibling,notice=following.find(e=>e.classList.contains('notice')),noticeHead=notice?.previousElementSibling,urgent=parent.querySelector('.urgent-stack');
@@ -37,7 +38,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
  const keep=w=>{if(w)works.push(w);return w;};
  async function betaPane(k,slot){
   slot.append(betaHost);
-  if(!beta){const m=await import('./teacher-beta.js?v=20261013-b2');if(!alive())return;beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:k,onTab:t=>{if(t==='board')void go('attendance','board');}});}
+  if(!beta){const m=await import('./teacher-beta.js?v=20261016-voc1');if(!alive())return;beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:k,onTab:t=>{if(t==='board')void go('attendance','board');}});}
   else beta.setTab(k);
  }
  async function load(key,slot){
@@ -48,6 +49,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
    if(key==='materials'){const m=await import('./lecture-materials.mjs');if(alive())keep(await m.mountLectureMaterials(slot,{db,user,classes:[classInfo],teacherClass:classInfo,readOnly:true}));}
    if(key==='surveys'){const m=await import('./survey-view.mjs');if(alive())keep(await m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo}));}
    if(key==='documents'){const m=await import('./beta2-docs.mjs');if(alive())keep(await m.mount(slot,{client,classes:[classInfo],teacherClass:cls}));}
+   if(key==='voc'){const m=await import('./beta2-voc.mjs');if(alive())keep(await m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc}));}
   }catch(e){loaded.delete(key);if(alive())slot.textContent='화면을 불러오지 못했습니다. '+e.message;}
  }
  async function go(m,s){
@@ -69,7 +71,15 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
   await load(sub,slot);
  }
  const statusHost=document.createElement('div');
- wrap.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.main)void go(b.dataset.main);if(b.dataset.subtab)void go(main,b.dataset.subtab);if(b.dataset.alertGo)void go('attendance','disease');});
+ wrap.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.main)void go(b.dataset.main);if(b.dataset.subtab)void go(main,b.dataset.subtab);if(b.dataset.alertGo)void go('attendance','disease');if(b.dataset.vocGo)void go('feedback','voc');});
+ // 운영팀 민원·이슈 답글 알림: 변경 번호 응답(b2Rev의 voc, 시트를 읽지 않음)에 이 반 건수가 옵니다. 1분마다 확인합니다(다른 화면이 방금 확인했으면 그 값).
+ function paintVoc(state){
+  if(!alive())return;const n=+(state?.teacher||{})[cls]||0,el=$('#t2Voc');el.hidden=!n;
+  el.innerHTML=n?`<span>운영팀이 민원·이슈에 답글을 남겼습니다 · ${n}건</span><button data-voc-go="1">보기</button>`:'';
+ }
+ const offVoc=onBeta2Rev(r=>paintVoc(r?.voc));
+ const vocTimer=setInterval(()=>{if(alive()&&!document.hidden)client.rev().catch(()=>{});},60000);
+ client.rev().catch(()=>{});
  // 질병 인정 경고: 4회 이상이면 모든 탭 위에 띄웁니다(출결원장 기준, 체크히어 메모와 다르면 함께 표시).
  (async()=>{try{
   const [b,ch]=await Promise.all([client.bundle(cls),client.checkhereDisease([cls])]);if(!alive())return;
@@ -79,7 +89,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
   el.innerHTML=`<span>⚠ 질병 인정 ${report.rows.length?report.rows.map(r=>`${esc(r.name)} ${r.count}/6회${r.count>6?' 초과':r.count===6?' 도달':''}`).join(' · '):'4회 이상 없음'}${report.review.length?` · 체크히어 메모와 다른 날 ${report.review.length}명 확인 필요`:''}</span><button data-alert-go="1">자세히</button>`;
  }catch{}})();
  await go('today');
- const dispose=()=>{if(disposed)return;disposed=true;observer.disconnect();works.forEach(w=>w?.dispose?.());};
+ const dispose=()=>{if(disposed)return;disposed=true;observer.disconnect();offVoc();clearInterval(vocTimer);works.forEach(w=>w?.dispose?.());};
  const observer=new MutationObserver(()=>{if(!wrap.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});
  return {canLeave:()=>works.every(w=>!w?.canLeave||w.canLeave()),dispose};
 }

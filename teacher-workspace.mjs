@@ -1,6 +1,6 @@
 export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=false,layout=''}){
  // 2기 베타(/beta2) 관리자 미리보기는 6탭 통합 담임 화면을 띄웁니다.
- if(layout==='beta2'){const m=await import('./beta2-teacher-layout.mjs?v=20261013-b2');return m.mountBeta2TeacherLayout(parent,{db,user,classInfo});}
+ if(layout==='beta2'){const m=await import('./beta2-teacher-layout.mjs?v=20261016-voc1');return m.mountBeta2TeacherLayout(parent,{db,user,classInfo});}
  const hero=parent.querySelector('.hero');if(!hero)return;
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
  const nav=document.createElement('nav');nav.className='admin-tabs teacher-tabs';nav.setAttribute('aria-label','담임 업무 메뉴');
@@ -48,7 +48,7 @@ export async function mountTeacherWorkspace(parent,{db,user,classInfo,preview=fa
   if(id==='surveys'){const m=await import('./survey-view.mjs');if(!alive())return;host.textContent='';work=await m.mountSurveys(host,options);}
   if(id==='materials'){const m=await import('./lecture-materials.mjs');if(!alive())return;host.textContent='';work=await m.mountLectureMaterials(host,{...options,readOnly:preview});}
   // Admin preview only for now. Class switches rebuild the whole workspace, so the beta view mounts once per class.
-  if(id==='beta'){const m=await import('./teacher-beta.js?v=20261012-beta1');if(!alive())return;host.textContent='';work=m.mountTeacherBeta(host,{cls:Number(classInfo.id),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta'});}
+  if(id==='beta'){const m=await import('./teacher-beta.js?v=20261016-voc1');if(!alive())return;host.textContent='';work=m.mountTeacherBeta(host,{cls:Number(classInfo.id),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta'});}
   retain(id,work);
  }catch(e){if(alive()){host.textContent='화면을 불러오지 못했습니다. '+e.message;loaded.delete(id);}}}
  nav.querySelectorAll('button').forEach(b=>b.onclick=()=>void show(b.dataset.teacherTab));void show('home');
