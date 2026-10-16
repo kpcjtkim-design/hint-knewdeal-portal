@@ -131,6 +131,23 @@ Vercel 환경변수(`HINT_SHEET_API_URL`, `HINT_SHEET_API_KEY`)는 **바꾸지 �
 
 - 두 번째(실패한) 실행에서 출결원장 쓰기는 이미 끝나 있었기 때문에, 변경이력의 '1기 동기화' 요약 줄은 마지막 실행분(추가 7건)만 보여 준다.
 
+### 웹 앱에서 부를 수 있던 함수 막기 (2026-10-15, 반영은 사용자 확인 후에만)
+
+**문제.** 배포 ①·② 모두 `doGet`으로 담임 포털(Portal.html)을 열고, 소유자(hint.kpc)로 실행된다. 그 화면에서는 이름 끝이 `_`가 아닌 **모든 최상위 함수**(Code.gs·beta2.gs 전부)를 누구나 `google.script.run`으로 키·PIN 없이 부를 수 있었다. 예: `portalRoster`(생년월일·성별), `b2Docs`(역할이 비어 생년월일까지 보냄), `b2Bundle`(모든 반 명부·출결), `saveRecord`·`b2Save`(아무 반 출결 쓰기), `setApiKey`(키를 바꿔 Vercel 연결 끊기), `b2SyncTick`·`b2SyncNow`(동기화를 계속 돌려 잠금·하루 한도 차지).
+
+**바뀐 것**
+- Vercel 전용 함수는 이름 끝에 `_`를 붙였다: `portalRoster_`, `b2Bundle_`·`b2Rev_`·`b2Status_`·`b2SyncNow_`·`b2Save_`·`b2Release_`·`b2Docs_`·`b2DocCreate_`·`b2DocUpdate_`. `doPost` 함수표와 `B2_ACTIONS`의 **동작 이름은 그대로**라 Vercel(`api/teacher-beta.js`)·환경변수는 바꾸지 않는다.
+- 편집기·메뉴·패널 전용은 첫 줄에서 부른 사람과 실행 계정이 같은지 본다(Code.gs `editorOnly_`, beta2 `b2EditorOnly_`와 같은 판단): `saveRecord`(출결 입력 패널 저장), `rebuildAll`(메뉴 '출결판 새로고침'), `setApiKey`. `onEdit`은 `rebuildAll` 대신 `rebuildBoards_`를 바로 부른다(단순 트리거는 이메일이 빈 칸일 수 있음).
+- `b2SyncTick(e)`는 시간 트리거 이벤트의 `triggerUid`가 이 프로젝트 트리거이거나 편집기에서 직접 실행할 때만 돈다(`b2TriggerOnly_`). 시간대 밖이면 확인 전에 그냥 끝난다.
+- 그대로 둔 것: Portal.html이 부르는 `portalClasses`(반 이름·PIN 유무만)와 PIN을 확인하는 `portal*` 8개, 패널이 0.7초마다 부르는 읽기 `getContext`·`getSelectionKey`(웹 앱에서는 고른 칸이 없어 안내 문구만), 메뉴 함수(웹 앱에는 화면이 없음), `doGet`·`doPost`(API 키).
+- 붙여 넣기용 사본 `apps-script/teacher-beta-api.gs`도 같이 고쳤다. 새 권한 승인은 없다(이미 쓰는 이메일·트리거 권한).
+- 시험: `checkhere/tests/script-run-guard.test.mjs`. `_` 없는 함수 목록이 바뀌면 실패하므로, 함수를 더하면 그 시험의 분류 표에 넣고 웹 앱 방문자가 불러도 되는지 정한다.
+
+**반영 순서 (Cowork 또는 사용자)**
+1. 편집기에서 `Code.gs`·`beta2` 내용을 저장소 파일로 통째로 바꾸고 저장한다. 프로젝트에 다른 `.gs` 파일이 있으면 이름을 알린다(그 파일의 `_` 없는 함수도 같은 방식으로 열려 있다).
+2. **배포 ①과 배포 ② 둘 다 새 버전으로 업데이트한다**(배포 관리 → 연필 → 버전 '새 버전'. 새 배포를 만들지 않음, 주소 그대로). 버전을 고정한 배포는 예전 코드를 계속 쓰므로, 한쪽이라도 그대로면 그 주소의 포털 화면에서 예전 함수가 계속 불린다(지금 ②는 버전 5라 `saveRecord`·`setApiKey`가 열려 있다). 다른 활성 웹 앱 배포가 있으면 알린다.
+3. 확인(값만, 학생 이름 없이): /beta2 홈 숫자가 나온다 · 담임 포털(② 주소)에 반·PIN으로 들어가진다 · 시트 메뉴 '출결판 새로고침'이 돈다 · 다음 `b2SyncTick` 트리거 실행이 실행 기록에서 '완료'다. 트리거가 '편집기에서 직접 실행할 때만…'으로 실패하면 트리거 확인이 실제 환경과 다른 것이니 바로 알린다(그동안 동기화가 멈춤).
+
 ### 동기화 실행 시간 줄이기 반영 순서 (2026-10-14, 사용자 확인 후에만)
 
 `beta2.gs`(동기화 `B2_SYNC_VERSION 20261014.1`)와 `apps-script/master/Code.gs`(onOpen에서 출결판 그리기 뺌)를 **함께** 반영한다. Code.gs만 먼저 바꾸면 새 교육일 열을 그릴 곳이 없다.

@@ -50,7 +50,9 @@ function goLedger() { SpreadsheetApp.getActive().getSheetByName(CFG.LEDGER).acti
 
 /* ---------- 출결판 다시 그리기 ---------- */
 
-function rebuildAll() { rebuildBoards_(null); }
+// 메뉴 'HINT > 출결판 새로고침'. 편집기·메뉴에서만 돕니다(웹 앱 방문자가 google.script.run으로 17개 반을 계속 다시 그리게 하지 않음, editorOnly_).
+// onEdit(단순 트리거)은 rebuildBoards_를 바로 부릅니다.
+function rebuildAll() { editorOnly_(); rebuildBoards_(null); }
 
 // classes: 다시 그릴 반 번호 목록(null이면 모두). 읽기(탭 찾기·색 규칙 확인)를 먼저 모두 하고 쓰기를 몰아서 합니다.
 // 읽기와 쓰기가 섞이면 반마다 시트가 다시 계산되어 느려집니다.
@@ -144,7 +146,7 @@ function onEdit(e) {
     // 시트 다듬기 뒤에는 교육일자(시간표에서 올 수 있음)·명부·원장을 고치면 원장 Q열(입력 확인)도 다시 계산합니다(slimLocked_, 그 전에는 아무것도 안 함).
     // 다시 계산할 것을 먼저 적어 둡니다(slimMark_): 출결판 그리기에서 단순 트리거 한도(30초)로 끊기거나 잠금을 못 잡아도 다음 동기화·저장이 계산.
     if ([CFG.LEDGER, CFG.ROSTER, CFG.DAYS, '시간표'].indexOf(name) >= 0) slimMark_();
-    if (name === '시간표' || name === CFG.DAYS) { rebuildAll(); slimLocked_(null); return; }
+    if (name === '시간표' || name === CFG.DAYS) { rebuildBoards_(null); slimLocked_(null); return; }
     // 명부·원장은 고친 행의 반만 다시 그립니다(17개 반을 모두 그리면 단순 트리거 30초 한도에 걸릴 수 있음).
     if (name === CFG.ROSTER) { rebuildBoards_(editedClasses_(e.range, 1)); slimLocked_(null); return; }
     if (name === CFG.LEDGER) { touch_(); rebuildBoards_(editedClasses_(e.range, 2)); slimLocked_(null); return; }
@@ -223,7 +225,9 @@ function ctx_(cls, stu, date, tz) {
 }
 
 // 패널 저장: 유형이 '출석'이면 기록 삭제, 아니면 저장. 사유·시간은 선택.
+// 패널(Sidebar.html)은 시트를 연 사람 계정으로 돕니다. 웹 앱(담임 포털, 소유자로 실행)에서 google.script.run으로 부르면 PIN 없이 아무 반이나 쓰게 되므로 거절합니다.
 function saveRecord(p) {
+  editorOnly_();
   if (!rosterHas_(p.cls, p.name)) return { ok: false, msg: '명부에 없는 학생입니다.' };
   if (!p.type || p.type === '출석') { removeRow_(p.cls, p.name, p.date, '패널'); setCell_(p, '출석'); touch_(); return { ok: true }; }
   if (CFG.TYPES.indexOf(p.type) < 0) return { ok: false, msg: '유형을 골라 주세요.' };
@@ -576,7 +580,7 @@ function doPost(e) {
       portalClasses: portalClasses, portalData: portalData, portalSave: portalSave,
       portalCheck: portalCheck, portalClose: portalClose, portalAddRow: portalAddRow,
       portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus,
-      portalRoster: portalRoster
+      portalRoster: portalRoster_ // 끝이 '_'인 함수는 google.script.run으로 부를 수 없음(생년월일·성별)
     }, typeof B2_ACTIONS === 'object' ? B2_ACTIONS : {}); // beta2.gs가 있으면 2기 베타 기능도 받습니다.
     const fn = A[body.action];
     if (!fn) return out({ ok: false, error: 'unknown action' });
@@ -591,7 +595,8 @@ function doPost(e) {
 }
 
 // 출결 업로드 파일용: 한 반의 명부(이름·상태·생년월일·성별). Vercel이 관리자 요청만 넘깁니다.
-function portalRoster(cls) {
+// 끝이 '_'라 doPost(API 키 확인)로만 부릅니다. 예전 이름(portalRoster)은 담임 포털 화면에서 google.script.run으로 PIN 없이 불렸습니다(2026-10-15).
+function portalRoster_(cls) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('명부');
   if (!sh) throw new Error('명부 탭이 없습니다.');
   const v = sh.getDataRange().getValues(), h = v[0].map(String);
@@ -603,8 +608,18 @@ function portalRoster(cls) {
 }
 
 // 편집기에서 한 번 실행하면 API_KEY를 새로 만들고 실행 로그에 보여 줍니다. Vercel 환경변수 HINT_SHEET_API_KEY에 넣으세요.
+// 편집기에서만 돕니다(웹 앱 방문자가 키를 바꿔 Vercel 연결을 끊지 못하게).
 function setApiKey() {
+  editorOnly_();
   const k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   PropertiesService.getScriptProperties().setProperty('API_KEY', k);
   console.log('API_KEY = ' + k);
+}
+
+// 편집기·시트 메뉴·패널에서만 부르는 함수의 첫 줄(beta2.gs b2EditorOnly_와 같은 판단).
+// 같은 프로젝트의 웹 앱(doGet 담임 포털·데이터 API, 둘 다 '나로 실행')이 연 화면에서는 끝이 '_'가 아닌 모든 함수를 누구나 google.script.run으로 부를 수 있습니다.
+// 웹 앱은 소유자 계정으로 실행되고 방문자 이메일은 빈 칸이거나 다른 계정이라, 부른 사람과 실행 계정이 같을 때만 진행합니다. 이미 쓰는 이메일 권한이라 새 승인은 없습니다.
+function editorOnly_() {
+  let who = ''; try { who = Session.getActiveUser().getEmail(); } catch (e) { }
+  if (!who || who !== Session.getEffectiveUser().getEmail()) throw new Error('편집기·시트 메뉴에서만 쓸 수 있습니다(웹 앱으로는 부를 수 없음).');
 }

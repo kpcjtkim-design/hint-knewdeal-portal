@@ -161,7 +161,7 @@ test('a portal save marks the class; the next run re-checks it against 운영총
  const env=setup();firstRun(env);
  const [cur]=find(env,'가상6가','2026-10-06'),{gas}=env;
  gas.advance(60000);gas.resetLog();
- const saved=gas.call('b2Save',{cls:'6',name:'가상6가',date:'2026-10-06',type:'결석',reason:'개인',ev:'',before:cur.sig});
+ const saved=gas.call('b2Save_',{cls:'6',name:'가상6가',date:'2026-10-06',type:'결석',reason:'개인',ev:'',before:cur.sig});
  assert.equal(saved.ok,true);assert.deepEqual(gas.log.outsideLock,[]);
  assert.equal(props(env).B2_DIRTY,'["6"]');
  tick(env);const res=last(env);
@@ -256,7 +256,7 @@ test('a one-class sync draws only its own board and leaves the pending boards of
  const env=setup(),{gas}=env;firstRun(env);
  gas.scriptProps.setProperty('B2_PENDING_BOARDS',JSON.stringify(['3','4']));
  setSource(env,'14','가상14가','2026-10-13','결석','결석1- 가상14가_병원');
- gas.resetLog();const res=plain(gas.call('b2SyncNow',{cls:'14'}));
+ gas.resetLog();const res=plain(gas.call('b2SyncNow_',{cls:'14'}));
  assert.deepEqual(res.processed,['14']);assert.equal(res.writes.boards,1);
  assert.deepEqual([...new Set(masterWrites(env).filter(w=>/^30\d\d$/.test(w.sheet)).map(w=>w.sheet))],['3014']);
  assert.deepEqual(JSON.parse(props(env).B2_PENDING_BOARDS),['3','4']);
@@ -350,7 +350,7 @@ test('a new day redraws every board once, and a manual one-class sync still work
  assert.equal(gas.formatDate(env.m.getSheetByName('3012').get(16,5),'Asia/Seoul','MM/dd'),'10/15');
  tick(env);assert.equal(gas.log.api.length,0);
  setSource(env,'12','가상12다','2026-10-15','지각','지각1- 가상12다_09:20');
- gas.resetLog();res=plain(gas.call('b2SyncNow',{cls:'12'}));
+ gas.resetLog();res=plain(gas.call('b2SyncNow_',{cls:'12'}));
  assert.deepEqual(res.processed,['12']);assert.equal(find(env,'가상12다','2026-10-15')[0].inT,'09:20');
  assert.deepEqual(gas.log.outsideLock,[]);
 });
@@ -389,7 +389,7 @@ test('board drawing problems after the ledger is done only warn: a lock timeout 
  // 한 반 가져오기가 자기 반 출결판을 못 그리면 남은 출결판에 더해 두고, 다음 전체 동기화가 그립니다.
  const b15=env.m.getSheetByName('3015');b15.maxCols=4;
  setSource(env,'15','가상15가','2026-10-13','결석','결석1- 가상15가_병원');
- const one=plain(gas.call('b2SyncNow',{cls:'15'}));assert.match(one.warnings.join('\n'),/^15반 출결판/m);
+ const one=plain(gas.call('b2SyncNow_',{cls:'15'}));assert.match(one.warnings.join('\n'),/^15반 출결판/m);
  assert.deepEqual(JSON.parse(props(env).B2_PENDING_BOARDS),['15']);
  b15.maxCols=64;tick(env);assert.equal(props(env).B2_PENDING_BOARDS,undefined);assert.equal(b15.get(17,6),'결석');
  // 날이 바뀐 첫 실행에서 읽기에 실패한 반은 운영총괄이 그대로여도 두 번 더 읽어 봅니다.
@@ -525,7 +525,7 @@ test('a temporary Sheets API failure stops a 10-minute run once and the next run
  assert.equal(res.mode,'sheet');assert.match(res.apiError,/Forbidden/);assert.deepEqual(plain(res.processed),['7']);
  // 전체 다시 맞추기는 처음 실패에도 넘어갑니다.
  setSource(env,'4','가상4나','2026-10-13','결석','결석1- 가상4나_병원');gas.scriptProps.deleteProperty('B2_API_FAILS');
- fail('Internal error encountered.');gas.resetLog();res=plain(gas.call('b2SyncNow',{}));
+ fail('Internal error encountered.');gas.resetLog();res=plain(gas.call('b2SyncNow_',{}));
  assert.equal(res.mode,'sheet');assert.match(res.apiError,/Internal error/);assert.equal(find(env,'가상4나','2026-10-13')[0].type,'결석');
 });
 
@@ -573,7 +573,7 @@ test('the sync reads 출결원장 A:K and R:T only (never the L:Q formulas) and 
  const row=find(env,'가상5나','2026-10-12')[0].row;
  assert.deepEqual(masterWrites(env,'출결원장').filter(w=>w.kind==='format'&&w.c===19).map(w=>[w.r,w.nr]),[[row,1]]);
  assert.equal(env.ledger.fmt.get(env.ledger.key(row,19)),'@');
- gas.resetLog();const b=gas.call('b2Bundle','5');
+ gas.resetLog();const b=gas.call('b2Bundle_','5');
  assert.ok(readsLQ(env).length>0,'the portal bundle still reads the memo and check columns');assert.equal(b.ledgerCols.length,17);
 });
 
@@ -627,7 +627,7 @@ test('if 명부 rows move while the ledger is read, the roster write stops inste
 test('a release whose follow-up sync stops early marks the class, so the next run puts the 운영총괄 values into the released rows',()=>{
  const env=setup(),{gas,sig}=env;firstRun(env);
  gas.hooks.push({when:e=>e.op==='read'&&e.range.sh.name==='출결원장'&&e.range.c===1&&e.range.nc===11,run:()=>gas.advance(250000),once:true});
- gas.advance(60000);gas.resetLog();const res=plain(gas.call('b2Release',{cls:'4',name:'가상4가',date:'2026-10-06'}));
+ gas.advance(60000);gas.resetLog();const res=plain(gas.call('b2Release_',{cls:'4',name:'가상4가',date:'2026-10-06'}));
  assert.equal(res.released,1);assert.equal(res.sync.late,'write');
  let [row]=find(env,'가상4가','2026-10-06');assert.deepEqual([row.type,row.prov,row.sig],['결석','1기 동기화','*']);
  assert.deepEqual(JSON.parse(props(env).B2_DIRTY),['4']);

@@ -1487,11 +1487,13 @@ function b2ImportDocs_(srcValues) {
 // 10분 트리거가 부릅니다. 정한 시간(B2.SYNC.window, 기본 평일 09:10~18:00) 밖이면 바로 끝나고,
 // 하루 사용 시간이 상한(B2.SYNC.dailyMs)을 넘으면 30분에 한 번만 돕니다. 6분 한도로 끊긴 실행은 다음 실행이 기록합니다.
 // 시간 판단은 B2.TZ로 하고 B2_SYNC_RUNNING을 적은 뒤에야 시트를 부릅니다(시트가 느린 날 시간 확인에서 끊겨도 흔적이 남게).
-function b2SyncTick() {
+// e: 시간 트리거가 넘기는 이벤트. 트리거·편집기 실행만 받습니다(b2TriggerOnly_). 시간 밖이면 확인 전에 끝나므로 그때는 아무것도 하지 않습니다.
+function b2SyncTick(e) {
   b2Begin_();
   var props = b2Props_(), now = new Date();
   var spec = props.getProperty('B2_SYNC_WINDOW') || B2.SYNC.window;
   if (!b2InWindow_(spec, Utilities.formatDate(now, B2.TZ, 'u'), Utilities.formatDate(now, B2.TZ, 'HH:mm'))) return;
+  b2TriggerOnly_(e);
   var day = Utilities.formatDate(now, B2.TZ, 'yyyy-MM-dd'), usage = b2JsonProp_('B2_RUN_USAGE', null);
   if (!usage || usage.day !== day) usage = { day: day, ms: 0, runs: 0, cut: 0, lastAt: 0 };
   var running = +props.getProperty('B2_SYNC_RUNNING') || 0;
@@ -1514,6 +1516,15 @@ function b2SyncTick() {
     props.setProperty('B2_RUN_USAGE', JSON.stringify(usage));
     props.deleteProperty('B2_SYNC_RUNNING');
   }
+}
+
+// b2SyncTick의 확인. 시간 트리거 이벤트의 triggerUid가 이 프로젝트 트리거면 진행하고, 아니면 편집기에서 직접 실행했는지 봅니다(b2EditorOnly_).
+// 웹 앱 방문자가 google.script.run으로 부르면(가짜 triggerUid 포함) 거절합니다: 동기화를 계속 돌려 문서 잠금·하루 사용량(B2_RUN_USAGE)을 차지하지 않게.
+// getProjectTriggers는 b2Status·b2InstallTrigger가 이미 쓰는 권한이라 새 승인은 없습니다.
+function b2TriggerOnly_(e) {
+  var uid = e && e.triggerUid ? String(e.triggerUid) : '';
+  if (uid) { try { if (ScriptApp.getProjectTriggers().some(function (t) { return String(t.getUniqueId()) === uid; })) return; } catch (x) { } }
+  b2EditorOnly_();
 }
 
 /* ---------- 편집기에서 한 번 실행 ---------- */
@@ -1544,7 +1555,7 @@ function b2RemoveTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'b2SyncTick') ScriptApp.deleteTrigger(t); });
 }
 
-/* ---------- 포털에서 부르는 함수 (B2_ACTIONS) ---------- */
+/* ---------- 포털에서 부르는 함수 (B2_ACTIONS, doPost로만. 이름 끝 '_') ---------- */
 
 var B2_LEDGER_COLS = ['date', 'cls', 'name', 'type', 'inT', 'outT', 'oa', 'ob', 'reason', 'ev', 'evr', 'memo', 'evApplied', 'check', 'prov', 'flag', 'sig'];
 // cut: 6분 한도로 끊긴 실행 {at: 시작 시각, phase: 마지막 단계, ms}(예전 값은 시작 시각 숫자), running: 지금 도는 실행 {at, phase, ms}
@@ -1647,7 +1658,7 @@ function b2CacheWrite_(cache, stamp, parts, old) {
 }
 // cls: '1'~'17' 또는 'all'. 개인정보(생년월일·성별)는 보내지 않습니다. 묶음 캐시(위)에 있으면 시트를 읽지 않습니다.
 // rev는 시트를 읽기 전 값입니다. 읽는 사이에 바뀌었으면 화면이 다음 변경 번호 확인에서 다시 받습니다.
-function b2Bundle(cls) {
+function b2Bundle_(cls) {
   cls = String(cls || 'all');
   if (cls !== 'all' && !B2.SOURCE_TABS[cls]) throw new Error('반 번호를 확인해 주세요.');
   var all = b2Props_().getProperties(), rev = +all.B2_REV || 0, stamp = b2BundleStamp_(rev), cache = stamp ? b2Cache_() : null;
@@ -1666,22 +1677,22 @@ function b2Bundle(cls) {
   if (!parts) parts = b2BundleParts_();
   return b2BundleFrom_(parts, cls, { rev: rev, today: b2Today_(), sync: b2SyncState_(all) });
 }
-function b2Rev() { var all = b2Props_().getProperties(); return { rev: +all.B2_REV || 0, sync: b2SyncState_(all) }; }
-function b2Status() {
+function b2Rev_() { var all = b2Props_().getProperties(); return { rev: +all.B2_REV || 0, sync: b2SyncState_(all) }; }
+function b2Status_() {
   var triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'b2SyncTick'; }).length;
   var updated = 0, sourceId = b2SourceId_(); try { if (sourceId) updated = DriveApp.getFileById(sourceId).getLastUpdated().getTime(); } catch (e) { }
   var all = b2Props_().getProperties();
   return { rev: +all.B2_REV || 0, sync: b2SyncState_(all), trigger: triggers > 0, sourceUpdated: updated, source: sourceId ? 'linked' : 'none' };
 }
 // p: {cls}가 있으면 그 반만(빠름), 없으면 17개 반 전체를 지금 가져옵니다.
-function b2SyncNow(p) {
+function b2SyncNow_(p) {
   b2Begin_();
   var cls = p && p.cls ? [String(p.cls)] : null;
   return b2SyncRun_({ classes: cls, force: true, reason: 'manual' });
 }
 // 출결원장 한 행 저장. p: {cls,name,date,type,inT,outT,oa,ob,reason,ev,evr,before}
 // before: 화면이 본 행 지문(없던 행은 ''). 그사이 바뀌었으면 CONFLICT로 막습니다. type '출석'은 출석으로 되돌림.
-function b2Save(p) {
+function b2Save_(p) {
   p = p || {};
   var cls = String(p.cls || '').trim(), name = String(p.name || '').trim(), date = String(p.date || '').trim();
   var days = b2Days_(), roster = b2ReadRoster_().rows, person = roster.filter(function (r) { return r.cls === cls && r.name === name; })[0];
@@ -1716,7 +1727,7 @@ function b2Save(p) {
   } finally { lock.releaseLock(); }
 }
 // 베타에서 고친 행을 운영총괄 값으로 되돌립니다. p: {cls, name, date} 또는 {cls, flagged: true}(그 반 확인 필요 행 전체)
-function b2Release(p) {
+function b2Release_(p) {
   b2Begin_(); // 뒤의 b2SyncRun_이 이 실행의 남은 시간을 셉니다.
   p = p || {}; var cls = String(p.cls || '');
   if (!B2.SOURCE_TABS[cls]) throw new Error('반 번호를 확인해 주세요.');
@@ -1749,7 +1760,7 @@ function b2ReadDocs_() {
   return { sh: sh, last: last, rows: out };
 }
 // p: {cls} 없으면 전체(관리자). 생년월일은 관리자에게만 보냅니다.
-function b2Docs(p) {
+function b2Docs_(p) {
   var cls = p && p.cls ? String(p.cls) : '', admin = __ACTOR_ROLE === 'ADMIN' || !__ACTOR_ROLE;
   return {
     rev: +b2Props_().getProperty('B2_REV') || 0, statuses: B2.DOC_STATUS, types: B2.DOC_TYPES, delivery: B2.DOC_DELIVERY,
@@ -1758,7 +1769,7 @@ function b2Docs(p) {
   };
 }
 // p: {cls, name, docType, period, purpose, submitTo, due, qty, delivery, memo}
-function b2DocCreate(p) {
+function b2DocCreate_(p) {
   p = p || {};
   var cls = String(p.cls || '').trim(), name = String(p.name || '').trim(), docType = String(p.docType || '').trim();
   if (!B2.SOURCE_TABS[cls]) throw new Error('반을 골라 주세요.');
@@ -1798,7 +1809,7 @@ function b2DocCreate(p) {
   return { id: id, mailed: mailed };
 }
 // 관리자 처리. p: {id, status, memo, link, fixReason}
-function b2DocUpdate(p) {
+function b2DocUpdate_(p) {
   p = p || {};
   if (B2.DOC_STATUS.indexOf(p.status) < 0) throw new Error('처리 상황을 골라 주세요.');
   if (p.status === '보완 필요' && !String(p.fixReason || '').trim()) throw new Error('보완 사유를 적어 주세요.');
@@ -1815,7 +1826,9 @@ function b2DocUpdate(p) {
   return { ok: true, rev: b2Bump_() };
 }
 
+// doPost(Code.gs)가 API 키를 확인한 뒤에만 부르는 표. 왼쪽은 Vercel(api/teacher-beta.js)이 보내는 동작 이름(그대로), 오른쪽 함수는 모두 끝이 '_'입니다.
+// 끝이 '_'가 아니면 같은 프로젝트 웹 앱(담임 PIN 포털)이 연 화면에서 누구나 google.script.run으로 키 없이 부를 수 있었습니다(2026-10-15 고침).
 var B2_ACTIONS = {
-  b2Bundle: b2Bundle, b2Rev: b2Rev, b2Status: b2Status, b2SyncNow: b2SyncNow, b2Save: b2Save, b2Release: b2Release,
-  b2Docs: b2Docs, b2DocCreate: b2DocCreate, b2DocUpdate: b2DocUpdate
+  b2Bundle: b2Bundle_, b2Rev: b2Rev_, b2Status: b2Status_, b2SyncNow: b2SyncNow_, b2Save: b2Save_, b2Release: b2Release_,
+  b2Docs: b2Docs_, b2DocCreate: b2DocCreate_, b2DocUpdate: b2DocUpdate_
 };

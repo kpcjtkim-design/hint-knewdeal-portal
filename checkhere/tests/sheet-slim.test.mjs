@@ -224,7 +224,7 @@ test('b2RestoreFormulas puts every formula back exactly, clears the values where
  const env=master(),{gas,m,ledger,tabs}=env,snapshot=()=>m.getSheets().filter(s=>s.name!=='수식백업').map(s=>[s.name,[...s.f].sort((a,b)=>a[0]-b[0])]);
  const before=snapshot();
  gas.call('b2SlimSheet');
- gas.call('b2Save',{cls:'2',name:'가상2다',date:'2026-10-13',type:'지각',inT:'09:05',before:''}); // 값이 하나 더 생긴 뒤 되돌려도
+ gas.call('b2Save_',{cls:'2',name:'가상2다',date:'2026-10-13',type:'지각',inT:'09:05',before:''}); // 값이 하나 더 생긴 뒤 되돌려도
  gas.resetLog();const res=plain(gas.call('b2RestoreFormulas'));
  assert.deepEqual(res,{restored:288,missing:[]});
  assert.deepEqual(gas.log.outsideLock,[]);
@@ -241,7 +241,7 @@ test('b2RestoreFormulas puts every formula back exactly, clears the values where
 
 test('before the migration every hook is a no-op: no Q / C·D reads or writes from b2Save, Code.gs saves, direct edits or board redraws',()=>{
  const env=master(),{gas,ledger,boards}=env;gas.resetLog();
- gas.call('b2Save',{cls:'2',name:'가상2다',date:'2026-10-13',type:'결석',before:''});
+ gas.call('b2Save_',{cls:'2',name:'가상2다',date:'2026-10-13',type:'결석',before:''});
  gas.call('portalSave',{cls:3,pin:'',name:'가상3가',date:'2026-10-13',type:'지각',inT:'09:30'});
  gas.call('portalSave',{cls:1,pin:'',name:'가상1라',date:'2026-10-08',type:'해당없음'});
  const locks=gas.log.locks;
@@ -259,13 +259,13 @@ test('before the migration every hook is a no-op: no Q / C·D reads or writes fr
 test('after the migration b2Save rewrites only the Q cells that changed and that class tab C/D, and returns the new check text',()=>{
  const env=master(),{gas,ledger,tabs}=env;gas.call('b2SlimSheet');
  gas.resetLog();
- const saved=gas.call('b2Save',{cls:'1',name:'가상1라',date:'2026-10-13',type:'지각',inT:'09:05',before:''});
+ const saved=gas.call('b2Save_',{cls:'1',name:'가상1라',date:'2026-10-13',type:'지각',inT:'09:05',before:''});
  const row=ledger.getLastRow();
  assert.equal(saved.check,'09:10까지는 지각 아님 ·','b2Save returns the fresh Q text');
  assert.deepEqual(qWrites(gas).map(w=>[w.r,w.nr]),[[row,1]],'only the new row');
  assert.deepEqual(cdWrites(gas).map(w=>w.sheet),[tabs['1']]);assert.deepEqual(gas.log.outsideLock,[]);
  gas.resetLog();
- gas.call('b2Save',{cls:'1',name:'가상1다',date:'2026-10-13',type:'결석',before:gas.call('b2Sig_',{date:'2026-10-13',cls:'1',name:'가상1다',type:'조퇴',inT:'',outT:'17:50',oa:'',ob:'',reason:'',ev:'',evr:''})});
+ gas.call('b2Save_',{cls:'1',name:'가상1다',date:'2026-10-13',type:'결석',before:gas.call('b2Sig_',{date:'2026-10-13',cls:'1',name:'가상1다',type:'조퇴',inT:'',outT:'17:50',oa:'',ob:'',reason:'',ev:'',evr:''})});
  assert.equal(ledger.get(13,17),'','the 17:50 note disappears');assert.deepEqual(qWrites(gas).map(w=>w.r),[13]);
  assert.deepEqual(env.m.getSheetByName(tabs['1']).rows(19,3,1,2)[0],[6/7,1],'가상1다 now has one absence');
 });
@@ -324,7 +324,7 @@ test('after the migration redrawing boards (Code.gs) writes C/D from the same le
 test('a failed Q recompute does not block the save; it leaves B2_SLIM_DIRTY so the next hook call recomputes even without a write',()=>{
  const env=master(),{gas}=env;gas.call('b2SlimSheet');
  gas.hooks.push({when:e=>e.op==='read'&&e.range.sh.name==='출결원장'&&e.range.c===17,run:()=>{throw new Error('Service error');},once:true});
- const saved=gas.call('b2Save',{cls:'2',name:'가상2다',date:'2026-10-13',type:'지각',inT:'09:05',before:''});
+ const saved=gas.call('b2Save_',{cls:'2',name:'가상2다',date:'2026-10-13',type:'지각',inT:'09:05',before:''});
  assert.equal(saved.ok,true);assert.equal(gas.scriptProps.getProperty('B2_SLIM_DIRTY'),'1');
  assert.equal(saved.check,'','the stale value is returned this time');
  assert.equal(gas.call('b2SlimRefresh_',{onlyIfDirty:true}).q,1);
@@ -379,8 +379,8 @@ test('with the sync: before the migration nothing extra happens; after it a chan
  assert.equal(m.getSheetByName('3005').get(19,3),6/7);
  // 바뀐 것이 없는 실행은 Q를 다시 계산하지 않음. 지난 계산이 실패했으면(B2_SLIM_DIRTY) 쓴 것이 없어도 다시 계산
  tick(gas);assert.deepEqual(slimReads(gas),[]);
- gas.resetLog();gas.call('b2SyncNow',{cls:'5'});assert.equal(gas.log.reads.filter(r=>r.sheet==='출결원장'&&r.c===17).length,0,'a one-class run that writes nothing');
- gas.scriptProps.setProperty('B2_SLIM_DIRTY','1');gas.resetLog();gas.call('b2SyncNow',{cls:'5'});
+ gas.resetLog();gas.call('b2SyncNow_',{cls:'5'});assert.equal(gas.log.reads.filter(r=>r.sheet==='출결원장'&&r.c===17).length,0,'a one-class run that writes nothing');
+ gas.scriptProps.setProperty('B2_SLIM_DIRTY','1');gas.resetLog();gas.call('b2SyncNow_',{cls:'5'});
  assert.equal(gas.log.reads.filter(r=>r.sheet==='출결원장'&&r.c===17).length,1);assert.equal(gas.scriptProps.getProperty('B2_SLIM_DIRTY'),null);
 });
 
@@ -388,17 +388,17 @@ test('with the sync: before the migration nothing extra happens; after it a chan
 
 test('after the migration a Code.gs save bumps B2_REV only after Q is written, so a /beta2 bundle cached between the A:K and Q writes is not reused',()=>{
  const env=master(),{gas,ledger,m}=env;gas.call('b2SlimSheet');
- gas.call('b2Bundle','3'); // 캐시를 채움
+ gas.call('b2Bundle_','3'); // 캐시를 채움
  let inside=null,dirtyDuring=null;
  // A~K를 쓴 뒤 Q를 다시 계산하는 중에 화면이 묶음을 읽음(그사이 Drive 수정 시각은 바뀜) → 새 A~K와 옛 Q가 그때 표시로 캐시됨
- gas.hooks.push({when:e=>e.op==='read'&&e.range.sh.name==='출결원장'&&e.range.c===17,run:()=>{dirtyDuring=gas.scriptProps.getProperty('B2_SLIM_DIRTY');gas.advance(1000);m.touch();inside=plain(gas.call('b2Bundle','3'));},once:true});
+ gas.hooks.push({when:e=>e.op==='read'&&e.range.sh.name==='출결원장'&&e.range.c===17,run:()=>{dirtyDuring=gas.scriptProps.getProperty('B2_SLIM_DIRTY');gas.advance(1000);m.touch();inside=plain(gas.call('b2Bundle_','3'));},once:true});
  const rev0=+gas.scriptProps.getProperty('B2_REV')||0;
  assert.equal(gas.call('portalSave',{cls:3,pin:'',name:'가상3나',date:'2026-10-13',type:'지각'}).ok,true);
  const pick=b=>b.ledger.find(r=>r[2]==='가상3나'&&r[0]==='2026-10-13');
  assert.ok(inside&&pick(inside),'the bundle was read mid-save');assert.equal(pick(inside)[13],'','that read saw the old (empty) Q');
  assert.equal(inside.rev,rev0,'B2_REV is not bumped between the A:K write and the Q write');
  assert.equal(dirtyDuring,'1','B2_SLIM_DIRTY is set before computing, so a run cut off mid-way is recomputed next time');
- const after=plain(gas.call('b2Bundle','3'));
+ const after=plain(gas.call('b2Bundle_','3'));
  assert.ok(after.rev>inside.rev,'B2_REV was bumped after the Q write');assert.equal(after.rev,rev0+2,'b2SlimRefresh_ (Q changed) and upsert_ bump back to back');
  assert.equal(pick(after)[13],'입실 시간 없음 ·','the next bundle has the new Q');assert.equal(ledger.get(ledger.getLastRow(),17),'입실 시간 없음 ·');
  assert.equal(gas.scriptProps.getProperty('B2_SLIM_DIRTY'),null);
@@ -486,7 +486,7 @@ test("after the migration C counts absences up to the class tab's own A2 like th
  assert.deepEqual(b1.rows(17,3,2,2),[[6/7,1],[6/7,1]],'가상1나: only the 10/07 absence is on or before A2');
  let check=plain(gas.call('b2SlimCheck'));assert.deepEqual([check.differ.q,check.differ.cd],[0,0]);
  assert.match(check.notes.join('\n'),/1반 A2가 교육일자 D5와 다름\(C는 수식처럼 A2 기준\)/);
- gas.call('b2Save',{cls:'1',name:'가상1다',date:'2026-10-13',type:'결석',before:gas.call('b2Sig_',{date:'2026-10-13',cls:'1',name:'가상1다',type:'조퇴',inT:'',outT:'17:50',oa:'',ob:'',reason:'',ev:'',evr:''})});
+ gas.call('b2Save_',{cls:'1',name:'가상1다',date:'2026-10-13',type:'결석',before:gas.call('b2Sig_',{date:'2026-10-13',cls:'1',name:'가상1다',type:'조퇴',inT:'',outT:'17:50',oa:'',ob:'',reason:'',ev:'',evr:''})});
  assert.deepEqual(b1.rows(19,3,1,2)[0],[1,1],'a one-cell save uses A2 too: 10/13 is after A2');
  b1.fill(2,1,[['']]);gas.call('rebuildAll');assert.deepEqual(b1.rows(17,3,3,2),[[6/7,1],[5/7,1],[6/7,1]],'an empty A2 falls back to 교육일자 D5');
  assert.match(plain(gas.call('b2SlimCheck')).notes.join('\n'),/1반 A2가 교육일자 D5와 다름\(A2가 날짜가 아니라 C는 D5 기준\)/);
@@ -498,7 +498,7 @@ test('after the migration a class tab whose C/D held no formulas is left alone b
  const res=plain(gas.call('b2SlimSheet'));assert.match(res.notes.join('\n'),/9반 C17:D48에 수식 없음/);assert.equal(res.boards,16);
  assert.equal(JSON.parse(gas.scriptProps.getProperty('B2_SLIM_TABS')).includes('9'),false);
  gas.resetLog();gas.call('rebuildAll');
- gas.call('b2Save',{cls:'9',name:'가상9가',date:'2026-10-13',type:'결석',before:''});
+ gas.call('b2Save_',{cls:'9',name:'가상9가',date:'2026-10-13',type:'결석',before:''});
  gas.call('portalSave',{cls:9,pin:'',name:'가상9나',date:'2026-10-13',type:'결석'});
  gas.call('portalSetStatus',9,'','가상9다','중도탈락','2026-10-12');
  assert.deepEqual(b9.rows(17,3,1,2)[0],['손으로','적음']);assert.deepEqual(cdWrites(gas,tabs['9']),[]);

@@ -1,5 +1,5 @@
 // 시험 전용 가짜 Google Apps Script 환경. 실제 시트·Drive·트리거에 접속하지 않습니다.
-// SpreadsheetApp·Sheets(고급 서비스)·DriveApp·PropertiesService·LockService·CacheService·Utilities·ScriptApp과 시계를 흉내 내고,
+// SpreadsheetApp·Sheets(고급 서비스)·DriveApp·PropertiesService·LockService·CacheService·Utilities·ScriptApp·ContentService와 시계를 흉내 내고,
 // 읽기·쓰기 횟수, 잠금 밖에서 한 쓰기, 일부러 낸 일시 오류를 기록합니다.
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
@@ -128,7 +128,7 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   waitLock(){if(lock.other)throw new Error('Lock timeout: another process was holding the lock for too long.');mine++;lock.depth++;log.locks++;},
   tryLock(){if(lock.other)return false;mine++;lock.depth++;log.locks++;return true;},
   releaseLock(){if(mine){mine--;lock.depth--;}},hasLock:()=>mine>0};};
- const triggers=[];
+ const triggers=[];triggers.seq=1; // seq: 트리거 고유 번호(getUniqueId, 시간 트리거 이벤트의 triggerUid와 같은 값)
  // 데이터 확인·조건부 서식 만들기 흉내. 조건부 서식은 whenTextEqualTo 값을 getBooleanCondition으로 돌려줍니다.
  const builder=()=>{const st={},p=new Proxy({},{get:(_,k)=>k==='build'?()=>({getBooleanCondition:()=>st.eq===undefined?null:{getCriteriaType:()=>'TEXT_EQUAL_TO',getCriteriaValues:()=>[st.eq]}}):(...a)=>{if(k==='whenTextEqualTo')st.eq=a[0];return p;}});return p;};
  let active=null;
@@ -177,10 +177,12 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   LockService:{getDocumentLock:lockObj,getScriptLock:lockObj},
   Utilities:{formatDate,sleep(ms){log.sleeps.push(ms);clock.t+=ms;},getUuid:()=>'00000000-0000-4000-8000-'+String(Math.floor(Math.random()*1e12)).padStart(12,'0')},
   ScriptApp:{getProjectTriggers:()=>[...triggers],deleteTrigger(t){triggers.splice(triggers.indexOf(t),1);},
-   newTrigger(fn){const t={fn,kind:'',every:0,getHandlerFunction:()=>fn};const c={timeBased:()=>c,everyMinutes(n){t.kind='minutes';t.every=n;return c;},everyHours(n){t.kind='hours';t.every=n;return c;},everyDays(n){t.kind='days';t.every=n;return c;},atHour(h){t.hour=h;return c;},nearMinute(m){t.minute=m;return c;},create(){triggers.push(t);return t;}};return c;},
+   newTrigger(fn){const t={fn,kind:'',every:0,uid:'7'+String(triggers.seq++).padStart(18,'0'),getHandlerFunction:()=>fn,getUniqueId:()=>t.uid};const c={timeBased:()=>c,everyMinutes(n){t.kind='minutes';t.every=n;return c;},everyHours(n){t.kind='hours';t.every=n;return c;},everyDays(n){t.kind='days';t.every=n;return c;},atHour(h){t.hour=h;return c;},nearMinute(m){t.minute=m;return c;},create(){triggers.push(t);return t;}};return c;},
    getService:()=>({getUrl:()=>'https://script.google.com/macros/s/fake/exec'})},
   Session:{getActiveUser:()=>({getEmail:()=>'tester@example.com'}),getEffectiveUser:()=>({getEmail:()=>'tester@example.com'})}, // 편집기에서 소유자가 실행한 것처럼
-  MailApp:{sendEmail(m){log.mails.push(m);}}
+  MailApp:{sendEmail(m){log.mails.push(m);}},
+  // doPost 응답(JSON 글자). 시험은 getContent()로 읽습니다.
+  ContentService:{createTextOutput(text){const o={mime:'',setMimeType(m){o.mime=m;return o;},getContent:()=>String(text)};return o;},MimeType:{JSON:'application/json'}}
  };
  if(sheetsApi)ctx.Sheets=SheetsApi;
  if(cache)ctx.CacheService={getScriptCache:()=>scriptCache};

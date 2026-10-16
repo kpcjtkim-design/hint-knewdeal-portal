@@ -58,7 +58,7 @@ function setup({files=[GS],cache=true,now='2026-10-14T10:00:00+09:00',extra=[]}=
  const old=files.includes(GS)?gas.run(OLD_BUNDLE):null;
  return {gas,m,d,days,roster,ledger,info,boards,old};
 }
-const bundle=(env,cls)=>{env.gas.resetLog();return plain(env.gas.call('b2Bundle',cls));};
+const bundle=(env,cls)=>{env.gas.resetLog();return plain(env.gas.call('b2Bundle_',cls));};
 const sheetReads=env=>env.gas.log.reads.filter(r=>r.book===MASTER);
 const rev=env=>+env.gas.scriptProps.getProperty('B2_REV');
 const head=env=>{const e=env.gas.cacheStore.get('b2b:head');return e?JSON.parse(e.v):null;};
@@ -78,7 +78,7 @@ function invalidates(env,label,act,check){
 
 test('a miss reads the four tabs once and stores every class; later calls for any class or all read nothing and equal the uncached bundle',()=>{
  const env=setup(),{gas,old}=env,want=Object.fromEntries(['all',...ALL].map(c=>[c,JSON.stringify(old(c))]));
- gas.resetLog();const first=gas.call('b2Bundle','3');
+ gas.resetLog();const first=gas.call('b2Bundle_','3');
  assert.equal(JSON.stringify(first),want['3']);
  assert.deepEqual([...new Set(sheetReads(env).map(r=>r.sheet))].sort(),['교육일자','명부','반정보','출결원장']);
  assert.equal(sheetReads(env).filter(r=>r.sheet==='출결원장'&&r.nc===20).length,1,'the ledger is read once for all classes');
@@ -87,7 +87,7 @@ test('a miss reads the four tabs once and stores every class; later calls for an
  assert.equal(h.stamp,stampOf(env,5));
  for(const p of ['base','c1','c2','c3','c5','c17','cx'])assert.ok(h.parts[p]>=1,p);
  for(const c of ['3','5','7','all','1','17','2']){
-  gas.resetLog();const b=gas.call('b2Bundle',c);
+  gas.resetLog();const b=gas.call('b2Bundle_',c);
   assert.equal(gas.log.reads.length,0,c+': a hit touches no sheet');assert.equal(JSON.stringify(b),want[c],c+': same as before the cache');
  }
  assert.deepEqual(gas.log.cache.map(x=>x.op),['get','getAll'],'a hit is one head read and one chunk read');
@@ -125,12 +125,12 @@ test('rev, today and the sync state are read fresh on every hit',()=>{
 test('b2Save, b2Release and a sync that writes bump B2_REV, and the next call reads the sheet again',()=>{
  const env=setup(),{gas}=env;
  invalidates(env,'b2Save',()=>{
-  const res=gas.call('b2Save',{cls:'3',name:'가상3가',date:'2026-10-13',type:'결석',reason:'개인',ev:'',before:''});
+  const res=gas.call('b2Save_',{cls:'3',name:'가상3가',date:'2026-10-13',type:'결석',reason:'개인',ev:'',before:''});
   assert.equal(res.ok,true);
  },b=>assert.deepEqual(rowOf(b,'가상3가','2026-10-13').map(r=>[r[3],r[8],r[14]]),[['결석','개인','베타 수정']]));
  assert.deepEqual(gas.log.outsideLock,[]);
  invalidates(env,'b2Release (no source, so the sync is skipped)',()=>{
-  assert.equal(gas.call('b2Release',{cls:'3',name:'가상3나',date:'2026-10-07'}).released,1);
+  assert.equal(gas.call('b2Release_',{cls:'3',name:'가상3나',date:'2026-10-07'}).released,1);
  },b=>assert.equal(rowOf(b,'가상3나','2026-10-07')[0][14],'1기 동기화'));
  // 한 반 가져오기: 운영총괄 5반 탭(가상)에서 가상5가 10/13 결석이 새로 들어옵니다.
  const tab=gas.run("B2.SOURCE_TABS['5']"),src=gas.book(SOURCE,'1기 운영총괄').add(tab,60,30);
@@ -140,7 +140,7 @@ test('b2Save, b2Release and a sync that writes bump B2_REV, and the next call re
  src.fill(50,13,[['사유','','','',...DAYS.map(md)]]).fill(51,13,[['*','','','',...DAYS.map(x=>({'2026-10-13':'결석1- 가상5가_병원','2026-10-12':'조퇴1- 가상5나_병원 16:00'})[x]||'')]]);
  gas.scriptProps.setProperty('B2_SOURCE_ID',SOURCE);
  invalidates(env,'b2SyncNow',()=>{
-  const res=plain(gas.call('b2SyncNow',{cls:'5'}));assert.deepEqual(res.processed,['5']);assert.equal(res.writes.appended,1);
+  const res=plain(gas.call('b2SyncNow_',{cls:'5'}));assert.deepEqual(res.processed,['5']);assert.equal(res.writes.appended,1);
  },b=>assert.deepEqual(rowOf(b,'가상5가','2026-10-13').map(r=>[r[3],r[8],r[14]]),[['결석','병원','1기 동기화']]));
  assert.deepEqual(gas.log.outsideLock,[]);
 });
@@ -220,15 +220,15 @@ test('a bundle bigger than one cache value is split into pieces under 100 KB and
  bundle(env,'9');
  const h=head(env);assert.ok(h.parts.c9>=5,'class 9 is split: '+h.parts.c9);assert.equal(h.parts.c3,1);
  for(const [k,e] of gas.cacheStore)assert.ok(Buffer.byteLength(e.v,'utf8')<=100*1024,k);
- gas.resetLog();assert.equal(JSON.stringify(gas.call('b2Bundle','9')),want);assert.equal(sheetReads(env).length,0);
- gas.resetLog();assert.equal(JSON.stringify(gas.call('b2Bundle','all')),wantAll);assert.equal(sheetReads(env).length,0);
+ gas.resetLog();assert.equal(JSON.stringify(gas.call('b2Bundle_','9')),want);assert.equal(sheetReads(env).length,0);
+ gas.resetLog();assert.equal(JSON.stringify(gas.call('b2Bundle_','all')),wantAll);assert.equal(sheetReads(env).length,0);
  assert.ok(gas.log.cache.filter(x=>x.op==='getAll')[0].n>h.parts.c9);
  // 두 글자로 된 문자(이모지)는 조각 경계에서 갈라지지 않습니다.
  assert.deepEqual(plain(gas.call('b2Chunks_','ab😀cd',3)),['ab','😀c','d']);
  assert.deepEqual(plain(gas.call('b2Chunks_','abcdef',3)),['abc','def']);
  // 너무 크면(조각 수 상한) 넣지 않고 매번 시트를 읽습니다.
  const big=setup({extra});big.gas.run('B2_CACHE.maxChunks = 3');
- assert.equal(JSON.stringify(big.gas.call('b2Bundle','9')),want);assert.equal(head(big),null);
+ assert.equal(JSON.stringify(big.gas.call('b2Bundle_','9')),want);assert.equal(head(big),null);
  bundle(big,'9');assert.ok(sheetReads(big).length>0);
 });
 
@@ -269,7 +269,7 @@ test('concurrent misses: a caller that waited for the fill lock uses what the ho
  // 잠금을 기다리는 동안 다른 실행이 시트를 읽어 캐시를 채우고 잠금을 놓은 것처럼
  const other='(function () { var c = b2Cache_(); b2CacheWrite_(c, b2BundleStamp_(+b2Props_().getProperty("B2_REV") || 0), b2BundleParts_(), b2CacheHead_(c)); })()';
  LS.getScriptLock=()=>({tryLock(){gas.run(other);gas.resetLog();return true;},releaseLock(){}});
- let b=plain(gas.call('b2Bundle','3'));
+ let b=plain(gas.call('b2Bundle_','3'));
  assert.equal(sheetReads(env).length,0,'the waiting call reads no sheet');assert.deepEqual(b,plain(env.old('3')));
  gas.cacheStore.clear();LS.getScriptLock=()=>({tryLock:()=>false,releaseLock(){}});
  b=bundle(env,'3');assert.ok(sheetReads(env).length>0);assert.deepEqual(b,plain(env.old('3')));assert.equal(head(env),null,'no cache write without the lock');
@@ -288,7 +288,7 @@ test('b2Rev, b2Status and a cached b2Bundle read the script properties in one ca
  const P=gas.scriptProps,get=P.getProperty,all=P.getProperties;let one=0,many=0;
  P.getProperty=function(k){one++;return get.call(this,k);};P.getProperties=function(){many++;return all.call(this);};
  gas.scriptProps.setProperty('B2_SYNC_LAST',JSON.stringify({at:7}));
- const r=plain(gas.call('b2Rev'));assert.deepEqual([one,many],[0,1]);assert.deepEqual([r.rev,r.sync.last],[5,{at:7}]);
+ const r=plain(gas.call('b2Rev_'));assert.deepEqual([one,many],[0,1]);assert.deepEqual([r.rev,r.sync.last],[5,{at:7}]);
  one=many=0;const b=bundle(env,'3');assert.deepEqual([one,many],[0,1],'a cache hit');assert.equal(b.sync.last.at,7);
- one=many=0;gas.call('b2Status');assert.deepEqual([one,many],[1,1],'b2Status also reads B2_SOURCE_ID');
+ one=many=0;gas.call('b2Status_');assert.deepEqual([one,many],[1,1],'b2Status also reads B2_SOURCE_ID');
 });

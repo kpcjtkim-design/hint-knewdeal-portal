@@ -17,7 +17,7 @@ function doPost(e) {
       portalClasses: portalClasses, portalData: portalData, portalSave: portalSave,
       portalCheck: portalCheck, portalClose: portalClose, portalAddRow: portalAddRow,
       portalUpdateVoc: portalUpdateVoc, portalSaveOfficer: portalSaveOfficer, portalSetStatus: portalSetStatus,
-      portalRoster: portalRoster
+      portalRoster: portalRoster_ // 끝이 '_'인 함수는 google.script.run으로 부를 수 없음(생년월일·성별)
     }, typeof B2_ACTIONS === 'object' ? B2_ACTIONS : {}); // beta2.gs가 있으면 2기 베타 기능도 받습니다.
     const fn = A[body.action];
     if (!fn) return out({ ok: false, error: 'unknown action' });
@@ -32,7 +32,8 @@ function doPost(e) {
 }
 
 // 출결 업로드 파일용: 한 반의 명부(이름·상태·생년월일·성별). Vercel이 관리자 요청만 넘깁니다.
-function portalRoster(cls) {
+// 끝이 '_'라 doPost(API 키 확인)로만 부릅니다. 예전 이름(portalRoster)은 담임 포털 화면에서 google.script.run으로 PIN 없이 불렸습니다(2026-10-15).
+function portalRoster_(cls) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('명부');
   if (!sh) throw new Error('명부 탭이 없습니다.');
   const v = sh.getDataRange().getValues(), h = v[0].map(String);
@@ -44,8 +45,18 @@ function portalRoster(cls) {
 }
 
 // 편집기에서 한 번 실행하면 API_KEY를 새로 만들고 실행 로그에 보여 줍니다. Vercel 환경변수 HINT_SHEET_API_KEY에 넣으세요.
+// 편집기에서만 돕니다(웹 앱 방문자가 키를 바꿔 Vercel 연결을 끊지 못하게).
 function setApiKey() {
+  editorOnly_();
   const k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   PropertiesService.getScriptProperties().setProperty('API_KEY', k);
   console.log('API_KEY = ' + k);
+}
+
+// 편집기·시트 메뉴·패널에서만 부르는 함수의 첫 줄(beta2.gs b2EditorOnly_와 같은 판단).
+// 같은 프로젝트의 웹 앱(doGet 담임 포털·데이터 API, 둘 다 '나로 실행')이 연 화면에서는 끝이 '_'가 아닌 모든 함수를 누구나 google.script.run으로 부를 수 있습니다.
+// 웹 앱은 소유자 계정으로 실행되고 방문자 이메일은 빈 칸이거나 다른 계정이라, 부른 사람과 실행 계정이 같을 때만 진행합니다. 이미 쓰는 이메일 권한이라 새 승인은 없습니다.
+function editorOnly_() {
+  let who = ''; try { who = Session.getActiveUser().getEmail(); } catch (e) { }
+  if (!who || who !== Session.getEffectiveUser().getEmail()) throw new Error('편집기·시트 메뉴에서만 쓸 수 있습니다(웹 앱으로는 부를 수 없음).');
 }
