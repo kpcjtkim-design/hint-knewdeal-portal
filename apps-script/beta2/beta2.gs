@@ -842,7 +842,10 @@ function b2SlimPlan_(strict) {
   var rows = b2SheetRows_(led.getRange(2, 1, n, B2.COL.input).getValues(), ser), cur = led.getRange(2, B2_SLIM_Q, n, 1).getValues();
   var q1 = led.getRange(1, B2_SLIM_Q).getFormula(), days = b2SlimDays_(ser), info = b2Info_();
   if (strict && !/ARRAYFORMULA/i.test(q1)) throw new Error('출결원장 Q1에 배열 수식이 없습니다(이미 값이거나 다른 수식). 바꾸지 않았습니다.');
-  var plan = { led: led, q: b2QValues_(rows, days.col, b2SlimRoster_(ser)), last: 0, backups: [], boards: [], formulas: [], notes: [], diff: { q: 0, cd: 0, examples: [] } };
+  var plan = { led: led, q: b2QValues_(rows, days.col, b2SlimRoster_(ser)), last: 0, backups: [], boards: [], formulas: [], notes: [], blocked: [], diff: { q: 0, cd: 0, examples: [] } };
+  // 입력 거부 규칙(데이터 확인 '입력 거부')이 걸린 칸은 Sheets가 규칙에 맞지 않는 값·수식 결과를 받지 않습니다(2026-10-16 대시보드 F27 '완료, 미완료').
+  // 값으로 바꿀 칸(Q·C/D)에 있으면 아무것도 쓰기 전에 멈추고(blocked), 대시보드 수식 칸이면 INDIRECT를 그대로 둡니다(guarded).
+  var rejects = function (rg) { return rg.getDataValidations().map(function (r) { return r.map(function (v) { return !!v && !v.getAllowInvalid(); }); }); };
   var same = function (a, b) { return typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 1e-9 : b2SText_(a) === b2SText_(b); };
   var diff = function (kind, where, sheet, mine) {
     if (same(sheet, mine)) return;
@@ -851,6 +854,8 @@ function b2SlimPlan_(strict) {
   };
   plan.q.forEach(function (v, i) { if (rows[i][0] !== '') plan.last = i + 1; diff('q', 'Q' + (i + 2), cur[i][0], v); });
   if (q1) plan.backups.push([B2.SHEETS.ledger, 'Q1', q1, 'Q2:Q']);
+  // Q열 전체(바꾼 뒤 동기화·저장도 아래 행까지 씀)
+  rejects(led.getRange(1, B2_SLIM_Q, led.getMaxRows(), 1)).forEach(function (r, i) { if (r[0]) plan.blocked.push(B2.SHEETS.ledger + '!Q' + (i + 1)); });
   Object.keys(B2.SOURCE_TABS).forEach(function (cls) {
     var sh = b2SlimBoard_(cls, info), cd = sh && b2SlimBoardValues_(sh, rows, days, ser), found = 0;
     if (!cd) { plan.notes.push(cls + '반 출결판 탭 없음'); return; }
@@ -864,13 +869,16 @@ function b2SlimPlan_(strict) {
     // 수식이 없어도 비교는 합니다(바꾼 뒤 b2SlimCheck로 값이 맞는지 볼 수 있게).
     cd.values.forEach(function (r, i) { diff('cd', sh.getName() + '!C' + (17 + i), cd.cur[i][0], r[0]); diff('cd', sh.getName() + '!D' + (17 + i), cd.cur[i][1], r[1]); });
     if (cd.a2 !== days.main) plan.notes.push(cls + '반 A2가 교육일자 D5와 다름(' + (typeof cd.a2 === 'number' ? 'C는 수식처럼 A2 기준' : 'A2가 날짜가 아니라 C는 D5 기준') + ')');
-    if (found) plan.boards.push({ cls: cls, sh: sh, values: cd.values }); else plan.notes.push(cls + '반 C17:D48에 수식 없음(그대로 둠)');
+    if (found) {
+      plan.boards.push({ cls: cls, sh: sh, values: cd.values });
+      rejects(sh.getRange(17, 3, 32, 2)).forEach(function (r, i) { r.forEach(function (x, j) { if (x) plan.blocked.push(sh.getName() + '!' + (j ? 'D' : 'C') + (17 + i)); }); });
+    } else plan.notes.push(cls + '반 C17:D48에 수식 없음(그대로 둠)');
   });
-  var cache = {}, left = [], hasSheet = function (name) { return !!ss.getSheetByName(name); };
+  var cache = {}, left = [], guarded = [], hasSheet = function (name) { return !!ss.getSheetByName(name); };
   B2_SLIM_INDIRECT.forEach(function (t) {
     var sh = ss.getSheetByName(t[0]);
     if (!sh) { plan.notes.push(t[0] + ' 탭 없음'); return; }
-    var rg = sh.getRange(t[1]), r0 = rg.getRow(), c0 = rg.getColumn();
+    var rg = sh.getRange(t[1]), r0 = rg.getRow(), c0 = rg.getColumn(), rej = rejects(rg);
     var resolve = function (ref) {
       var p = b2RefParts_(ref); if (!p) return null;
       var name = p.sheet || t[0], key = name + '!' + p.a1;
@@ -880,13 +888,21 @@ function b2SlimPlan_(strict) {
     rg.getFormulas().forEach(function (row, i) {
       row.forEach(function (x, j) {
         if (!/INDIRECT/i.test(x)) return;
-        var res = b2DirectRefs_(x, resolve, hasSheet), a1 = b2ColName_(c0 + j) + (r0 + i);
+        var a1 = b2ColName_(c0 + j) + (r0 + i);
+        if (rej[i][j]) { guarded.push(t[0] + '!' + a1); return; } // 같은 결과라도 다시 넣으면 거부될 수 있어 그대로 둠(백업에도 넣지 않음)
+        var res = b2DirectRefs_(x, resolve, hasSheet);
         if (res.left) left.push(t[0] + '!' + a1);
         if (res.done) { plan.backups.push([t[0], a1, x, '']); plan.formulas.push({ sh: sh, row: r0 + i, col: c0 + j, formula: res.formula }); }
       });
     });
   });
   if (left.length) plan.notes.push('INDIRECT를 그대로 둔 칸 ' + left.length + '개: ' + left.slice(0, 5).join(', '));
+  if (guarded.length) plan.notes.push('입력 거부 규칙이 있어 INDIRECT를 그대로 둔 칸 ' + guarded.length + '개: ' + guarded.slice(0, 5).join(', '));
+  if (plan.blocked.length) {
+    var where = plan.blocked.length + '개: ' + plan.blocked.slice(0, 5).join(', ');
+    plan.notes.push('입력 거부 규칙이 있어 값으로 바꿀 수 없는 칸 ' + where);
+    if (strict) throw new Error("입력 거부 규칙이 있는 칸이 있어 바꾸지 않았습니다(" + where + "). 그 칸의 데이터 확인을 '경고 표시'로 바꾸거나 지운 뒤 다시 실행해 주세요.");
+  }
   return plan;
 }
 function b2ColName_(n) { var s = ''; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; } return s; }
@@ -913,28 +929,51 @@ function b2EditorOnly_() {
 // 바꾸기 전 확인(편집기에서, 쓰지 않음): 지금 수식 결과와 Apps Script 계산이 다른 칸 수·예시와 바꿀 수식 수를 로그에 남깁니다.
 function b2SlimCheck() { b2EditorOnly_(); var s = b2SlimSummary_(b2SlimPlan_(false)); console.log('b2SlimCheck: ' + JSON.stringify(s)); return s; }
 // 편집기에서 한 번 실행: 바꿀 수식을 숨긴 '수식백업' 탭에 남기고 값·직접 참조로 바꾼 뒤 B2_SLIM=1. 되돌리기 전에는 다시 실행되지 않습니다.
+// 전부 바꾸거나 하나도 안 바꿉니다: 백업을 먼저 저장하고(flush) 대시보드 직접 참조 → 출결원장 Q·반 탭 C/D 값 순서로 씁니다.
+// 중간에 쓰기가 실패하면 바꾼 칸만 백업 수식으로 되돌리고 백업 탭을 지운 뒤 오류를 냅니다. 값만 바뀌고 B2_SLIM이 꺼진 채
+// (코드가 다시 계산하지 않는) 반쯤 바뀐 상태를 남기지 않기 위해서입니다(2026-10-16 대시보드 F27 입력 거부 규칙에 막혀 멈춘 일).
 function b2SlimSheet() {
   b2EditorOnly_();
   var lock = LockService.getDocumentLock(); lock.waitLock(30000);
   try {
     var ss = b2Ss_(), props = b2Props_(), back = ss.getSheetByName(B2_SLIM_BACKUP);
-    if (props.getProperty('B2_SLIM') === '1' || (back && back.getLastRow() > 1)) throw new Error('이미 시트 다듬기를 했습니다. 다시 하려면 먼저 b2RestoreFormulas로 되돌려 주세요.');
+    var already = '이미 시트 다듬기를 했습니다. 다시 하려면 먼저 b2RestoreFormulas로 되돌려 주세요.';
+    if (props.getProperty('B2_SLIM') === '1') throw new Error(already);
+    // 남은 백업 탭: 백업한 수식이 모두 제자리에 있으면(지난 실행이 멈춘 뒤 되돌림) 새 백업으로 덮어쓰고, 바뀐 칸이 있으면 막습니다.
+    if (back && back.getLastRow() > 1 && b2RestoreDiff_(ss, b2BackupList_(back)).todo.length) throw new Error(already);
     var plan = b2SlimPlan_(true), led = plan.led;
     // 1) 수식 백업부터 씁니다(중간에 끊겨도 b2RestoreFormulas로 되돌릴 수 있게). 앞에 '를 붙여 글자로 둡니다(그러지 않으면 수식으로 들어감).
     back = back || ss.insertSheet(B2_SLIM_BACKUP);
+    if (back.getLastRow() > 1) back.getRange(2, 1, back.getLastRow() - 1, 4).clearContent();
     if (back.getMaxRows() < plan.backups.length + 1) back.insertRowsAfter(back.getMaxRows(), plan.backups.length + 1 - back.getMaxRows());
     back.getRange(1, 1, plan.backups.length + 1, 4).setValues([['탭', '칸', '수식', '되돌릴 때 비울 칸']].concat(plan.backups.map(function (b) { return ["'" + b[0], b[1], "'" + b[2], b[3]]; })));
     back.hideSheet();
-    // 2) 출결원장: 빈 행이 500보다 적으면 1000행 늘리고 S열(동기화 지문) 서식을 한 번에 글자로. Q1은 머리글만 남기고 Q값을 씁니다.
-    var extended = led.getMaxRows() - 1 - plan.last < 500 ? 1000 : 0;
-    if (extended) led.insertRowsAfter(led.getMaxRows(), extended);
-    if (led.getMaxColumns() >= B2.COL.sig) led.getRange(2, B2.COL.sig, led.getMaxRows() - 1, 1).setNumberFormat('@');
-    led.getRange(1, B2_SLIM_Q).setValue('입력 확인');
-    if (plan.last) led.getRange(2, B2_SLIM_Q, plan.last, 1).setValues(plan.q.slice(0, plan.last).map(function (v) { return [v]; }));
-    // 3) 반 탭 C17:D48 값, 4) 대시보드·누적관리 직접 참조(바꾼 칸만, 같은 줄에 붙은 칸은 한 번에)
-    plan.boards.forEach(function (b) { b.sh.getRange(17, 3, 32, 2).setValues(b.values); });
-    b2SlimRuns_(plan.formulas).forEach(function (run) { run.sh.getRange(run.row, run.col, 1, run.values.length).setFormulas([run.values]); });
     SpreadsheetApp.flush();
+    var extended = 0;
+    try {
+      // 2) 대시보드·누적관리 직접 참조(바꾼 칸만, 같은 줄에 붙은 칸은 한 번에). 입력 거부 규칙 칸은 계획에서 빠져 INDIRECT 그대로입니다.
+      //    여기서 멈추면 Q·C/D는 아직 수식이라 시트 값은 그대로 맞습니다.
+      b2SlimRuns_(plan.formulas).forEach(function (run) { run.sh.getRange(run.row, run.col, 1, run.values.length).setFormulas([run.values]); });
+      SpreadsheetApp.flush();
+      // 3) 출결원장: 빈 행이 500보다 적으면 1000행 늘리고 S열(동기화 지문) 서식을 한 번에 글자로. Q1은 머리글만 남기고 Q값을 씁니다.
+      extended = led.getMaxRows() - 1 - plan.last < 500 ? 1000 : 0;
+      if (extended) led.insertRowsAfter(led.getMaxRows(), extended);
+      if (led.getMaxColumns() >= B2.COL.sig) led.getRange(2, B2.COL.sig, led.getMaxRows() - 1, 1).setNumberFormat('@');
+      led.getRange(1, B2_SLIM_Q).setValue('입력 확인');
+      if (plan.last) led.getRange(2, B2_SLIM_Q, plan.last, 1).setValues(plan.q.slice(0, plan.last).map(function (v) { return [v]; }));
+      // 4) 반 탭 C17:D48 값
+      plan.boards.forEach(function (b) { b.sh.getRange(17, 3, 32, 2).setValues(b.values); });
+      SpreadsheetApp.flush();
+    } catch (e) {
+      var undone = null, removed = false;
+      try {
+        undone = b2RestoreList_(ss, plan.backups.map(function (b) { return { tab: b[0], a1: b[1], f: b[2], clear: b[3] }; }));
+        b2Bump_(); ss.deleteSheet(back); removed = true;
+      } catch (e2) { }
+      throw new Error('시트 다듬기를 끝내지 못했습니다(' + b2Msg_(e) + '). ' + (removed ? '바꾼 칸 ' + undone.restored + '개를 수식으로 되돌리고 백업 탭을 지웠습니다. 시트는 바꾸기 전과 같습니다.'
+        : undone ? "바꾼 칸은 되돌렸지만 '" + B2_SLIM_BACKUP + "' 탭을 지우지 못했습니다. b2RestoreFormulas를 한 번 실행하면 지워집니다."
+        : "되돌리지 못했습니다. 편집기에서 b2RestoreFormulas를 실행해 주세요('" + B2_SLIM_BACKUP + "' 탭에 수식이 남아 있습니다)."));
+    }
     // 값으로 바꾼 반만 적어 둡니다. 동기화·저장·출결판 그리기는 이 반의 C17:D48만 씁니다(수식이 없던 탭은 그대로).
     props.setProperty('B2_SLIM_TABS', JSON.stringify(plan.boards.map(function (b) { return b.cls; })));
     props.setProperty('B2_SLIM', '1'); props.deleteProperty('B2_SLIM_DIRTY');
@@ -944,24 +983,59 @@ function b2SlimSheet() {
     return s;
   } finally { lock.releaseLock(); }
 }
-// 편집기에서 실행: '수식백업' 탭의 수식을 그대로 되돌립니다. 배열 수식이 펼쳐질 칸의 값을 먼저 지우고, 다 되면 백업 탭을 지웁니다.
+// '수식백업' 탭 → [{tab, a1, f, clear}]. 앞의 '는 글자로 두려고 붙인 것이라 뗍니다.
+function b2BackupList_(back) {
+  var txt = function (v) { return String(v == null ? '' : v).replace(/^'/, ''); };
+  return back.getRange(2, 1, back.getLastRow() - 1, 4).getValues().map(function (r) { return { tab: txt(r[0]), a1: txt(r[1]), f: txt(r[2]), clear: txt(r[3]) }; })
+    .filter(function (r) { return r.tab && r.a1 && r.f.charAt(0) === '='; });
+}
+function b2A1Cell_(a1) {
+  var m = /^([A-Z]{1,3})(\d+)$/i.exec(String(a1)); if (!m) return null;
+  var col = 0; m[1].toUpperCase().split('').forEach(function (ch) { col = col * 26 + ch.charCodeAt(0) - 64; });
+  return { row: +m[2], col: col };
+}
+// 백업 목록 중 지금 수식이 백업과 다른 칸(되돌릴 칸). 탭마다 백업 칸을 감싸는 범위를 한 번에 읽습니다.
+function b2RestoreDiff_(ss, list) {
+  var byTab = {}, todo = [], same = 0, missing = [];
+  list.forEach(function (r) { (byTab[r.tab] = byTab[r.tab] || []).push(r); });
+  Object.keys(byTab).forEach(function (tab) {
+    var sh = ss.getSheetByName(tab), items = byTab[tab];
+    if (!sh) { items.forEach(function (r) { missing.push(tab + '!' + r.a1); }); return; }
+    var cells = items.map(function (r) { return b2A1Cell_(r.a1); }), ok = cells.filter(Boolean), cur = null, r0 = 0, c0 = 0;
+    if (ok.length) {
+      var rows = ok.map(function (c) { return c.row; }), cols = ok.map(function (c) { return c.col; });
+      r0 = Math.min.apply(null, rows); c0 = Math.min.apply(null, cols);
+      cur = sh.getRange(r0, c0, Math.max.apply(null, rows) - r0 + 1, Math.max.apply(null, cols) - c0 + 1).getFormulas();
+    }
+    items.forEach(function (r, i) { var c = cells[i]; if (c && cur[c.row - r0][c.col - c0] === r.f) same++; else todo.push({ sh: sh, r: r }); });
+  });
+  return { todo: todo, same: same, missing: missing };
+}
+// 되돌릴 칸만 씁니다: 배열 수식이 펼쳐질 칸의 값을 먼저 지우고 수식을 넣습니다. 지금 수식이 백업과 같은 칸은 건드리지 않습니다
+// (바꾸지 않은 칸에 같은 수식을 다시 넣다가 입력 거부 규칙에 막히지 않게. 2026-10-16 대시보드 F27).
+function b2RestoreList_(ss, list) {
+  var d = b2RestoreDiff_(ss, list);
+  d.todo.forEach(function (x) { if (x.r.clear) x.sh.getRange(x.r.clear).clearContent(); });
+  d.todo.forEach(function (x) { x.sh.getRange(x.r.a1).setFormula(x.r.f); });
+  SpreadsheetApp.flush();
+  return { restored: d.todo.length, unchanged: d.same, missing: d.missing };
+}
+// 편집기에서 실행: '수식백업' 탭의 수식을 되돌립니다(바뀐 칸만). 배열 수식이 펼쳐질 칸의 값을 먼저 지우고, 다 되면 백업 탭을 지웁니다.
+// 지난 b2SlimSheet가 멈춘 뒤 남은 백업 탭도 이것으로 지웁니다(바뀐 칸이 없으면 restored 0).
 function b2RestoreFormulas() {
   b2EditorOnly_();
   var lock = LockService.getDocumentLock(); lock.waitLock(30000);
   try {
-    var ss = b2Ss_(), props = b2Props_(), back = ss.getSheetByName(B2_SLIM_BACKUP), missing = [];
+    var ss = b2Ss_(), props = b2Props_(), back = ss.getSheetByName(B2_SLIM_BACKUP);
     if (!back || back.getLastRow() < 2) throw new Error("되돌릴 수식이 없습니다('" + B2_SLIM_BACKUP + "' 탭이 없거나 비었습니다).");
     // 먼저 끕니다: 되살린 배열 수식이 펼쳐질 칸에 Q값을 다시 쓰지 않게(중간에 끊기면 이 함수를 다시 실행하면 됨).
     props.deleteProperty('B2_SLIM'); props.deleteProperty('B2_SLIM_DIRTY'); props.deleteProperty('B2_SLIM_TABS');
-    var txt = function (v) { return String(v == null ? '' : v).replace(/^'/, ''); };
-    var list = back.getRange(2, 1, back.getLastRow() - 1, 4).getValues().map(function (r) { return { tab: txt(r[0]), a1: txt(r[1]), f: txt(r[2]), clear: txt(r[3]) }; })
-      .filter(function (r) { return r.tab && r.a1 && r.f.charAt(0) === '='; });
-    list.forEach(function (r) { r.sh = ss.getSheetByName(r.tab); if (!r.sh) missing.push(r.tab + '!' + r.a1); else if (r.clear) r.sh.getRange(r.clear).clearContent(); });
-    list.forEach(function (r) { if (r.sh) r.sh.getRange(r.a1).setFormula(r.f); });
-    SpreadsheetApp.flush();
+    var s;
+    try { s = b2RestoreList_(ss, b2BackupList_(back)); }
+    catch (e) { throw new Error('수식을 되돌리다 멈췄습니다(' + b2Msg_(e) + "). '" + B2_SLIM_BACKUP + "' 탭은 남겨 두었습니다. 원인을 고친 뒤 다시 실행해 주세요."); }
     b2Bump_(); // Q가 다시 수식 결과가 됨: 묶음 캐시·열린 화면이 다시 읽게
-    if (!missing.length) ss.deleteSheet(back);
-    var s = { restored: list.length - missing.length, missing: missing.slice(0, 10) };
+    if (!s.missing.length) ss.deleteSheet(back);
+    s.missing = s.missing.slice(0, 10);
     console.log('b2RestoreFormulas 완료: ' + JSON.stringify(s));
     return s;
   } finally { lock.releaseLock(); }

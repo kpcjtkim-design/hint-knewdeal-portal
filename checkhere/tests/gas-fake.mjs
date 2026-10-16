@@ -47,8 +47,22 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   // 수식: 칸마다 글자로 보관(계산은 하지 않음. 시험이 결과 값을 따로 채움)
   getFormulas(){this._read('formulas');return this._grid((r,c)=>this.sh.f.get(this.sh.key(r,c))||'');}
   getFormula(){return this.getFormulas()[0][0];}
+  // 데이터 확인: 시험이 sheet.validate()로 건 '입력 거부' 칸만 검사합니다(setDataValidation은 기록만 하고 검사하지 않음).
+  // 실제 Sheets처럼 범위 안 한 칸이라도 어기면 그 쓰기 전체가 들어가지 않습니다. 수식은 결과를 계산할 수 없어 formulaOk가 아니면 거부합니다.
+  _check(rows,formulas){
+   rows.forEach((row,i)=>row.forEach((v,j)=>{
+    const r=this.r+i,c=this.c+j,rule=this.sh.dv.get(this.sh.key(r,c));
+    if(!rule||rule.allowInvalid)return;
+    const isF=formulas?!!v:typeof v==='string'&&v[0]==='=';
+    if(isF?rule.formulaOk:(v===''||v==null||rule.list.includes(String(v))))return;
+    throw new Error(`Exception: ${colName(c)}${r} 셀에 입력하신 데이터는 이 셀에 설정된 데이터 확인 규칙을 위반합니다. 다음 값 중 하나를 입력하세요. ${rule.list.join(', ')}.`);
+   }));
+  }
+  getDataValidations(){this._read('validations');return this._grid((r,c)=>this.sh.dv.get(this.sh.key(r,c))||null);}
+  getDataValidation(){return this.getDataValidations()[0][0];}
   setFormulas(rows){
    if(!Array.isArray(rows)||rows.length!==this.nr||rows.some(r=>r.length!==this.nc))throw new Error('Exception: 수식 배열 크기가 범위와 다릅니다.');
+   this._check(rows,true);
    this._write('formulas');rows.forEach((row,i)=>row.forEach((f,j)=>{const k=this.sh.key(this.r+i,this.c+j);this.sh.v.delete(k);if(f)this.sh.f.set(k,f);else this.sh.f.delete(k);}));ev({op:'write',range:this});return this;
   }
   setFormula(f){if(this.nr!==1||this.nc!==1)throw new Error('시험은 한 칸 setFormula만 흉내 냅니다.');return this.setFormulas([[f]]);}
@@ -56,6 +70,7 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   setValues(rows){
    if(!Array.isArray(rows)||rows.length!==this.nr)throw new Error(`Exception: 데이터 행 수(${rows?.length})가 범위 행 수(${this.nr})와 다릅니다.`);
    rows.forEach((row,i)=>{if(row.length!==this.nc)throw new Error(`Exception: 데이터 열 수(${row.length})가 범위 열 수(${this.nc})와 다릅니다 (${i}행).`);});
+   this._check(rows,false);
    this._write('values');rows.forEach((row,i)=>row.forEach((v,j)=>this.sh.put(this.r+i,this.c+j,v)));ev({op:'write',range:this});return this;
   }
   setValue(v){return this.setValues([[v]]);}
@@ -65,7 +80,7 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   getRow(){return this.r;} getColumn(){return this.c;} getNumRows(){return this.nr;} getNumColumns(){return this.nc;} getSheet(){return this.sh;}
  }
  class Sheet{
-  constructor(book,name,rows=200,cols=26){Object.assign(this,{book,name,maxRows:rows,maxCols:cols,v:new Map(),bg:new Map(),fmt:new Map(),f:new Map(),id:++book.seq});}
+  constructor(book,name,rows=200,cols=26){Object.assign(this,{book,name,maxRows:rows,maxCols:cols,v:new Map(),bg:new Map(),fmt:new Map(),f:new Map(),dv:new Map(),id:++book.seq});}
   key(r,c){return r*100000+c;}
   get(r,c){const v=this.v.get(this.key(r,c));return v===undefined?'':v;}
   display(r,c){const v=this.get(r,c);return v instanceof Date?formatDate(v,tz,'yyyy-MM-dd'):String(v);}
@@ -98,7 +113,7 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   insertRowsAfter(after,n){this._shift(after,n);this.maxRows+=n;}
   insertColumnsAfter(after,n){this.maxCols+=n;}
   deleteRow(r){maybeFail(this.name,'write');log.writes.push({seq:++log.seq,book:this.book.id,sheet:this.name,r,c:1,nr:1,nc:this.maxCols,kind:'deleteRow'});if(this.book.master&&!lock.depth)log.outsideLock.push(this.name+' deleteRow '+r);this._shift(r,-1);this.maxRows--;}
-  _shift(at,n){for(const m of [this.v,this.bg,this.fmt,this.f]){const e=[...m];m.clear();for(const [k,v] of e){const r=Math.floor(k/100000),c=k%100000;if(n<0&&r===at)continue;m.set(this.key(r>at?r+n:r,c),v);}}}
+  _shift(at,n){for(const m of [this.v,this.bg,this.fmt,this.f,this.dv]){const e=[...m];m.clear();for(const [k,v] of e){const r=Math.floor(k/100000),c=k%100000;if(n<0&&r===at)continue;m.set(this.key(r>at?r+n:r,c),v);}}}
   appendRow(row){const at=this.getLastRow()+1;if(at>this.maxRows)this.insertRowsAfter(this.maxRows,at-this.maxRows);if(row.length>this.maxCols)this.maxCols=row.length;this.getRange(at,1,1,row.length).setValues([row]);return this;}
   getSheetId(){return this.id;} getName(){return this.name;} setFrozenRows(){} activate(){}
   hideSheet(){this.hidden=true;return this;} showSheet(){this.hidden=false;return this;} isSheetHidden(){return !!this.hidden;}
@@ -106,6 +121,8 @@ export function createGas({now='2026-10-14T10:00:00+09:00',tz='Asia/Seoul',sheet
   // 시험에서 칸을 바로 채우는 도우미(기록에 남지 않음)
   fill(r,c,rows){rows.forEach((row,i)=>row.forEach((v,j)=>this.put(r+i,c+j,v,true)));return this;}
   color(r,c,hex){this.bg.set(this.key(r,c),hex);return this;}
+  // 데이터 확인 규칙(목록). allowInvalid=false면 '입력 거부', formulaOk면 수식 결과가 규칙에 맞는 칸(시험 도우미, 기록에 남지 않음)
+  validate(r,c,{list=[],allowInvalid=false,formulaOk=false}={}){this.dv.set(this.key(r,c),{list,allowInvalid,formulaOk,getAllowInvalid:()=>allowInvalid,getCriteriaType:()=>'VALUE_IN_LIST',getCriteriaValues:()=>[list,true]});return this;}
   rows(r,c,nr,nc){const out=[];for(let i=0;i<nr;i++){const row=[];for(let j=0;j<nc;j++)row.push(this.get(r+i,c+j));out.push(row);}return out;}
  }
  class Book{

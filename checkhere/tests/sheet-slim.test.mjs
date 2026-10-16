@@ -226,7 +226,7 @@ test('b2RestoreFormulas puts every formula back exactly, clears the values where
  gas.call('b2SlimSheet');
  gas.call('b2Save_',{cls:'2',name:'가상2다',date:'2026-10-13',type:'지각',inT:'09:05',before:''}); // 값이 하나 더 생긴 뒤 되돌려도
  gas.resetLog();const res=plain(gas.call('b2RestoreFormulas'));
- assert.deepEqual(res,{restored:288,missing:[]});
+ assert.deepEqual(res,{restored:288,unchanged:0,missing:[]});
  assert.deepEqual(gas.log.outsideLock,[]);
  assert.deepEqual(snapshot(),before,'every formula in every tab is exactly as before');
  assert.equal(m.getSheetByName('수식백업'),null,'backup tab removed');assert.equal(gas.scriptProps.getProperty('B2_SLIM'),null);
@@ -235,6 +235,80 @@ test('b2RestoreFormulas puts every formula back exactly, clears the values where
  assert.equal(m.getSheetByName(DASH).get(43,8),'손으로 적은 값');
  assert.throws(()=>gas.call('b2RestoreFormulas'),/되돌릴 수식이 없습니다/);
  gas.call('b2SlimSheet');assert.equal(gas.scriptProps.getProperty('B2_SLIM'),'1','can migrate again after a restore');
+});
+
+/* ---------- 입력 거부 규칙·중간 실패 (2026-10-16 대시보드 F27 '완료, 미완료'에서 멈춘 일) ---------- */
+const formulaSnapshot=m=>m.getSheets().filter(s=>s.name!=='수식백업').map(s=>[s.name,[...s.f].sort((a,b)=>a[0]-b[0])]);
+const backupRows=m=>{const b=m.getSheetByName('수식백업');return b.rows(2,1,b.getLastRow()-1,4);};
+
+test('a dashboard cell with an input-rejecting rule keeps its INDIRECT: the check notes it, the migration skips and finishes, the restore leaves it alone',()=>{
+ const env=master(),{gas,m}=env,dash=m.getSheetByName(DASH);
+ dash.validate(27,6,{list:['완료','미완료']});
+ const f27=dash.getRange('F27').getFormula();
+ const check=plain(gas.call('b2SlimCheck'));
+ assert.deepEqual([check.formulas,check.backups,check.differ.q,check.differ.cd],[252,287,0,0],'one formula fewer to change and to back up');
+ assert.match(check.notes.join('\n'),/입력 거부 규칙이 있어 INDIRECT를 그대로 둔 칸 1개: 운영총괄\(1기\) 대시보드!F27/);
+ gas.resetLog();const res=plain(gas.call('b2SlimSheet'));
+ assert.equal(res.formulas,252);assert.equal(gas.scriptProps.getProperty('B2_SLIM'),'1');
+ assert.equal(dash.getRange('F27').getFormula(),f27,'F27 keeps its INDIRECT');
+ assert.ok(!gas.log.writes.some(w=>w.sheet===DASH&&w.r===27&&w.c<=6&&w.c+w.nc-1>=6),'nothing is written over F27');
+ assert.equal(dash.getRange('E27').getFormula(),`=IFERROR('1. 수도권_임베디드 AI(HW)'!G13,"")`,'its neighbours still change');
+ assert.equal(dash.getRange('G27').getFormula(),`=IFERROR('1. 수도권_임베디드 AI(HW)'!I13,"")`);
+ assert.ok(!backupRows(m).some(r=>r[0]===DASH&&r[1]==='F27'),'F27 is not in the backup');
+ gas.resetLog();assert.deepEqual(plain(gas.call('b2RestoreFormulas')),{restored:287,unchanged:0,missing:[]});
+ assert.equal(dash.getRange('F27').getFormula(),f27);assert.ok(!gas.log.writes.some(w=>w.sheet===DASH&&w.r===27&&w.c===6));
+});
+
+test('an input-rejecting rule in the ledger Q column or in a class tab C/D stops the migration before anything is written',()=>{
+ for(const put of [env=>env.ledger.validate(5,17,{list:['확인']}),env=>env.m.getSheetByName(env.tabs['3']).validate(20,4,{list:['0']})]){
+  const env=master(),{gas,m}=env;put(env);
+  assert.match(plain(gas.call('b2SlimCheck')).notes.join('\n'),/입력 거부 규칙이 있어 값으로 바꿀 수 없는 칸 1개: (출결원장!Q5|3\. 충청_임베디드 AI\(SW\)!D20)/);
+  gas.resetLog();
+  assert.throws(()=>gas.call('b2SlimSheet'),/입력 거부 규칙이 있는 칸이 있어 바꾸지 않았습니다/);
+  assert.deepEqual(gas.log.writes,[],'no write, not even the backup');
+  assert.equal(m.getSheetByName('수식백업'),null);assert.equal(gas.scriptProps.getProperty('B2_SLIM'),null);
+ }
+});
+
+test('a write that fails half-way (dashboard, ledger Q or a class tab) puts back exactly what was changed and removes the backup tab; a later run succeeds',()=>{
+ for(const [sheet,skip] of [[DASH,3],['출결원장',2],['9. 대경_제조지능화(2)',0]]){
+  const env=master(),{gas,m}=env,before=formulaSnapshot(m);
+  gas.failures.push({sheet,op:'write',message:'Service Spreadsheets failed while accessing document',times:1,skip});
+  gas.resetLog();
+  assert.throws(()=>gas.call('b2SlimSheet'),/시트 다듬기를 끝내지 못했습니다\(Service Spreadsheets failed while accessing document\)\. 바꾼 칸 \d+개를 수식으로 되돌리고 백업 탭을 지웠습니다/,sheet);
+  assert.deepEqual(formulaSnapshot(m),before,sheet+': every formula is as before');
+  assert.equal(m.getSheetByName('수식백업'),null,sheet);
+  assert.deepEqual([gas.scriptProps.getProperty('B2_SLIM'),gas.scriptProps.getProperty('B2_SLIM_TABS')],[null,null],sheet);
+  assert.deepEqual(gas.log.outsideLock,[],sheet);
+  gas.call('b2SlimSheet');assert.equal(gas.scriptProps.getProperty('B2_SLIM'),'1',sheet+': a later run succeeds');
+ }
+});
+
+test('if the automatic undo also fails, the backup tab stays and b2RestoreFormulas puts back only the changed cells',()=>{
+ const env=master(),{gas,m}=env,before=formulaSnapshot(m);
+ gas.failures.push({sheet:DASH,op:'write',message:'Service Spreadsheets failed while accessing document',times:2,skip:3});
+ assert.throws(()=>gas.call('b2SlimSheet'),/되돌리지 못했습니다\. 편집기에서 b2RestoreFormulas를 실행해 주세요/);
+ assert.ok(m.getSheetByName('수식백업'),'backup tab kept');assert.equal(gas.scriptProps.getProperty('B2_SLIM'),null);
+ assert.equal(m.getSheetByName(env.tabs['1']).getRange('C17').getFormula(),C17F,'Q and C/D were not reached (dashboards go first)');
+ assert.throws(()=>gas.call('b2SlimSheet'),/이미 시트 다듬기/,'changed cells still differ from the backup → blocked');
+ assert.deepEqual(plain(gas.call('b2RestoreFormulas')),{restored:18,unchanged:270,missing:[]},'rows 6-8 of the dashboard (6 cells each)');
+ assert.deepEqual(formulaSnapshot(m),before);assert.equal(m.getSheetByName('수식백업'),null);
+});
+
+test("10/16 leftover: a backup tab whose formulas are all still in place blocks nothing; restoring it writes no formula (a rejecting F27 included) and removes it",()=>{
+ const env=master(),{gas,m}=env,dash=m.getSheetByName(DASH);
+ gas.call('b2SlimSheet');const rows=backupRows(m);gas.call('b2RestoreFormulas');
+ const before=formulaSnapshot(m);
+ const leave=()=>m.add('수식백업',400,26).fill(1,1,[['탭','칸','수식','되돌릴 때 비울 칸'],...rows]).hideSheet(); // 예전 코드가 멈춘 뒤 되돌리고 남긴 탭
+ dash.validate(27,6,{list:['완료','미완료']}); // 같은 수식을 다시 넣으면 거부되는 칸
+ leave();gas.resetLog();
+ assert.deepEqual(plain(gas.call('b2RestoreFormulas')),{restored:0,unchanged:288,missing:[]});
+ assert.deepEqual(gas.log.writes.filter(w=>w.kind!=='deleteSheet'),[],'no formula rewritten');
+ assert.equal(m.getSheetByName('수식백업'),null);assert.deepEqual(formulaSnapshot(m),before);
+ leave();
+ const res=plain(gas.call('b2SlimSheet'));
+ assert.equal(gas.scriptProps.getProperty('B2_SLIM'),'1','the stale tab no longer blocks the migration');
+ assert.equal(res.backups,287);assert.equal(backupRows(m).length,287,'the old rows were replaced, not appended');
 });
 
 /* ---------- 바꾼 뒤에만 도는 계산(훅) ---------- */
