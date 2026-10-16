@@ -38,7 +38,8 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   const prepareApproval=(r,record,options={})=>prepareApprovalCore(r,record,{...options,identities:identityFor(r)});
   // 시간 삭제 요청은 cleanRequest가 확인한 deleteTimes만 지울 수 있습니다(연결 프로그램에 time-delete-v1이 없으면 assertChangeAllowed가 거절).
   // 1교시 삭제(퇴실 → 1교시 순서, 다시 읽어 두 칸 확인)는 time-delete-v2 연결 프로그램에서만 승인합니다. 퇴실이 남은 1교시만 삭제는 assertChangeAllowed가 거절(rules.mjs).
-  const judgeRequest=(r,record,c)=>{const deletions=cleanRequest(r).deleteTimes||[];if(deletions.includes('entry')&&!c.state().capabilities?.includes(TIME_DELETE_V2_CAPABILITY))throw Error(`수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요. 1교시 삭제는 ${TIME_DELETE_V2_CAPABILITY} 지원이 필요합니다(그 전에는 퇴실만 지웁니다).`);
+  // v2가 없으면 요청 전체를 보내지 않습니다(두 칸 요청의 퇴실도 지우지 않음, 승인 대기 그대로). /beta2는 중계 신호가 없으면 v2로 보고 두 칸 요청을 만들 수 있습니다(2026-10-16).
+  const judgeRequest=(r,record,c)=>{const deletions=cleanRequest(r).deleteTimes||[];if(deletions.includes('entry')&&!c.state().capabilities?.includes(TIME_DELETE_V2_CAPABILITY))throw Error(`수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요. 1교시 삭제는 ${TIME_DELETE_V2_CAPABILITY} 지원이 필요합니다. 그 전에는 이 요청을 반영할 수 없습니다. 업데이트 뒤 다시 승인하거나 반려해 주세요.`);
     const defaults=memoDefaultTimes(r.changes,record),judgement=assertChangeAllowed(record,{...r.changes,...defaults},{capabilities:c.state().capabilities,requested:true,deletions});if(Object.keys(defaults).length)judgement.warning='메모 저장에 필요한 빈 시간만 기본 설정으로 자동 입력합니다. 기존 시간은 유지합니다.';return judgement;};
   async function readIdentities(){for(const classId of new Set(rows.filter(r=>ACTIVE_STATUSES.includes(r.status)||isRetryableRequest(r)).map(r=>String(r.classId))))identityMaps.set(classId,await loadCheckHereIdentities(db,classId,rows.filter(r=>String(r.classId)===classId)));}
   const active=()=>host.isConnected&&!host.hidden&&host.style.display!=='none'&&!document.hidden;

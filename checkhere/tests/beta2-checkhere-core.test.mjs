@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sheetToCheckHere,liveForm,checkhereChangeKind,canDeleteTime,deleteLeaves,deletionGate,validTeacher,isAutoLedgerRequest,AUTO_TEXT,RELAY_STALE_MS,TIME_DELETE_V2_CAPABILITY,V2_NEEDED,UNMASK_ON_APPLY,relayPrivacy,privacyShort} from '../../beta2-checkhere-core.mjs';
+import {sheetToCheckHere,liveForm,checkhereChangeKind,canDeleteTime,deleteLeaves,deletionGate,validTeacher,isAutoLedgerRequest,AUTO_TEXT,RELAY_STALE_MS,TIME_DELETE_V2_CAPABILITY,V2_NEEDED,UNMASK_ON_APPLY,relayPrivacy,privacyShort,needsUnmaskOnApply,PRIVACY_NEEDS_RELAY} from '../../beta2-checkhere-core.mjs';
 import {buildLiveRequest,isLiveRequest,tagOf,isAutoLedgerRequest as sharedAuto,AUTO_TEXT as sharedText} from '../../checkhere-live-core.mjs';
 import {memoDefaultTimes} from '../approval-core.mjs';
 import {beta2RequestData} from '../../beta2-guard-core.mjs';
@@ -152,24 +152,35 @@ test('which saves are sent automatically',()=>{
  assert.equal(checkhereChangeKind(null,{type:'지각',inT:'09:20'}),'checkhere');
 });
 
-test('time deletion stays off until rules, relay capability and permissions are all in place',()=>{
- const now=Date.parse('2026-10-14T03:00:00Z'),relay={state:'running',at:now-60000,capabilities:['time-delete-v1']};
- assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay,now}),{enabled:true,reasons:[],v2:false});
- assert.match(deletionGate({relay,now}).reasons.join(),/규칙 게시/);
- assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,capabilities:[]},now}).reasons.join(),/time-delete-v1/);
- assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:now-RELAY_STALE_MS-1},now}).reasons.join(),/중계가 꺼져/);
- assert.equal(deletionGate({features:{timeDeleteRules:true},relay,now,denied:true}).enabled,false);
- assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,state:'stopped'},now}).reasons.join(),/중계가 꺼져/,'a recent stop signal is off');
- assert.equal(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:{seconds:(now-60000)/1000,nanoseconds:0}},now}).enabled,true,'Firestore Timestamp shape');
- assert.equal(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:{toMillis:()=>now-60000}},now}).enabled,true);
- assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:null},now}).reasons.join(),/중계가 꺼져/,'a pending server timestamp');
- // 읽기 전용 중계의 needsUnmask = 사람이 승인한 반영 중 가림에 막힌 수. 가린 동안에도 삭제 요청은 만듭니다(승인 대기, 2026-10-16) — 도구줄에만 보임.
- assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:{...relay,needsUnmask:1},now}),{enabled:true,reasons:[],v2:false});
- // v2(두 칸 삭제)는 작동 중인 중계 신호의 능력으로만 켜짐. 가린 화면(privacy masked)은 요청을 막지 않음(승인 대기, 반영할 때 해제)
+// 사용자 결정(2026-10-16): /beta2 삭제 요청은 중계 없이도 만듭니다. 남는 관문은 규칙 게시 깃발과 이 세션의 권한 거절뿐이고,
+// 능력은 마지막 중계 신호에서(오래되거나 멈춘 신호도 됨): v2 → 두 칸, v1만 → 퇴실만, 신호·능력 목록 없음 → v2(build 20261016.2), 둘 다 없음 → 업데이트 필요.
+test('time deletion needs only the rules flag and no permission-denied; the latest relay signal of any age picks v1 or v2',()=>{
+ const now=Date.parse('2026-10-14T03:00:00Z'),ON={timeDeleteRules:true},relay={state:'running',at:now-60000,capabilities:['time-delete-v1']},V2_ON={enabled:true,reasons:[],v2:true};
+ assert.deepEqual(deletionGate({features:ON,relay,now}),{enabled:true,reasons:[],v2:false},'v1: 퇴실만');
+ assert.deepEqual(deletionGate({relay,now}),{enabled:false,reasons:['Firestore 규칙 게시 필요'],v2:false});
+ assert.equal(deletionGate({features:{timeDeleteRules:'true'},relay,now}).enabled,false,'boolean true only');
+ assert.deepEqual(deletionGate({features:ON,relay,now,denied:true}),{enabled:false,reasons:['시간 삭제용 Firestore 규칙이 아직 게시되지 않았습니다'],v2:false});
+ // 중계가 없어도 켜짐: 신호 문서 없음·능력 목록 없음(옛 중계)·빈 목록(연결 프로그램에 닿지 못한 신호) → v2로 봄(반영 때 승인 화면이 v2 없으면 1교시 삭제 거절)
+ assert.deepEqual(deletionGate({features:ON}),V2_ON,'no relay signal at all');
+ assert.deepEqual(deletionGate({features:ON,relay:null,now}),V2_ON);
+ assert.deepEqual(deletionGate({features:ON,relay:{state:'stopped',at:now-86400000},now}),V2_ON,'a signal without a capability list');
+ assert.deepEqual(deletionGate({features:ON,relay:{...relay,capabilities:[]},now}),V2_ON,'an empty list = the bridge was not reached');
+ assert.deepEqual(deletionGate({relay:null,now}),{enabled:false,reasons:['Firestore 규칙 게시 필요'],v2:true},'v2 alone does not open the gate');
+ // 오래된·멈춘·서버 시각 대기 신호도 능력은 그대로 씀(연결 프로그램은 올라가기만 함)
+ for(const old of [{...relay,at:now-RELAY_STALE_MS-1},{...relay,at:now-7*86400000},{...relay,state:'stopped'},{...relay,at:null},{...relay,at:{seconds:(now-60000)/1000,nanoseconds:0}},{...relay,at:{toMillis:()=>now-60000}}])
+  assert.deepEqual(deletionGate({features:ON,relay:old,now}),{enabled:true,reasons:[],v2:false},JSON.stringify(old));
  const v2={...relay,capabilities:['time-delete-v1',TIME_DELETE_V2_CAPABILITY]};
- assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:v2,now}),{enabled:true,reasons:[],v2:true});
- assert.equal(deletionGate({features:{timeDeleteRules:true},relay:{...v2,at:now-RELAY_STALE_MS-1},now}).v2,false,'a stale signal tells nothing');
- assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:{...v2,privacy:{state:'masked',leftSec:null,writable:false}},now}),{enabled:true,reasons:[],v2:true});
+ assert.deepEqual(deletionGate({features:ON,relay:v2,now}),V2_ON);
+ assert.deepEqual(deletionGate({features:ON,relay:{...v2,at:now-RELAY_STALE_MS-1},now}),V2_ON,'a stale v2 signal is still v2');
+ assert.deepEqual(deletionGate({features:ON,relay:{...v2,state:'stopped',at:now-86400000},now}),V2_ON,'a stopped v2 signal is still v2');
+ assert.deepEqual(deletionGate({features:ON,relay:{state:'running',at:now,capabilities:[TIME_DELETE_V2_CAPABILITY]},now}),V2_ON,'v2 alone');
+ // 닿은 신호인데 시간 삭제 능력이 둘 다 없음(옛 연결 프로그램): 오래된 신호여도 업데이트 안내로 꺼짐
+ const none={features:ON,relay:{...relay,capabilities:['incremental-sync-v1']},now};
+ assert.deepEqual(deletionGate(none),{enabled:false,reasons:['수집 PC 프로그램 업데이트 필요 (time-delete-v2)'],v2:false});
+ assert.deepEqual(deletionGate({...none,relay:{...none.relay,state:'stopped',at:now-86400000}}).reasons,['수집 PC 프로그램 업데이트 필요 (time-delete-v2)']);
+ // 읽기 전용 중계의 needsUnmask = 사람이 승인한 반영 중 가림에 막힌 수. 가린 동안에도 삭제 요청은 만듭니다(승인 대기, 2026-10-16) — 도구줄에만 보임.
+ assert.deepEqual(deletionGate({features:ON,relay:{...relay,needsUnmask:1},now}),{enabled:true,reasons:[],v2:false});
+ assert.deepEqual(deletionGate({features:ON,relay:{...v2,privacy:{state:'masked',leftSec:null,writable:false}},now}),V2_ON,'가린 화면은 요청을 막지 않음(반영할 때 해제)');
 });
 
 test('the relay privacy (no names) decays with the signal age and gives the short toolbar text',()=>{
@@ -185,6 +196,9 @@ test('the relay privacy (no names) decays with the signal age and gives the shor
  assert.equal(relayPrivacy({...relay({state:'masked'}),at:now-RELAY_STALE_MS-1},now),null,'a stale signal');
  assert.equal(relayPrivacy({...relay({state:'masked'}),state:'stopped'},now),null);assert.equal(relayPrivacy(relay(undefined),now),null,'an old relay without privacy');
  assert.equal(UNMASK_ON_APPLY,'반영할 때 체크히어 마스킹 해제 필요');
+ // 확인창·× title의 '반영할 때 해제 필요': 해제 상태를 모르거나(중계 꺼짐·옛 중계 → null, unknown) 쓸 수 없으면 붙임. 해제됐고 시간이 넉넉할 때만 뺌.
+ assert.deepEqual([null,undefined,masked,short,relayPrivacy(relay({state:'unknown',leftSec:null,writable:false}),now),open].map(needsUnmaskOnApply),[true,true,true,true,true,false]);
+ assert.equal(PRIVACY_NEEDS_RELAY,'체크히어 해제 상태는 중계가 켜져 있을 때 보입니다');
 });
 
 test('memo safety net and in-progress requests',()=>{

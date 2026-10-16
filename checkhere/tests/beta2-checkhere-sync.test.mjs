@@ -303,8 +303,8 @@ test('write errors: permission-denied without deletions is a plain send failure 
  await h.advance(3000);assert.equal(h.writes().length,1);
 });
 
-// 켜지는 조건(G1 규칙 게시 깃발 · G2 중계 신호의 time-delete-v1)을 가짜 settings 문서로 켭니다. gateOn은 옛 연결 프로그램(v1: 퇴실만),
-// gateOnV2는 두 칸 삭제(time-delete-v2)를 아는 연결 프로그램. privacy는 중계 신호의 체크히어 해제 상태(없으면 옛 중계).
+// 켜지는 조건(G1 규칙 게시 깃발, 중계는 필요 없음 2026-10-16)과 능력(마지막 중계 신호)을 가짜 settings 문서로 넣습니다. gateOn은 옛 연결 프로그램(v1: 퇴실만),
+// gateOnV2는 두 칸 삭제(time-delete-v2)를 아는 연결 프로그램. privacy는 중계 신호의 체크히어 해제 상태(없으면 옛 중계 → 모름).
 const gateOn=(h,caps=['time-delete-v1'],privacy)=>{h.pushSetting('checkhereFeatures',{timeDeleteRules:true});h.pushSetting('checkhereRelay',{state:'running',at:{seconds:h.now/1000,nanoseconds:0},capabilities:caps,...(privacy?{privacy}:{})});};
 const gateOnV2=(h,privacy)=>gateOn(h,['time-delete-v1','time-delete-v2'],privacy);
 // 체크인한 학생: 1교시는 입실에서 계산(PASS, 번호 없음), 퇴실만 기록 번호가 있음 / 관리자가 1교시를 넣은 학생: ATTEND 번호 있음
@@ -319,9 +319,9 @@ test('결석 holds while time deletion is off; with the gate on it asks first (S
  await h.advance(10000);assert.equal(h.writes().length,0);
  assert.equal(h.sync.gate().enabled,false);assert.match(h.sync.gate().reasons.join(),/규칙 게시 필요/);
  const sent=await h.sync.send(h.key,{deleteTimes:['exit']});assert.equal(sent.ok,false);assert.ok(sent.reasons.length);assert.equal(h.st.confirms.length,0,'꺼져 있으면 묻지도 않음');
- // 깃발만 있고 중계 능력이 없으면 여전히 꺼짐(G2)
+ // 깃발이 있어도 닿은 중계 신호의 연결 프로그램이 시간 삭제를 모르면 꺼짐(업데이트 안내)
  h.pushSetting('checkhereFeatures',{timeDeleteRules:true});h.pushSetting('checkhereRelay',{state:'running',at:{seconds:h.now/1000,nanoseconds:0},capabilities:['incremental-sync-v1']});
- assert.deepEqual(h.sync.gate(),{enabled:false,reasons:['수집 PC 프로그램 업데이트 필요 (time-delete-v1)'],v2:false});
+ assert.deepEqual(h.sync.gate(),{enabled:false,reasons:['수집 PC 프로그램 업데이트 필요 (time-delete-v2)'],v2:false});
  // 켬: 체크인한 학생은 퇴실만 지움(퇴실을 지우면 1교시도 함께 비워짐), 입실 기록은 남음
  const g=harness({rec:record(CHECKED_IN)});await g.open();gateOn(g);
  assert.equal(g.sync.gate().enabled,true);
@@ -442,8 +442,11 @@ test('relay signal, subscriptions and dispose',async()=>{
  h.pushSetting('checkhereRelay',{state:'running',at:{seconds:(h.now-120000)/1000,nanoseconds:0},capabilities:['incremental-sync-v1'],busy:false,queue:0});
  assert.deepEqual([h.sync.relay().on,h.sync.relay().text],[true,'수집 PC 중계 작동 중 · 신호 2분 전']);
  h.pushSetting('checkhereRelay',{state:'running',at:{seconds:(h.now-4*60000)/1000,nanoseconds:0}});
- assert.deepEqual([h.sync.relay().on,h.sync.relay().text],[false,'중계 꺼짐 · 체크히어 기록 10분 갱신 멈춤']);
- h.pushSetting('checkhereRelay',null);assert.equal(h.sync.relay().on,false,'문서 없으면 꺼짐');
+ // 꺼짐: 자동 수집과 해제 표시만 멈춤. 요청은 만들고 반영은 승인 때. 삭제 조건(규칙 게시 깃발)이 맞을 때만 '삭제 요청은 가능'
+ assert.deepEqual([h.sync.relay().on,h.sync.relay().text,h.sync.relay().privacy],[false,'중계 꺼짐 · 자동 수집·해제 표시 없음 (요청은 가능, 반영은 승인 때)',null]);
+ h.pushSetting('checkhereFeatures',{timeDeleteRules:true});
+ assert.equal(h.sync.relay().text,'중계 꺼짐 · 자동 수집·해제 표시 없음 (삭제 요청은 가능, 반영은 승인 때)');
+ h.pushSetting('checkhereRelay',null);assert.deepEqual([h.sync.relay().on,h.sync.gate()],[false,{enabled:true,reasons:[],v2:true}],'문서 없으면 꺼짐 · 삭제는 v2로 켜짐');
  h.save(PRESENT,LATE,'sig-1');assert.equal(h.sync.holds().length,1);
  h.sync.dispose();assert.ok(h.subs.every(s=>!s.on));assert.deepEqual(h.sync.holds(),[]);
  await h.advance(10000);assert.equal(h.writes().length,0);
@@ -645,7 +648,7 @@ test('with time-delete-v2: 결석 deletes the admin 1st period with the exit, ×
  assert.equal(a.sync.gate().v2,true);
  a.save(PRESENT,row('결석'),'sig-1');await a.advance(3000);
  assert.match(a.st.confirms[0],/입실\(교시\) 09:02 · 퇴실 18:00/);assert.doesNotMatch(a.st.confirms[0],/총 참여 시간/);assert.match(a.st.confirms[0],new RegExp(BOTH_LEFT));
- assert.doesNotMatch(a.st.confirms[0],UNMASK,'privacy를 모르면(옛 중계) 덧붙이지 않음');
+ assert.match(a.st.confirms[0],UNMASK,'privacy를 모르면(옛 중계) 반영할 때 해제 필요를 붙임');
  assert.deepEqual([a.writes()[0][2].changes,a.writes()[0][2].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
  // 퇴실이 남아 있으면 1교시 ×는 v2여도 잠김(결석으로 두 칸을 함께 지움)
  const x=harness({rec:record(ADMIN_ENTRY)});await x.open();gateOnV2(x);x.st.rows[NAME]=row('출석');
@@ -677,6 +680,34 @@ test('with time-delete-v2: 결석 deletes the admin 1st period with the exit, ×
  // 해제됐고 남은 시간이 넉넉하면 덧붙이지 않음
  const u=harness({rec:record(CHECKED_IN)});await u.open();gateOnV2(u,{state:'unmasked',leftSec:900,writable:true});u.st.confirm=()=>false;
  await u.sync.send(u.key,{deleteTimes:['exit']});assert.doesNotMatch(u.st.confirms[0],UNMASK);assert.match(u.sync.relay().text,/체크히어 해제됨 · 15분 남음$/);
+});
+
+// 사용자 결정(2026-10-16): 삭제 요청은 중계 없이도 만듭니다. 능력은 마지막 중계 신호(오래되거나 멈춰도), 신호가 없으면 v2로 봄(반영 때 승인 화면이 다시 확인).
+// 중계가 꺼져 해제 상태를 모르면 도구줄에 해제 표시가 없고, 확인창에는 '반영할 때 체크히어 마스킹 해제 필요'를 붙입니다.
+test('without a running relay deletions are still requested: no signal means v2, a stale or stopped signal keeps its capabilities, and the confirm asks to unmask on apply',async()=>{
+ const flagOnly=h=>h.pushSetting('checkhereFeatures',{timeDeleteRules:true});
+ // 신호 없음: 관리자 1교시 학생 결석 → 두 칸 삭제 요청 1건(승인 대기)
+ const a=harness({rec:record(ADMIN_ENTRY)});await a.open();flagOnly(a);
+ assert.deepEqual(a.sync.gate(),{enabled:true,reasons:[],v2:true});
+ assert.deepEqual([a.sync.relay().on,a.sync.relay().privacy,a.sync.relay().text],[false,null,'중계 꺼짐 · 자동 수집·해제 표시 없음 (삭제 요청은 가능, 반영은 승인 때)']);
+ a.save(PRESENT,row('결석'),'sig-1');await a.advance(3000);
+ assert.match(a.st.confirms[0],new RegExp(BOTH_LEFT));assert.match(a.st.confirms[0],/승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
+ assert.deepEqual([a.writes().length,a.writes()[0][2].changes,a.writes()[0][2].deleteTimes,a.writes()[0][2].status],[1,{entry:'',exit:''},['entry','exit'],'pending']);
+ // 오래된(3분 넘음) v2 신호: 중계는 꺼짐이지만 능력은 v2 그대로. 신호의 해제 상태는 모름 → 퇴실 × 확인창에 해제 필요
+ const s=harness({rec:record(CHECKED_IN)});await s.open();gateOnV2(s,{state:'unmasked',leftSec:900,writable:true});
+ await s.advance(4*60000);
+ assert.deepEqual([s.sync.relay().on,s.sync.relay().privacy,s.sync.gate()],[false,null,{enabled:true,reasons:[],v2:true}]);
+ s.st.confirm=()=>false;assert.deepEqual(await s.sync.send(s.key,{deleteTimes:['exit']}),{ok:false,cancelled:true});assert.match(s.st.confirms[0],UNMASK);
+ // 멈춘 v1 신호(옛 연결 프로그램, 하루 전): 퇴실만. 관리자 1교시 결석은 예전처럼 보류
+ const o=harness({rec:record(ADMIN_ENTRY)});await o.open();flagOnly(o);
+ o.pushSetting('checkhereRelay',{state:'stopped',at:{seconds:(o.now-86400000)/1000,nanoseconds:0},capabilities:['incremental-sync-v1','time-delete-v1']});
+ assert.deepEqual(o.sync.gate(),{enabled:true,reasons:[],v2:false});
+ assert.equal(o.save(PRESENT,row('결석'),'sig-1').label,'보류 · '+V2_NEEDED+' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)');
+ await o.advance(5000);assert.deepEqual([o.writes().length,o.st.confirms.length],[0,0]);
+ // 닿은 신호인데 시간 삭제 능력이 없음: 오래돼도 꺼짐(업데이트 안내)
+ o.pushSetting('checkhereRelay',{state:'stopped',at:{seconds:(o.now-86400000)/1000,nanoseconds:0},capabilities:['incremental-sync-v1']});
+ assert.deepEqual(o.sync.gate(),{enabled:false,reasons:['수집 PC 프로그램 업데이트 필요 (time-delete-v2)'],v2:false});
+ assert.equal(o.sync.relay().text,'중계 꺼짐 · 자동 수집·해제 표시 없음 (요청은 가능, 반영은 승인 때)');
 });
 
 test('timesDeleted: the newest live request of the student is a verified deletion',async()=>{

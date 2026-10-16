@@ -23,7 +23,7 @@
    - 담임 경우는 `users`에 TEACHER로 있는 계정을 쓰고 `classId`를 그 담임 반으로 맞춘다(플레이그라운드는 실제 `users` 문서를 읽는다).
    - (선택) 하위 호환: `deleteTimes` 없이 `changes {entry:'09:00:00'}` → 지금처럼 허용.
 5. 게시(사용자).
-6. 데이터 탭에서 `settings/checkhereFeatures` 문서에 `timeDeleteRules`(boolean) `true`. /beta2는 이 깃발을 읽는다. 연결 프로그램이 `time-delete-v1`을 알리기 전에는 깃발이 있어도 ×가 켜지지 않는다(G2). 체크히어에 시험용 학생이 없고 삭제 요청은 깃발이 켜진 /beta2에서만 만들어지므로, 깃발을 켠 뒤 첫 실제 삭제를 지켜보는 순서는 `docs/checkhere-time-delete-enable.md` 4절을 따른다.
+6. 데이터 탭에서 `settings/checkhereFeatures` 문서에 `timeDeleteRules`(boolean) `true`. /beta2는 이 깃발을 읽는다. 2026-10-16부터 중계는 필요 없다(G2 없음): 깃발이 있으면 삭제 조건이 열리고(×는 기록 번호가 있는 칸만), 마지막 중계 신호가 시간 삭제 능력을 모르는 옛 연결 프로그램일 때만 꺼진다(`docs/checkhere-time-delete-enable.md` 0-1절). 체크히어에 시험용 학생이 없고 삭제 요청은 깃발이 켜진 /beta2에서만 만들어지므로, 깃발을 켠 뒤 첫 실제 삭제를 지켜보는 순서는 `docs/checkhere-time-delete-enable.md` 4절을 따른다.
 
 ## 고치는 네 부분
 

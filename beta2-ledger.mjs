@@ -10,7 +10,7 @@ import {matchSnapshot} from './attendance-beta-core.mjs';
 import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 import {createProposalReview} from './checkhere-proposals.mjs';
 import {withdrawRequest} from './checkhere-request-actions.mjs';
-import {UNMASK_ON_APPLY,deleteLeaves,holdKey} from './beta2-checkhere-core.mjs';
+import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnApply} from './beta2-checkhere-core.mjs';
 import {createCheckHereSync,STATUS_ACTIONS,timeDeleteBlock} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
 
@@ -81,14 +81,14 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const keep=r=>pinned.has(r.name)||held.has(r.name)||jobs.has(r.name)||hasDraft(r.name)||notes.has(r.name)||editing===r.name||typing(bodies.get(r.name));
   return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='flag'&&isConflictFlag(r.rec?.flag)))));
  }
- // × 버튼: 켜지는 조건(deletionGate G1~G3)이 모두 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
- // 1교시 ×는 중계 신호에 time-delete-v2가 있고 퇴실이 비어 있을 때만(퇴실이 있으면 결석 저장으로 두 칸을 함께 지움).
- // 꺼져 있으면 title에 이유를 보입니다(timeDeleteBlock). 누르면 확인창 → 3초 되돌리기 → 시간 삭제 요청(sync.send). 가린 화면이어도 요청은 만들고 title에 해제 필요를 붙입니다.
+ // × 버튼: 켜지는 조건(deletionGate: 규칙 게시 깃발·권한, 중계는 필요 없음)이 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
+ // 1교시 ×는 v2(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄)이고 퇴실이 비어 있을 때만(퇴실이 있으면 결석 저장으로 두 칸을 함께 지움).
+ // 꺼져 있으면 title에 이유를 보입니다(timeDeleteBlock). 누르면 확인창 → 3초 되돌리기 → 시간 삭제 요청(sync.send). 가렸거나 해제 상태를 몰라도(중계 꺼짐) 요청은 만들고 title에 해제 필요를 붙입니다.
  // 재학 기간이 아닌 행에는 상태 칩이 없어 3초·되돌리기가 보이지 않으므로 ×를 두지 않습니다.
  function delButton(row,record,side){
   if(!hm(record?.[side])||(!row.enrolled&&!row.rec))return '';
   const why=timeDeleteBlock({gate:sync.gate(),record,side,type:valuesOf(row).type}),label=side==='entry'?'입실(교시)':'퇴실',p=sync.relay().privacy;
-  return `<button class="b2-x" data-ch-del="${side}" ${why.length?'disabled':''} title="${esc(why.length?`${label} 시간 삭제 불가 · ${why.join(' · ')}`:`체크히어 ${label} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${deleteLeaves([side],record)}${p&&p.state!=='unknown'&&!p.writable?` · ${UNMASK_ON_APPLY}`:''})`)}" aria-label="체크히어 ${label} 시간 삭제">×</button>`;
+  return `<button class="b2-x" data-ch-del="${side}" ${why.length?'disabled':''} title="${esc(why.length?`${label} 시간 삭제 불가 · ${why.join(' · ')}`:`체크히어 ${label} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${deleteLeaves([side],record)}${needsUnmaskOnApply(p)?` · ${UNMASK_ON_APPLY}`:''})`)}" aria-label="체크히어 ${label} 시간 삭제">×</button>`;
  }
  function checkhereCell(row,record){
   if(!record)return `<span class="b2-muted b2-small">${esc(recordsNote||'저장본 없음')}</span>`;
@@ -167,7 +167,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const el=$('#b2Relay');if(!el)return;const r=sync.relay();
   // 중계는 읽기 전용(10분마다 체크히어 기록 갱신)입니다. 요청은 켜져 있어도 자동 처리되지 않고 사람의 승인을 기다립니다.
   // 체크히어 해제 상태(중계 신호 privacy): 가려져 있어도 읽기·요청은 되고, 운영 포털에서 반영할 때만 사람이 수집 PC 체크히어 탭에서 해제합니다.
-  const title=[r.privacy?.text||'',r.on?`수집 PC 중계가 체크히어 기록을 10분마다 읽습니다(읽기 전용)${r.busy?' · 작업 중':''}`:'수집 PC의 체크히어 실시간 화면에서 중계를 켜면 체크히어 기록을 10분마다 읽어 옵니다(읽기 전용).',
+  // 중계가 꺼지면 해제 상태를 모릅니다(첫 줄). 요청(시간 삭제 포함)은 중계 없이도 만듭니다(2026-10-16). '시간 삭제 포함'은 도구줄 글처럼 삭제 조건(sync.gate())이 맞을 때만.
+  const title=[r.privacy?.text||(r.on?'':PRIVACY_NEEDS_RELAY+'.'),r.on?`수집 PC 중계가 체크히어 기록을 10분마다 읽습니다(읽기 전용)${r.busy?' · 작업 중':''}`:`수집 PC의 체크히어 실시간 화면에서 중계를 켜면 체크히어 기록을 10분마다 읽어 옵니다(읽기 전용). 요청${sync.gate().enabled?'(시간 삭제 포함)':''}은 중계 없이도 만들 수 있습니다.`,
    '체크히어 반영 요청은 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 반영됩니다.',
    r.needsUnmask?`승인한 반영 ${r.needsUnmask}건이 체크히어 개인정보 가림에 막혀 있습니다. 수집 PC 연결 프로그램의 체크히어 창(같은 탭)에서 직접 해제하거나 연결 프로그램 화면의 「마스킹 해제 시작」을 누른 뒤, 운영 포털에서 다시 반영해 주세요.`:'',r.requestsError?`체크히어 요청 목록 읽기 실패: ${r.requestsError}`:''].filter(Boolean).join('\n');
   const html=`<span class="b2-pill ${r.on&&!r.needsUnmask?'live':'wait'}" title="${esc(title)}">${esc(r.text)}</span>`;if(shown.get('relay')!==html){el.innerHTML=html;shown.set('relay',html);}
@@ -465,8 +466,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  const warn=e=>{if(jobs.size||drafts.size||sync.holds().length){e.preventDefault();e.returnValue='';}};
  addEventListener('beforeunload',warn);
  // 중계 신호 'n분 전'과 반영 대기 90초·반영 중 3분 안내는 30초마다 다시 봅니다(초 단위 남은 시간은 동기화 모듈이 보류가 있을 때만 알림).
- // 시간 삭제 켜짐(게이트)·1교시 삭제(v2)는 중계 신호가 3분 지나면 시계만으로도 꺼지므로, 바뀌면 행을 다시 그려 ×를 맞춥니다.
- const gateMark=()=>{const g=sync.gate();return `${g.enabled}|${!!g.v2}`;};
+ // × title의 '반영할 때 해제 필요'는 해제 남은 시간이 줄거나 중계 신호가 3분 지나면 시계만으로도 바뀌므로, 바뀌면 행을 다시 그려 ×를 맞춥니다(삭제 조건·v2는 신호가 올 때 다시 그림).
+ const gateMark=()=>{const g=sync.gate();return `${g.enabled}|${!!g.v2}|${needsUnmaskOnApply(sync.relay().privacy)}`;};
  let gateOn=gateMark();
  const clock=setInterval(()=>{if(!life.alive())return;paintRelay();const g=gateMark();if(g!==gateOn){gateOn=g;return renderRows();}for(const name of bodies.keys())paintStatus(name);},30000);
  life.on(()=>unwatch?.());life.on(stopWatch);life.on(()=>removeEventListener('beforeunload',warn));life.on(()=>clearInterval(clock));

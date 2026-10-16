@@ -99,6 +99,15 @@ test('a time deletion request shows 삭제, needs time-delete-v1 and approves on
     await page.getByRole('button',{name:'새로고침',exact:true}).click();await page.getByText('입실·교시 시간: (시간 삭제)').waitFor();
     await page.getByRole('button',{name:'요청 승인·반영',exact:true}).click();
     await page.locator('#message').getByText(/1교시 삭제는 time-delete-v2 지원이 필요합니다/).waitFor();
+    // 두 칸 삭제 요청(/beta2는 중계 신호가 없으면 v2로 보고 만듦, 2026-10-16)도 v2 없는 연결 프로그램에는 보내지 않음(같은 안내, 퇴실도 지우지 않음, 승인 대기 그대로)
+    await page.evaluate(()=>{Object.assign(window.rows[1],{changes:{entry:'',exit:''},deleteTimes:['entry','exit']});document.querySelector('#host').shadowRoot.querySelector('#message').textContent='';});
+    await page.getByRole('button',{name:'새로고침',exact:true}).click();await page.getByText('퇴실 시간: (시간 삭제)').nth(1).waitFor();
+    await page.getByRole('button',{name:'요청 승인·반영',exact:true}).click();
+    await page.locator('#message').getByText('수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요. 1교시 삭제는 time-delete-v2 지원이 필요합니다. 그 전에는 이 요청을 반영할 수 없습니다. 업데이트 뒤 다시 승인하거나 반려해 주세요.',{exact:true}).waitFor();
+    assert.equal(await page.locator('#review[open]').count(),0);assert.equal(await page.evaluate(()=>window.rows[1].status),'pending');
+    assert.deepEqual(await page.evaluate(()=>window.applied.map(c=>c.path)),['apply','reconcile'],'nothing more was sent');
+    await page.evaluate(()=>Object.assign(window.rows[1],{changes:{entry:''},deleteTimes:['entry']}));
+    await page.getByRole('button',{name:'새로고침',exact:true}).click();await page.getByText('퇴실 시간: (시간 삭제)').nth(1).waitFor({state:'detached'});
     await page.evaluate(()=>window.caps.push('time-delete-v2'));
     await page.getByRole('button',{name:'요청 승인·반영',exact:true}).click();
     await page.locator('#message').getByText('퇴실이 남아 있으면 1교시만 지울 수 없습니다(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다). 퇴실과 함께 지워 주세요.',{exact:true}).waitFor();

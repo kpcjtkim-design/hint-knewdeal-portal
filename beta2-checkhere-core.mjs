@@ -4,6 +4,7 @@
 // 사용자 결정(2026-10-16): 요청은 만들기만 하고 승인 대기로 남습니다. 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만(중계는 읽기 전용).
 // 사용자 결정(2026-10-16): 삭제는 1교시(09~18 칸)·퇴실 두 칸이 깨끗이 비면 됨(입실 기록은 남아도 됨). 두 칸 삭제는 time-delete-v2 연결 프로그램만(퇴실 → 1교시 순서, 다시 읽어 확인).
 // 요청은 가린 화면에서도 만들고(승인 대기), 반영할 때만 사람이 수집 PC 체크히어 탭에서 마스킹을 해제합니다(중계 신호 privacy로 보임).
+// 사용자 결정(2026-10-16): /beta2 삭제 요청은 중계 없이도 만듭니다. 능력은 마지막 중계 신호에서(오래돼도 됨), 신호가 없으면 v2로 봅니다(반영 때 승인 화면·연결 프로그램이 다시 확인).
 import {memoDefaultTimes} from './checkhere/approval-core.mjs';
 import {TIME_DELETE_V2_CAPABILITY,normalizeTime,privacyState,timeDeleteRefusal} from './checkhere/rules.mjs';
 import {ACTIVE,AUTO_TEXT,isAutoLedgerRequest,isLiveRequest,stamp} from './checkhere-live-core.mjs';
@@ -11,14 +12,14 @@ import {reasonCategory} from './checkhere-proposal-core.mjs';
 
 export const STATUS_MEMO=/^\s*(?:\(\s*인정(?:출석|지각|조퇴|외출)\s*\)|(?:지각|조퇴|외출)_담임:)/;
 const PLAIN_STATUS_MEMO=/^\s*(?:지각|조퇴|외출)_담임:/;
-export const RELAY_STALE_MS=3*60*1000;          // 중계 신호가 이보다 오래되면 '중계 꺼짐'
+export const RELAY_STALE_MS=3*60*1000;          // 중계 신호가 이보다 오래되면 '중계 꺼짐'(해제 상태 모름, 시간 삭제 요청과는 상관없음)
 export const REQUEST_DATE_RANGE={from:'2026-07-27',to:'2026-10-22'}; // checkhere/approval-core.mjs cleanRequest, firestore.rules와 같아야 함
 export {AUTO_TEXT,isAutoLedgerRequest}; // 1기 재처리 제외도 쓰므로 checkhere-live-core.mjs에 둡니다.
 export const TIME_DELETE_CAPABILITY='time-delete-v1';
 export {TIME_DELETE_V2_CAPABILITY};
 // 관리자 1교시(ATTEND) 삭제는 두 칸 삭제(퇴실 먼저, 다시 읽은 1교시 번호로)를 아는 연결 프로그램에서만 엽니다. 옛 연결 프로그램(v1만)이면 지금처럼 퇴실만 지웁니다.
 export const V2_NEEDED=`1교시 삭제는 수집 PC 프로그램 업데이트 후 가능 (${TIME_DELETE_V2_CAPABILITY})`;
-// 가린 화면에서 만든 요청의 확인창에 덧붙이는 말(요청은 만들고 승인 대기, 반영할 때 사람이 해제).
+// 가린 화면(또는 중계가 꺼져 해제 상태를 모를 때) 만든 요청의 확인창에 덧붙이는 말(요청은 만들고 승인 대기, 반영할 때 사람이 해제).
 export const UNMASK_ON_APPLY='반영할 때 체크히어 마스킹 해제 필요';
 export const holdKey=(cls,date,name)=>`${cls}|${date}|${name}`;
 // 메모에 넣을 담임 이름: 비어 있지 않고 메모 형식을 깨는 글자가 없어야 합니다.
@@ -49,7 +50,7 @@ export function checkhereChangeKind(prev,row){
 
 // 체크히어에서 지울 수 있는 칸인지(기록 번호가 있는 칸만, 사용자 결정 2026-10-14). 규칙은 연결 프로그램·운영 포털과 같은 rules.mjs timeDeleteRefusal:
 // record.exitEventId 퇴실(COMPLETE) 번호 / record.entryKind 'ATTEND'(관리자가 넣은 1교시)·'PASS'(입실에서 계산된 값) / record.entryEventId / record.enterEventId 입실 번호(체크인한 학생)
-// v2 = 중계 신호에 time-delete-v2(아니면 1교시는 잠금), withExit = 같은 요청이 퇴실도 지움(퇴실이 남아 있으면 체크히어가 퇴실 시간으로 1교시를 다시 채워 1교시만은 못 지움).
+// v2 = deletionGate().v2(마지막 중계 신호에 time-delete-v2이거나 신호·능력 목록이 없음, 아니면 1교시는 잠금), withExit = 같은 요청이 퇴실도 지움(퇴실이 남아 있으면 체크히어가 퇴실 시간으로 1교시를 다시 채워 1교시만은 못 지움).
 export function canDeleteTime(record,side,{v2=false,withExit=false}={}){
   if(!has(record,side))return {ok:false,reason:'지울 시간이 없습니다.'};
   // 체크인했지만 아직 퇴실이 없는 학생: 지울 수 있는 칸이 없습니다(퇴실을 지우면 비워진다는 안내는 맞지 않음).
@@ -62,20 +63,19 @@ export function canDeleteTime(record,side,{v2=false,withExit=false}={}){
 // 퇴실만 지우면 입실은 남고, 관리자가 넣은 1교시도 남습니다(체크인한 학생의 계산된 1교시는 함께 비워짐 → 확인창이 따로 알림).
 export const deleteLeaves=(sides,record=null)=>sides.includes('entry')?'1교시·퇴실 칸은 비워지고 체크히어 입실 기록은 남을 수 있습니다':record?.entryKind==='ATTEND'?'관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다':'체크히어 실제 입실 기록은 남습니다';
 
-// 시간 삭제 요청을 만들 수 있는지. features = settings/checkhereFeatures, relay = settings/checkhereRelay, denied = 이 세션에서 permission-denied를 봄
+// 시간 삭제 요청을 만들 수 있는지. features = settings/checkhereFeatures, relay = settings/checkhereRelay(마지막 신호), denied = 이 세션에서 permission-denied를 봄
 // 켜져도 삭제 요청은 승인 대기로 남고, 사람이 운영 포털 「반영 요청·승인」에서 한 건씩 승인해야 지워집니다(일괄 승인에서 빠짐).
-// 중계는 읽기 전용이지만 연결 프로그램 능력(time-delete-v1·v2)을 /beta2에 알리는 유일한 통로라, 작동 중인 중계 신호를 그대로 봅니다.
-// v2: 두 칸 삭제(1교시 포함)를 아는 연결 프로그램. 체크히어 가림(privacy)은 막지 않습니다(요청은 승인 대기, 반영할 때 해제).
-export function deletionGate({features=null,relay=null,denied=false,now=Date.now()}={}){
-  const reasons=[];
+// 중계는 필요 없습니다(사용자 결정 2026-10-16). 승인 때 승인 화면이 연결 프로그램 능력(v2 없으면 1교시 삭제 거절)을, 연결 프로그램이 능력·규칙·마스킹을 다시 봅니다.
+// 능력은 마지막 중계 신호에서(시각·멈춤 무관, 연결 프로그램은 올라가기만 함): time-delete-v2 → v2(두 칸 삭제), v1만 → 퇴실만,
+// 신호가 없거나 능력 목록이 비면(연결 프로그램에 한 번도 닿지 못함·옛 중계가 닿지 못할 때 쓴 빈 목록, 지금 중계는 마지막 능력을 그대로 씀) → v2(build 20261016.2),
+// 목록에 둘 다 없음 → 업데이트 필요. 체크히어 가림(privacy)은 막지 않습니다.
+export function deletionGate({features=null,relay=null,denied=false}={}){
+  const reasons=[],caps=Array.isArray(relay?.capabilities)&&relay.capabilities.length?relay.capabilities:null,v2=!caps||caps.includes(TIME_DELETE_V2_CAPABILITY);
   if(features?.timeDeleteRules!==true)reasons.push('Firestore 규칙 게시 필요');
-  // at은 Firestore Timestamp(또는 시험의 밀리초 숫자). 멈춤 신호(state:'stopped')는 최근이어도 꺼짐입니다(능력을 확인할 수 없음).
-  const at=typeof relay?.at==='number'?relay.at:stamp(relay?.at),fresh=relay?.state==='running'&&at>0&&now-at<=RELAY_STALE_MS;
-  if(!fresh)reasons.push('수집 PC 중계가 꺼져 있습니다');
-  else if(!(relay.capabilities||[]).includes(TIME_DELETE_CAPABILITY))reasons.push(`수집 PC 프로그램 업데이트 필요 (${TIME_DELETE_CAPABILITY})`);
+  if(!v2&&!caps.includes(TIME_DELETE_CAPABILITY))reasons.push(`수집 PC 프로그램 업데이트 필요 (${TIME_DELETE_V2_CAPABILITY})`);
   // 가린 동안에도 삭제 요청은 만듭니다(승인 대기, 사용자 결정 2026-10-16: 반영할 때만 사람이 해제). 가림에 막힌 승인 쓰기 수(needsUnmask)는 도구줄에만 보입니다.
   if(denied)reasons.push('시간 삭제용 Firestore 규칙이 아직 게시되지 않았습니다');
-  return {enabled:!reasons.length,reasons,v2:fresh&&(relay.capabilities||[]).includes(TIME_DELETE_V2_CAPABILITY)};
+  return {enabled:!reasons.length,reasons,v2};
 }
 // 중계 신호의 needsUnmask(승인한 반영 중 가림에 막힌 수, 연결 프로그램이 셈, 이름 없음) → 알림 글. 없으면 ''.
 export const unmaskNote=relay=>Number(relay?.needsUnmask)>0?'체크히어 해제 필요':'';
@@ -86,6 +86,9 @@ export function relayPrivacy(relay,now=Date.now()){
   if(!p||typeof p!=='object'||relay.state!=='running'||!(at>0)||now-at>RELAY_STALE_MS)return null;
   return privacyState({state:p.state,leftSec:Number.isFinite(p.leftSec)?Math.max(0,Math.floor(p.leftSec-Math.max(0,now-at)/1000)):null});
 }
+// 중계가 꺼져 해제 상태를 모를 때 도구줄 중계 표시 title에 보이는 글. 확인창·× title의 UNMASK_ON_APPLY는 모르거나 쓸 수 없으면 붙입니다(needsUnmaskOnApply).
+export const PRIVACY_NEEDS_RELAY='체크히어 해제 상태는 중계가 켜져 있을 때 보입니다';
+export const needsUnmaskOnApply=p=>!p?.writable;
 // 도구줄 중계 표시에 붙일 짧은 해제 상태(전체 글 privacyState().text는 title에).
 export const privacyShort=p=>!p||p.state==='unknown'?'':p.state==='masked'?'체크히어 가림 · 읽기만':p.writable?`체크히어 해제됨 · ${Math.floor(p.leftSec/60)}분 남음`:'체크히어 해제 시간 부족 · 연장 필요';
 

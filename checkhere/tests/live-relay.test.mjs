@@ -10,6 +10,7 @@ import {ATTEND_DELETE} from '../rules.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
 import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
 import {createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
+import {deletionGate} from '../../beta2-checkhere-core.mjs';
 
 const DATE='2026-10-12';
 test('Korean clock, live window and request tags',()=>{
@@ -271,6 +272,7 @@ test('the relay signal carries state, busy, queue, capabilities, build and error
   assert.deepEqual(relaySignal({...status,privacy:open},{},APPROVER),{...signal,privacy:{state:'unmasked',leftSec:412,writable:true}});
   assert.deepEqual(relaySignal({...status,privacy:{state:'masked',leftSec:null,writable:true}},{},APPROVER).privacy,{state:'masked',leftSec:null,writable:false},'a masked tab is never writable');
   assert.equal(Object.hasOwn(relaySignal({...status,privacy:open,bridgeOk:false},{},APPROVER),'privacy'),false,'bridge unreachable');
+  assert.deepEqual(relaySignal({...status,bridgeOk:false},{},APPROVER).capabilities,caps,'bridge unreachable: the last known capabilities stay');
   assert.equal(Object.hasOwn(relaySignal({...status,privacy:{state:'가상둘'}},{},APPROVER),'privacy'),false,'odd state text is dropped');
 });
 test('relay status shows the bridge capabilities, build and busy flag, and the time of the last error',async()=>{
@@ -287,7 +289,7 @@ test('relay status shows the bridge capabilities, build and busy flag, and the t
   assert.deepEqual(relaySignal(s,{},APPROVER),{state:'running',busy:false,queue:0,capabilities:bridgeState.capabilities,build:'20261014.1',lastErrorAt:clock.getTime(),by:APPROVER});
   bridgeState={...bridgeState,busy:'job-1'};relay.syncNow('2',DATE);await relay.step();
   assert.equal(relay.status().bridgeBusy,true);assert.equal(relaySignal(relay.status(),{},APPROVER).busy,true,'the bridge is working on something else');
-  // 일이 없을 때도 신호 전에 ping으로 연결 프로그램을 다시 봅니다. 닿지 않으면 능력을 알리지 않습니다.
+  // 일이 없을 때도 신호 전에 ping으로 연결 프로그램을 다시 봅니다. 닿지 않으면 해제 상태는 빼고 능력은 마지막으로 본 목록 그대로 알립니다.
   bridgeState={...bridgeState,busy:null,capabilities:[...bridgeState.capabilities,'time-delete-v1']};
   assert.equal(await relay.ping(),true);assert.ok(relaySignal(relay.status(),{},APPROVER).capabilities.includes('time-delete-v1'));assert.equal(relay.status().bridgeBusy,false);
   // 연결 프로그램의 해제 상태(privacy, 옛 build는 masking 머리말·남은 시간)를 신호에 옮김. 남은 초만 바뀌면 알리지 않고 조용히 고침
@@ -299,7 +301,9 @@ test('relay status shows the bridge capabilities, build and busy flag, and the t
   assert.equal(relay.status().privacy.leftSec,540);assert.equal(seen.length,after,'only the seconds changed');
   bridgeState={...bridgeState,privacy:undefined,masking:undefined};await relay.ping();assert.equal(Object.hasOwn(relaySignal(relay.status(),{},APPROVER),'privacy'),false,'an old bridge without masking info');
   const reachable=bridgeState;bridgeState=null;
-  assert.equal(await relay.ping(),false,'the bridge is off');assert.deepEqual(relaySignal(relay.status(),{},APPROVER).capabilities,[]);
+  assert.equal(await relay.ping(),false,'the bridge is off');const off=relaySignal(relay.status(),{},APPROVER);
+  // /beta2는 마지막 신호의 능력으로 v1·v2를 정합니다(2026-10-16): 옛(v1) 연결 프로그램이 꺼져도 v2(두 칸 삭제)로 바뀌지 않음
+  assert.deepEqual(off.capabilities,reachable.capabilities,'last known capabilities');assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:off}),{enabled:true,reasons:[],v2:false},'a v1 bridge stays v1 while unreachable');
   bridgeState=reachable;assert.equal(await relay.ping(),true);assert.equal(relaySignal(relay.status(),{},APPROVER).capabilities.length,4);
   const before=seen.length;relay.stop();
   assert.equal(relaySignal(relay.status(),{},APPROVER).state,'stopped');assert(seen.length>before);

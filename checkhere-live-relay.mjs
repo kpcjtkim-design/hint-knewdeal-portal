@@ -29,8 +29,9 @@ export function relaySignal(status,{capabilities=status?.capabilities,build=stat
   const s=status||{},running=s.state==='running',reachable=s.bridgeOk!==false,unmask=Math.max(0,Math.floor(Number(s.needsUnmask)||0));
   // busy: 중계가 갱신 중이거나 연결 프로그램이 다른 작업 중(멈춘 중계는 바쁘지 않음). queue: 기다리는 수동 갱신 수(요청이 아님).
   return {state:running?'running':'stopped',busy:running&&(Boolean(s.current)||s.bridgeBusy===true),queue:Number(s.queue)||0,
-    // 연결 프로그램에 닿지 않으면(bridgeOk false) 능력을 알리지 않습니다(/beta2가 시간 삭제를 켜지 않게).
-    capabilities:[...new Set((reachable&&Array.isArray(capabilities)?capabilities:[]).filter(c=>typeof c==='string'&&SIGNAL_NAME.test(c)))],
+    // 능력은 마지막으로 닿은 연결 프로그램의 목록입니다. 닿지 않아도(bridgeOk false) 비우지 않습니다: /beta2는 마지막 신호의 능력으로 v1·v2를 정하므로(2026-10-16)
+    // 빈 목록을 쓰면 옛(v1) 연결 프로그램이 꺼진 동안 '모름 → v2'로 바뀝니다. 연결 프로그램은 올라가기만 하고, 반영 때 승인 화면·연결 프로그램이 다시 확인합니다.
+    capabilities:[...new Set((Array.isArray(capabilities)?capabilities:[]).filter(c=>typeof c==='string'&&SIGNAL_NAME.test(c)))],
     build:typeof build==='string'&&SIGNAL_NAME.test(build)?build:null,lastErrorAt:Number.isFinite(s.lastErrorAt)?s.lastErrorAt:null,by:typeof by==='string'&&by?by:null,
     // 체크히어 가림 때문에 연결 프로그램에서 기다리는 쓰기 수(이름 없음, 연결 프로그램이 셈). 0이면 넣지 않습니다(신호 모양은 그대로).
     ...(unmask?{needsUnmask:unmask}:{}),

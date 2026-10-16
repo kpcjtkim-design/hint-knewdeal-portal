@@ -1,15 +1,15 @@
 // 2기 베타 출결대조 → 체크히어 반영 요청(브라우저 쪽 흐름). 출결원장 저장 3초 뒤 실시간 요청을 만들고, 되돌리기·보류·다시 계산을 맡습니다.
 // 사용자 결정(2026-10-16): 만든 요청은 승인 대기로 남습니다. 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만(중계는 읽기 전용).
 // 설계: docs/beta2-instant-edit-plan.md 4.2(S1~S15). 사용자 결정(2026-10-14): 오늘만 자동(지난 날은 '체크히어 맞추기'를 눌러 같은 3초 흐름),
-// 3초 되돌리기는 출결원장과 요청을 모두 되돌림. 시간 삭제 요청(deleteTimes)은 켜지는 조건(G1 규칙 게시 깃발·G2 중계 time-delete-v1·G3 권한 거절 없음)이
+// 3초 되돌리기는 출결원장과 요청을 모두 되돌림. 시간 삭제 요청(deleteTimes)은 켜지는 조건(G1 규칙 게시 깃발·G3 권한 거절 없음, 중계는 필요 없음 2026-10-16)이
 // 모두 맞을 때만 씁니다(결석 저장과 × 버튼). 지우기는 기록 번호가 있는 칸만(canDeleteTime), 보내기 전 확인창 필수(S8).
-// 1교시(관리자 ATTEND) 삭제는 중계 신호에 time-delete-v2가 있을 때만: 결석은 1교시·퇴실 두 칸, 1교시 ×는 퇴실이 비어 있을 때만(2026-10-16).
-// 가린 화면(중계 신호 privacy)이어도 요청은 만듭니다(승인 대기). 확인창에 '반영할 때 체크히어 마스킹 해제 필요'를 붙입니다.
+// 1교시(관리자 ATTEND) 삭제는 v2일 때만(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄): 결석은 1교시·퇴실 두 칸, 1교시 ×는 퇴실이 비어 있을 때만(2026-10-16).
+// 가린 화면(중계 신호 privacy)이거나 중계가 꺼져 해제 상태를 몰라도 요청은 만듭니다(승인 대기). 확인창에 '반영할 때 체크히어 마스킹 해제 필요'를 붙입니다.
 // Firestore 함수(fs)·시계·타이머는 화면이 넘깁니다. /beta2 화면은 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js'에서
 // import한 함수를 넘겨야 가드(beta2-firestore-guard.mjs)를 거쳐 근거에 [2기 베타]가 붙습니다. 이 파일은 https 주소를 import하지 않습니다(Node 시험).
 import {memoDefaultTimes,resultText} from './checkhere/approval-core.mjs';
 import {ACTIVE,LIVE_STATUS,buildLiveRequest,isAutoLedgerRequest,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
-import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,privacyShort,relayPrivacy,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
+import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,needsUnmaskOnApply,privacyShort,relayPrivacy,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
 import {B2_EVIDENCE,B2_TYPES,neededTimes,recognizedType} from './beta2-core.mjs';
 
 // firestore.rules checkhereRequests create 허용 키 중 요청 내용(나머지는 status·createdBy·createdAt·updatedAt).
@@ -48,11 +48,11 @@ const verOf=r=>r?[r.version??'',...MARK_KEYS.map(k=>String(r[k]??''))].join('|')
 // S8 확인창: 지울 시간(HH:MM)과 남는 것. 체크인한 학생(1교시 PASS)은 퇴실을 지우면 1교시·총 참여 시간도 '-'가 됩니다(Cowork 확인).
 const DEL_LABEL={entry:'입실(교시)',exit:'퇴실'};
 // 그 칸의 관리자 사유도 기록과 함께 지워집니다. 1교시를 지우면 1교시·퇴실 칸이 비고 입실 기록은 남을 수 있습니다(deleteLeaves, 2026-10-16 확인).
-// 보내는 것은 삭제 요청이고, 체크히어에서 지우는 것은 관리자가 운영 포털에서 한 건씩 승인할 때입니다. 가린 화면이면 그때 해제가 필요하다고 덧붙입니다(privacy).
+// 보내는 것은 삭제 요청이고, 체크히어에서 지우는 것은 관리자가 운영 포털에서 한 건씩 승인할 때입니다. 가린 화면이거나 해제 상태를 모르면(중계 꺼짐·옛 중계) 그때 해제가 필요하다고 덧붙입니다(privacy).
 const deleteQuestion=(name,date,record,sides,privacy=null)=>`${name} · ${date} 체크히어 시간 삭제를 요청합니다: ${sides.map(k=>`${DEL_LABEL[k]} ${hhmm(record?.[k])||'-'}`).join(' · ')}`
   +(sides.includes('exit')&&!sides.includes('entry')&&record?.entryKind==='PASS'&&hhmm(record?.entry)?`\n퇴실을 지우면 1교시(${hhmm(record.entry)})와 총 참여 시간도 비워집니다.`:'')
   +sides.filter(k=>String(record?.[k+'Memo']??'').trim()).map(k=>`\n${DEL_LABEL[k]} 칸의 관리자 사유(「${record[k+'Memo']}」)도 함께 지워집니다.`).join('')
-  +`\n${deleteLeaves(sides,record)}.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다.${privacy&&privacy.state!=='unknown'&&!privacy.writable?`\n${UNMASK_ON_APPLY}.`:''}\n보낼까요?`;
+  +`\n${deleteLeaves(sides,record)}.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다.${needsUnmaskOnApply(privacy)?`\n${UNMASK_ON_APPLY}.`:''}\n보낼까요?`;
 // 되돌리기 저장(b2Save)이 받아 줄 이전 값인지(beta2.gs b2Validate_와 같은 기준). 못 받으면 그 이유 — 운영총괄에서 온 '중복'·시간 없는 지각 같은 값은
 // 출결원장에 다시 저장할 수 없으므로 되돌리기는 체크히어 반영만 취소합니다.
 export function restoreBlock(p){
@@ -127,7 +127,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   const emit=key=>{if(!disposed)try{onChange(key??null);}catch{}};
   const onDay=(cls,date)=>!!day&&cls===day.cls&&date===day.date;
   const sigOf=(cls,date,name)=>String(getSig(cls,date,name)??'');
-  const gate=()=>deletionGate({features,relay:relayDoc,denied,now:now()});
+  const gate=()=>deletionGate({features,relay:relayDoc,denied});
   // 결과 안내가 계산된 때의 삭제 조건(켜짐·v2). 바뀌면 그 안내를 버리고 다시 계산합니다.
   const gateMark=()=>{const g=gate();return g.enabled?(g.v2?'v2':'on'):'off';};
   const privacy=()=>relayPrivacy(relayDoc,now());
@@ -456,8 +456,9 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
       // privacy: 수집 PC 체크히어 탭의 해제 상태(중계 신호, 이름 없음). 가려져 있어도 읽기·요청은 되고, 반영할 때만 사람이 해제합니다.
       const unmask=on?unmaskNote(s):'',p=on?privacy():null,short=privacyShort(p);
       return {on,at:at||null,busy:!!s?.busy,queue:Number(s?.queue)||0,capabilities:[...(s?.capabilities||[])],build:s?.build||null,requestsError:reqError,needsUnmask:on?Number(s?.needsUnmask)||0:0,privacy:p,
-        // 중계는 읽기 전용이라 꺼져도 요청 처리와는 상관없고(요청은 늘 사람의 승인을 기다림), 체크히어 기록 갱신만 멈춥니다.
-        text:on?`수집 PC 중계 작동 중 · 신호 ${min<1?'방금':min+'분 전'}${unmask?` · ${unmask} ${Number(s.needsUnmask)}건`:''}${short?` · ${short}`:''}`:'중계 꺼짐 · 체크히어 기록 10분 갱신 멈춤'};
+        // 중계는 읽기 전용이라 꺼져도 요청(시간 삭제 요청 포함, 2026-10-16)은 만들고 늘 사람의 승인을 기다립니다. 멈추는 것은 체크히어 기록 자동 수집과 해제 상태 표시뿐입니다.
+        // '삭제 요청은 가능'은 삭제 조건(규칙 게시 깃발·권한)이 맞을 때만 붙입니다.
+        text:on?`수집 PC 중계 작동 중 · 신호 ${min<1?'방금':min+'분 전'}${unmask?` · ${unmask} ${Number(s.needsUnmask)}건`:''}${short?` · ${short}`:''}`:`중계 꺼짐 · 자동 수집·해제 표시 없음 (${gate().enabled?'삭제 ':''}요청은 가능, 반영은 승인 때)`};
     },
     // needsConfirm: 확인창(S8)을 거치지 않은 시간 삭제라 지금 보내기(떠남·반·날짜 이동)로는 보내지 않는 결정
     holds:()=>[...holds.values()].map(h=>({key:h.key,cls:h.cls,date:h.date,name:h.name,phase:h.phase,sendable:sendable(h),needsConfirm:needsConfirm(h),retryWhen:h.retryWhen||null,deadline:h.deadline||null})),
