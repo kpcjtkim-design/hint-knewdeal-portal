@@ -265,7 +265,7 @@ test('writes: refused in the masked view before any click; in the unmasked tab t
     stored.push(...(await collect(c,'2',DAY)).records);const target=()=>stored.find(r=>r.name==='나가상');
     // 가린 화면: 거절(MASKED_WRITE), 칸도 누르지 않음, 요청 없음
     s.w.mode='masked';const masked=(await collect(c,'2',DAY)).records.find(r=>r.name==='나가상');
-    await assert.rejects(()=>c.write(masked,'exit',{time:'17:00:00',memo:'조퇴_담임:가상담임(17:00)'},{requestedFields:['exit','exitMemo']}),/MASKED_WRITE: 체크히어 마스킹 해제 후 반영합니다/);
+    await assert.rejects(()=>c.write(masked,'exit',{time:'17:00:00',memo:'조퇴_담임:가상담임(17:00)'},{requestedFields:['exit','exitMemo']}),/MASKED_WRITE: 체크히어 마스킹 해제가 필요합니다/);
     assert.deepEqual(await s.page.evaluate(()=>[window.clicks.cell,window.clicks.change]),[0,0]);assert.equal(s.w.writes.length,0);
     // 해제됐지만 남은 시간 80초: 시작하지 않음(MASKED_TIME)
     s.w.mode='unmasked';s.w.left='1분 20초';const short=await c.read(target());

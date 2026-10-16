@@ -9,7 +9,7 @@ import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mj
 import {ATTEND_DELETE} from '../rules.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
 import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
-import {TIME_DELETE_OLD,TIME_DELETE_RULES,createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
+import {createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
 
 const DATE='2026-10-12';
 test('Korean clock, live window and request tags',()=>{
@@ -28,7 +28,8 @@ test('Korean clock, live window and request tags',()=>{
 const live={id:'r1',classId:'2',date:DATE,name:'가상학생',phoneLast4:'0001',studentKey:'k',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'09:12:00',entry:'09:12:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0};
 // 시간 삭제는 기록 번호 표시가 있는 기록에서만: 관리자가 1교시를 넣은 학생(입실 번호 없음)의 표시
 const LIVE=live,MARKS={entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false};
-const ATTEND_OFF='관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).';
+// 퇴실이 남아 있으면 1교시만은 지우지 않습니다(체크히어가 퇴실 시간으로 1교시를 다시 채움, 2026-10-16 확인, rules.mjs).
+const EXIT_FIRST='퇴실이 남아 있으면 1교시만 지울 수 없습니다(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다). 퇴실과 함께 지워 주세요.';
 test('editor builds only changed fields and refuses blanks, no-ops and missing reasons',()=>{
   const req=buildLiveRequest(live,{entry:'09:12',exit:'18:00:00',entryMemo:'지각_교통',exitMemo:''},'버스 지연');
   assert.deepEqual(req.changes,{entryMemo:'지각_교통'});assert.equal(req.phoneLast4,'0001');assert(req.reason.startsWith(LIVE_MARK));assert.equal(tagOf(req.reason),baseTag(live,['entryMemo']));
@@ -55,19 +56,23 @@ test('time deletion builds a blank for the named side, tags it and skips a side 
   assert.deepEqual(buildLiveRequest(memo,{...form,exitMemo:memo.exitMemo},'결석 확인',{deleteTimes:['exit']}).changes,{exit:''},'or the memo is left alone');
   const both=buildLiveRequest({...live,entry:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']});
   assert.deepEqual([both.changes,both.deleteTimes],[{exit:''},['exit']],'the already blank entry is skipped');
-  // 관리자가 넣은 1교시(ATTEND)는 실제 체크히어에서 확인하기 전까지 지우지 않습니다(2026-10-15, rules.mjs ATTEND_DELETE).
-  assert.throws(()=>buildLiveRequest({...live,exit:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']}),{message:ATTEND_OFF});
-  assert.throws(()=>buildLiveRequest(live,{...form,entry:''},'결석 확인',{deleteTimes:['entry','exit']}),{message:ATTEND_OFF},'퇴실만 지우는 일부 요청으로 바꾸지 않음');
+  // 관리자가 넣은 1교시(ATTEND)는 퇴실과 함께(두 칸) 지웁니다(2026-10-16 확인 뒤 켬). 퇴실이 남은 채 1교시만은 거절(퇴실만 지우는 일부 요청으로도 바꾸지 않음).
+  const two=buildLiveRequest(live,{...form,entry:''},'결석 확인',{deleteTimes:['entry','exit']});
+  assert.deepEqual([two.changes,two.deleteTimes],[{entry:'',exit:''},['entry','exit']]);assert.equal(tagOf(two.reason),baseTag(live,['entry','exit']));
+  assert.throws(()=>buildLiveRequest(live,{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),{message:EXIT_FIRST});
+  assert.throws(()=>buildLiveRequest({...live,exit:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']}),{message:EXIT_FIRST},'퇴실 번호가 남아 있으면 퇴실이 빈 것으로 보지 않음');
   assert.throws(()=>buildLiveRequest({...live,exit:null},form,'결석 확인',{deleteTimes:['exit']}),/바뀐 값이 없습니다/);
   assert.throws(()=>buildLiveRequest(live,{...form,exit:'18:00'},'결석 확인',{deleteTimes:['exit']}),/삭제할 시간 칸은 비워/);
   assert.throws(()=>buildLiveRequest(live,{...form,exitMemo:'남길 사유'},'결석 확인',{deleteTimes:['exit']}),/사유는 비워/);
   assert.throws(()=>buildLiveRequest(live,form,'결석 확인',{deleteTimes:['exitMemo']}),/삭제할 시간 항목/);
   assert.throws(()=>buildLiveRequest({...live,entryKind:'PASS'},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),/계산된 1교시/);
-  assert.throws(()=>buildLiveRequest({...live,enterEventId:true},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),/체크인한 학생은 퇴실만/);
+  assert.throws(()=>buildLiveRequest({...live,enterEventId:true},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),{message:EXIT_FIRST});
+  assert.deepEqual(buildLiveRequest({...live,enterEventId:true},{...form,entry:''},'결석 확인',{deleteTimes:['entry','exit']}).deleteTimes,['entry','exit'],'체크인한 학생이 사유를 저장한 1교시도 퇴실과 함께(두 칸만 깨끗이, 2026-10-16)');
 });
-// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 같은 시험). rules.mjs ATTEND_DELETE가 true가 되면 저절로 돕니다.
-test('with ATTEND_DELETE on, the admin 1st period is deleted and an already blank exit is skipped',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},()=>{
-  const both=buildLiveRequest({...LIVE,...MARKS,exit:null},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']});
+// 관리자 1교시(ATTEND) 삭제(2026-10-16 켬): 퇴실이 이미 비었으면(번호도 없음) 1교시만 지웁니다.
+test('with ATTEND_DELETE on, the admin 1st period is deleted and an already blank exit is skipped',()=>{
+  assert.equal(ATTEND_DELETE,true);
+  const both=buildLiveRequest({...LIVE,...MARKS,exit:null,exitEventId:false},{entry:'',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['entry','exit']});
   assert.deepEqual([both.changes,both.deleteTimes],[{entry:''},['entry']],'the already blank exit is skipped');
 });
 
@@ -80,9 +85,14 @@ function world({classes={'2':[['가상하나','01000000001','08:55:00','09:00:00
   const rowsFor=(classId,date)=>{const list=[...truth.values()].filter(r=>r.classId===String(classId)&&r.date===date);if(!list.length)throw Error(`${date} 강의가 없습니다. 휴강 여부를 확인해 주세요.`);
     return list.map((t,i)=>({...t,rowIndex:i+2,entryMemo:null,exitMemo:null,source:'live',readState:'partial',tableSignature:[t.schedule,t.rawEntry,t.entry,t.exit,t.outingCount].join('|'),collectedAt:new Date().toISOString()}));};
   const details=row=>{reads.push(row.name);const t=truth.get(row.id),r={...row,entry:t.entry,exit:t.exit,entryMemo:t.entryMemo,exitMemo:t.exitMemo,readState:'complete',collectedAt:new Date(Date.now()+reads.length).toISOString()};r.version=version(r);return r;};
+  // 그날 화면 데이터(가상): 빠른 수집은 이것만 읽고 수정창(reads)을 열지 않습니다(2026-10-16).
+  const at=(t,v)=>`${t.date}T${v}`,entryFrom=row=>{const t=truth.get(row.id);return {sequence:row.rowIndex-1,attendeeId:'att-'+t.studentKey.slice(0,8),name:t.name,phone:'',leaveEvents:{pairs:[]},eventList:[
+    ...(t.rawEntry?[{type:'ENTER',time:at(t,t.rawEntry),eventId:t.enterEventId?'e':null,timeIndex:0}]:[]),
+    ...(t.entry?[{type:t.entryKind||'ATTEND',time:at(t,t.entry),eventId:t.entryEventId?'a':null,timeIndex:0,memoByAdmin:t.entryMemo||null}]:[]),
+    ...(t.exit?[{type:'COMPLETE',time:at(t,t.exit),eventId:t.exitEventId?'c':null,timeIndex:0,memoByAdmin:t.exitMemo||null}]:[])]};};
   const adapter=Object.assign(Object.create(CheckHereCollector.prototype),{
-    cancelled:false,loggedIn:async()=>true,requireLogin:async()=>{},
-    openDay:async(classId,date)=>rowsFor(classId,date),readDetails:async row=>details(row),
+    cancelled:false,loggedIn:async()=>true,requireLogin:async()=>{},dayGapMs:[0,0],lastDayAt:0,
+    openDay:async(classId,date)=>{const rows=rowsFor(classId,date);adapter.dayData={data:{eventResultList:rows.map(entryFrom)}};return rows;},planOptions:()=>({entryFor:entryFrom}),readDetails:async row=>details(row),
     read:async record=>details(rowsFor(record.classId,record.date).find(r=>r.id===record.id)),
     readOpened:async record=>details(rowsFor(record.classId,record.date).find(r=>r.id===record.id)),
     write:async(record,field,change,{deleteFields=[]}={})=>{const t=truth.get(record.id);
@@ -97,9 +107,10 @@ function world({classes={'2':[['가상하나','01000000001','08:55:00','09:00:00
     read:async(c,d)=>current.has(c+'/'+d)?{records:structuredClone(current.get(c+'/'+d))}:null,readLegacy:async()=>[],
     commit:async(c,d,rows)=>{current.set(c+'/'+d,mergeCurrentRecords(current.get(c+'/'+d)||[],rows,c,d));},
   });
-  let commits=0;
+  let commits=0,watches=0;
   const store={
-    watchQueue(cb){listeners.add(cb);notify();return()=>listeners.delete(cb);},
+    // 읽기 전용 중계는 요청 목록을 구독하지 않습니다(watches 0이어야 함). 승인은 시험이 사람 대신 부릅니다(approveByPerson).
+    watchQueue(cb){watches++;listeners.add(cb);notify();return()=>listeners.delete(cb);},
     async approve(id,approval){const d=requests.get(id);assert.equal(d.status,'pending');Object.assign(d,{status:'approved',approval,approvedBy:APPROVER});notify();},
     async reject(id,note){const d=requests.get(id);assert.equal(d.status,'pending');Object.assign(d,{status:'rejected',reviewNote:note,reviewedBy:APPROVER});notify();},
     isAdmin:async email=>admins.has(email),identities:async()=>[],
@@ -117,7 +128,7 @@ function world({classes={'2':[['가상하나','01000000001','08:55:00','09:00:00
       Object.assign(d,{status:job.status,result:{message:job.status==='verified'?'체크히어 반영·원본 확인·플랫폼 DB 저장 완료':job.message,results:job.results||[],platformSaved:job.status==='verified'}});notify();return d.result;
     },
   };
-  return {truth,reads,requests,current,store,cloud,adapter,admins,notify,get commits(){return commits;},
+  return {truth,reads,requests,current,store,cloud,adapter,admins,notify,get commits(){return commits;},get watches(){return watches;},
     add(id,data){requests.set(id,{status:'pending',createdBy:'admin@example.com',createdAt:{seconds:requests.size+1},...data});notify();},
     day:c=>current.get(c+'/'+DATE)||[]};
 }
@@ -128,11 +139,18 @@ async function harness(w,port,opts={},{capabilities,addCapabilities=[]}={}){
   await new Promise(r=>app.server.listen(port,'127.0.0.1',r));
   let clock=new Date('2026-10-12T00:30:00Z');const logs=[];
   const client=createBridgeClient({base:`http://127.0.0.1:${port}`,key:app.key,fetchImpl:(u,o)=>fetch(u,{...o,headers:{...o.headers,connection:'close'}})});
-  const bridge=addCapabilities.length?{...client,state:async c=>{const s=await client.state(c);return {...s,capabilities:[...new Set([...(s.capabilities||[]),...addCapabilities])]};}}:client;
-  const relay=createLiveRelay({bridge,store:w.store,
-    user:{email:APPROVER,getIdToken:async()=>'approver-token'},log:e=>logs.push(e.text),now:()=>clock,sleep:()=>new Promise(r=>setTimeout(r,2)),pollMs:2,inWindow:()=>true,...opts});
+  // calls: 중계가 부른 연결 프로그램 작업 이름(읽기 전용이면 'sync'뿐). 시험의 사람 승인(approveByPerson)은 client를 바로 써서 세지 않습니다.
+  const calls=[],bridge={state:async c=>{const s=await client.state(c);return addCapabilities.length?{...s,capabilities:[...new Set([...(s.capabilities||[]),...addCapabilities])]}:s;},api:(name,body)=>{calls.push(name);return client.api(name,body);}};
+  const relay=createLiveRelay({bridge,store:w.store,log:e=>logs.push(e.text),now:()=>clock,sleep:()=>new Promise(r=>setTimeout(r,2)),pollMs:2,inWindow:()=>true,...opts});
   await relay.start({loop:false});
-  return {app,relay,logs,advance(ms){clock=new Date(clock.getTime()+ms);},close:()=>{relay.stop();app.close();}};
+  return {app,relay,logs,calls,client,advance(ms){clock=new Date(clock.getTime()+ms);},close:()=>{relay.stop();app.close();}};
+}
+// 운영 포털 「반영 요청·승인」에서 사람이 하는 일(승인 저장 → 연결 프로그램 /api/apply → 결과·DB 저장 확인)을 시험에서 대신합니다.
+async function approveByPerson(w,h,id,record){
+  await w.store.approve(id,prepareApproval({id,...w.requests.get(id)},record));
+  await h.client.api('apply',{approvalId:id,idToken:'approver-token'});
+  for(let i=0;i<1000;i++){const job=((await h.client.state()).jobs||[]).find(j=>j.id===id);if(job&&job.status!=='running'&&job.cloudSaved!==undefined)return job;await new Promise(r=>setTimeout(r,10));}
+  throw Error('반영 결과 대기 시간 초과');
 }
 test('10-minute cycle saves a class once, skips unchanged students, re-reads only changed ones and drops classes without a lecture',async()=>{
   const w=world(),h=await harness(w,18791,{classIds:['2','3']});
@@ -140,7 +158,7 @@ test('10-minute cycle saves a class once, skips unchanged students, re-reads onl
     assert(h.relay.status().capabilities.includes('incremental-sync-v1'),'the real bridge capabilities show in the status');
     // 5b: /api/state가 build를 알립니다(옛 연결 프로그램이면 없음).
     const build=h.relay.status().build;assert.ok(build===null||/^\d{8}\.\d+$/.test(build),`build ${build}`);
-    assert.equal(await h.relay.step(),'sync');assert.equal(w.day('2').length,2);assert.deepEqual(w.reads.sort(),['가상둘','가상하나']);
+    assert.equal(await h.relay.step(),'sync');assert.equal(w.day('2').length,2);assert.deepEqual(w.reads,[],'read from page data, no editor');
     assert.equal(await h.relay.step(),'sync');assert.match(h.logs.join('\n'),/3반: 오늘 강의가 없어/);
     assert.equal(await h.relay.step(),'idle','waits for the next 10-minute round');
     h.advance(10*60*1000);w.reads.length=0;const commits=w.commits;
@@ -148,135 +166,93 @@ test('10-minute cycle saves a class once, skips unchanged students, re-reads onl
     assert.deepEqual(w.reads,[],'nothing changed: no editor opened');assert.equal(w.commits,commits,'and no DB write');
     [...w.truth.values()].find(t=>t.name==='가상둘').exit='17:30:00';
     h.advance(10*60*1000);await h.relay.step();
-    assert.deepEqual(w.reads,['가상둘']);assert.equal(w.day('2').find(r=>r.name==='가상둘').exit,'17:30:00');
+    assert.deepEqual(w.reads,[],'the changed student is read from page data too');assert.equal(w.day('2').find(r=>r.name==='가상둘').exit,'17:30:00');assert.equal(w.commits,commits+1);
   }finally{h.close();}
 });
-test('an admin edit is approved, written to CheckHere, verified and lands in the live document',async()=>{
+// 읽기 전용 중계(사용자 결정 2026-10-16): 어떤 요청도 승인·반영·반려하지 않고, 수집(sync) 말고는 연결 프로그램 작업을 부르지 않습니다.
+test('the relay never approves, applies or rejects: every request stays as it was and CheckHere is only read',async()=>{
   const w=world(),h=await harness(w,18792,{classIds:['2']});
   try{
-    await h.relay.step();const shown=w.day('2').find(r=>r.name==='가상둘');
-    const input=buildLiveRequest(shown,{entry:'09:20',exit:'18:00',entryMemo:'(인정지각)병원_담임:가상',exitMemo:''},'진료확인서 제출');
-    w.add('live-req-000000000001',input);
-    assert.equal(await h.relay.step(),'request');
-    const req=w.requests.get('live-req-000000000001');assert.equal(req.status,'verified',JSON.stringify(req.result)+h.logs.join('\n'));
+    await h.relay.step();const one=w.day('2').find(r=>r.name==='가상하나'),two=w.day('2').find(r=>r.name==='가상둘');
+    const edit=buildLiveRequest(two,{entry:'09:20',exit:'18:00',entryMemo:'(인정지각)병원_담임:가상',exitMemo:''},'진료확인서 제출');
+    w.add('live-req-000000000001',edit);
+    // 예전에 승인만 되고 반영되지 않은 요청도 중계가 이어서 쓰지 않습니다.
+    const early=buildLiveRequest(one,{entry:'09:00',exit:'18:00',entryMemo:'',exitMemo:'조퇴_병원'},'조퇴 확인');
+    w.add('live-approved-0000001',{...early,status:'approved',approvedBy:APPROVER,approval:prepareApproval(early,one)});
+    w.add('live-delete-000000001',buildLiveRequest(one,{entry:'09:00',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['exit']}));
+    w.add('live-teacher-00000001',{...buildLiveRequest(two,{entry:'09:20',exit:'18:00',entryMemo:'x',exitMemo:''},'y'),createdBy:'teacher@example.com'});
+    w.add('plain-request-0000001',{classId:'2',date:DATE,name:'가상둘',phoneLast4:'',reason:'일반 요청',changes:{entry:'09:05:00'}});
+    w.add('retry_'+'a'.repeat(64),{...buildLiveRequest(two,{entry:'09:20',exit:'18:00',entryMemo:'재처리',exitMemo:''},'재처리'),createdBy:APPROVER});
+    // 화면 표가 바뀐 학생(퇴실 17:30)은 다시 읽어 저장하지만, 그 학생 요청도 그대로 둡니다.
+    [...w.truth.values()].find(t=>t.name==='가상둘').exit='17:30:00';
+    const requests=structuredClone([...w.requests]),truth=structuredClone([...w.truth]);
+    h.relay.syncNow('2',DATE);
+    for(let i=0;i<6;i++){assert.notEqual(await h.relay.step(),'request');h.advance(5*60000);}
+    assert.deepEqual([...w.requests],requests,'no request was approved, claimed, rejected or withdrawn');
+    assert.deepEqual([...w.truth],truth,'fake CheckHere only read');
+    assert.deepEqual([...new Set(h.calls)],['sync'],'only collection jobs: no preview-request, confirm-existing, apply or reconcile');
+    assert.equal(w.watches,0,'the request queue is not even watched');
+    assert.equal(w.day('2').find(r=>r.name==='가상둘').exit,'17:30:00','viewers see the newer CheckHere value');
+    assert.equal(h.relay.status().needsUnmask,0);assert.equal(Object.hasOwn(h.relay.status(),'processed'),false);
+    assert.doesNotMatch(h.logs.join('\n'),/자동 반영|승인|반려/);
+    // 실시간 화면은 전화 끝 4자리가 없는 운영포털 요청도 그 학생 것으로 봅니다(수정 버튼 잠금).
+    assert.deepEqual(requestsFor(two,[...w.requests].map(([id,d])=>({id,...d}))).map(r=>r.id).sort(),['live-req-000000000001','live-teacher-00000001','plain-request-0000001','retry_'+'a'.repeat(64)]);
+  }finally{h.close();}
+});
+// 쓰기는 사람이 운영 포털에서 승인할 때만: 연결 프로그램이 입력·재확인·DB 저장을 하고, 중계는 그 뒤에도 읽기만 합니다.
+test('only a person approving in the portal writes: the bridge enters, verifies and saves; the relay keeps reading',async()=>{
+  const w=world({classes:{'2':[['가상하나','01000000001','08:55:00','09:00:00','18:00:00'],['가상둘','01000000002','09:20:00','09:20:00','18:00:00'],['가상셋','01000000003','09:01:00','09:01:00',null]]}}),h=await harness(w,18793,{classIds:['2']});
+  try{
+    await h.relay.step();const two=w.day('2').find(r=>r.name==='가상둘');
+    w.add('live-req-000000000001',buildLiveRequest(two,{entry:'09:20',exit:'18:00',entryMemo:'(인정지각)병원_담임:가상',exitMemo:''},'진료확인서 제출'));
+    h.advance(10*60*1000);await h.relay.step();
+    assert.equal(w.requests.get('live-req-000000000001').status,'pending','the relay leaves it for a person');
+    const job=await approveByPerson(w,h,'live-req-000000000001',two);
+    const req=w.requests.get('live-req-000000000001');assert.equal(req.status,'verified',JSON.stringify(job));
     assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entryMemo,'(인정지각)병원_담임:가상','CheckHere changed');
-    assert.equal(w.day('2').find(r=>r.name==='가상둘').entryMemo,'(인정지각)병원_담임:가상','live document updated');
+    assert.equal(w.day('2').find(r=>r.name==='가상둘').entryMemo,'(인정지각)병원_담임:가상','live document updated by the approval');
     assert.equal(req.approvedBy,APPROVER);assert.equal(req.createdBy,'admin@example.com','the editor stays on record');
+    // 사유만 넣은 학생(퇴실 없음)은 승인할 때 기본 시간이 함께 들어갑니다(요청 흐름과 같음).
+    const three=w.day('2').find(r=>r.name==='가상셋');
+    w.add('live-default-00000001',buildLiveRequest(three,{entry:'09:01',exit:'',entryMemo:'',exitMemo:'조퇴_병원'},'조퇴'));
+    await approveByPerson(w,h,'live-default-00000001',three);
+    const t=[...w.truth.values()].find(x=>x.name==='가상셋');assert.equal(w.requests.get('live-default-00000001').status,'verified');assert.deepEqual([t.exit,t.exitMemo],['18:00:00','조퇴_병원']);
+    h.advance(10*60*1000);await h.relay.step();
+    assert.deepEqual([...new Set(h.calls)],['sync'],'the relay itself only ran collection jobs');
   }finally{h.close();}
 });
-test('stale edits, non-admin and unmarked requests are never written to CheckHere',async()=>{
-  const w=world(),h=await harness(w,18793,{classIds:['2']});
-  try{
-    await h.relay.step();const shown=w.day('2').find(r=>r.name==='가상하나');
-    const input=buildLiveRequest(shown,{entry:'09:00',exit:'18:00',entryMemo:'',exitMemo:'조퇴_병원'},'조퇴 확인');
-    [...w.truth.values()].find(t=>t.name==='가상하나').exitMemo='다른 관리자가 먼저 입력';
-    w.add('live-stale-0000000001',input);await h.relay.step();
-    const stale=w.requests.get('live-stale-0000000001');assert.equal(stale.status,'rejected');assert.match(stale.reviewNote,/바뀌었습니다/);
-    assert.equal([...w.truth.values()].find(t=>t.name==='가상하나').exitMemo,'다른 관리자가 먼저 입력','not overwritten');
-    assert.equal(w.day('2').find(r=>r.name==='가상하나').exitMemo,'다른 관리자가 먼저 입력','viewers see the newer value');
-    const fresh=w.day('2').find(r=>r.name==='가상둘');
-    w.add('live-teacher-00000001',{...buildLiveRequest(fresh,{entry:'09:20',exit:'18:00',entryMemo:'x',exitMemo:''},'y'),createdBy:'teacher@example.com'});
-    w.add('plain-request-0000001',{classId:'2',date:DATE,name:'가상둘',phoneLast4:'0002',reason:'일반 요청',changes:{entryMemo:'z'}});
-    assert.equal(await h.relay.step(),'request');assert.equal(w.requests.get('live-teacher-00000001').status,'pending','left for a human');
-    assert.equal(await h.relay.step(),'idle','plain requests are not in the beta queue');
-    assert.equal(w.requests.get('plain-request-0000001').status,'pending');
-    // 운영포털 '실패 건 다시 처리'가 만든 retry_ 요청은 근거에 실시간 표시가 복사돼 있어도 중계가 가져가지 않습니다.
-    w.add('retry_'+'a'.repeat(64),{...buildLiveRequest(fresh,{entry:'09:20',exit:'18:00',entryMemo:'재처리',exitMemo:''},'재처리'),createdBy:APPROVER});
-    assert.equal(await h.relay.step(),'idle');assert.equal(w.requests.get('retry_'+'a'.repeat(64)).status,'pending');
-    assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entryMemo,'');
-  }finally{h.close();}
-});
-test('a memo on a student with no exit yet gets the configured default time, as in the request flow',async()=>{
-  const w=world({classes:{'2':[['가상셋','01000000003','09:01:00','09:01:00',null]]}}),h=await harness(w,18794,{classIds:['2']});
-  try{
-    await h.relay.step();const shown=w.day('2')[0];
-    w.add('live-default-00000001',buildLiveRequest(shown,{entry:'09:01',exit:'',entryMemo:'',exitMemo:'조퇴_병원'},'조퇴'));
-    await h.relay.step();const req=w.requests.get('live-default-00000001');
-    assert.equal(req.status,'verified',h.logs.join('\n'));const t=w.truth.values().next().value;assert.equal(t.exit,'18:00:00');assert.equal(t.exitMemo,'조퇴_병원');
-  }finally{h.close();}
-});
-test('a request that keeps failing by itself is closed after five tries; bridge outages are retried without limit',async()=>{
-  const w=world(),h=await harness(w,18795,{classIds:['2'],intervalMs:3600000});
-  try{
-    await h.relay.step();const shown=w.day('2').find(r=>r.name==='가상둘');
-    const input=buildLiveRequest(shown,{entry:'09:20',exit:'18:00',entryMemo:'x',exitMemo:''},'y');
-    w.add('live-missing-00000001',{...input,name:'없는학생',phoneLast4:''});
-    for(let i=0;i<5;i++){assert.equal(await h.relay.step(),'request');h.advance(61000);}
-    const req=w.requests.get('live-missing-00000001');assert.equal(req.status,'rejected');assert.match(req.reviewNote,/5번 시도/);
-    assert.equal(await h.relay.step(),'idle');
-  }finally{h.close();}
-  const w2=world(),h2=await harness(w2,18796,{classIds:['2'],intervalMs:3600000});
-  try{
-    await h2.relay.step();const shown=w2.day('2').find(r=>r.name==='가상둘');
-    w2.add('live-offline-00000001',buildLiveRequest(shown,{entry:'09:20',exit:'18:00',entryMemo:'x',exitMemo:''},'y'));
-    h2.app.server.close();h2.app.server.closeAllConnections?.();
-    for(let i=0;i<7;i++){await h2.relay.step();h2.advance(61000);}
-    assert.equal(w2.requests.get('live-offline-00000001').status,'pending','kept for when the collector PC is back');
-  }finally{h2.relay.stop();h2.app.db.close();}
-});
-test('a live edit is refused while another request for the same student and field is in progress, even without phone digits',async()=>{
-  const w=world(),h=await harness(w,18941,{classIds:['2']});
-  try{
-    await h.relay.step();const shown=w.day('2').find(r=>r.name==='가상둘');
-    w.add('plain-old-000000000001',{classId:'2',date:DATE,name:'가상둘',phoneLast4:'',reason:'운영포털 요청',changes:{entry:'09:05:00'}});
-    w.add('live-late-00000000001',buildLiveRequest(shown,{entry:'09:10',exit:'18:00',entryMemo:'',exitMemo:''},'입실 정정'));
-    assert.equal(await h.relay.step(),'request');
-    const req=w.requests.get('live-late-00000000001');assert.equal(req.status,'rejected');assert.match(req.reviewNote,/처리 중인 다른 수정 요청/);
-    assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entry,'09:20:00','CheckHere untouched');
-    assert.deepEqual(requestsFor(shown,[...w.requests].map(([id,d])=>({id,...d}))).map(r=>r.id).sort(),['live-late-00000000001','plain-old-000000000001'],'the viewer also sees the request without phone digits');
-    // 다른 항목(퇴실 메모)만 바꾸는 요청은 겹치지 않으므로 반영됩니다.
-    w.add('live-exit-00000000001',buildLiveRequest(shown,{entry:'09:20',exit:'18:00',entryMemo:'',exitMemo:'메모'},'퇴실 메모'));
-    await h.relay.step();assert.equal(w.requests.get('live-exit-00000000001').status,'verified',h.logs.join('\n'));
-  }finally{h.close();}
-});
-// ---- 시간 삭제 게이트(설계 6장 5b): 연결 프로그램의 time-delete-v1 능력이 있을 때만 지웁니다 ----
+// ---- 시간 삭제(설계 6장 5b): 중계는 지우지 않고, 사람이 승인해도 연결 프로그램에 time-delete-v1 능력이 있을 때만 지웁니다 ----
 const BASE_CAPS=['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1'];
 const exitOf=(w,name)=>[...w.truth.values()].find(t=>t.name===name).exit;
-test('without time-delete-v1 a pending live deletion is refused without reading CheckHere, and an approved one waits',async()=>{
+test('without time-delete-v1 the relay leaves a deletion alone and the bridge refuses a person\'s approval without reading CheckHere',async()=>{
   const w=world(),h=await harness(w,18961,{classIds:['2'],intervalMs:3600000},{capabilities:BASE_CAPS});
   try{
     await h.relay.step();assert.equal(h.relay.status().capabilities.includes('time-delete-v1'),false);
     const shown=w.day('2').find(r=>r.name==='가상하나');
-    const input=buildLiveRequest(shown,{entry:'09:00',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['exit']});
-    w.reads.length=0;w.add('live-delete-000000001',input);
-    assert.equal(await h.relay.step(),'request');
-    const req=w.requests.get('live-delete-000000001');assert.equal(req.status,'rejected');assert.equal(req.reviewNote,TIME_DELETE_OLD);
-    assert.match(req.reviewNote,/「체크히어 시작\.cmd」를 최신으로 실행한 뒤 다시 요청해 주세요/);
-    assert.deepEqual(w.reads,[],'no preview read: CheckHere is not opened');assert.equal(exitOf(w,'가상하나'),'18:00:00','fake CheckHere untouched');
-    // 이미 승인된 삭제 요청은 규칙상 반려할 수 없어 업데이트를 기다립니다(BRIDGE_OLD, 시도 횟수에 넣지 않음).
-    w.add('live-delete-000000002',{...input,status:'approved',approvedBy:APPROVER,approval:prepareApproval(input,shown)});
-    for(let i=0;i<6;i++){assert.equal(await h.relay.step(),'request');h.advance(61000);}
-    assert.equal(w.requests.get('live-delete-000000002').status,'approved','kept for the updated collector');
-    assert.match(h.logs.join('\n'),/승인된 시간 삭제 요청은 연결 프로그램 업데이트를 기다립니다/);
-    assert.deepEqual(w.reads,[]);assert.equal(exitOf(w,'가상하나'),'18:00:00');
+    w.reads.length=0;w.add('live-delete-000000001',buildLiveRequest(shown,{entry:'09:00',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['exit']}));
+    for(let i=0;i<3;i++){assert.equal(await h.relay.step(),'idle');h.advance(61000);}
+    assert.equal(w.requests.get('live-delete-000000001').status,'pending','not rejected by the relay');assert.deepEqual(w.reads,[]);
+    await assert.rejects(approveByPerson(w,h,'live-delete-000000001',shown),/시간 삭제를 지원하지 않습니다/);
+    assert.equal(w.requests.get('live-delete-000000001').status,'approved','kept for the updated collector');
+    assert.deepEqual(w.reads,[],'CheckHere is not opened');assert.equal(exitOf(w,'가상하나'),'18:00:00','fake CheckHere untouched');
+    assert.deepEqual(h.calls,['sync'],'the relay never tried the deletion');
   }finally{h.close();}
 });
-test('with time-delete-v1 a live deletion is approved, deleted through the bridge, verified and reported as 삭제 확인; unpublished rules reject it',async()=>{
+test('with time-delete-v1 a deletion waits for a person; once approved the bridge deletes, verifies and saves it',async()=>{
   const w=world(),h=await harness(w,18962,{classIds:['2']},{capabilities:[...BASE_CAPS,'time-delete-v1'],addCapabilities:['time-delete-v1']});
   try{
     await h.relay.step();assert.ok(h.relay.status().capabilities.includes('time-delete-v1'));
-    // 규칙 미게시: 승인 저장(approval.after의 '')이 권한 거절되면 그 문구로 반려하고 체크히어는 그대로 둡니다.
-    const approve=w.store.approve;w.store.approve=async()=>{throw Object.assign(Error('Missing or insufficient permissions.'),{code:'permission-denied'});};
-    const two=w.day('2').find(r=>r.name==='가상둘');
-    w.add('live-delete-000000003',buildLiveRequest(two,{entry:'09:20',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['exit']}));
-    assert.equal(await h.relay.step(),'request');
-    assert.deepEqual([w.requests.get('live-delete-000000003').status,w.requests.get('live-delete-000000003').reviewNote],['rejected',TIME_DELETE_RULES]);
-    assert.equal(exitOf(w,'가상둘'),'18:00:00');w.store.approve=approve;
-    // 능력 있음: 승인 → 수정창 '삭제'(가짜) → 다시 읽어 확인 → 실시간 문서에 반영
     const shown=w.day('2').find(r=>r.name==='가상하나');
     w.add('live-delete-000000004',buildLiveRequest(shown,{entry:'09:00',exit:'',entryMemo:'',exitMemo:''},'결석 확인',{deleteTimes:['exit']}));
-    assert.equal(await h.relay.step(),'request');
-    const req=w.requests.get('live-delete-000000004');assert.equal(req.status,'verified',JSON.stringify(req.result)+h.logs.join('\n'));
+    h.advance(10*60*1000);await h.relay.step();
+    assert.equal(w.requests.get('live-delete-000000004').status,'pending');assert.equal(exitOf(w,'가상하나'),'18:00:00','nothing deleted before a person approves');
+    // 사람 승인 → 수정창 '삭제'(가짜) → 다시 읽어 확인 → 실시간 문서에 반영
+    await approveByPerson(w,h,'live-delete-000000004',shown);
+    const req=w.requests.get('live-delete-000000004');assert.equal(req.status,'verified',JSON.stringify(req.result));
     assert.equal(req.result.results[0].deleted,true);assert.equal(req.approval.after.exit,'');assert.deepEqual(req.deleteTimes,['exit']);
     assert.equal(exitOf(w,'가상하나'),null,'CheckHere exit deleted');assert.equal([...w.truth.values()].find(t=>t.name==='가상하나').entry,'09:00:00','the other side stays');
     assert.equal(w.day('2').find(r=>r.name==='가상하나').exit,null,'live document shows the deletion');
-    assert.match(h.logs.join('\n'),/가상하나: 체크히어 반영·확인·DB 저장 완료 · 퇴실 시간 삭제 확인/);
-    // 관리자가 넣은 1교시 삭제 요청(화면을 거치지 않고 만든 것)은 승인하지 않고 그 이유로 반려합니다. 체크히어 1교시는 그대로
-    const other=w.day('2').find(r=>r.name==='가상둘');
-    w.add('live-delete-000000005',{classId:'2',date:DATE,name:'가상둘',phoneLast4:other.phoneLast4,reason:`${LIVE_MARK} 결석 확인 [기준:${baseTag(other,['entry'])}]`,changes:{entry:''},deleteTimes:['entry']});
-    assert.equal(await h.relay.step(),'request');
-    assert.deepEqual([w.requests.get('live-delete-000000005').status,w.requests.get('live-delete-000000005').reviewNote],['rejected',ATTEND_OFF]);
-    assert.equal([...w.truth.values()].find(t=>t.name==='가상둘').entry,'09:20:00','CheckHere 1st period untouched');
+    assert.deepEqual([...new Set(h.calls)],['sync']);
   }finally{h.close();}
 });
 // 중계 신호(settings/checkhereRelay)는 담임도 읽으므로 반·학생 이름과 오류 글이 들어가면 안 됩니다.
@@ -290,6 +266,12 @@ test('the relay signal carries state, busy, queue, capabilities, build and error
   assert.deepEqual(relaySignal({...status,state:'stopped'},{},APPROVER),{state:'stopped',busy:false,queue:3,capabilities:caps,build:'20261014.1',lastErrorAt:1760229000000,by:APPROVER},'a stopped relay is never busy');
   assert.deepEqual(relaySignal(undefined),{state:'stopped',busy:false,queue:0,capabilities:[],build:null,lastErrorAt:null,by:null});
   assert.deepEqual(relaySignal({...status,lastErrorAt:'어제'},{},''),{...signal,lastErrorAt:null,by:null});
+  // 체크히어 해제 상태는 상태·남은 초·쓸 수 있는지만 옮깁니다(글·이름 없음). 연결 프로그램에 닿지 않으면 넣지 않습니다.
+  const open={state:'unmasked',leftSec:412.8,writable:true,text:'가상둘 원문'};
+  assert.deepEqual(relaySignal({...status,privacy:open},{},APPROVER),{...signal,privacy:{state:'unmasked',leftSec:412,writable:true}});
+  assert.deepEqual(relaySignal({...status,privacy:{state:'masked',leftSec:null,writable:true}},{},APPROVER).privacy,{state:'masked',leftSec:null,writable:false},'a masked tab is never writable');
+  assert.equal(Object.hasOwn(relaySignal({...status,privacy:open,bridgeOk:false},{},APPROVER),'privacy'),false,'bridge unreachable');
+  assert.equal(Object.hasOwn(relaySignal({...status,privacy:{state:'가상둘'}},{},APPROVER),'privacy'),false,'odd state text is dropped');
 });
 test('relay status shows the bridge capabilities, build and busy flag, and the time of the last error',async()=>{
   let bridgeState={capabilities:['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1'],busy:null,records:[],cursor:'c1'};
@@ -308,6 +290,14 @@ test('relay status shows the bridge capabilities, build and busy flag, and the t
   // 일이 없을 때도 신호 전에 ping으로 연결 프로그램을 다시 봅니다. 닿지 않으면 능력을 알리지 않습니다.
   bridgeState={...bridgeState,busy:null,capabilities:[...bridgeState.capabilities,'time-delete-v1']};
   assert.equal(await relay.ping(),true);assert.ok(relaySignal(relay.status(),{},APPROVER).capabilities.includes('time-delete-v1'));assert.equal(relay.status().bridgeBusy,false);
+  // 연결 프로그램의 해제 상태(privacy, 옛 build는 masking 머리말·남은 시간)를 신호에 옮김. 남은 초만 바뀌면 알리지 않고 조용히 고침
+  bridgeState={...bridgeState,masking:{header:'masked',view:'masked',remaining:null,waitingWrites:0}};const heard=seen.length;
+  assert.equal(await relay.ping(),true);assert.deepEqual(relaySignal(relay.status(),{},APPROVER).privacy,{state:'masked',leftSec:null,writable:false});assert(seen.length>heard,'masked → heard');
+  bridgeState={...bridgeState,privacy:{state:'unmasked',leftSec:600,writable:true,text:'체크히어 해제됨 · 10분 남음 — 수정·삭제 가능'}};
+  await relay.ping();assert.deepEqual(relay.status().privacy,{state:'unmasked',leftSec:600,writable:true});const after=seen.length;
+  bridgeState={...bridgeState,privacy:{...bridgeState.privacy,leftSec:540}};await relay.ping();
+  assert.equal(relay.status().privacy.leftSec,540);assert.equal(seen.length,after,'only the seconds changed');
+  bridgeState={...bridgeState,privacy:undefined,masking:undefined};await relay.ping();assert.equal(Object.hasOwn(relaySignal(relay.status(),{},APPROVER),'privacy'),false,'an old bridge without masking info');
   const reachable=bridgeState;bridgeState=null;
   assert.equal(await relay.ping(),false,'the bridge is off');assert.deepEqual(relaySignal(relay.status(),{},APPROVER).capabilities,[]);
   bridgeState=reachable;assert.equal(await relay.ping(),true);assert.equal(relaySignal(relay.status(),{},APPROVER).capabilities.length,4);

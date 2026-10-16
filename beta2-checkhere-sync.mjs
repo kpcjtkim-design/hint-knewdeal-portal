@@ -1,12 +1,15 @@
-// 2기 베타 출결대조 → 체크히어 자동 반영(브라우저 쪽 흐름). 출결원장 저장 3초 뒤 실시간 요청을 만들고, 되돌리기·보류·다시 계산을 맡습니다.
+// 2기 베타 출결대조 → 체크히어 반영 요청(브라우저 쪽 흐름). 출결원장 저장 3초 뒤 실시간 요청을 만들고, 되돌리기·보류·다시 계산을 맡습니다.
+// 사용자 결정(2026-10-16): 만든 요청은 승인 대기로 남습니다. 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만(중계는 읽기 전용).
 // 설계: docs/beta2-instant-edit-plan.md 4.2(S1~S15). 사용자 결정(2026-10-14): 오늘만 자동(지난 날은 '체크히어 맞추기'를 눌러 같은 3초 흐름),
 // 3초 되돌리기는 출결원장과 요청을 모두 되돌림. 시간 삭제 요청(deleteTimes)은 켜지는 조건(G1 규칙 게시 깃발·G2 중계 time-delete-v1·G3 권한 거절 없음)이
 // 모두 맞을 때만 씁니다(결석 저장과 × 버튼). 지우기는 기록 번호가 있는 칸만(canDeleteTime), 보내기 전 확인창 필수(S8).
+// 1교시(관리자 ATTEND) 삭제는 중계 신호에 time-delete-v2가 있을 때만: 결석은 1교시·퇴실 두 칸, 1교시 ×는 퇴실이 비어 있을 때만(2026-10-16).
+// 가린 화면(중계 신호 privacy)이어도 요청은 만듭니다(승인 대기). 확인창에 '반영할 때 체크히어 마스킹 해제 필요'를 붙입니다.
 // Firestore 함수(fs)·시계·타이머는 화면이 넘깁니다. /beta2 화면은 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js'에서
 // import한 함수를 넘겨야 가드(beta2-firestore-guard.mjs)를 거쳐 근거에 [2기 베타]가 붙습니다. 이 파일은 https 주소를 import하지 않습니다(Node 시험).
 import {memoDefaultTimes,resultText} from './checkhere/approval-core.mjs';
 import {ACTIVE,LIVE_STATUS,buildLiveRequest,isAutoLedgerRequest,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
-import {RELAY_STALE_MS,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
+import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,privacyShort,relayPrivacy,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
 import {B2_EVIDENCE,B2_TYPES,neededTimes,recognizedType} from './beta2-core.mjs';
 
 // firestore.rules checkhereRequests create 허용 키 중 요청 내용(나머지는 status·createdBy·createdAt·updatedAt).
@@ -16,8 +19,9 @@ export const REQUEST_KEYS=['classId','date','name','phoneLast4','reason','change
 // 지각류는 입실, 조퇴류는 퇴실 시간을 출결원장이 요구하고(beta2.gs b2Validate_), 외출류·인정출석은 사유를 입실(1교시) 칸 메모에 씁니다
 // (지우면 그 메모도 사라지고 시간이 없는 쪽에는 사유를 다시 넣을 수 없음). 그래서 그 칸은 유형을 먼저 바꿔야 합니다.
 export const TYPE_FIRST='유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)';
+// 1교시 ×는 그 칸만 지우므로(퇴실 없이) 퇴실이 비어 있을 때만, 그리고 v2 연결 프로그램일 때만 켭니다(canDeleteTime).
 export function timeDeleteBlock({gate:g,record,side,type='출석'}){
-  const why=[...(g?.reasons||[])],can=canDeleteTime(record,side);
+  const why=[...(g?.reasons||[])],can=canDeleteTime(record,side,{v2:!!g?.v2});
   if(!can.ok)why.push(can.reason);
   if((side==='entry'&&/^(?:인정)?(?:지각|외출)$|^인정출석$/.test(type))||(side==='exit'&&/^(인정)?조퇴$/.test(type)))why.push(TYPE_FIRST);
   return why;
@@ -43,11 +47,12 @@ const MARK_KEYS=['entryKind','entryEventId','exitEventId','enterEventId'];
 const verOf=r=>r?[r.version??'',...MARK_KEYS.map(k=>String(r[k]??''))].join('|'):null;
 // S8 확인창: 지울 시간(HH:MM)과 남는 것. 체크인한 학생(1교시 PASS)은 퇴실을 지우면 1교시·총 참여 시간도 '-'가 됩니다(Cowork 확인).
 const DEL_LABEL={entry:'입실(교시)',exit:'퇴실'};
-// 그 칸의 관리자 사유도 기록과 함께 지워집니다. 관리자 1교시를 지우면 그것에서 계산된 입실도 빌 수 있어 '남습니다'는 퇴실만 지울 때만 씁니다(deleteLeaves).
-const deleteQuestion=(name,date,record,sides)=>`${name} · ${date} 체크히어 시간을 지웁니다: ${sides.map(k=>`${DEL_LABEL[k]} ${hhmm(record?.[k])||'-'}`).join(' · ')}`
+// 그 칸의 관리자 사유도 기록과 함께 지워집니다. 1교시를 지우면 1교시·퇴실 칸이 비고 입실 기록은 남을 수 있습니다(deleteLeaves, 2026-10-16 확인).
+// 보내는 것은 삭제 요청이고, 체크히어에서 지우는 것은 관리자가 운영 포털에서 한 건씩 승인할 때입니다. 가린 화면이면 그때 해제가 필요하다고 덧붙입니다(privacy).
+const deleteQuestion=(name,date,record,sides,privacy=null)=>`${name} · ${date} 체크히어 시간 삭제를 요청합니다: ${sides.map(k=>`${DEL_LABEL[k]} ${hhmm(record?.[k])||'-'}`).join(' · ')}`
   +(sides.includes('exit')&&!sides.includes('entry')&&record?.entryKind==='PASS'&&hhmm(record?.entry)?`\n퇴실을 지우면 1교시(${hhmm(record.entry)})와 총 참여 시간도 비워집니다.`:'')
   +sides.filter(k=>String(record?.[k+'Memo']??'').trim()).map(k=>`\n${DEL_LABEL[k]} 칸의 관리자 사유(「${record[k+'Memo']}」)도 함께 지워집니다.`).join('')
-  +`\n${deleteLeaves(sides)}.\n보낼까요?`;
+  +`\n${deleteLeaves(sides,record)}.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다.${privacy&&privacy.state!=='unknown'&&!privacy.writable?`\n${UNMASK_ON_APPLY}.`:''}\n보낼까요?`;
 // 되돌리기 저장(b2Save)이 받아 줄 이전 값인지(beta2.gs b2Validate_와 같은 기준). 못 받으면 그 이유 — 운영총괄에서 온 '중복'·시간 없는 지각 같은 값은
 // 출결원장에 다시 저장할 수 없으므로 되돌리기는 체크히어 반영만 취소합니다.
 export function restoreBlock(p){
@@ -67,10 +72,11 @@ export function restoreBlock(p){
 const S=(kind,label,o={})=>({kind,label,detail:'',actions:[],tone:'wait',...o});
 const HOLD=(note,o={})=>S('hold',`보류 · ${note}`,{tone:'warn',...o});
 const CANCEL=(label,o={})=>S('cancelled',label,{tone:'warn',actions:['retry'],...o}); // 취소된 결정은 '다시 보내기'(지금 값으로 다시 계산)로 이어 갈 수 있습니다.
+// 요청은 사람이 승인해야 체크히어에 쓰이므로 기다림은 '승인 대기', 반려도 사람이 한 것입니다(운영 포털 STATUS와 같은 말).
 export function requestStatus(r,{now=Date.now(),me=''}={}){
-  const label={pending:'반영 대기',approved:'반영 준비',applying:'반영 중',verified:'완료',rejected:'자동 반영 안 함',withdrawn:'취소',conflict:'원본 변경',partial:'일부 반영',failed:'반영 실패',unknown:'결과 미확인'}[r.status]||LIVE_STATUS[r.status]||String(r.status||'');
+  const label={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'완료',rejected:'반려',withdrawn:'취소',conflict:'원본 변경',partial:'일부 반영',failed:'반영 실패',unknown:'결과 미확인'}[r.status]||LIVE_STATUS[r.status]||String(r.status||'');
   const o={requestId:r.id};
-  if(r.status==='pending')return S('pending',label,{...o,detail:r.createdAt&&now-stamp(r.createdAt)>PENDING_SLOW_MS?'수집 PC 중계가 꺼져 있거나 다른 반을 갱신 중입니다. 켜지면 자동 처리됩니다':'',actions:me&&r.createdBy===me?['withdraw']:[]});
+  if(r.status==='pending')return S('pending',label,{...o,detail:r.createdAt&&now-stamp(r.createdAt)>PENDING_SLOW_MS?'관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에 반영됩니다(자동으로 쓰지 않음)':'',actions:me&&r.createdBy===me?['withdraw']:[]});
   if(r.status==='approved')return S('approved',label,o);
   if(r.status==='applying'){const t=stamp(r.updatedAt)||stamp(r.approvedAt)||stamp(r.createdAt);return t&&now-t>APPLYING_SLOW_MS?S('applying','반영 중 · 결과 확인 필요',{...o,detail:'결과 확인 필요 · 수집 PC에서 결과 확인',tone:'warn'}):S('applying',label,o);}
   if(r.status==='verified')return S('verified',label,{...o,detail:resultText(r.result?.message,r.result?.results),tone:'ok'}); // 시간 삭제 확인은 저장된 results로 붙임
@@ -122,6 +128,9 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   const onDay=(cls,date)=>!!day&&cls===day.cls&&date===day.date;
   const sigOf=(cls,date,name)=>String(getSig(cls,date,name)??'');
   const gate=()=>deletionGate({features,relay:relayDoc,denied,now:now()});
+  // 결과 안내가 계산된 때의 삭제 조건(켜짐·v2). 바뀌면 그 안내를 버리고 다시 계산합니다.
+  const gateMark=()=>{const g=gate();return g.enabled?(g.v2?'v2':'on'):'off';};
+  const privacy=()=>relayPrivacy(relayDoc,now());
   const studentRequests=(cls,date,name)=>onDay(cls,date)?requestsFor({classId:cls,date,name,phoneLast4:getRecord(cls,date,name)?.phoneLast4||''},requests).sort(newestFirst):[];
   // S2 결정 시점 저장: 그때 화면에 보인 기록의 복사본으로 [기준:…]을 만듭니다.
   // manual = 되돌리기가 체크히어 요청만 취소(이 세션 저장을 이어받지 않은 맞추기), asked = 사람이 누른 맞추기·다시 보내기(오늘이 아니어도 보냄)
@@ -130,7 +139,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     return {key,cls,date,name,prevRow:prev,prevProv:existedBefore===false||!prevRow?'':String(prevRow.prov||''),row:pickRow(row),sig:String(sig??''),existedBefore:existedBefore!==false,keepSheet:manual?'':restoreBlock(prev),
       sheetTeacher:String(teacherOf(cls)||''),record:clone(getRecord(cls,date,name)),manual,asked,phase:'new',timer:null,deadline:0};
   }
-  const compute=h=>h.remove?removeResult(h):sheetToCheckHere({row:h.row,record:h.record,sheetTeacher:h.sheetTeacher,date:h.date,deleteEnabled:gate().enabled,active:studentRequests(h.cls,h.date,h.name),me});
+  const compute=h=>h.remove?removeResult(h):sheetToCheckHere({row:h.row,record:h.record,sheetTeacher:h.sheetTeacher,date:h.date,deleteEnabled:gate().enabled,deleteV2:gate().v2,active:studentRequests(h.cls,h.date,h.name),me});
   // × 버튼의 결정(h.remove = 지울 쪽): 출결원장은 그대로 두고 그 시간만 지웁니다. 보내기 직전에도 지금 기록·조건으로 다시 봅니다.
   function removeResult(h){
     const out={state:'hold',changes:{},deleteTimes:[],text:'',notes:[],warnings:[],withdraw:[]},r=h.record;
@@ -139,7 +148,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     const why=[...new Set(h.remove.flatMap(side=>timeDeleteBlock({gate:gate(),record:r,side,type:h.row.type})))];
     if(why.length)return {...out,notes:why};
     const deleteTimes=['entry','exit'].filter(k=>h.remove.includes(k));
-    return {...out,state:'send',changes:Object.fromEntries(deleteTimes.map(k=>[k,''])),deleteTimes,text:`출결대조 시간 삭제 · ${deleteTimes.map(k=>DEL_LABEL[k]).join('·')}`,warnings:[deleteLeaves(deleteTimes)]};
+    return {...out,state:'send',changes:Object.fromEntries(deleteTimes.map(k=>[k,''])),deleteTimes,text:`출결대조 시간 삭제 · ${deleteTimes.map(k=>DEL_LABEL[k]).join('·')}`,warnings:[deleteLeaves(deleteTimes,r)]};
   }
   const stop=h=>{if(h?.timer!=null){clearTimer(h.timer);h.timer=null;}};
   const setNote=(key,status)=>{if(status)notes.set(key,{...status,at:now()});else notes.delete(key);};
@@ -147,7 +156,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   // 지금 값으로 다시 계산해 보입니다(기록 없음·이미 같음·삭제 보류가 굳지 않게). 표시는 버전에 들어가지 않아 따로 봅니다(checkhere/day-data.mjs DELETE_MARKS).
   const KEEP=new Set(['error','denied','undo-failed','undone']);
   const deciding=h=>!!h.remove||h.row?.type==='결석';
-  const stamped=(h,status)=>({...status,ver:verOf(h.record),...(deciding(h)?{gate:gate().enabled}:{})});
+  const stamped=(h,status)=>({...status,ver:verOf(h.record),...(deciding(h)?{gate:gateMark()}:{})});
   function finish(h,status){
     stop(h);if(holds.get(h.key)===h)holds.delete(h.key);
     // × 결정: 출결원장으로 다시 계산하는 '다시 보내기'를 빼고 ×를 다시 누르게 합니다.
@@ -164,13 +173,13 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   // 계산 결과에 따라: 보낼 것(또는 취소할 내 자동 요청)이 있으면 3초, 다시 계산할 조건이 있으면 보류, 아니면 끝(S5·S7)
   function applyResult(h,res){
     if(res.state==='send'||res.withdraw.length){
-      // 오늘만 자동(사용자 결정): 미뤄 둔 자동 반영이 그날을 넘겼으면 보내지 않고 '체크히어 맞추기'만 남깁니다.
+      // 오늘만 자동(사용자 결정): 미뤄 둔 자동 요청이 그날을 넘겼으면 보내지 않고 '체크히어 맞추기'만 남깁니다.
       if(!h.asked&&h.date!==today())return finish(h,{...resultStatus(res),sig:h.sig});
       return countdown(h,res);
     }
     // 저장 때 체크히어 기록이 아직 없었으면(첫 수집 전·다시 읽는 중) 기록이 오면 다시 계산합니다. 출석·결석은 기록이 없으면 체크히어에 할 일이 없어
     // 기다리지 않습니다(안 온 학생마다 대기가 쌓이지 않게). 그 안내는 기록이 오면 버려지고 지금 값으로 다시 계산해 보입니다.
-    if(res.state==='none'&&!h.record&&!h.asked&&!['출석','결석'].includes(h.row.type))return wait(h,'record','체크히어 기록 없음 · 기록이 오면 자동 반영');
+    if(res.state==='none'&&!h.record&&!h.asked&&!['출석','결석'].includes(h.row.type))return wait(h,'record','체크히어 기록 없음 · 기록이 오면 다시 계산해 요청');
     if(res.state==='hold'&&res.retryWhen)return wait(h,res.retryWhen,res.notes[0],res.retryWhen==='request'?studentRequests(h.cls,h.date,h.name).filter(r=>ACTIVE.includes(r.status)).map(r=>r.id):[]);
     finish(h,{...resultStatus(res),sig:h.sig});
   }
@@ -188,7 +197,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     if(!onDay(h.cls,h.date))return void finish(h,CANCEL('반·날짜가 바뀌어 체크히어로 보내지 않았습니다'));
     if(!reqReady){if(flush)return void finish(h,CANCEL('체크히어 요청 목록을 읽지 못해 보내지 않았습니다'));h.counted=true;wait(h,'load','체크히어 요청 목록 확인 중');return null;}
     const sheetSig=sigOf(h.cls,h.date,h.name);
-    if(sheetSig!==h.sig)return void finish(h,CANCEL('시트가 그사이 바뀜 · 자동 반영 안 함',{actions:['retry'],sig:sheetSig}));
+    if(sheetSig!==h.sig)return void finish(h,CANCEL('시트가 그사이 바뀜 · 요청 안 보냄',{actions:['retry'],sig:sheetSig}));
     const cur=getRecord(h.cls,h.date,h.name);
     // 저장 때 본 기록이 지금 화면에 없음(새로고침·다시 읽는 중): '기록 없음'으로 끝내지 않고 기록이 다시 오면 계산합니다.
     if(!cur&&h.record){if(flush)return void finish(h,CANCEL('체크히어 기록을 다시 읽는 중이라 보내지 않았습니다'));return void wait(h,'record','체크히어 기록 다시 읽는 중');}
@@ -209,7 +218,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
       // × 결정이면 finish가 '다시 보내기' 대신 ×를 다시 누르라고 안내합니다.
       if(!h.deleteOk&&(h.deferred||flush)){if(flush)unconfirmed?.push(h.name);return void finish(h,flush?CANCEL('시간 삭제는 확인 없이 보내지 않습니다'):h.remove?CANCEL('체크히어 시간 삭제 멈춤'):{...resultStatus(res),sig:h.sig});}
       if(!h.deleteOk){
-        if(!ask(deleteQuestion(h.name,h.date,h.record,res.deleteTimes)))return void finish(h,CANCEL('체크히어 시간 삭제 취소'));
+        if(!ask(deleteQuestion(h.name,h.date,h.record,res.deleteTimes,privacy())))return void finish(h,CANCEL('체크히어 시간 삭제 취소'));
         h.deleteOk=true;
       }
     }
@@ -218,7 +227,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     const run=(async()=>{
       const gone=()=>disposed||holds.get(h.key)!==h;
       for(const id of res.withdraw){
-        try{await withdrawById(id);}catch(e){if(!gone())wait(h,'request','대기 중인 자동 요청을 취소하지 못함 · 진행 중 요청이 끝나면 자동 반영',[id]);return null;}
+        try{await withdrawById(id);}catch(e){if(!gone())wait(h,'request','대기 중인 자동 요청을 취소하지 못함 · 진행 중 요청이 끝나면 다시 계산해 요청',[id]);return null;}
         if(gone())return null;
       }
       if(res.state!=='send')return void finish(h,{...resultStatus({...res,withdraw:[]}),sig:h.sig});
@@ -239,7 +248,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
         if(e?.code==='permission-denied'&&res.deleteTimes.length){denied=true;emit(null);return void finish(h,S('denied','시간 삭제용 Firestore 규칙이 아직 게시되지 않았습니다',{tone:'bad'}));}
         return void finish(h,FAIL(e));
       }
-      if(!disposed)finish(h,S('pending','반영 대기',{requestId:id})); // 구독에 요청이 보이면 요청 상태로 바뀝니다.
+      if(!disposed)finish(h,S('pending','승인 대기',{requestId:id})); // 구독에 요청이 보이면 요청 상태로 바뀝니다.
       return id;
     })().catch(e=>{if(!disposed&&holds.get(h.key)===h)finish(h,FAIL(e));return null;});
     inflight.add(run);run.then(()=>inflight.delete(run));
@@ -253,7 +262,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
       let sig;
       try{const b=await client.bundle(h.cls,{maxAge:0});sig=String((b?.ledger||[]).find(r=>String(r.cls)===h.cls&&r.name===h.name&&r.date===h.date)?.sig??'');}catch{return;}
       if(disposed||holds.get(h.key)!==h||h.phase!=='waiting'||saving.has(h.key))return;
-      if(sig!==h.sig)return void finish(h,CANCEL('시트가 그사이 바뀜 · 자동 반영 안 함',{actions:['retry'],sig:sigOf(h.cls,h.date,h.name)}));
+      if(sig!==h.sig)return void finish(h,CANCEL('시트가 그사이 바뀜 · 요청 안 보냄',{actions:['retry'],sig:sigOf(h.cls,h.date,h.name)}));
       Object.assign(h,{record:clone(getRecord(h.cls,h.date,h.name)),deferred:true,deleteOk:false,waitVersion:undefined,waitChanges:undefined});
       applyResult(h,compute(h));
     }catch(e){if(!disposed&&holds.get(h.key)===h)finish(h,FAIL(e));}finally{h.busy=false;}
@@ -339,14 +348,14 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   function lazy(cls,date,name){
     if(!getRow||!onDay(cls,date)||!reqReady)return null;
     const row=getRow(cls,date,name);if(row?.type==='해당없음')return null;
-    try{return {...resultStatus(sheetToCheckHere({row:pickRow(row||{type:'출석'}),record:getRecord(cls,date,name),sheetTeacher:String(teacherOf(cls)||''),date,deleteEnabled:gate().enabled,active:studentRequests(cls,date,name),me})),lazy:true};}catch{return null;}
+    try{return {...resultStatus(sheetToCheckHere({row:pickRow(row||{type:'출석'}),record:getRecord(cls,date,name),sheetTeacher:String(teacherOf(cls)||''),date,deleteEnabled:gate().enabled,deleteV2:gate().v2,active:studentRequests(cls,date,name),me})),lazy:true};}catch{return null;}
   }
   function statusFor(key){
     const {cls,date,name}=parseKey(key),h=holds.get(key),list=studentRequests(cls,date,name);
     const local=h?{phase:h.phase,deadline:h.deadline,note:h.note,detail:h.detail,draft:h.draft,mineBlocking:h.phase==='waiting'&&list.some(r=>(h.blockers||[]).includes(r.id)&&r.status==='pending'&&r.createdBy===me)}:null;
     let target=notes.get(key)||null;
     // 그 뒤 시트나 체크히어 기록이 바뀐 결과는 버리고 지금 값으로 계산해 보입니다.
-    if(target&&!target.requestId&&((target.sig!=null&&sigOf(cls,date,name)!==target.sig)||(target.ver!==undefined&&target.ver!==verOf(getRecord(cls,date,name)))||(target.gate!==undefined&&target.gate!==gate().enabled)))target=null;
+    if(target&&!target.requestId&&((target.sig!=null&&sigOf(cls,date,name)!==target.sig)||(target.ver!==undefined&&target.ver!==verOf(getRecord(cls,date,name)))||(target.gate!==undefined&&target.gate!==gateMark())))target=null;
     return rowCheckHereStatus({local,request:list.find(isLiveRequest)||null,target:target||lazy(cls,date,name),now:now(),me,record:onDay(cls,date)?getRecord(cls,date,name):null});
   }
   // × 버튼(send의 deleteTimes): 지금 지울 수 있는지 보고, 확인창(S8)에서 '예'일 때만 3초를 시작합니다(그 뒤 보내기 직전 확인 S3은 그대로).
@@ -364,7 +373,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     h.remove=[...sides];
     const res=compute(h);
     if(res.state!=='send')return {ok:false,reasons:res.notes};
-    if(!ask(deleteQuestion(name,date,h.record,res.deleteTimes)))return {ok:false,cancelled:true};
+    if(!ask(deleteQuestion(name,date,h.record,res.deleteTimes,privacy())))return {ok:false,cancelled:true};
     h.deleteOk=true;countdown(h,res);
     return {ok:true,status:statusFor(key)};
   }
@@ -444,9 +453,11 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     gate,
     relay(){
       const s=relayDoc,at=typeof s?.at==='number'?s.at:stamp(s?.at),t=now(),on=s?.state==='running'&&at>0&&t-at<=RELAY_STALE_MS,min=Math.floor((t-at)/60000);
-      const unmask=on?unmaskNote(s):'';
-      return {on,at:at||null,busy:!!s?.busy,queue:Number(s?.queue)||0,capabilities:[...(s?.capabilities||[])],build:s?.build||null,requestsError:reqError,needsUnmask:on?Number(s?.needsUnmask)||0:0,
-        text:on?`수집 PC 중계 작동 중 · 신호 ${min<1?'방금':min+'분 전'}${unmask?` · ${unmask} ${Number(s.needsUnmask)}건`:''}`:'중계 꺼짐 · 요청은 반영 대기로 남습니다'};
+      // privacy: 수집 PC 체크히어 탭의 해제 상태(중계 신호, 이름 없음). 가려져 있어도 읽기·요청은 되고, 반영할 때만 사람이 해제합니다.
+      const unmask=on?unmaskNote(s):'',p=on?privacy():null,short=privacyShort(p);
+      return {on,at:at||null,busy:!!s?.busy,queue:Number(s?.queue)||0,capabilities:[...(s?.capabilities||[])],build:s?.build||null,requestsError:reqError,needsUnmask:on?Number(s?.needsUnmask)||0:0,privacy:p,
+        // 중계는 읽기 전용이라 꺼져도 요청 처리와는 상관없고(요청은 늘 사람의 승인을 기다림), 체크히어 기록 갱신만 멈춥니다.
+        text:on?`수집 PC 중계 작동 중 · 신호 ${min<1?'방금':min+'분 전'}${unmask?` · ${unmask} ${Number(s.needsUnmask)}건`:''}${short?` · ${short}`:''}`:'중계 꺼짐 · 체크히어 기록 10분 갱신 멈춤'};
     },
     // needsConfirm: 확인창(S8)을 거치지 않은 시간 삭제라 지금 보내기(떠남·반·날짜 이동)로는 보내지 않는 결정
     holds:()=>[...holds.values()].map(h=>({key:h.key,cls:h.cls,date:h.date,name:h.name,phase:h.phase,sendable:sendable(h),needsConfirm:needsConfirm(h),retryWhen:h.retryWhen||null,deadline:h.deadline||null})),

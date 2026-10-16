@@ -9,8 +9,11 @@ import {version} from '../identity.mjs';
 mkdirSync(join(import.meta.dirname,'../test-results'),{recursive:true});
 const URL_OF=(c,d)=>`https://check.ihereapp.com/history/lecture/modify?tab=STUDENT&lectureId=L${c}&scheduleId=S${c}${d}&scheduleDate=${d}`;
 // A collector whose CheckHere pages are simulated; collect() and the batch logic are real.
+// 빠른 수집(incremental)은 그날 화면 데이터만 읽습니다(2026-10-16): openDay가 순번으로 맞춘 화면 데이터 항목을 함께 둡니다.
+// failOnce: 그 학생의 화면 데이터가 처음 한 번 표와 달라(읽지 못함) 두 번째 시도에서 읽힙니다. 수정창(readDetails)은 정밀 수집에서만 열립니다.
+const entryOf=(row,exit)=>({sequence:1,attendeeId:'att-'+row.id,name:row.name,phone:'',eventList:[{type:'ENTER',time:row.date+'T'+row.rawEntry,eventId:'e',timeIndex:0},{type:'PASS',time:row.date+'T'+row.entry,eventId:null,timeIndex:0},{type:'COMPLETE',time:row.date+'T'+exit,eventId:'c',timeIndex:0}],leaveEvents:{pairs:[]}});
 function fakeCollector({lectures,failOnce=new Set(),scan=true}){
-  const c=new CheckHereCollector('fixture',{page:{}}),calls={openDay:[],details:[],scans:[]},failed=new Set();
+  const c=new CheckHereCollector('fixture',{page:{},dayGapMs:[0,0]}),calls={openDay:[],details:[],scans:[]},failed=new Set();
   c.loggedIn=async()=>true;c.requireLogin=async()=>{if(c.loggedOut)throw Error('LOGIN_REQUIRED: 전용 크롬에서 체크히어에 로그인해 주세요.');};
   if(scan)c.lectureDates=async classId=>{calls.scans.push(classId);if(!lectures[classId])throw Error(`${classId}반 강의를 찾지 못했습니다.`);return {dates:Object.keys(lectures[classId]).sort(),complete:true};};
   else c.lectureDates=undefined;
@@ -18,9 +21,12 @@ function fakeCollector({lectures,failOnce=new Set(),scan=true}){
     await c.requireLogin();calls.openDay.push(`${classId}|${date}`);
     const day=lectures[classId]?.[date];if(!day)throw Error(`${date} 강의가 없습니다. 휴강 여부를 확인해 주세요.`);
     c.urls.set(`${classId}|${date}`,URL_OF(classId,date));
-    return day.map((s,i)=>({id:`${classId}-${date}-${s.name}`,classId,date,name:s.name,studentKey:'k'+s.name,phoneLast4:'0000',rowIndex:i+2,schedule:'09:00 ~ 18:00',rawEntry:s.in,entry:s.in,exit:s.out,outingCount:0,outings:[],entryMemo:null,exitMemo:null,tableSignature:`${s.in}|${s.out}`,source:'live',readState:'partial',collectedAt:new Date().toISOString()}));
+    const rows=day.map((s,i)=>({id:`${classId}-${date}-${s.name}`,classId,date,name:s.name,studentKey:'k'+s.name,phoneLast4:'0000',rowIndex:i+2,schedule:'09:00 ~ 18:00',rawEntry:s.in,entry:s.in,exit:s.out,outingCount:0,outings:[],entryMemo:null,exitMemo:null,tableSignature:`${s.in}|${s.out}`,source:'live',readState:'partial',collectedAt:new Date().toISOString()}));
+    const entries=new Map(rows.map(r=>{const bad=failOnce.has(r.id)&&!failed.has(r.id);if(bad)failed.add(r.id);return [r.id,entryOf(r,bad?'12:34:56':r.exit)];}));
+    c.dayData={data:{eventResultList:[...entries.values()]}};c.planOptions=()=>({entryFor:r=>entries.get(r.id)});
+    return rows;
   };
-  c.readDetails=async row=>{calls.details.push(row.id);if(failOnce.has(row.id)&&!failed.has(row.id)){failed.add(row.id);return {...row,readState:'partial',readError:'가상 오류'};}
+  c.readDetails=async row=>{calls.details.push(row.id);
     const r={...row,entryMemo:'',exitMemo:'',readState:'complete',collectedAt:new Date(Date.now()+calls.details.length).toISOString()};r.version=version(r);return r;};
   return {c,calls};
 }
@@ -42,7 +48,9 @@ test('one batch job covers several classes and a period, rules out non-lecture d
     assert.equal(by['2|2026-09-02'].status,'no-lecture');assert(!calls.openDay.includes('2|2026-09-02'),'no paged search for a day the scan ruled out');
     assert.equal(by['2|2026-09-01'].status,'complete');assert.equal(by['2|2026-09-03'].status,'complete','second attempt read the student that failed');
     assert.equal(by['2|2026-09-03'].attempt,2);
-    assert.deepEqual(calls.details.filter(x=>x.startsWith('2-2026-09-03')).sort(),['2-2026-09-03-가','2-2026-09-03-나','2-2026-09-03-나'],'the retry reopened only the unread student');
+    assert.deepEqual(calls.details,[],'fast reads never open an editor, not even for the unread student');
+    const latest=JSON.parse(b.app.db.prepare("SELECT payload FROM snapshots WHERE id='2-2026-09-03-나' ORDER BY seq DESC LIMIT 1").get().payload);
+    assert.equal(latest.readState,'complete','the retry read the student from page data');
     for(const d of ['2026-09-01','2026-09-02','2026-09-03'])assert.equal(by['3|'+d].status,'failed');
     assert.equal(calls.scans.filter(x=>x==='3').length,1);assert(!calls.openDay.some(x=>x.startsWith('3|')),'a class that does not exist is not retried day by day');
     assert.equal(job.status,'partial');assert.match(job.message,/6\/6 반·날짜/);assert.match(job.message,/강의 없음 1/);
@@ -51,9 +59,9 @@ test('one batch job covers several classes and a period, rules out non-lecture d
     const again=await b.wait((await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'incremental'})).id);
     assert.deepEqual(calls.details,[]);assert.equal(again.skipped,4);assert.equal(b.rows(),before);assert.equal(again.status,'complete');
     assert.equal(calls.scans.filter(x=>x==='2').length,1,'remembered day addresses skip the schedule scan');
-    // Precise mode re-reads everyone.
+    // Precise mode (emergency) re-reads everyone through editors.
     const precise=await b.wait((await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01'],mode:'full'})).id);
-    assert.equal(precise.count,2);assert.equal(precise.skipped,0);
+    assert.equal(precise.count,2);assert.equal(precise.skipped,0);assert.equal(calls.details.length,2);
   }finally{b.app.close();}
 });
 test('remembered addresses survive a restart; a lost login stops the batch instead of failing every day',async()=>{

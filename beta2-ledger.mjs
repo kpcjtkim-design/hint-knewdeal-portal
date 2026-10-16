@@ -1,5 +1,6 @@
 // 2기 베타 출결대조: 마스터시트 출결원장 + 체크히어 실시간 기록. 행 안에서 유형·시간·사유를 바로 고쳐 Apps Script로 시트에 저장하고,
-// 오늘 기록은 저장 3초 뒤 체크히어 자동 반영 요청을 만듭니다(beta2-checkhere-sync.mjs, 설계 docs/beta2-instant-edit-plan.md 5장).
+// 오늘 기록은 저장 3초 뒤 체크히어 반영 요청을 만듭니다(beta2-checkhere-sync.mjs, 설계 docs/beta2-instant-edit-plan.md 5장).
+// 요청은 승인 대기로 남고, 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만입니다(사용자 결정 2026-10-16, 중계는 읽기 전용).
 // Firestore 함수는 반드시 아래 주소 그대로 불러옵니다. /beta2 import map이 이 주소를 가드(beta2-firestore-guard.mjs)로 돌려 요청 근거에 [2기 베타]가 붙습니다.
 import {doc,setDoc,onSnapshot,query,collection,where,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,isConflictFlag,B2_TYPES} from './beta2-core.mjs';
@@ -9,7 +10,7 @@ import {matchSnapshot} from './attendance-beta-core.mjs';
 import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 import {createProposalReview} from './checkhere-proposals.mjs';
 import {withdrawRequest} from './checkhere-request-actions.mjs';
-import {holdKey} from './beta2-checkhere-core.mjs';
+import {UNMASK_ON_APPLY,deleteLeaves,holdKey} from './beta2-checkhere-core.mjs';
 import {createCheckHereSync,STATUS_ACTIONS,timeDeleteBlock} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
 
@@ -26,7 +27,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // drafts: 행 안 초안(이름 → 값, typed=유형을 바꿔 「저장」·Enter가 필요), notes: 행 안내·오류, jobs: 학생마다 저장 하나(next=대기 중인 마지막 초안, done=끝나면 풀림)
  // pinned: 필터·검색을 바꾼 뒤 손댄 학생(필터에서 빠져도 3초·되돌리기·요청 상태가 보이게 남김, 필터·검색을 다시 바꾸면 풀림)
  const drafts=new Map(),notes=new Map(),jobs=new Map(),bodies=new Map(),drawn=new Map(),stale=new Set(),shown=new Map(),pinned=new Set();
- host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 행에서 유형은 「저장」·Enter로, 시간·사유는 칸을 벗어나거나 Enter로 마스터시트에 바로 저장합니다(Esc는 되돌림). 오늘 기록은 저장 3초 뒤 체크히어 반영 요청을 보냅니다.</p></div><div id="b2Sync"></div></div>
+ host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 행에서 유형은 「저장」·Enter로, 시간·사유는 칸을 벗어나거나 Enter로 마스터시트에 바로 저장합니다(Esc는 되돌림). 오늘 기록은 저장 3초 뒤 체크히어 반영 요청을 보내고, 관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에 반영됩니다.</p></div><div id="b2Sync"></div></div>
  <section class="b2-card"><div class="b2-toolbar">
   <label class="b2-field">반<select id="b2Class">${classOptions(classes,cls)}</select></label>
   <label class="b2-field">교육일<select id="b2Date"></select></label>
@@ -81,12 +82,13 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='flag'&&isConflictFlag(r.rec?.flag)))));
  }
  // × 버튼: 켜지는 조건(deletionGate G1~G3)이 모두 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
- // 꺼져 있으면 title에 이유를 보입니다(timeDeleteBlock). 누르면 확인창 → 3초 되돌리기 → 시간 삭제 요청(sync.send).
+ // 1교시 ×는 중계 신호에 time-delete-v2가 있고 퇴실이 비어 있을 때만(퇴실이 있으면 결석 저장으로 두 칸을 함께 지움).
+ // 꺼져 있으면 title에 이유를 보입니다(timeDeleteBlock). 누르면 확인창 → 3초 되돌리기 → 시간 삭제 요청(sync.send). 가린 화면이어도 요청은 만들고 title에 해제 필요를 붙입니다.
  // 재학 기간이 아닌 행에는 상태 칩이 없어 3초·되돌리기가 보이지 않으므로 ×를 두지 않습니다.
  function delButton(row,record,side){
   if(!hm(record?.[side])||(!row.enrolled&&!row.rec))return '';
-  const why=timeDeleteBlock({gate:sync.gate(),record,side,type:valuesOf(row).type}),label=side==='entry'?'입실(교시)':'퇴실';
-  return `<button class="b2-x" data-ch-del="${side}" ${why.length?'disabled':''} title="${esc(why.length?`${label} 시간 삭제 불가 · ${why.join(' · ')}`:`체크히어 ${label} 시간 삭제 (실제 입실 기록은 남음)`)}" aria-label="체크히어 ${label} 시간 삭제">×</button>`;
+  const why=timeDeleteBlock({gate:sync.gate(),record,side,type:valuesOf(row).type}),label=side==='entry'?'입실(교시)':'퇴실',p=sync.relay().privacy;
+  return `<button class="b2-x" data-ch-del="${side}" ${why.length?'disabled':''} title="${esc(why.length?`${label} 시간 삭제 불가 · ${why.join(' · ')}`:`체크히어 ${label} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${deleteLeaves([side],record)}${p&&p.state!=='unknown'&&!p.writable?` · ${UNMASK_ON_APPLY}`:''})`)}" aria-label="체크히어 ${label} 시간 삭제">×</button>`;
  }
  function checkhereCell(row,record){
   if(!record)return `<span class="b2-muted b2-small">${esc(recordsNote||'저장본 없음')}</span>`;
@@ -123,7 +125,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const cmp=compareRow(row),out=!row.enrolled&&!row.rec,flag=isConflictFlag(row.rec?.flag),record=matchFor(row);
   return `<tr class="${cmp.state==='diff'?'diff':''} ${flag?'flag':''} ${out?'out':''} ${editing===row.name||drafts.get(row.name)?.typed?'editing':''}" data-name="${esc(row.name)}"><td><span class="b2-name">${esc(row.name)}</span>${row.status&&row.status!=='재학'?`<span class="b2-sub">${esc(row.status)}${row.changed?' · '+md(row.changed):''}</span>`:''}</td><td>${ledgerCell(row)}</td><td>${checkhereCell(row,record)}${out?'':'<div class="b2-status" data-status></div>'}</td><td><span class="b2-match ${cmp.state}">${cmp.state==='ok'?'✓ ':cmp.state==='diff'?'⚠ ':''}${esc(cmp.text)}</span></td><td><div class="b2-chips">${evidenceOk(row)?`<button class="b2-btn small ${editing===row.name?'dark':''}" data-edit>${editing===row.name?'닫기':'증빙'}</button>`:''}<button class="b2-btn small soft" data-req aria-pressed="${opened.has(row.name)}">직접 요청</button></div></td></tr>`
    +(editing===row.name?`<tr class="editing"><td colspan="5">${editorHtml(row)}</td></tr>`:'')
-   +(opened.has(row.name)?`<tr><td colspan="5"><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${['times','entryMemo','exitMemo'].map(c=>proposals.html({rowIndex:row.rowIndex,name:row.name},c)).join('')}</div><div class="b2-tiny b2-muted">자동 반영: 오늘 출결원장을 저장하면 3초 뒤 [실시간 베타] [2기 베타] 요청이 만들어지고, 수집 PC가 체크히어에 입력한 뒤 다시 읽어 확인합니다(지난 날은 「체크히어 맞추기」를 눌러야 보냅니다). 직접 요청: 위 칸에서 따로 요청하며, 근거 앞에 [2기 베타]가 붙고 수집 PC가 승인한 뒤 반영됩니다.</div></td></tr>`:'');
+   +(opened.has(row.name)?`<tr><td colspan="5"><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${['times','entryMemo','exitMemo'].map(c=>proposals.html({rowIndex:row.rowIndex,name:row.name},c)).join('')}</div><div class="b2-tiny b2-muted">자동 요청: 오늘 출결원장을 저장하면 3초 뒤 [실시간 베타] [2기 베타] 요청이 만들어집니다(지난 날은 「체크히어 맞추기」를 눌러야 보냅니다). 체크히어에는 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 입력하고 다시 읽어 확인합니다. 직접 요청: 위 칸에서 따로 요청하며, 근거 앞에 [2기 베타]가 붙고 관리자가 승인한 뒤 반영됩니다.</div></td></tr>`:'');
  }
  function msgHtml(name){
   const d=drafts.get(name),note=notes.get(name),busy=jobs.has(name);
@@ -163,7 +165,11 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  }
  function paintRelay(){
   const el=$('#b2Relay');if(!el)return;const r=sync.relay();
-  const title=[r.on?`수집 PC 중계 대기 ${r.queue}건${r.busy?' · 작업 중':''}`:'수집 PC의 체크히어 실시간 화면에서 중계를 켜면 반영 대기 요청이 자동 처리됩니다.',r.needsUnmask?`체크히어 개인정보 가림 때문에 ${r.needsUnmask}건이 기다립니다. 수집 PC 연결 프로그램 화면에서 「마스킹 해제 시작」을 눌러 주세요.`:'',r.requestsError?`체크히어 요청 목록 읽기 실패: ${r.requestsError}`:''].filter(Boolean).join('\n');
+  // 중계는 읽기 전용(10분마다 체크히어 기록 갱신)입니다. 요청은 켜져 있어도 자동 처리되지 않고 사람의 승인을 기다립니다.
+  // 체크히어 해제 상태(중계 신호 privacy): 가려져 있어도 읽기·요청은 되고, 운영 포털에서 반영할 때만 사람이 수집 PC 체크히어 탭에서 해제합니다.
+  const title=[r.privacy?.text||'',r.on?`수집 PC 중계가 체크히어 기록을 10분마다 읽습니다(읽기 전용)${r.busy?' · 작업 중':''}`:'수집 PC의 체크히어 실시간 화면에서 중계를 켜면 체크히어 기록을 10분마다 읽어 옵니다(읽기 전용).',
+   '체크히어 반영 요청은 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 반영됩니다.',
+   r.needsUnmask?`승인한 반영 ${r.needsUnmask}건이 체크히어 개인정보 가림에 막혀 있습니다. 수집 PC 연결 프로그램의 체크히어 창(같은 탭)에서 직접 해제하거나 연결 프로그램 화면의 「마스킹 해제 시작」을 누른 뒤, 운영 포털에서 다시 반영해 주세요.`:'',r.requestsError?`체크히어 요청 목록 읽기 실패: ${r.requestsError}`:''].filter(Boolean).join('\n');
   const html=`<span class="b2-pill ${r.on&&!r.needsUnmask?'live':'wait'}" title="${esc(title)}">${esc(r.text)}</span>`;if(shown.get('relay')!==html){el.innerHTML=html;shown.set('relay',html);}
  }
  function showEmpty(html){let el=table.querySelector('tbody[data-empty]');if(!el){el=document.createElement('tbody');el.dataset.empty='';table.append(el);}el.innerHTML=`<tr><td colspan="5">${html}</td></tr>`;}
@@ -459,9 +465,10 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  const warn=e=>{if(jobs.size||drafts.size||sync.holds().length){e.preventDefault();e.returnValue='';}};
  addEventListener('beforeunload',warn);
  // 중계 신호 'n분 전'과 반영 대기 90초·반영 중 3분 안내는 30초마다 다시 봅니다(초 단위 남은 시간은 동기화 모듈이 보류가 있을 때만 알림).
- // 시간 삭제 켜짐(게이트)은 중계 신호가 3분 지나면 시계만으로도 꺼지므로, 바뀌면 행을 다시 그려 ×를 맞춥니다.
- let gateOn=sync.gate().enabled;
- const clock=setInterval(()=>{if(!life.alive())return;paintRelay();const g=sync.gate().enabled;if(g!==gateOn){gateOn=g;return renderRows();}for(const name of bodies.keys())paintStatus(name);},30000);
+ // 시간 삭제 켜짐(게이트)·1교시 삭제(v2)는 중계 신호가 3분 지나면 시계만으로도 꺼지므로, 바뀌면 행을 다시 그려 ×를 맞춥니다.
+ const gateMark=()=>{const g=sync.gate();return `${g.enabled}|${!!g.v2}`;};
+ let gateOn=gateMark();
+ const clock=setInterval(()=>{if(!life.alive())return;paintRelay();const g=gateMark();if(g!==gateOn){gateOn=g;return renderRows();}for(const name of bodies.keys())paintStatus(name);},30000);
  life.on(()=>unwatch?.());life.on(stopWatch);life.on(()=>removeEventListener('beforeunload',warn));life.on(()=>clearInterval(clock));
  await load();
  return {

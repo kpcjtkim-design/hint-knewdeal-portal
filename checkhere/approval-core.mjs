@@ -35,8 +35,14 @@ export function cleanRequest(input){
   if(changes.entry&&changes.exit&&changes.exit<changes.entry)throw Error('퇴실이 입실보다 빠릅니다.');
   return {classId,date,name,phoneLast4,reason,changes,...(deleteTimes.length?{deleteTimes}:{})};
 }
-// 반영 결과(results)에서 확인된 시간 삭제 안내: ' · 입실·퇴실 시간 삭제 확인'(없으면 ''). 연결 프로그램·중계가 같은 글을 씁니다.
-export const deletedNote=results=>{const sides=(Array.isArray(results)?results:[]).filter(r=>r?.state==='verified'&&r.deleted).map(r=>r.field==='entry'?'입실':'퇴실');return sides.length?` · ${sides.join('·')} 시간 삭제 확인`:'';};
+// 반영 결과(results)에서 확인된 시간 삭제 안내(없으면 ''). 연결 프로그램·포털이 같은 글을 씁니다.
+// 두 칸(퇴실·1교시): ' · 퇴실·1교시 삭제 확인'(+ 마지막으로 다시 읽은 입실이 남았으면 ' · 입실 기록은 남음'), 한 칸: ' · 퇴실 시간 삭제 확인' / ' · 1교시 시간 삭제 확인'.
+export const deletedNote=results=>{
+  const done=(Array.isArray(results)?results:[]).filter(r=>r?.state==='verified'&&r.deleted),has=f=>done.some(r=>r.field===f);
+  if(!done.length)return '';
+  if(has('entry')&&has('exit'))return ` · 퇴실·1교시 삭제 확인${done.at(-1)?.rawEntryAfter?' · 입실 기록은 남음':''}`;
+  return ` · ${has('exit')?'퇴실':'1교시'} 시간 삭제 확인`;
+};
 // 요청 결과(result) 글: 플랫폼 저장(cloud-approval finish)이 완료 문구를 새로 써도 저장된 results로 삭제 확인을 붙여 보입니다.
 export const resultText=(message,results)=>{const m=String(message||''),note=deletedNote(results);return note&&!m.includes(note)?m+note:m;};
 export function sameRequestTarget(left,right){

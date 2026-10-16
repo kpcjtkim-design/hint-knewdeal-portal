@@ -3,13 +3,16 @@
 // 학생은 체크히어 자신의 attendeeId(날짜가 달라도 같음)로 찾고, 이름·학생 키는 이 PC에 저장된 원문 기록에서 가져옵니다.
 // 가린 글자는 이름·키·메모가 되지 않습니다. 오류 글에는 이름·첫 글자·끝 4자리를 넣지 않습니다.
 // 할 일: 이 글은 중계 기록·반영 결과에 그대로 보이므로 어디서 무엇을 하면 되는지까지 적습니다.
-const WHERE='수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 눌러 주세요';
+// 해제는 사람이 합니다(2026-10-16 결정): 연결 프로그램이 연 체크히어 창(같은 탭, 새 탭은 다시 가려짐)에서 직접, 또는 연결 프로그램 화면에서 사람이 누르는 「마스킹 해제 시작」으로.
+import {NEEDS_UNMASK_TEXT} from './rules.mjs';
+const WHERE='연결 프로그램이 연 체크히어 창(같은 탭)에서 마스킹을 해제해 주세요. 직접 하거나 수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 눌러도 됩니다';
+// 수정·삭제 직전 가림 확인(K4, 2026-10-16)에서 막힐 때의 글: 포털·연결 프로그램이 같은 안내(rules.mjs NEEDS_UNMASK_TEXT)를 보입니다.
 export const MASKED={
   MIXED:'MASKED_MIXED: 체크히어 화면의 가림 상태가 섞여 있어 이 날 수집을 멈췄습니다(해제 시간이 끝나는 중일 수 있음). 해제가 끝나거나 다시 가려진 뒤 다시 수집해 주세요.',
   NODATA:'MASKED_NODATA: 가린 화면에서 출결 화면 데이터를 받지 못해 이 날 수집을 멈췄습니다. 잠시 뒤 다시 수집해 주세요. 계속되면 마스킹 해제 후 수집해 주세요.',
   ALIGN:'MASKED_ALIGN: 가린 화면의 표와 화면 데이터 순번이 맞지 않아 이 날 수집을 멈췄습니다. 체크히어 화면 모양이 바뀌었을 수 있으니 담당자에게 알려 주세요.',
-  WRITE:`MASKED_WRITE: 체크히어 마스킹 해제 후 반영합니다. ${WHERE}`,
-  TIME:'MASKED_TIME: 체크히어 해제 남은 시간을 읽지 못했거나 모자라 다음 해제 때 반영합니다. 연장·다시 해제는 사람이 체크히어 창에서 정합니다',
+  WRITE:`MASKED_WRITE: ${NEEDS_UNMASK_TEXT} ${WHERE}`,
+  TIME:'MASKED_TIME: 체크히어 해제 남은 시간을 읽지 못했거나 모자라 수정·삭제를 시작하지 않았습니다. 수집 PC의 체크히어 탭에서 연장(또는 다시 해제)한 뒤 다시 반영해 주세요. 연장·다시 해제는 사람이 체크히어 창에서 정합니다',
   UNLINKED:`MASKED_UNLINKED: 이 학생은 아직 체크히어 학생 번호와 연결되지 않았습니다. 체크히어 마스킹 해제 후 반영합니다. ${WHERE}`,
   READ:`MASKED_READ: 가린 화면에서 이 학생의 화면 데이터가 표와 달라 읽지 못했습니다. 체크히어 마스킹 해제 후 반영합니다. ${WHERE}`,
   TARGET:'MASKED_TARGET: 체크히어가 보내려던 학생·날짜가 연결된 학생과 달라 막았습니다. 다시 수집해 주세요',
@@ -19,6 +22,8 @@ export const MASKED={
   CONFLICT:'MASKED_CONFLICT: 체크히어 학생 번호 연결이 예전과 달라 멈췄습니다. 수집 PC 연결 프로그램 화면에서 「연결 충돌 정리」를 누른 뒤 다시 수집해 주세요',
   GUARD:'MASKED_GUARD: 저장할 때 체크히어 변경 요청을 확인하지 못했습니다. 연결 프로그램을 다시 시작할 때까지 체크히어에 쓰지 않습니다. 반영 결과는 체크히어에서 확인해 주세요',
   UNMASKING:'MASKED_UNMASKING: 체크히어 창에서 사람이 마스킹 해제를 진행 중이라 화면을 옮기지 않았습니다. 해제가 끝나면 자동으로 이어 합니다.',
+  // 정밀 수집(수정창으로 읽기, 비상용)은 가린 화면에서 수정창이 열리지 않아 조용히 화면 데이터로 바꾸지 않고 거절합니다.
+  PRECISE:`MASKED_PRECISE: 정밀 수집(수정창으로 읽기)은 가린 화면에서 할 수 없어 시작하지 않았습니다. 빠른 수집(화면 데이터만)을 쓰거나, ${WHERE}`,
 };
 // 쓰기를 멈추는 남은 해제 시간(초). 이보다 적으면 새 쓰기를 시작하지 않습니다.
 export const MIN_WRITE_SECONDS=90;
@@ -82,7 +87,23 @@ export function alignRows(rows,list){
     used.add(q);return s;
   });
 }
-const attendeeOf=s=>typeof s?.attendeeId==='string'&&s.attendeeId.trim()?s.attendeeId.trim():null;
+// 원문 화면용 줄별 맞춤: 표 순번(=sequence)이 먼저입니다. 원문 줄은 지금처럼 모두 맞아야 하고(하나라도 어긋나면 null — 화면 모양을 의심),
+// 전화가 다 보이지 않는 줄(이상한 줄)은 그 줄만 null로 둡니다(그날을 멈추지 않음). 이상한 줄은 보이는 이름·끝 4자리가 있으면 그것도 맞아야 합니다.
+export function alignBySeq(rows,list){
+  if(!Array.isArray(list)||list.length!==rows.length)return null;
+  const bySeq=new Map();
+  for(const s of list){const q=Number(s?.sequence);if(!Number.isInteger(q)||bySeq.has(q))return null;bySeq.set(q,s);}
+  const used=new Set(),out=[];
+  for(const r of rows){
+    const q=/^\d+$/.test(String(r.seq??'').trim())?Number(String(r.seq).trim()):NaN,s=used.has(q)?null:bySeq.get(q);
+    const plain=(r.kind||rowKind(r.name,r.phone))==='plain';
+    const fits=!!s&&nameFits(r.name,s.name)&&(plain?phoneFits(r.phone,s.phone):!last4Of(r.phone)||!last4Of(s.phone)||last4Of(r.phone)===last4Of(s.phone));
+    if(!fits){if(plain)return null;out.push(null);continue;}
+    used.add(q);out.push(s);
+  }
+  return out;
+}
+export const attendeeOf=s=>typeof s?.attendeeId==='string'&&s.attendeeId.trim()?s.attendeeId.trim():null;
 const sameSig=(a,b)=>nameFits(a.name,b.name)&&last4Of(a.phone)===last4Of(b.phone);
 // 원문 기록(이름 전체·phoneLast4, 전화 없음)의 가린 화면 서명: 첫 글자+끝 4자리(가린 화면이 더 보여 줘도 첫 글자가 가장 넓게 묶음).
 export const plainSig=r=>(String(r?.name??'').trim()[0]||'')+'|'+(r?.phoneLast4??last4Of(r?.phone));

@@ -20,7 +20,7 @@ const failedScript=`
    for(let i=1;i<=4;i++){const r={...common,id:'failed-original-0000'+i,name:'가상'+i,classId:i===4?'3':'2',changes:{entryMemo:'요청 사유 '+i}};originals.push(structuredClone(r));docs['checkhereRequests/'+r.id]=r;}
    const done={...common,id:'completed-request-001',name:'완료학생',status:'verified',changes:{entryMemo:'완료'},result:{platformSaved:true}};docs['checkhereRequests/'+done.id]=done;
    const records=originals.map((r,i)=>({...r,id:'record-'+i,version:'v1',source:'live',readState:'complete',teacher:'가상담임',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:i===0?r.changes.entryMemo:'기존',exitMemo:'',outings:[]}));const jobs=[];
-   const controller={state:()=>({records,jobs,capabilities:['approval-current-sync-v1','live-approval-preview-v1','memo-default-time-v1']}),refresh:async()=>{},api:async(path,input)=>{
+   const controller={state:()=>({records,jobs,privacy:{state:'unmasked',leftSec:900},capabilities:['approval-current-sync-v1','live-approval-preview-v1','memo-default-time-v1']}),refresh:async()=>{},api:async(path,input)=>{
     const r=docs['checkhereRequests/'+input.approvalId];calls.push({path,id:input.approvalId,name:r?.name});if(!r)throw Error('missing request');
     if(path==='reconcile'){if(r.status==='applying'){r.status='verified';r.result={platformSaved:true,message:'DB 저장 완료'};}return {status:r.status,...r.result};}
     if(path==='preview-request')return {record:records.find(x=>x.name===r.name)};
@@ -52,7 +52,7 @@ const ledgerScript=`
    const common={classId:'2',date:'2026-09-14',phoneLast4:'',reason:'기존 근거',status:'failed',updatedAt:{seconds:10},createdAt:{seconds:1},createdBy:'hint.kpc@gmail.com'};
    for(const r of [{...common,id:'failed-plain-request-01',name:'가상일반',changes:{entryMemo:'요청 사유'}},{...common,id:'failed-auto-ledger-0001',name:'가상자동',reason:'[실시간 베타] [2기 베타] 출결대조 자동 · 지각 · 가상 사유 [기준:0123abcd]',changes:{entryMemo:'지각_담임:가상담임(09:30)'}},{...common,id:'failed-time-delete-0001',name:'가상삭제',changes:{exit:''},deleteTimes:['exit']}]){originals.push(structuredClone(r));docs['checkhereRequests/'+r.id]=r;}
    const records=originals.map((r,i)=>({...r,id:'record-'+i,version:'v1',source:'live',readState:'complete',teacher:'가상담임',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:r.changes.entryMemo||'',exitMemo:'',outings:[]}));
-   const controller={state:()=>({records,jobs:[],capabilities:['approval-current-sync-v1','live-approval-preview-v1','memo-default-time-v1']}),refresh:async()=>{},api:async(path,input)=>{
+   const controller={state:()=>({records,jobs:[],privacy:{state:'unmasked',leftSec:900},capabilities:['approval-current-sync-v1','live-approval-preview-v1','memo-default-time-v1']}),refresh:async()=>{},api:async(path,input)=>{
     const r=docs['checkhereRequests/'+input.approvalId];calls.push({path,id:input.approvalId,name:r?.name});if(!r)throw Error('missing request');
     if(path==='reconcile')return {status:r.status,...r.result};
     if(path==='preview-request')return {record:records.find(x=>x.name===r.name)};

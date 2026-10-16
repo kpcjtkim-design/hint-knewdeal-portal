@@ -137,7 +137,8 @@ test('출결대조 shows the ledger next to CheckHere, flags mismatches and save
   await dong.getByRole('button',{name:'직접 요청'}).click();
   await page.locator('.proposal-box').first().waitFor();
   assert.equal(await page.locator('.proposal-box').count(),3,'times, entry memo and exit memo request boxes');
-  await page.getByText(/자동 반영: 오늘 출결원장을 저장하면 3초 뒤/).waitFor();
+  await page.getByText(/자동 요청: 오늘 출결원장을 저장하면 3초 뒤/).waitFor();
+  assert.match(await page.getByText(/자동 요청: 오늘 출결원장을 저장하면 3초 뒤/).innerText(),/관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만/);
   await dong.getByRole('button',{name:'직접 요청'}).click();
   assert.equal(await page.locator('.proposal-box').count(),0);
   // 유형을 바꾸면 아직 저장하지 않고, 필요한 시간을 체크히어 값으로 채운 뒤 「저장」을 기다립니다.
@@ -307,9 +308,12 @@ test('today: an inline save that already matches sends nothing, a real change se
  await beta(async(page,posts)=>{
   await openLedger(page);
   // 도구줄 중계 표시: 신호가 없으면 꺼짐, 작동 중 신호가 오면 '신호 n분 전'
-  await page.locator('#b2Relay').getByText('중계 꺼짐 · 요청은 반영 대기로 남습니다').waitFor();
+  await page.locator('#b2Relay').getByText('중계 꺼짐 · 체크히어 기록 10분 갱신 멈춤').waitFor();
   await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1'],build:null,at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
   await page.locator('#b2Relay').getByText('수집 PC 중계 작동 중 · 신호 방금').waitFor();
+  // 중계는 읽기 전용: 켜져 있어도 요청은 사람이 운영 포털에서 승인해야 반영된다고 알립니다(자동 처리 안내 없음).
+  const relayTitle=await page.locator('#b2Relay .b2-pill').getAttribute('title');
+  assert.match(relayTitle,/읽기 전용/);assert.match(relayTitle,/운영 포털 「반영 요청·승인」에서 승인할 때만 반영됩니다/);assert.doesNotMatch(relayTitle,/자동 처리/);
   // 보정 모드: 교시 기록 09:00으로 맞춘 출석은 일치(실제 입실은 글로만). 지각 메모의 시간은 사유 힌트가 아님.
   await student(page,'가상보정').getByText('일치 · 실제 입실 09:25').waitFor();
   assert.equal(await student(page,'가상지각').getByRole('button',{name:/체크히어 메모/}).count(),0,'지각_담임:…(09:25) is a time, not a reason');
@@ -325,7 +329,7 @@ test('today: an inline save that already matches sends nothing, a real change se
   await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
   await chip(page,'가상변경').getByText('보내기 전').waitFor();
   assert.equal((await requestWrites(page)).length,0,'nothing is written during the 3 seconds');
-  await chip(page,'가상변경').getByText('반영 대기').waitFor({timeout:6000});
+  await chip(page,'가상변경').getByText('승인 대기').waitFor({timeout:6000});
   await page.waitForTimeout(1500);
   const sent=await requestWrites(page);
   assert.equal(sent.length,1,'exactly one request');
@@ -335,10 +339,10 @@ test('today: an inline save that already matches sends nothing, a real change se
   assert.match(req.reason,AUTO_REASON);assert.match(req.reason,/출결대조 자동 · 지각 · 일반 출결/);
   assert.deepEqual([req.classId,req.date,req.name,req.phoneLast4,req.status,req.createdBy],['1',D,'가상변경','0000','pending',ME]);
   assert.deepEqual(req.changes,{entryMemo:'지각_담임:가상담임(09:25)'},'09:25:31 keeps its seconds and no default time is added');
-  // (4) 요청 상태: 반영 대기 → 반영 중 → 완료
+  // (4) 요청 상태: 승인 대기(사람이 운영 포털에서 승인) → 반영 중 → 완료
   const {path,createdAt,updatedAt,...rest}=req,doc={...rest,id:path.split('/')[1]};
   await pushRequests(page,[doc]);
-  await chip(page,'가상변경').getByText('반영 대기').waitFor();
+  await chip(page,'가상변경').getByText('승인 대기').waitFor();
   assert.equal(await chip(page,'가상변경').getByRole('button',{name:'요청 취소'}).count(),1,'my pending request can be withdrawn');
   await pushRequests(page,[{...doc,status:'applying'}]);
   await chip(page,'가상변경').getByText('반영 중',{exact:true}).waitFor();
@@ -380,7 +384,7 @@ test('undo within 3 seconds writes no request and saves the previous sheet row b
   await page.waitForTimeout(3500);
   assert.equal((await requestWrites(page)).length,0,'the paused countdown does not send while b2Save is slow');
   await chip(page,'가상겹침').getByText('보내기 전').waitFor({timeout:6000});
-  await chip(page,'가상겹침').getByText('반영 대기').waitFor({timeout:6000});
+  await chip(page,'가상겹침').getByText('승인 대기').waitFor({timeout:6000});
   const sent=await requestWrites(page);
   assert.equal(sent.length,1);assert.equal(sent[0].name,'가상겹침');assert.match(sent[0].reason,/출결대조 자동 · 지각 · 교통 \[기준:/);
   assert.deepEqual(savesOf(posts,'가상겹침').map(s=>[s.type,s.reason,s.before]),[['지각','','sig-가상겹침-2026-09-03'],['지각','교통','new-sig']]);
@@ -505,26 +509,37 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상출석"] [data-ch-del="exit"]')?.disabled);
   assert.equal(await x('가상출석','entry').isDisabled(),true,'PASS 1교시는 계속 잠김');
   assert.equal(await x('가상출석','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 입실에서 계산된 1교시는 지울 수 없습니다. 퇴실을 지우면 함께 비워집니다.');
-  // 관리자 1교시는 실제 체크히어에서 확인하기 전까지 잠김(2026-10-15, rules.mjs ATTEND_DELETE)
+  // 관리자 1교시 ×는 잠김. 이 중계는 옛 연결 프로그램(v1)이라 업데이트 안내가 먼저(문서 표, v2여도 퇴실이 남아 있으면 '퇴실이 남아 있으면…'으로 잠김 — beta2-checkhere-sync 시험)
+  const V2_NEEDED='1교시 삭제는 수집 PC 프로그램 업데이트 후 가능 (time-delete-v2)',EXIT_FIRST='퇴실이 남아 있으면 1교시만 지울 수 없습니다(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다). 퇴실과 함께 지워 주세요.';
   assert.equal(await x('가상지각','entry').isDisabled(),true);
-  assert.equal(await x('가상지각','entry').getAttribute('title'),'입실(교시) 시간 삭제 불가 · 관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다). · 유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)');
+  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${V2_NEEDED} · 유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)`);
+  assert.equal(await x('가상지각','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다)');
   assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음');
   assert.equal(await x('가상메모','exit').isDisabled(),true,'기록 번호가 없는 칸');
   // 확인창 아니오: 아무것도 시작하지 않음
   await x('가상출석','exit').click();
   await askedAt(1);
-  assert.match(asked[0],/가상출석 · 2026-09-03 체크히어 시간을 지웁니다: 퇴실 18:00/);assert.match(asked[0],/1교시\(09:02\)와 총 참여 시간도 비워집니다/);assert.match(asked[0],/체크히어 실제 입실 기록은 남습니다/);
+  assert.match(asked[0],/가상출석 · 2026-09-03 체크히어 시간 삭제를 요청합니다: 퇴실 18:00/);assert.match(asked[0],/관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다/);assert.match(asked[0],/1교시\(09:02\)와 총 참여 시간도 비워집니다/);assert.match(asked[0],/체크히어 실제 입실 기록은 남습니다/);
   await page.waitForTimeout(300);assert.equal(await chip(page,'가상출석').getByText('보내기 전').count(),0);
   // 예: 3초 되돌리기 → 시간 삭제 요청 1건(출결원장 저장 없음)
   answer=true;await x('가상출석','exit').click();
   await chip(page,'가상출석').getByText('보내기 전').waitFor();
   assert.equal((await requestWrites(page)).length,0,'nothing is written during the 3 seconds');
-  await chip(page,'가상출석').getByText('반영 대기').waitFor({timeout:6000});
+  await chip(page,'가상출석').getByText('승인 대기').waitFor({timeout:6000});
   const sent=await requestWrites(page);assert.equal(sent.length,1);
   assert.deepEqual(Object.keys(sent[0]).filter(k=>k!=='path').sort(),[...REQUEST_KEYS,'deleteTimes'].sort());
   assert.deepEqual([sent[0].changes,sent[0].deleteTimes],[{exit:''},['exit']]);
   assert.match(sent[0].reason,/^\[실시간 베타\] \[2기 베타\] 출결대조 시간 삭제 · 퇴실 \[기준:[0-9a-f]{8}\]$/);
   assert.equal(asked.length,2);assert.equal(savesOf(posts,'가상출석').length,0,'the master sheet is not saved');
+  // 두 칸 삭제(time-delete-v2)를 아는 연결 프로그램 + 수집 PC 체크히어 탭이 가려짐: 도구줄에 가림(읽기만), ×는 그대로 켜지고 title·확인창에 '반영할 때 체크히어 마스킹 해제 필요'
+  await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1','time-delete-v1','time-delete-v2'],build:'20261016.2',privacy:{state:'masked',leftSec:null,writable:false},at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
+  await page.locator('#b2Relay').getByText('수집 PC 중계 작동 중 · 신호 방금 · 체크히어 가림 · 읽기만').waitFor();
+  assert.match(await page.locator('#b2Relay .b2-pill').getAttribute('title'),/^체크히어 가림 — 읽기만 가능 · 수정·삭제하려면 마스킹 해제 필요\n/);
+  await page.waitForFunction(()=>/반영할 때 체크히어 마스킹 해제 필요/.test(document.querySelector('tbody[data-student="가상지각"] [data-ch-del="exit"]')?.title||''));
+  assert.equal(await x('가상지각','exit').isDisabled(),false,'가려져도 요청은 만듦(승인 대기)');
+  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${EXIT_FIRST} · 유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)`,'v2여도 퇴실이 남은 1교시 ×는 잠김');
+  answer=false;await x('가상지각','exit').click();await askedAt(3);
+  assert.match(asked[2],/가상지각 · 2026-09-03 체크히어 시간 삭제를 요청합니다: 퇴실 /);assert.match(asked[2],/관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다\.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
  },{...virtual(),days:DEL_DAYS});
 });
 
@@ -578,7 +593,7 @@ test('an evidence-only save never sends automatically but offers 체크히어 �
   // (14) 내 승인 대기 자동 요청이 있는 학생을 출석으로 되돌림 → 그 요청을 먼저 취소(트랜잭션)하고 새 요청
   const old={id:'b2_old',classId:'1',date:D,name:'가상취소',phoneLast4:'0000',status:'pending',createdBy:ME,changes:{entryMemo:'지각_담임:가상담임(09:25)'},reason:'[실시간 베타] [2기 베타] 출결대조 자동 · 지각 · 일반 출결 [기준:0123abcd]'};
   await pushRequests(page,[old]);
-  await chip(page,'가상취소').getByText('반영 대기').waitFor();
+  await chip(page,'가상취소').getByText('승인 대기').waitFor();
   assert.equal(await chip(page,'가상취소').getByRole('button',{name:'요청 취소'}).count(),1);
   await typeOf(page,'가상취소').selectOption('출석');
   await student(page,'가상취소').getByRole('button',{name:'저장',exact:true}).click();
@@ -641,7 +656,7 @@ test('the 3-second undo survives a press across a second boundary and keyboard f
   await typeOf(page,'가상인정').selectOption('인정출석');
   await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
   await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
-  await chip(page,'가상인정').getByText('보류 · 진행 중 요청이 끝나면 자동 반영').waitFor();
+  await chip(page,'가상인정').getByText('보류 · 진행 중 요청이 끝나면 다시 계산해 요청').waitFor();
   const dialogs=[];page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
   await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
   await page.getByRole('heading',{name:'출결 현황'}).waitFor();

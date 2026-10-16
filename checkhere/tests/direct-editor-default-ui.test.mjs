@@ -18,7 +18,7 @@ test('direct editor previews only corresponding defaults, preserves real times a
   const page=await browser.newPage(),errors=[],calls=[];
   page.on('pageerror',e=>errors.push(e.message));
   const record={id:'fixture-record',version:'fixture-version',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:05:00',exit:'17:55:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,...scenario.patch};
-  const state={records:[record],jobs:[],connected:true,capabilities:['approval-current-sync-v1',...(!scenario.old?['memo-default-time-v1']:[])]};
+  const state={records:[record],jobs:[],connected:true,privacy:{state:'unmasked',leftSec:900},capabilities:['approval-current-sync-v1',...(!scenario.old?['memo-default-time-v1']:[])]};
   await page.route('**/*',route=>{
    const u=new URL(route.request().url());
    if(u.hostname==='127.0.0.1'){

@@ -25,7 +25,9 @@ test('page data values are read as Korean local times and suspicious entries are
   assert.equal(localTime('2026-09-03T08:55:01'),'08:55:01');assert.equal(localTime('2026-09-02T23:55:01Z'),'08:55:01');assert.equal(localTime(null),null);assert.equal(localTime('어제'),undefined);
   const s=readStudent(roster()[2]);assert.deepEqual([s.rawEntry,s.entry,s.exit,s.entryMemo,s.exitMemo],['08:59:00','08:59:00','15:00:00','','조퇴_병원']);
   assert.deepEqual(s.outings,[{start:'13:00:00',end:'13:40:00',cutoff:'13:40:00',recognized:false}]);assert.deepEqual(s.problems,[]);
-  const odd=roster()[0];odd.eventList[0].memoByAdmin='메모 위치 이상';assert.match(readStudent(odd).problems.join(),/관리자 메모/);
+  const odd=roster()[2];odd.eventList[2].memoByAdmin='메모 위치 이상';assert.equal(odd.eventList[2].type,'LEAVE');assert.match(readStudent(odd).problems.join(),/관리자 메모/);
+  // 입실(ENTER)의 메모는 어느 칸에도 보이지 않아 읽지 않습니다: 관리자 1교시를 지우거나 되살린 뒤 입실 기록이 그 메모를 달고 남음(2026-10-16 실제 확인)
+  const kept=roster()[0];kept.eventList[0].memoByAdmin='지각_담임:가상(09:20)';assert.deepEqual(readStudent(kept).problems,[]);assert.equal(readStudent(kept).entryMemo,'');
   const multi=roster()[0];multi.eventList[1].timeIndex=1;assert.match(readStudent(multi).problems.join(),/교시/);
   const unknown=roster()[0];unknown.eventList[1].type='NEW_KIND';assert.match(readStudent(unknown).problems.join(),/알 수 없는/);
 });
@@ -60,12 +62,12 @@ async function site(state){
   const c=new CheckHereCollector('fixture',{page:p});return {browser,page:p,c};
 }
 async function run(c,opts={}){const out=[];await c.collect('2',[DATE],async r=>out.push(r),async()=>{},opts);return out;}
-test('a day is read from page data with a one-editor sample and matches the editor-by-editor read exactly',{timeout:60000},async()=>{
+test('a day is read from page data without opening any editor and matches the editor-by-editor read exactly',{timeout:60000},async()=>{
   const state={list:roster()},{browser,page:p,c}=await site(state);
   try{
     const days=[];const fast=await run(c,{pageData:true,onDay:d=>days.push(d)});
     const fastOpens=await p.evaluate(()=>window.opens);
-    assert.deepEqual(days.map(d=>d.method),['page-data']);assert(fastOpens<=6,`only the two sample students' editors were opened (${fastOpens})`);
+    assert.deepEqual(days.map(d=>d.method),['page-data']);assert.equal(fastOpens,0,'no sample editor in a fast read (2026-10-16)');
     const slow=await run(c);const slowOpens=await p.evaluate(()=>window.opens);
     assert(slowOpens>=6,'editor read opens every editor');
     const v=list=>Object.fromEntries(list.map(r=>[r.id,r.version]));assert.deepEqual(v(fast),v(slow),'identical records either way');
@@ -75,13 +77,14 @@ test('a day is read from page data with a one-editor sample and matches the edit
     const zoned=await run(c,{pageData:true});assert.deepEqual(v(zoned),v(slow));
   }finally{await browser.close();}
 });
-test('an editor that disagrees with page data sends the whole day back to editors; a mismatching row alone goes to its editor',{timeout:60000},async()=>{
+test('a fast read never falls back to editors: page data is the source and only the precise read opens them',{timeout:60000},async()=>{
   const state={list:roster()},{browser,page:p,c}=await site(state);
   try{
     await p.addInitScript(()=>{window.override={'가상셋|exit':'수정창에만 있는 메모'};});
     const days=[];const out=await run(c,{pageData:true,onDay:d=>days.push(d)});
-    assert.equal(days[0].method,'editor');assert.equal(out.find(r=>r.name==='가상셋').exitMemo,'수정창에만 있는 메모','the editor value wins');
-    assert.equal(out.length,3);
+    assert.equal(days[0].method,'page-data');assert.equal(out.find(r=>r.name==='가상셋').exitMemo,'조퇴_병원','page data, no editor sample');
+    assert.equal(out.length,3);assert.equal(await p.evaluate(()=>window.opens),0);
+    const precise=await run(c);assert.equal(precise.find(r=>r.name==='가상셋').exitMemo,'수정창에만 있는 메모','the emergency precise read still uses editors');
   }finally{await browser.close();}
 });
 test('the bridge reads by page data, skips identical students and still catches a memo changed without any time change',{timeout:60000},async()=>{

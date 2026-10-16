@@ -53,8 +53,8 @@ test('a bridge without time-delete-v1 refuses deletion requests before reading, 
   const b=await bridge(18797,record,docs,OLD);
   try{
     const session=await (await fetch('http://127.0.0.1:18797/api/session')).json();
-    assert.equal(session.build,'20261015.3');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
-    const state=await b.get('state?delta=1');assert.equal(state.build,'20261015.3','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
+    assert.equal(session.build,'20261016.2');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
+    const state=await b.get('state?delta=1');assert.equal(state.build,'20261016.2','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
     const applied=await b.post('apply','fixture-delete-approved-01');
     assert.equal(applied.code,400);assert.match(applied.body.error,/시간 삭제를 지원하지 않습니다/);
     assert.equal(docs.get('fixture-delete-approved-01').status,'approved','an approved deletion stays approved (not claimed)');
@@ -75,7 +75,7 @@ test('a bridge with time-delete-v1 deletes an approved exit, verifies it by re-r
   const b=await bridge(18798,record,docs);
   try{
     const session=await (await fetch('http://127.0.0.1:18798/api/session')).json();
-    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261015.3');
+    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261016.2');
     const started=await b.post('apply','fixture-delete-approved-02');assert.equal(started.code,202,JSON.stringify(started.body));
     const j=await b.job('fixture-delete-approved-02');
     assert.equal(j.status,'verified',j.message);assert.equal(j.results[0].deleted,true);assert.equal(j.results[0].field,'exit');
@@ -117,16 +117,22 @@ test('an approved deletion whose time changed after approval ends as conflict wi
   }finally{b.close();}
 });
 
-// 2026-10-15부터 관리자가 넣은 1교시(ATTEND) 삭제는 실제 체크히어에서 확인하기 전까지 꺼져 있습니다(rules.mjs ATTEND_DELETE).
-// 앞 build에서 이미 승인된 1교시 삭제 요청도 '삭제'를 누르지 않고 원본 변경(conflict)으로 끝냅니다.
-test('an approved deletion of the admin 1st period ends as conflict without pressing 삭제 while ATTEND_DELETE is off',async()=>{
-  const record=base({rawEntry:'09:00:00',entry:'09:00:00',entryKind:'ATTEND',entryEventId:true,enterEventId:false}),docs=new Map([['fixture-delete-attend-001',request(record,'approved',{changes:{entry:''},deleteTimes:['entry']})]]);
+// 관리자가 넣은 1교시(ATTEND) 삭제(2026-10-16 켬): 퇴실이 남은 채 1교시만 지우는 승인은 누르지 않고 원본 변경(conflict)으로 끝내고(체크히어가 퇴실 시간으로 다시 채움),
+// 두 칸 삭제는 퇴실 먼저 → 다시 읽기 → 1교시 → 다시 읽어 두 칸 확인 뒤 플랫폼 저장까지 갑니다. 옛 포털이 보낸 1교시만의 삭제도 연결 프로그램이 막습니다.
+test('the admin 1st period: alone it is refused while the exit stays; with the exit it is deleted after the exit and both cells are verified empty',async()=>{
+  const record=base({rawEntry:'09:00:00',entry:'09:00:00',entryKind:'ATTEND',entryEventId:true,enterEventId:false});
+  const docs=new Map([['fixture-delete-attend-001',request(record,'approved',{changes:{entry:''},deleteTimes:['entry']})],['fixture-delete-attend-002',request(record,'approved',{changes:{entry:'',exit:''},deleteTimes:['entry','exit']})]]);
   const b=await bridge(18966,record,docs);
   try{
-    const started=await b.post('apply','fixture-delete-attend-001');assert.equal(started.code,202,JSON.stringify(started.body));
-    const j=await b.job('fixture-delete-attend-001');
-    assert.equal(j.status,'conflict',j.message);assert.match(j.message,/관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다\(지금은 퇴실만 지웁니다\)/);
-    assert.equal(b.f.calls.writes.length,0);assert.deepEqual([b.f.current.entry,b.f.current.rawEntry],['09:00:00','09:00:00'],'the 1st period stays');
+    let started=await b.post('apply','fixture-delete-attend-001');assert.equal(started.code,202,JSON.stringify(started.body));
+    let j=await b.job('fixture-delete-attend-001');
+    assert.equal(j.status,'conflict',j.message);assert.match(j.message,/퇴실이 남아 있으면 1교시만 지울 수 없습니다/);
+    assert.equal(b.f.calls.writes.length,0);assert.deepEqual([b.f.current.entry,b.f.current.exit],['09:00:00','18:00:00'],'nothing was pressed');
     assert.equal(docs.get('fixture-delete-attend-001').status,'conflict');
+    started=await b.post('apply','fixture-delete-attend-002');assert.equal(started.code,202,JSON.stringify(started.body));
+    j=await b.job('fixture-delete-attend-002');
+    assert.equal(j.status,'verified',j.message);assert.deepEqual(b.f.calls.writes.map(w=>[w.field,w.options.deleteFields]),[['exit',['entry','exit']],['entry',['entry','exit']]],'exit first');
+    assert.equal(j.message,'체크히어 반영·원본 확인·플랫폼 DB 저장 완료 · 퇴실·1교시 삭제 확인 · 입실 기록은 남음');
+    const saved=b.c.calls.finish.at(-1);assert.deepEqual([saved.entry,saved.exit,saved.rawEntry],[null,null,'09:00:00']);
   }finally{b.close();}
 });

@@ -5,9 +5,11 @@ import {fileURLToPath} from 'node:url';
 import {dirname,join} from 'node:path';
 import {randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
 import {CheckHereCollector,sameTableRow} from './collector.mjs';
-import {DELETE_MARKS} from './day-data.mjs';
-import {judge,RULES,TIME_DELETE_CAPABILITY} from './rules.mjs';
-import {applyVerified,confirmAlreadyApplied} from './writeback.mjs';
+import {DELETE_MARKS,LOCAL_ONLY as PC_ONLY,outward} from './day-data.mjs';
+import {judge,RULES,TIME_DELETE_CAPABILITY,TIME_DELETE_V2_CAPABILITY,PRIVACY_STATE_CAPABILITY,PRIVACY_MIN_WRITE_SECONDS,privacyState} from './rules.mjs';
+import {applyVerified,confirmAlreadyApplied,planRequest} from './writeback.mjs';
+import {EVENT_REQUEST_CAPABILITY,formatWith} from './event-request.mjs';
+import {recordFormat,saveFormat,loadFormat,formatSummary} from './format-record.mjs';
 import {createApprovalCloud} from './cloud-approval.mjs';
 import {readRequestRecord} from './request-record.mjs';
 import {proposalFromApproval,prepareApproval,resultText,requestMatchesRecord} from './approval-core.mjs';
@@ -20,13 +22,20 @@ import {MASKED,MIN_CLAIM_SECONDS,hasMask,waitsForUnmask,unmaskReason} from './ma
 import {startUnmask,enterCode,cancelUnmask} from './unmask.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
 // build는 Start.ps1의 값과 같아야 합니다(다르면 「체크히어 시작.cmd」가 쉬고 있는 연결 프로그램을 다시 띄웁니다).
-export const BUILD='20261015.3';
-// time-delete-v1: 수정창 '삭제'로 기록 번호가 있는 칸(퇴실 COMPLETE·관리자 1교시 ATTEND)만 지웁니다(collector.deleteTime). 관리자 1교시는 지금 꺼짐(rules.mjs ATTEND_DELETE).
+export const BUILD='20261016.2';
+// time-delete-v1: 기록 번호가 있는 칸(퇴실 COMPLETE·1교시 ATTEND)만 지웁니다(collector.deleteTime·requestWrite).
+// time-delete-v2: 두 칸 삭제(퇴실 먼저 → 다시 읽기 → 남은 ATTEND 1교시 → 다시 읽어 두 칸 확인, writeback.applyVerified). 퇴실이 남은 1교시만의 삭제는 거절합니다.
+// privacy-state-v1: /api/status·/api/state의 privacy(rules.mjs privacyState, 이름 없음). 수정·삭제는 해제·남은 150초일 때만(K4).
 // api-probe-v1: 읽기 전용 체크히어 가림 진단(/api/api-probe, probe-api.mjs). 화면이 받은 출결상세 응답만 보고 따로 요청하지 않습니다.
 // masked-identity-v1: 체크히어 개인정보 가림 화면에서 학생 번호(attendeeId) 연결로 읽고, 쓰기는 이 탭이 해제된 동안만 합니다(masking.mjs).
 export const MASKED_IDENTITY_CAPABILITY='masked-identity-v1';
-export const CAPABILITIES=Object.freeze(['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1',TIME_DELETE_CAPABILITY,API_PROBE_CAPABILITY,MASKED_IDENTITY_CAPABILITY]);
-const LOCAL_ONLY='체크히어 해제·연결 정리는 수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서만 합니다.';
+// event-request-v1: 순차 수정(event-request.mjs). /api/apply·/api/apply-batch의 writer 없음(자동: 순차 요청이 준비되면 그것, 아니면 수정창)·'request'·'editor', 미리보기, 형식 기록(/api/record-format).
+// 내장 형식(2026-10-16 기록)으로 보내고, 사람이 해제한 탭의 헤더가 있을 때만 그 탭 안에서 보냅니다(켜기 단계 없음 — 사람의 해제가 관문). 첫 실행은 build마다 1건(「확인했음」 전까지 나머지는 수정창).
+export const CAPABILITIES=Object.freeze(['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1',TIME_DELETE_CAPABILITY,API_PROBE_CAPABILITY,MASKED_IDENTITY_CAPABILITY,EVENT_REQUEST_CAPABILITY,TIME_DELETE_V2_CAPABILITY,PRIVACY_STATE_CAPABILITY]);
+const LOCAL_ONLY='체크히어 해제·연결 정리·형식 기록·「확인했음」은 수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서만 합니다.';
+// 순차 수정 안내(이름 없음)
+const FIRST_RUN_NOTE='이 build의 첫 순차 수정 1건을 사람이 확인하기 전이라 이 건은 수정창으로 반영했습니다. 체크히어에서 그 1건을 확인한 뒤 연결 프로그램 화면(127.0.0.1:8765/writer)에서 「확인했음」을 누르면 순차 수정으로 바뀝니다.';
+const HEADERS_MISSING='EVENT_REQUEST_HEADERS: 체크히어 탭에서 사람이 해제한 헤더를 확인하지 못해 순차 수정을 시작하지 않았습니다(아무것도 보내지 않음). 수집 PC의 체크히어 탭에서 마스킹 해제(또는 연장)를 확인한 뒤 다시 반영해 주세요.';
 // 작업 글에 붙이는 가림 요약(이름 없음, 수만)
 // unread: 가린 화면에서 읽지 못해 저장된 기록을 그대로 둔 학생(확인 필요로 셈, 새 행을 만들지 않음).
 const countView=(j,v)=>{if(v?.view==='masked')j.masked=(j.masked||0)+1;for(const k of ['unlinked','mismatch','conflicts','unread'])if(v?.[k])j[k]=(j[k]||0)+v[k];};
@@ -37,7 +46,8 @@ const deletionRequest=r=>r?.deleteTimes!==undefined&&r?.deleteTimes!==null&&!(Ar
 // 플랫폼 저장(finish)이 돌려준 완료 문구에는 시간 삭제 확인이 없어, 이 PC 작업 글에 반영 결과로 다시 붙입니다(중계 기록에 남게).
 const withDeleted=(message,j)=>resultText(message,j.results);
 // learnTickMs·writeGapMs: 연결 확인 수집을 보는 간격과, 쓰기 시도 뒤(해제 직후 포함) 그 수집을 미루는 시간. 시험만 줄여 씁니다.
-export function createBridge({dataDir=join(here,'data'),collector=null,port=8765,approvalCloud=createApprovalCloud(),capabilities=CAPABILITIES,learnTickMs=3000,writeGapMs=60000}={}){
+// itemGapMs: 묶음 반영에서 건과 건 사이(0.5~1초). recordTimeoutMs: 형식 기록을 기다리는 최대 시간(10분). privacyPollMs: 쉬는 동안 머리말(가림 상태)을 보는 간격(15초).
+export function createBridge({dataDir=join(here,'data'),collector=null,port=8765,approvalCloud=createApprovalCloud(),capabilities=CAPABILITIES,learnTickMs=3000,writeGapMs=60000,itemGapMs=[500,1000],recordTimeoutMs=10*60000,privacyPollMs=15000}={}){
   mkdirSync(dataDir,{recursive:true});const db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS snapshot_id ON snapshots(id,seq); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS journal(seq INTEGER PRIMARY KEY, job TEXT, payload TEXT);');
   const key=randomBytes(32).toString('hex'),adapter=collector||new CheckHereCollector(dataDir),jobs=new Map();let busy=null,connecting=false;
@@ -63,8 +73,8 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
   // 체크히어 학생 번호 연결(이 PC SQLite만). 수집기는 가린 화면에서 이것과 저장된 원문 기록으로 학생을 찾습니다.
   const links=createLinkStore(db,{records:latest});
   if(adapter&&typeof adapter==='object'&&!adapter.links)adapter.links=links;
-  // 가림 때문에 기다리는 쓰기(요청 번호 → {at: 마지막으로 막힌 시각, status: 'pending'|'approved'}). 중계가 5분마다 다시 보므로
-  // 6분 지나도 다시 오지 않으면(철회·반려·중계 멈춤) 잊습니다. 가림이 아닌 결과가 나오면 바로 지웁니다. 해제 사유의 수는 여기서 셉니다.
+  // 가림 때문에 기다리는 쓰기(요청 번호 → {at: 마지막으로 막힌 시각, status: 'pending'|'approved'}). 중계는 읽기만 하므로(2026-10-16) 다시 반영은
+  // 사람이 운영 포털 「반영 요청·승인」에서 합니다. 6분 지나도 다시 오지 않으면(철회·반려를 이 PC는 모름) 잊습니다. 가림이 아닌 결과가 나오면 바로 지웁니다. 해제 사유의 수는 여기서 셉니다.
   const waiting=new Map();let lastWriteCall=0,unmaskedAt=0,unmask=null,lastHeader=null,lastPeek=0;const learnQueue=new Map();
   const prune=()=>{const t=Date.now();for(const [id,w] of waiting)if(t-w.at>6*60000)waiting.delete(id);};
   const wait=(id,message,status)=>{if(waitsForUnmask(message))waiting.set(String(id),{at:Date.now(),status:status==='approved'?'approved':'pending'});else waiting.delete(String(id));};
@@ -81,15 +91,16 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
       reasonPreview:reasonOf(Number(m?.unlinked)||0)};
   };
   const endUnmask=(j,status,message)=>{if(unmask?.job===j){clearTimeout(unmask.timer);unmask=null;}Object.assign(j,{status,message,finishedAt:new Date().toISOString()});saveJob(j);if(busy===j.id)busy=null;};
-  // 해제된 동안 할 일(검토 E): 기다리는 쓰기는 중계가 먼저 처리하고, 그 사이가 비면 연결 안 된 학생이 있던 반을 원문으로 한 번씩 읽어 연결을 배웁니다.
-  // 해제 직후에는 중계가 알아채고(15초 안) 쓰기를 시작할 때까지 1분을 비워 둡니다(배우기가 해제 시간을 먼저 쓰지 않게).
+  // 해제된 동안 할 일(검토 E): 기다리는 쓰기는 사람이 운영 포털에서 다시 반영하고(중계는 쓰지 않음), 그 사이가 비면 연결 안 된 학생이 있던 반을 원문으로 한 번씩 읽어 연결을 배웁니다.
+  // 기다리는 쓰기가 있으면 해제 직후·쓰기 뒤 1분을 비워 둡니다(사람이 다시 반영하기 전에 배우기가 해제 시간을 먼저 쓰지 않게).
   // 해제 시간이 1분보다 적게 남았거나 다시 가려지면 시작하지 않습니다. 해제(연장·종료)는 사람이 정합니다.
   const queueLearning=m=>{for(const c of m?.classes||[])if(c.count>0)learnQueue.set(String(c.classId),String(c.date));};
   async function learnTick(){
     if(busy||connecting||unmask)return;
-    // 쉬는 동안 10초마다 머리말만 봅니다(읽기만, 이동·클릭 없음). 직접 해제한 것도 여기서 알아챕니다.
-    if(!learnQueue.size){if(Date.now()-lastPeek<10000||!adapter.page||adapter.page.isClosed?.())return;lastPeek=Date.now();await maskingInfo();if(!learnQueue.size||busy||connecting||unmask)return;}
-    prune();if(waiting.size&&Date.now()-Math.max(lastWriteCall,unmaskedAt)<writeGapMs)return;
+    // 쉬는 동안 15초마다 머리말(가림 상태·남은 해제 시간)만 봅니다(화면 글 읽기만, 이동·클릭 없음). 직접 해제한 것도 여기서 알아챕니다.
+    if(!learnQueue.size){if(Date.now()-lastPeek<privacyPollMs||!adapter.page||adapter.page.isClosed?.())return;lastPeek=Date.now();await maskingInfo();if(!learnQueue.size||busy||connecting||unmask)return;}
+    // 쓰기 시도(바빠서 돌려보낸 것 포함) 뒤 1분은 늘 비워 둡니다: 운영포털이 가린 동안 보내지 않아 기다리는 쓰기가 없어도, 해제 뒤 승인·반영을 누른 사람이 배우기에 밀리지 않게.
+    prune();if(Date.now()-(waiting.size?Math.max(lastWriteCall,unmaskedAt):lastWriteCall)<writeGapMs)return;
     const m=typeof adapter.maskingState==='function'?await adapter.maskingState().catch(()=>null):null;
     if(m?.header!=='unmasked'){learnQueue.clear();return;}
     // 남은 시간을 읽지 못하면(타이머 모양이 다름) 배우기도 시작하지 않습니다(안전한 쪽).
@@ -113,7 +124,8 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
   };
   // Same student, same complete content as the last stored read (memos included).
   // 시간 삭제 표시(기록 번호)가 다르거나 옛 build의 저장본이라 없으면 한 번 다시 저장합니다(버전은 그대로).
-  const sameStored=r=>{const old=snapshots.get(r.id)?.record;return !!old&&old.source==='live'&&old.readState==='complete'&&old.version===r.version&&old.tableSignature===r.tableSignature&&old.studentKey===r.studentKey&&DELETE_MARKS.every(k=>old[k]===r[k]);};
+  // 학생 번호(attendeeId)는 버전 밖입니다: 옛 저장본에 없으면 같은 것으로 봅니다(다시 저장하지 않음, 옮겨 쓰기 없음). 둘 다 있고 다르면 다시 저장합니다.
+  const sameStored=r=>{const old=snapshots.get(r.id)?.record;return !!old&&old.source==='live'&&old.readState==='complete'&&old.version===r.version&&old.tableSignature===r.tableSignature&&old.studentKey===r.studentKey&&DELETE_MARKS.every(k=>old[k]===r[k])&&(!old.attendeeId||!r.attendeeId||old.attendeeId===r.attendeeId);};
   const journal=(job,event)=>db.prepare('INSERT INTO journal(job,payload) VALUES(?,?)').run(job,JSON.stringify({at:new Date().toISOString(),...event}));
   // 한 반·여러 날 수집 작업(busy는 부르는 쪽이 잡아 둠). learn: 해제된 동안 연결을 배우려는 원문 읽기.
   function startSync(classId,dates,incremental,extra={}){
@@ -127,11 +139,104 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
     }catch(e){j.status=j.count?'partial':'failed';j.message=e.message;}finally{j.finishedAt=new Date().toISOString();saveJob(j);rememberPlaces();if(busy===j.id)busy=null;}})();
     return j;
   }
+  // 정밀 수집(수정창으로 읽기, 비상용)은 가린 화면에서 수정창이 열리지 않으므로 시작 전에 거절합니다(머리말만 봄, 이동·클릭 없음).
+  async function refusePreciseWhileMasked(){const m=typeof adapter.maskingState==='function'?await adapter.maskingState().catch(()=>null):null;if(m?.header==='masked'||m?.view==='masked')throw Error(MASKED.PRECISE);}
+  // ---- 순차 수정(event-request-v1) ----
+  // 켜기 단계는 없습니다(2026-10-16 사용자 결정 「마스킹 해제를 요구하도록만」): 사람이 그 탭을 해제했고 남은 시간이 넉넉하며 탭 안 장치가 해제 헤더를 보았을 때만 보냅니다.
+  // 첫 실행: build마다 1건. 쓰기 단계까지 간 첫 건(작업 기록에 before_write — 보냈을 수 있음)은 결과와 상관없이 그 차례를 씁니다. 그 뒤 사람이 「확인했음」(127.0.0.1:8765/writer)을
+  // 누를 때까지 나머지는 수정창으로 반영합니다(막지 않음). 첫 건이 확인(verified)·플랫폼 저장까지 끝났으면 「확인했음」이 순차 수정을 켜고,
+  // 끝까지 확인되지 않았으면(실패·덜 지워짐·충돌·미확인) 사람이 체크히어 원본을 본 뒤 「확인했음」을 눌러야 1건을 다시 해 봅니다(writer_rearms, 같은 잘못이 건마다 되풀이되지 않게).
+  // 같은 건이 순차 요청으로 실패했을 때 수정창으로 저절로 다시 쓰지 않습니다(작업이 남아 다시 보내지 않음).
+  db.exec('CREATE TABLE IF NOT EXISTS writer_unlocks(build TEXT PRIMARY KEY, jobId TEXT NOT NULL, at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS writer_rearms(jobId TEXT PRIMARY KEY, build TEXT NOT NULL, at TEXT NOT NULL);');
+  const wrote=db.prepare(`SELECT 1 FROM journal WHERE job=? AND payload LIKE '%"phase":"before_write"%' LIMIT 1`),rearmed=db.prepare('SELECT 1 FROM writer_rearms WHERE jobId=?');
+  let recorder=null;
+  // 쓸 형식: 내장 형식(2026-10-16 기록) 위에 이 PC에서 새로 기록한 형식(있으면)을 덮습니다.
+  const formatNow=()=>formatWith(loadFormat(dataDir));
+  const firstRun=()=>{
+    const unlocked=!!db.prepare('SELECT 1 FROM writer_unlocks WHERE build=?').get(BUILD),mine=[...jobs.values()].filter(j=>j.kind==='apply'&&j.writer==='request'&&j.build===BUILD);
+    // 차례를 쓴 건: 끝났고(running 아님) 쓰기 단계까지 갔으며 사람이 다시 해 보기로 확인하지 않은 것. 판단은 가장 최근 건으로 합니다.
+    const running=mine.some(j=>j.status==='running'),tried=mine.filter(j=>j.status!=='running'&&!rearmed.get(j.id)&&wrote.get(j.id)).sort((a,b)=>String(a.startedAt).localeCompare(String(b.startedAt))),last=tried.at(-1);
+    const done=last?.status==='verified'&&last.platformSaved===true?last:null,failed=last&&last.status!=='verified'?last:null;
+    return {unlocked,waiting:!unlocked&&!!done,failed:!unlocked&&failed?failed.status:null,running,turn:unlocked||(!tried.length&&!running),doneJob:done?.id||null,failedJob:failed?.id||null};
+  };
+  // /api/state·/api/status용(이름·번호 없음): 쓸 형식 종류(내장+기록), 기록한 종류, 첫 실행 상태, 형식 기록 중인지. armed는 옛 화면을 위해 늘 true(켜기 없음).
+  const writerInfo=()=>{const r=firstRun(),recorded=loadFormat(dataDir);return {armed:true,armedUntil:null,builtin:true,formats:Object.keys(formatNow().kinds),recorded:Object.keys(recorded?.kinds||{}),firstRun:{unlocked:r.unlocked,waitingConfirm:r.waiting,failedFirst:r.failed},recording:!!recorder};};
+  // 쓰기 방식: 없음 → 'auto'(순차 요청이 준비됐고 첫 실행 차례면 순차, 아니면 수정창), 'editor' 수정창, 'request' 순차(준비 안 되면 거절).
+  const writerOf=input=>{if(input.writer===undefined||input.writer===null)return 'auto';if(['editor','request'].includes(input.writer))return input.writer;throw Error('쓰기 방식(writer)을 확인해 주세요.');};
+  // writer:'request'를 지정했을 때 읽기·잡기 전: 머리말 '원문 표시 중'과 남은 150초(모자라면 연장은 사람이 정함). 자동은 잡기 전 확인(writeBlocked)만.
+  async function requestGate(){
+    await adapter.readHeader?.();const h=adapter.headerNow?.()||{state:'none',remaining:null},p=privacyState({header:h.state,remaining:h.remaining});
+    if(p.state!=='unmasked')throw Error(MASKED.WRITE);if(!p.writable)throw Error(MASKED.TIME);
+  }
+  // 승인 하나를 다시 읽고(쓰기 전 확인) 잡습니다(claim). 잡기 전 오류는 던집니다(요청 상태 그대로, 가림이면 해제 대기로 셈).
+  // confirmOnly: 이미 같은 값인 승인 대기 요청을 승인·완료로만 바꿉니다(쓰지 않음). 결과 {reply}이면 더 할 일이 없습니다.
+  // writer: 'auto'|'editor'|'request'. requestTurn: 첫 실행 규칙상 이 건이 순차 요청을 쓸 차례인지(아니면 수정창, 막지 않음).
+  async function claimApproval(approvalId,idToken,{confirmOnly=false,writer='editor',requestTurn=true}={}){
+    let record,request,confirmed,identities,reqStatus='approved';
+    try{
+      let approved=await approvalCloud.get(approvalId,idToken);reqStatus=approved.data?.status;
+      // 시간 삭제를 지원하지 않는 연결 프로그램은 읽기·승인(approveExisting)·잡기(claim) 전에 거절합니다. 요청 상태는 그대로 둡니다.
+      if(deletionRequest(approved.data)&&!capabilities.includes(TIME_DELETE_CAPABILITY))throw Error('이 연결 프로그램은 체크히어 시간 삭제를 지원하지 않습니다. 수집 PC에서 최신 「체크히어 시작.cmd」를 다시 실행해 주세요.');
+      await adapter.requireLogin();
+      if(confirmOnly){
+        if(approved.data.status!=='pending')return {reply:{status:approved.data.status,...approved.data.result}};
+        record=await readRequestRecord(adapter,approved.data,latest(),approved.identities,put);confirmed=record;
+        if(!confirmAlreadyApplied(approved.data,record,confirmed,approved.identities)){if(confirmed?.id===record.id)put(confirmed);return {reply:{status:'pending',message:'현재 원본은 요청값과 다릅니다. 승인 대기를 유지합니다.'}};}
+        put(confirmed);record=confirmed;approved=await approvalCloud.approveExisting(approved,idToken,outward(confirmed));
+      }
+      request=approved.data;identities=approved.identities;let proposal=proposalFromApproval(request);
+      record=record||await readRequestRecord(adapter,request,latest(),identities,put);
+      if(record.id!==proposal.id)throw Error('승인된 학생과 수집된 학생의 식별정보가 다릅니다.');
+      const live=prepareApproval(request,record,{allowAlreadyApplied:true,identities});
+      proposal={id:record.id,version:record.version,...live.after,reason:live.reason};
+      // 잡기(claim) 전 가림 확인(K4): 가린·섞인 화면, 머리말을 읽지 못한 가림 기능 화면, 남은 해제 시간 150초(PRIVACY_MIN_WRITE_SECONDS) 미만이면
+      // 요청은 승인 상태 그대로 두고 해제를 기다립니다(MASKED_*, 아무것도 누르지 않음). 잡은 뒤 다시 읽는 동안 시간이 줄므로 넉넉히 봅니다(쓰기 직전은 90초).
+      if(!confirmed){const blocked=adapter.writeBlocked?.(record,{minSeconds:Math.max(MIN_CLAIM_SECONDS,PRIVACY_MIN_WRITE_SECONDS)});if(blocked)throw Error(blocked);}
+      // 쓰기 방식(그날 화면이 열린 뒤): 순차 요청은 머리말 '원문 표시 중'이고 탭 안 장치가 사람이 해제한 헤더를 보았을 때만(못 봤으면 시간 기준 라디오로 한 번 다시 읽게 함).
+      let used='editor',note=null;
+      if(!confirmed&&writer!=='editor'){
+        const unmasked=adapter.headerNow?.().state==='unmasked',able=typeof adapter.requestWrite==='function'&&typeof adapter.requestReady==='function';
+        if(writer==='request'&&!unmasked)throw Error(MASKED.WRITE);
+        if(requestTurn&&able&&unmasked&&await adapter.requestReady().catch(()=>false))used='request';
+        else if(writer==='request'&&requestTurn)throw Error(HEADERS_MISSING);
+        else if(able&&unmasked&&!requestTurn)note=FIRST_RUN_NOTE;
+      }
+      const attemptId=randomUUID();await approvalCloud.claim(approved,idToken,attemptId);waiting.delete(approvalId);
+      const j={id:approvalId,approvalId,attemptId,approvedBy:approved.data.approvedBy,kind:'apply',recordId:record.id,...(used==='request'?{writer:'request',build:BUILD}:{}),...(note?{writerNote:note}:{}),status:'running',startedAt:new Date().toISOString(),message:'승인된 변경 전 값을 다시 확인하고 있습니다.'};saveJob(j);
+      return {j,record,proposal,request,identities,confirmed,idToken,writer:used};
+    }catch(e){wait(approvalId,e.message,reqStatus);throw e;}
+  }
+  // 잡은 승인 하나를 반영합니다: 입력(수정창 또는 순차 요청) → 다시 읽어 확인 → 플랫폼 저장. 결과는 작업(j)에 남기고 j를 돌려줍니다.
+  async function runApproval({j,record,proposal,request,identities,confirmed,idToken,writer}){
+    try{
+      const result=confirmed?{status:'verified',alreadyApplied:true,message:'이미 반영 · 원본 확인 완료',results:[],current:confirmed}:await applyVerified(adapter,record,proposal,async e=>journal(j.id,e),request,identities,writer==='request'?{writer:{kind:'request',format:formatNow()}}:{});
+      Object.assign(j,result);if(result.current&&!confirmed)put(result.current);
+    }catch(e){j.status='failed';j.message=e.message;}finally{
+      j.finishedAt=new Date().toISOString();saveJob(j);
+      try{const result=await approvalCloud.finish(j.approvalId,idToken,j.attemptId,outward(j));j.cloudSaved=true;j.platformSaved=result?.platformSaved===true;if(result?.message)j.message=withDeleted(result.message,j);delete j.cloudError;}catch(e){j.cloudSaved=false;j.platformSaved=false;j.cloudError='체크히어 원본 확인 후 플랫폼 DB 저장을 완료하지 못했습니다. 결과 확인을 누르면 재입력 없이 저장을 다시 확인합니다. '+e.message;}
+      saveJob(j);
+    }
+    return j;
+  }
+  // 미리보기: 승인(또는 승인 대기) 요청마다 다시 읽어(읽기만) 바꿀 칸·값을 돌려줍니다. 잡지도 보내지도 않습니다. 이름·번호 값 없음.
+  async function previewItems(ids,idToken){
+    const format=formatNow(),out=[];
+    for(const approvalId of ids){
+      try{
+        const doc=await approvalCloud.get(approvalId,idToken);
+        if(!['pending','approved'].includes(doc.data.status))throw Error('이미 처리된 요청입니다.');
+        const current=await readRequestRecord(adapter,doc.data,latest(),doc.identities,put);
+        out.push({approvalId,classId:String(current.classId),date:current.date,status:doc.data.status,changes:planRequest(adapter,doc.data,current,doc.identities,format),blocked:adapter.writeBlocked?.(current,{minSeconds:MIN_CLAIM_SECONDS})||null});
+      }catch(e){out.push({approvalId,error:cleanMessage(e.message)});}
+    }
+    return out;
+  }
   const authorized=req=>{const raw=req.headers['x-hint-key'];return typeof raw==='string'&&raw.length===key.length&&timingSafeEqual(Buffer.from(raw),Buffer.from(key));};
   const localOrigin=o=>!o||o===`http://127.0.0.1:${port}`||o===`http://localhost:${port}`;
-  const send=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(body));};
+  // 응답에는 이 PC에만 두는 값(체크히어 학생 번호)을 넣지 않습니다(포털·중계·Firestore로 가지 않게).
+  const send=(res,code,body)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(body,(k,x)=>PC_ONLY.includes(k)?undefined:x));};
   async function body(req){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>1000000)throw new Error('요청이 너무 큽니다.');}return raw?JSON.parse(raw):{};}
-  const publicFiles={'/checkhere-name-core.mjs':'checkhere-name-core.mjs','/survey-identity.mjs':'survey-identity.mjs','/attendance-beta-core.mjs':'attendance-beta-core.mjs','/checkhere/bulk-collect.mjs':'checkhere/bulk-collect.mjs','/':'checkhere.html','/checkhere.html':'checkhere.html','/checkhere-ui.mjs':'checkhere-ui.mjs','/checkhere/ui.css':'checkhere/ui.css','/checkhere/rules.mjs':'checkhere/rules.mjs'};
+  const publicFiles={'/checkhere-name-core.mjs':'checkhere-name-core.mjs','/survey-identity.mjs':'survey-identity.mjs','/attendance-beta-core.mjs':'attendance-beta-core.mjs','/checkhere/bulk-collect.mjs':'checkhere/bulk-collect.mjs','/':'checkhere.html','/checkhere.html':'checkhere.html','/checkhere-ui.mjs':'checkhere-ui.mjs','/checkhere/ui.css':'checkhere/ui.css','/checkhere/rules.mjs':'checkhere/rules.mjs','/writer':'checkhere/writer.html','/checkhere/writer-ui.mjs':'checkhere/writer-ui.mjs'};
   const server=http.createServer(async(req,res)=>{
     try{
       if(![`127.0.0.1:${port}`,`localhost:${port}`].includes(req.headers.host))return send(res,403,{error:'허용하지 않는 주소입니다.'});
@@ -146,10 +251,15 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
       if(url.pathname.startsWith('/api/')){
         if(!authorized(req))return send(res,401,{error:'이 PC의 연결 키를 입력해 주세요.'});
         if(origin&&!localOrigin(origin)){if(!origin.startsWith('https://'))return send(res,403,{error:'HTTPS 플랫폼에서 연결해 주세요.'});res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
+        // 가벼운 상태(K2, 이름·기록 없음): build·능력·바쁨·체크히어 가림 상태 한 줄(privacy). 포털·이 PC 화면이 15초마다 봅니다(머리말 글만 읽음).
+        if(req.method==='GET'&&url.pathname==='/api/status'){
+          const masking=await maskingInfo(),connected=typeof adapter.loggedIn==='function'?await adapter.loggedIn().catch(()=>false):false;
+          return send(res,200,{build:BUILD,capabilities,busy,connected,privacy:privacyState(masking),waitingWrites:masking.waitingWrites,requestWriter:writerInfo()});
+        }
         if(req.method==='GET'&&url.pathname==='/api/state'){
           const connected=await adapter.loggedIn(),masking=await maskingInfo();
-          // Take records, cursor and job progress together, after the await. masking: 화면 가림 상태·남은 해제 시간·수만(이름 없음).
-          return send(res,200,{rules:RULES,capabilities,build:BUILD,busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,masking,...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
+          // Take records, cursor and job progress together, after the await. masking: 화면 가림 상태·남은 해제 시간·수만(이름 없음). privacy: 그 한 줄(rules.mjs privacyState).
+          return send(res,200,{rules:RULES,capabilities,build:BUILD,busy,jobs:[...jobs.values()].slice(-20).reverse(),connected,masking,privacy:privacyState(masking),requestWriter:writerInfo(),...(url.searchParams.get('delta')==='1'?delta(url.searchParams.get('cursor')):{records:latest().map(r=>({...r,audit:judge(r)}))})});
         }
         if(req.method==='GET'&&url.pathname==='/api/history'){const id=url.searchParams.get('id');return send(res,200,{snapshots:db.prepare('SELECT payload FROM snapshots WHERE id=? ORDER BY seq DESC LIMIT 20').all(id).map(x=>JSON.parse(x.payload))});}
         if(req.method!=='POST')return send(res,405,{error:'지원하지 않는 요청입니다.'});const input=await body(req);
@@ -163,7 +273,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           if(!/^(?:[1-9]|1[0-7])$/.test(classId)||!Array.isArray(dates)||!dates.length||dates.length>31||new Set(dates).size!==dates.length||dates.some(d=>!/^202\d-\d{2}-\d{2}$/.test(d)||Number.isNaN(Date.parse(d))||new Date(d).toISOString().slice(0,10)!==d))throw new Error('반 또는 날짜 범위를 확인해 주세요. 최대 31일입니다.');
           const incremental=input.mode==='incremental';
           // 로그인 확인(await) 전에 임시 값으로 잠가야 그 틈에 다른 작업이 들어오지 않습니다.
-          const claim='start:'+randomUUID();busy=claim;try{await adapter.requireLogin();}catch(e){if(busy===claim)busy=null;throw e;}
+          const claim='start:'+randomUUID();busy=claim;try{await adapter.requireLogin();if(!incremental)await refusePreciseWhileMasked();}catch(e){if(busy===claim)busy=null;throw e;}
           return send(res,202,startSync(classId,dates,incremental));
         }
         // Several classes × a period in one job: no per-day request/poll gaps, one
@@ -174,7 +284,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           const classIds=Array.isArray(input.classIds)?[...new Set(input.classIds.map(String))].sort((a,b)=>a-b):[],dates=Array.isArray(input.dates)?[...new Set(input.dates)].sort():[];
           if(!classIds.length||classIds.length>17||classIds.some(c=>!/^(?:[1-9]|1[0-7])$/.test(c))||!dates.length||dates.length>130||!dates.every(validDate))throw new Error('반(1~17)과 날짜를 확인해 주세요. 한 번에 최대 130일입니다.');
           const mode=input.mode==='full'?'full':'incremental';
-          const claim='start:'+randomUUID();busy=claim;try{await adapter.requireLogin();}catch(e){if(busy===claim)busy=null;throw e;}
+          const claim='start:'+randomUUID();busy=claim;try{await adapter.requireLogin();if(mode==='full')await refusePreciseWhileMasked();}catch(e){if(busy===claim)busy=null;throw e;}
           adapter.cancelled=false;
           const j={id:randomUUID(),kind:'batch',classIds,dates,mode,status:'running',startedAt:new Date().toISOString(),total:classIds.length*dates.length,done:0,count:0,skipped:0,errors:0,results:[],message:'선택한 반·기간을 차례로 읽고 있습니다.'};saveJob(j);busy=j.id;
           let savedAt=0;const persist=force=>{const t=Date.now();if(force||t-savedAt>2000){savedAt=t;saveJob(j);}};
@@ -187,8 +297,8 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
               result.status=adapter.cancelled?'cancelled':result.errors?'partial':'complete';
             }catch(e){
               result.status=NO_LECTURE.test(e.message)?'no-lecture':'failed';result.message=e.message;
-              // 섞인 화면(해제 시간이 끝나는 중 등)은 모든 반에 걸리므로 로그인 만료처럼 묶음 전체를 멈춥니다.
-              if(/LOGIN_REQUIRED|MASKED_MIXED/.test(e.message)){finish(result);throw e;}
+              // 섞인 화면(해제 시간이 끝나는 중 등)·가린 화면의 정밀 수집은 모든 반에 걸리므로 로그인 만료처럼 묶음 전체를 멈춥니다.
+              if(/LOGIN_REQUIRED|MASKED_MIXED|MASKED_PRECISE/.test(e.message)){finish(result);throw e;}
             }
             return finish(result);
           };
@@ -271,38 +381,52 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
         if(url.pathname==='/api/apply'||url.pathname==='/api/confirm-existing'){
           await approvalCloud.verify(input.idToken);
           const approvalId=input.approvalId;if(typeof approvalId!=='string'||!/^[-\w]{16,80}$/.test(approvalId))throw Error('승인된 수정 요청 번호가 필요합니다.');
+          // 쓰기 방식: 없음은 자동(순차 요청이 준비되면 그것, 아니면 수정창), 'editor' 수정창, 'request' 순차 요청. 미리보기는 보내지 않습니다.
+          const writer=url.pathname==='/api/apply'?writerOf(input):'editor';
+          if(input.preview===true&&url.pathname==='/api/apply'){
+            if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다.'});
+            const tok='preview:'+randomUUID();busy=tok;try{return send(res,200,{preview:true,writer,items:await previewItems([approvalId],input.idToken)});}finally{if(busy===tok)busy=null;}
+          }
           if(jobs.get(approvalId)?.approvalId===approvalId)return send(res,200,jobs.get(approvalId));
           if(busy||connecting){lastWriteCall=Date.now();return send(res,409,{error:'진행 중인 작업이 있습니다.'});}
           busy=approvalId;lastWriteCall=Date.now();
-          let j,record,proposal,request,confirmed,identities,reqStatus='approved';
-          try{
-            let approved=await approvalCloud.get(approvalId,input.idToken);reqStatus=approved.data?.status;
-            // 시간 삭제를 지원하지 않는 연결 프로그램은 읽기·승인(approveExisting)·잡기(claim) 전에 거절합니다. 요청 상태는 그대로 둡니다.
-            if(deletionRequest(approved.data)&&!capabilities.includes(TIME_DELETE_CAPABILITY))throw Error('이 연결 프로그램은 체크히어 시간 삭제를 지원하지 않습니다. 수집 PC에서 최신 「체크히어 시작.cmd」를 다시 실행해 주세요.');
-            await adapter.requireLogin();
-            if(url.pathname==='/api/confirm-existing'){
-              if(approved.data.status!=='pending'){if(busy===approvalId)busy=null;return send(res,200,{status:approved.data.status,...approved.data.result});}
-              record=await readRequestRecord(adapter,approved.data,latest(),approved.identities,put);confirmed=record;
-              if(!confirmAlreadyApplied(approved.data,record,confirmed,approved.identities)){if(confirmed?.id===record.id)put(confirmed);if(busy===approvalId)busy=null;return send(res,200,{status:'pending',message:'현재 원본은 요청값과 다릅니다. 승인 대기를 유지합니다.'});}
-              put(confirmed);record=confirmed;approved=await approvalCloud.approveExisting(approved,input.idToken,confirmed);
+          let ctx;
+          // 순차 요청 관문(가림·남은 시간)에 막힌 것도 해제를 기다리는 쓰기로 셉니다(해제 사유·「마스킹 해제 시작」·중계 수에 보이게, 요청은 승인 상태 그대로).
+          try{if(writer==='request')await requestGate().catch(e=>{wait(approvalId,e.message,'approved');throw e;});ctx=await claimApproval(approvalId,input.idToken,{confirmOnly:url.pathname==='/api/confirm-existing',writer,requestTurn:firstRun().turn});}
+          catch(e){if(busy===approvalId)busy=null;throw e;}
+          if(ctx.reply){if(busy===approvalId)busy=null;return send(res,200,ctx.reply);}
+          void runApproval(ctx).finally(()=>{if(busy===approvalId)busy=null;});
+          return send(res,202,ctx.j);
+        }
+        // 승인된 요청 여러 건을 한 작업으로: 연결 프로그램이 내내 잡고 있어(그 사이 수집·연결 배우기가 탭을 옮기지 않음) 한 건씩
+        // 잡기 → 입력 → 다시 읽어 확인 → 플랫폼 저장 → 0.5~1초 쉼 → 다음. 오류·불일치·해제 끝남 중 하나라도 나오면 그 자리에서 멈추고
+        // 어디까지 됐는지 남깁니다(이름 없음, 반·날짜·상태만). preview: 보내지 않고 바꿀 목록만 돌려줍니다.
+        if(url.pathname==='/api/apply-batch'){
+          await approvalCloud.verify(input.idToken);
+          const ids=Array.isArray(input.approvalIds)?[...new Set(input.approvalIds)]:[];
+          if(!ids.length||ids.length>50||ids.some(id=>typeof id!=='string'||!/^[-\w]{16,80}$/.test(id)))throw Error('승인된 수정 요청 번호 목록(최대 50건)을 확인해 주세요.');
+          const writer=writerOf(input);
+          if(busy||connecting){lastWriteCall=Date.now();return send(res,409,{error:'진행 중인 작업이 있습니다.'});}
+          const claim='apply-batch:'+randomUUID();busy=claim;lastWriteCall=Date.now();
+          if(input.preview===true){try{return send(res,200,{preview:true,writer,items:await previewItems(ids,input.idToken)});}finally{if(busy===claim)busy=null;}}
+          try{if(writer==='request')await requestGate().catch(e=>{for(const id of ids)wait(id,e.message,'approved');throw e;});await adapter.requireLogin();}catch(e){if(busy===claim)busy=null;throw e;}
+          const b={id:randomUUID(),kind:'apply-batch',writer,total:ids.length,done:0,items:[],status:'running',startedAt:new Date().toISOString(),message:'승인된 수정을 한 건씩 반영하고 있습니다.'};saveJob(b);busy=b.id;
+          // 첫 실행(「확인했음」 전): 이 묶음에서 순차 요청은 한 건만, 나머지는 수정창(막지 않음).
+          let usedRequest=false;
+          void(async()=>{try{
+            for(const [n,approvalId] of ids.entries()){
+              if(n)await new Promise(r=>setTimeout(r,itemGapMs[0]+Math.random()*Math.max(0,itemGapMs[1]-itemGapMs[0])));
+              if(jobs.get(approvalId)?.approvalId===approvalId){b.items.push({approvalId,status:'seen',job:jobs.get(approvalId).status});b.stoppedAt={approvalId,step:'seen'};throw Error('이미 이 PC에서 처리한 요청이 있어 멈췄습니다. 결과를 확인해 주세요.');}
+              lastWriteCall=Date.now();let ctx;
+              try{const fr=firstRun();ctx=await claimApproval(approvalId,input.idToken,{writer,requestTurn:fr.unlocked||(fr.turn&&!usedRequest)});if(ctx.writer==='request')usedRequest=true;}catch(e){b.items.push({approvalId,status:'not-started',message:cleanMessage(e.message)});b.stoppedAt={approvalId,step:'claim'};throw e;}
+              if(ctx.reply){b.items.push({approvalId,status:ctx.reply.status});continue;}
+              const j=await runApproval(ctx);b.done=n+1;
+              b.items.push({approvalId,classId:String(ctx.record.classId),date:ctx.record.date,status:j.status,platformSaved:j.platformSaved===true,writer:ctx.writer});saveJob(b);
+              if(j.status!=='verified'||j.platformSaved!==true){b.stoppedAt={approvalId,step:'apply',status:j.status};throw Error(j.status==='verified'?'체크히어 확인 후 플랫폼 DB 저장을 확인하지 못했습니다.':j.message||j.status);}
             }
-            request=approved.data;identities=approved.identities;proposal=proposalFromApproval(request);
-            record=record||await readRequestRecord(adapter,request,latest(),identities,put);
-            if(record.id!==proposal.id)throw Error('승인된 학생과 수집된 학생의 식별정보가 다릅니다.');
-            const live=prepareApproval(request,record,{allowAlreadyApplied:true,identities});
-            proposal={id:record.id,version:record.version,...live.after,reason:live.reason};
-            // 잡기(claim) 전에 쓰기가 막힌 화면인지 봅니다. 막히면 요청은 승인 상태 그대로 두고 해제를 기다립니다(아무것도 누르지 않음).
-            // 잡은 뒤 다시 읽는 동안 시간이 줄므로 여기서는 MIN_CLAIM_SECONDS(150초)로 봅니다(쓰기 직전은 90초).
-            if(!confirmed){const blocked=adapter.writeBlocked?.(record,{minSeconds:MIN_CLAIM_SECONDS});if(blocked)throw Error(blocked);}
-            const attemptId=randomUUID();await approvalCloud.claim(approved,input.idToken,attemptId);waiting.delete(approvalId);
-            j={id:approvalId,approvalId,attemptId,approvedBy:approved.data.approvedBy,kind:'apply',recordId:record.id,status:'running',startedAt:new Date().toISOString(),message:'승인된 변경 전 값을 다시 확인하고 있습니다.'};saveJob(j);
-          }catch(e){if(busy===approvalId)busy=null;wait(approvalId,e.message,reqStatus);throw e;}
-          const idToken=input.idToken;
-          void(async()=>{try{const result=confirmed?{status:'verified',alreadyApplied:true,message:'이미 반영 · 원본 확인 완료',results:[],current:confirmed}:await applyVerified(adapter,record,proposal,async e=>journal(j.id,e),request,identities);Object.assign(j,result);if(result.current&&!confirmed)put(result.current);}catch(e){j.status='failed';j.message=e.message;}finally{
-            j.finishedAt=new Date().toISOString();saveJob(j);
-            try{const result=await approvalCloud.finish(approvalId,idToken,j.attemptId,j);j.cloudSaved=true;j.platformSaved=result?.platformSaved===true;if(result?.message)j.message=withDeleted(result.message,j);delete j.cloudError;}catch(e){j.cloudSaved=false;j.platformSaved=false;j.cloudError='체크히어 원본 확인 후 플랫폼 DB 저장을 완료하지 못했습니다. 결과 확인을 누르면 재입력 없이 저장을 다시 확인합니다. '+e.message;}
-            saveJob(j);if(busy===approvalId)busy=null;
-          }})();return send(res,202,j);
+            b.status='complete';b.message=`${b.done}/${b.total}건 반영·확인·저장 완료`;
+          }catch(e){b.status=b.done?'partial':'failed';b.message=`${b.done}/${b.total}건 완료 후 멈춤 · ${cleanMessage(e.message)}`;}finally{b.finishedAt=new Date().toISOString();saveJob(b);if(busy===b.id)busy=null;}})();
+          return send(res,202,b);
         }
         if(url.pathname==='/api/reconcile'){
           await approvalCloud.verify(input.idToken);const doc=await approvalCloud.get(input.approvalId,input.idToken),j=jobs.get(input.approvalId);
@@ -314,8 +438,33 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
           const saved=await approvalCloud.finish(input.approvalId,input.idToken,doc.data.attemptId,result);j.cloudSaved=true;j.platformSaved=saved?.platformSaved===true;if(saved?.message)j.message=withDeleted(saved.message,j);delete j.cloudError;saveJob(j);return send(res,200,j);
         }
         // ---- 체크히어 마스킹 해제 도우미(이 PC 화면에서만). 사유는 기다리는 실제 일, 인증번호는 사람이 메일에서 보고 넣은 값 ----
-        if(url.pathname.startsWith('/api/unmask/')||url.pathname.startsWith('/api/links/')){
+        if(['/api/unmask/','/api/links/','/api/record-format/','/api/request-writer/'].some(p=>url.pathname.startsWith(p))){
           if(!localOrigin(origin))return send(res,403,{error:LOCAL_ONLY});
+          // ---- 형식 기록(4-1): 사람이 해제된 이 탭에서 수정창으로 한 건을 고치는 동안 나가는 변경·삭제 요청 하나의 형식만 적습니다(값·헤더 없음) ----
+          // 기록하는 동안 연결 프로그램이 탭을 옮기지 않게 잡아 두고(busy), 그 저장의 확인창(정해진 문구)만 받습니다.
+          if(url.pathname==='/api/record-format/start'){
+            if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다. 끝난 뒤 다시 눌러 주세요.'});
+            if(!adapter.page||adapter.page.isClosed?.())throw Error('체크히어 로그인 버튼을 먼저 눌러 전용 크롬을 열어 주세요.');
+            const h=await adapter.readHeader?.()||{state:'none'};if(h.state==='masked'||h.state==='both')throw Error(MASKED.WRITE);
+            const j={id:randomUUID(),kind:'record-format',status:'running',startedAt:new Date().toISOString(),message:'전용 크롬의 그 탭(해제된 탭)에서 수정창으로 한 건을 직접 고쳐 주세요. 첫 변경·삭제 요청 하나의 형식(키·값 종류)만 적습니다.'};saveJob(j);busy=j.id;
+            const r=recordFormat({target:typeof adapter.page.context==='function'?adapter.page.context():adapter.page,timeoutMs:recordTimeoutMs});recorder=r;adapter.recording=true;
+            void r.done.then(got=>{
+              if(!got){j.status='cancelled';j.message='형식 기록을 멈췄습니다(기록한 것 없음).';return;}
+              const saved=saveFormat(dataDir,got.entry,{build:BUILD,response:got.response});j.format=formatSummary(saved)[got.entry.op];j.op=got.entry.op;j.response=got.response;
+              j.status='complete';j.message=`형식 기록 완료 · ${got.entry.op==='update'?'변경':'삭제'} ${got.entry.method} · 항목 ${got.entry.keys.length}개${got.response?` · 응답 ${got.response.status}`:''}`;
+            }).catch(e=>{j.status='failed';j.message=cleanMessage(e.message);}).finally(()=>{adapter.recording=false;if(recorder===r)recorder=null;j.finishedAt=new Date().toISOString();saveJob(j);if(busy===j.id)busy=null;});
+            return send(res,202,j);
+          }
+          if(url.pathname==='/api/record-format/stop'){recorder?.stop();return send(res,200,{ok:true});}
+          // ---- 순차 수정 「확인했음」(사람이 이 PC 화면에서만). 켜기·끄기(arm·disarm)는 2026-10-16부터 없음: 옛 화면이 불러도 상태만 돌려줍니다 ----
+          if(url.pathname==='/api/request-writer/arm'||url.pathname==='/api/request-writer/disarm')return send(res,200,writerInfo());
+          if(url.pathname==='/api/request-writer/confirm'){
+            const r=firstRun();if(r.unlocked)return send(res,200,writerInfo());
+            // 끝까지 확인되지 않은 첫 건: 사람이 원본을 본 뒤 누르면 그 건을 넘기고 다음 1건만 다시 순차 수정으로 해 봅니다(켜지는 것은 아님).
+            if(r.failedJob){db.prepare('INSERT INTO writer_rearms(jobId,build,at) VALUES(?,?,?) ON CONFLICT(jobId) DO NOTHING').run(r.failedJob,BUILD,new Date().toISOString());return send(res,200,writerInfo());}
+            if(!r.doneJob)throw Error('확인할 첫 순차 수정이 없습니다. 먼저 1건을 반영하고 체크히어·플랫폼 저장 결과를 확인해 주세요(플랫폼 저장 확인 전이면 운영포털에서 반영 결과 확인을 먼저 눌러 주세요).');
+            db.prepare('INSERT INTO writer_unlocks(build,jobId,at) VALUES(?,?,?) ON CONFLICT(build) DO NOTHING').run(BUILD,r.doneJob,new Date().toISOString());return send(res,200,writerInfo());
+          }
           if(url.pathname==='/api/unmask/start'){
             if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다. 끝난 뒤 다시 눌러 주세요.'});
             if(!adapter.page||adapter.page.isClosed?.())throw Error('체크히어 로그인 버튼을 먼저 눌러 전용 크롬을 열어 주세요.');
@@ -356,7 +505,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=8765
       return send(res,404,{error:'페이지를 찾지 못했습니다.'});
     }catch(e){return send(res,400,{error:e.message||'요청 처리 오류'});}
   });
-  return{server,db,adapter,key,put,links,close:()=>{clearInterval(learnTimer);if(unmask)clearTimeout(unmask.timer);server.close();db.close();}};
+  return{server,db,adapter,key,put,links,close:()=>{clearInterval(learnTimer);if(unmask)clearTimeout(unmask.timer);recorder?.stop();server.close();db.close();}};
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
   const app=createBridge();app.server.listen(8765,'127.0.0.1',()=>console.log('HINT 체크히어 검수: http://127.0.0.1:8765'));

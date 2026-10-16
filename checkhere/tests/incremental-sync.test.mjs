@@ -24,10 +24,14 @@ test('collector opens editors only for rows the predicate does not skip',async()
   assert.deepEqual(read,['a','c']);assert.deepEqual(out,['a','c']);
   read.length=0;await c.collect('2',['2026-10-12'],async()=>{},async()=>{});assert.deepEqual(read,['a','b','c'],'the default full collection is unchanged');
 });
-test('bridge incremental sync skips unchanged students and adds no snapshot rows for them',async()=>{
-  let table=[row('a','09:00|18:00'),row('b','09:05|18:00')];const opened=[];
-  const adapter=new CheckHereCollector('fixture',{page:{}});
-  adapter.loggedIn=async()=>true;adapter.requireLogin=async()=>{};adapter.openDay=async()=>structuredClone(table);
+// 화면 데이터 항목(가상): 표의 입실·1교시·퇴실과 같은 시간
+const entryOf=(r,exit=r.exit)=>({sequence:1,attendeeId:'att-'+r.id,name:r.name,phone:'',eventList:[{type:'ENTER',time:'2026-10-12T'+r.rawEntry,eventId:'e',timeIndex:0},{type:'PASS',time:'2026-10-12T'+r.entry,eventId:null,timeIndex:0},{type:'COMPLETE',time:'2026-10-12T'+exit,eventId:'c',timeIndex:0}],leaveEvents:{pairs:[]}});
+test('bridge incremental sync reads from page data without editors, skips unchanged students and adds no snapshot rows for them; precise sync opens editors',async()=>{
+  const timed=(id,sig,exit)=>row(id,sig,{rawEntry:'09:00:00',entry:'09:00:00',exit,outingCount:0});
+  let table=[timed('a','09:00|18:00','18:00:00'),timed('b','09:05|18:00','18:00:00')];const opened=[];
+  const adapter=new CheckHereCollector('fixture',{page:{},dayGapMs:[0,0]});
+  // 빠른 수집은 그날 화면 데이터만 씁니다(2026-10-16): 순번으로 맞춘 항목을 흉내 냅니다.
+  adapter.loggedIn=async()=>true;adapter.requireLogin=async()=>{};adapter.openDay=async()=>{const rows=structuredClone(table);adapter.dayData={data:{eventResultList:rows.map(r=>entryOf(r))}};adapter.planOptions=()=>({entryFor:r=>entryOf(r)});return rows;};
   adapter.readDetails=async r=>{opened.push(r.id);const d={...r,entryMemo:'',exitMemo:'',readState:'complete',collectedAt:new Date().toISOString()};d.version=version(d);return d;};
   mkdirSync(join(import.meta.dirname,'../test-results'),{recursive:true});
   const app=createBridge({dataDir:mkdtempSync(join(import.meta.dirname,'../test-results/incremental-')),collector:adapter,port:18781});
@@ -36,13 +40,13 @@ test('bridge incremental sync skips unchanged students and adds no snapshot rows
   const sync=async mode=>{const j=await api('sync',{classId:'2',dates:['2026-10-12'],mode});for(let i=0;i<200;i++){const s=await api('state?delta=1');const job=s.jobs.find(x=>x.id===j.id);if(job.status!=='running')return job;await new Promise(r=>setTimeout(r,5));}throw Error('timeout');};
   const rows=()=>app.db.prepare('SELECT COUNT(*) n FROM snapshots').get().n;
   try{
-    let job=await sync('incremental');assert.equal(job.count,2);assert.equal(job.skipped,0);assert.equal(rows(),2);
+    let job=await sync('incremental');assert.equal(job.count,2);assert.equal(job.skipped,0);assert.equal(rows(),2);assert.deepEqual(opened,[],'no editor in a fast read');
     opened.length=0;job=await sync('incremental');
     assert.equal(job.status,'complete');assert.equal(job.count,0);assert.equal(job.skipped,2);assert.deepEqual(opened,[]);assert.equal(rows(),2,'no new snapshot rows');
     assert.match(job.message,/변경 없음 2건/);
-    table[1].tableSignature='09:05|17:10';opened.length=0;job=await sync('incremental');
-    assert.deepEqual(opened,['b']);assert.equal(job.count,1);assert.equal(job.skipped,1);assert.equal(rows(),3);
-    opened.length=0;job=await sync();assert.deepEqual(opened,['a','b'],'a normal sync still reads everyone');assert.equal(job.mode,undefined);
+    table[1].tableSignature='09:05|17:10';table[1].exit='17:10:00';opened.length=0;job=await sync('incremental');
+    assert.deepEqual(opened,[]);assert.equal(job.count,1);assert.equal(job.skipped,1);assert.equal(rows(),3);
+    opened.length=0;job=await sync();assert.deepEqual(opened,['a','b'],'the precise (emergency) sync still opens every editor');assert.equal(job.mode,undefined);
     const session=await (await fetch('http://127.0.0.1:18781/api/session',{headers:{connection:'close'}})).json();
     assert(session.build>='20261012.1');assert(session.capabilities.includes('incremental-sync-v1'));
   }finally{app.close();}

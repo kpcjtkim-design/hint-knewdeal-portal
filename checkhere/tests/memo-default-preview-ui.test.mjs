@@ -21,7 +21,7 @@ async function fixture(page,{modern}){
    window.records=[{name:'가상입실',entry:'',exit:'17:45:23',entryMemo:'기존 입실 사유',exitMemo:'유지할 퇴실 사유'},{name:'가상퇴실',entry:'08:55:07',exit:'',entryMemo:'유지할 입실 사유',exitMemo:'기존 퇴실 사유'}].map((r,i)=>({...common,...r,id:'record-'+i,version:'v1',teacher:'홍길동',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',outings:[]}));
    window.transactions=0;window.approvals=[];window.calls=[];const jobs=[];
    const capabilities=['approval-current-sync-v1','live-approval-preview-v1','approved-requests-v1','memo-only-requests-v1',...(${modern}?['memo-default-time-v1']:[])];
-   const controller={state:()=>({records:window.records,jobs,capabilities}),refresh:async()=>{},api:async(path,input)=>{
+   const controller={state:()=>({records:window.records,jobs,privacy:{state:'unmasked',leftSec:900},capabilities}),refresh:async()=>{},api:async(path,input)=>{
     const request=window.rows.find(r=>r.id===input.approvalId),record=window.records.find(r=>r.name===request.name);
     if(path==='preview-request')return{record};window.calls.push({path,id:request.id});
     if(path==='apply'){if(request.status!=='approved')throw Error('approval missing');Object.assign(record,request.approval.after,{version:'v2'});request.status='applying';jobs.push({id:request.id,status:'verified'});return{};}

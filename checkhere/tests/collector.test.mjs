@@ -1,9 +1,10 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {loadPlaywright,CheckHereCollector} from '../collector.mjs';import {ATTEND_DELETE} from '../rules.mjs';
+// 이 파일의 가짜 화면에는 가림 머리말이 없습니다(옛 화면): 시험 전용 legacyNoMasking으로 예전 쓰기 확인을 봅니다(운영은 머리말을 못 읽으면 쓰지 않음, two-cell-delete 시험).
 test('real DOM adapter reads both memos and outings; writes only Change',async()=>{
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
   try{
     await page.setContent(`<!doctype html><html><body><table><tr><td>대상자</td></tr><tr><td></td><td>순번</td><td>성명</td><td>전화번호</td><td>메모</td></tr><tr><td></td><td>1</td><td>가상학생</td><td>01000000001</td><td>시험</td></tr><tr><td>출석인원</td></tr></table><table><tr><td>강의시간</td></tr><tr><td>입실</td><td>09:00 ~ 18:00</td><td>퇴실</td><td>총 외출 시간(외출횟수)</td><td>총 강의 참여 시간</td></tr><tr><td>09:00:00</td><td onclick="edit('entry')">09:00:00</td><td onclick="edit('exit')">18:00:00</td><td onclick="outing()">30분 (1)</td><td>8시간</td></tr><tr><td>1</td></tr></table><div id="modal"></div><script>function neverDelete(){throw Error('NEVER_DELETE')} const data={entry:{time:'09:00:00',memo:'외출_담임:최유정(14:00~14:30)'},exit:{time:'18:00:00',memo:''}};function edit(f){const d=data[f];document.querySelector('#modal').innerHTML='<p>'+(f==='entry'?'1교시':'퇴실')+' 시간 수정</p><input id="name" disabled value="가상학생"><input id="prevTime" disabled value="'+d.time+'"><input id="modifyTime" value="'+d.time+'"><input id="memoByAdmin" value="'+d.memo+'"><button onclick="neverDelete()">삭제</button><button id="change">변경</button><button onclick="closeModal()">취소</button>';document.querySelector('#change').onclick=()=>{data[f]={time:document.querySelector('#modifyTime').value,memo:document.querySelector('#memoByAdmin').value};closeModal();};}function closeModal(){document.querySelector('#modal').innerHTML='';}function outing(){document.querySelector('#modal').innerHTML='<p>가상학생 님의 외출 시간 확인</p><table><tr><td></td><td>외출 시작 시간</td><td>외출 종료 시간</td><td>외출 종료 판단 기준</td><td>강의 시간 인정 여부</td></tr><tr><td></td><td>14:00:00</td><td>14:30:00</td><td>14:30:00</td><td>X</td></tr></table><button onclick="closeModal()">취소</button>';}</script></body></html>`);
-    const c=new CheckHereCollector('',{page});page.setDefaultTimeout(3000);c.day={classId:'2',date:'2026-09-03',teacher:'최유정'};
+    const c=new CheckHereCollector('',{page,legacyNoMasking:true});page.setDefaultTimeout(3000);c.day={classId:'2',date:'2026-09-03',teacher:'최유정'};
     const rows=await c.tableRecords();assert.equal(rows.length,1);const r=await c.readDetails(rows[0]);assert.equal(r.readState,'complete',r.readError);assert.equal(r.entryMemo,'외출_담임:최유정(14:00~14:30)');assert.equal(r.exitMemo,'');assert.deepEqual(r.outings,[{start:'14:00:00',end:'14:30:00',cutoff:'14:30:00',recognized:false}]);
     await c.write(r,'exit',{time:'18:00:00',memo:'시스템오류_담임:최유정'});const after=await c.readDetails((await c.tableRecords())[0]);assert.equal(after.exitMemo,'시스템오류_담임:최유정');
     await assert.rejects(()=>c.modal({...r,name:'다른사람'},'entry'),/일치 확인 실패/);
@@ -30,11 +31,11 @@ function edit(i,f){const s=students[i],e=of(s,f==='exit'?['COMPLETE']:['ATTEND',
   if(e&&!window.noRemove)document.querySelector('#remove').onclick=()=>{clicks.remove++;if(e.type==='PASS')clicks.passRemoved++;if(e.type==='ATTEND')clicks.attendRemoved++;s.eventList=s.eventList.filter(x=>x!==e&&!(f==='exit'&&x.type==='PASS'));closeModal();draw();};}
 function closeModal(){document.querySelector('#modal').innerHTML='';}
 draw();</script></body></html>`;
-test('time delete presses 삭제 once only for a numbered exit; the admin period (off for now), PASS, number-less, unrequested and stale cells are refused before any click',async()=>{
+test('time delete presses 삭제 once only for a numbered exit; a 1st period while its exit stays, PASS, number-less, unrequested and stale cells are refused before any click',async()=>{
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
   try{
     await page.setContent(DELETE_PAGE);page.setDefaultTimeout(3000);
-    const c=new CheckHereCollector('',{page});c.day={classId:'2',date:DAY,teacher:'가상담임'};
+    const c=new CheckHereCollector('',{page,legacyNoMasking:true});c.day={classId:'2',date:DAY,teacher:'가상담임'};
     // 연결 프로그램이 그날 화면을 열 때 받는 화면 데이터(openDay의 this.dayData)를 흉내 냅니다.
     let rows;const fresh=async()=>{c.dayData=await page.evaluate(()=>({code:'OK',data:{eventResultList:structuredClone(window.students)}}));rows=await c.tableRecords();return rows;};
     const by=name=>rows.find(r=>r.name===name),clicks=()=>page.evaluate(()=>({...window.clicks})),closed=async()=>assert.equal(await page.locator('#modifyTime').count(),0,'the editor is closed');
@@ -57,10 +58,9 @@ test('time delete presses 삭제 once only for a numbered exit; the admin period
     c.dayData=null;await assert.rejects(()=>c.write(admin,'exit',blank,del('exit')),/기록 번호가 없는 칸/);await closed();
     c.dayData=structuredClone(saved);c.dayData.data.eventResultList[1].eventList[2].time=iso('17:00:00');
     await assert.rejects(()=>c.write(admin,'exit',blank,del('exit')),/기록 번호가 없는 칸/,'page data that disagrees with the editor is not trusted');await closed();c.dayData=saved;
-    // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 칸: 번호가 있어도 지우지 않음(확인하지 않은 동작)
-    await assert.rejects(()=>c.write(resaved,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 체크인한 학생은 퇴실만 지웁니다/);await closed();
-    // 관리자가 넣은 1교시(ATTEND): 실제 체크히어에서 확인하기 전까지 꺼짐(2026-10-15, rules.mjs ATTEND_DELETE). 그 이유를 보이고 누르지 않음
-    await assert.rejects(()=>c.write(admin,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다\(지금은 퇴실만 지웁니다\)/);await closed();
+    // 1교시(ATTEND)는 퇴실이 남아 있는 동안 지우지 않음(체크히어가 퇴실 시간으로 다시 채움, 2026-10-16 확인): 관리자 1교시와 체크인한 학생이 사유를 저장한 칸 모두
+    await assert.rejects(()=>c.write(resaved,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 퇴실이 남아 있으면 1교시만 지울 수 없습니다/);await closed();
+    await assert.rejects(()=>c.write(admin,'entry',blank,del('entry')),/TIME_DELETE_REFUSED: 퇴실이 남아 있으면 1교시만 지울 수 없습니다\(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다\)/);await closed();
     // 화면 데이터의 실제 입실만 1초 달라도 믿지 않음(표시를 붙일 때와 같은 기준)
     c.dayData=structuredClone(saved);c.dayData.data.eventResultList[1].eventList[0].time=iso('08:50:04');
     await assert.rejects(()=>c.write(admin,'exit',blank,del('exit')),/기록 번호가 없는 칸/);await closed();c.dayData=saved;
@@ -79,26 +79,29 @@ test('time delete presses 삭제 once only for a numbered exit; the admin period
     assert.deepEqual(await clicks(),{change:0,remove:1,passRemoved:0,attendRemoved:0});
     await fresh();const gone=await c.readDetails(by('가상체크인'));
     assert.deepEqual([gone.rawEntry,gone.entry,gone.exit,gone.exitMemo],['08:55:31',null,null,'']);assert.equal(gone.exitEventId,false);
-    // 관리자가 1교시를 넣은 학생: 퇴실만 지워지고 1교시(ATTEND)와 그 사유는 남습니다(가짜 수정창의 가정. 실제 체크히어에서는 아직 확인하지 않음, 켜는 문서 4절).
+    // 관리자가 1교시를 넣은 학생: 퇴실만 지워지고 1교시(ATTEND)와 그 사유는 남습니다(2026-10-16 실제 체크히어에서 확인, docs/cowork/2026-10-16-checkhere-write-format.md 2-2).
     assert.deepEqual(await c.write(admin,'exit',blank,del('exit')),blank);await closed();
     await fresh();const adminAfter=await c.readDetails(by('가상관리자'));
     assert.deepEqual([adminAfter.entry,adminAfter.entryMemo,adminAfter.exit,adminAfter.exitEventId,adminAfter.entryEventId],['08:50:03','시스템오류_담임:가상담임',null,false,true]);
     assert.deepEqual(await clicks(),{change:0,remove:2,passRemoved:0,attendRemoved:0},'two exit deletions, one click each, never the 1st period');
   }finally{await browser.close();}
 });
-// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 같은 시험). rules.mjs ATTEND_DELETE가 true가 되면 저절로 돕니다.
-test('with ATTEND_DELETE on, the admin period is deleted with one click and the exit stays',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},async()=>{
+// 관리자 1교시(ATTEND) 삭제(2026-10-16 켬): 퇴실을 먼저 지우고 다시 읽은 뒤 1교시를 지우면 두 칸이 비고 실제 입실 기록은 남습니다(한 칸에 한 번씩 누름).
+test('the admin period is deleted after its exit, each with one click; both cells end empty',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},async()=>{
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
   try{
     await page.setContent(DELETE_PAGE);page.setDefaultTimeout(3000);
-    const c=new CheckHereCollector('',{page});c.day={classId:'2',date:DAY,teacher:'가상담임'};
+    const c=new CheckHereCollector('',{page,legacyNoMasking:true});c.day={classId:'2',date:DAY,teacher:'가상담임'};
     let rows;const fresh=async()=>{c.dayData=await page.evaluate(()=>({code:'OK',data:{eventResultList:structuredClone(window.students)}}));rows=await c.tableRecords();return rows;};
-    const by=name=>rows.find(r=>r.name===name),blank={time:null,memo:''};
-    await fresh();const admin=await c.readDetails(by('가상관리자'));
-    assert.deepEqual(await c.write(admin,'entry',blank,{requestedFields:['entry'],deleteFields:['entry']}),blank);assert.equal(await page.locator('#modifyTime').count(),0,'the editor is closed');
+    const by=name=>rows.find(r=>r.name===name),blank={time:null,memo:''},both={requestedFields:['entry','exit'],deleteFields:['entry','exit']};
+    await fresh();let admin=await c.readDetails(by('가상관리자'));
+    await assert.rejects(()=>c.write(admin,'entry',blank,both),/퇴실이 남아 있으면 1교시만 지울 수 없습니다/,'the 1st period is never first');
+    assert.deepEqual(await c.write(admin,'exit',blank,both),blank);
+    await fresh();admin=await c.readDetails(by('가상관리자'));assert.deepEqual([admin.entry,admin.exit,admin.exitEventId],['08:50:03',null,false]);
+    assert.deepEqual(await c.write(admin,'entry',blank,both),blank);assert.equal(await page.locator('#modifyTime').count(),0,'the editor is closed');
     await fresh();const after=await c.readDetails(by('가상관리자'));
-    assert.deepEqual([after.entry,after.entryMemo,after.exit],[null,'','18:00:00']);
-    assert.deepEqual(await page.evaluate(()=>({...window.clicks})),{change:0,remove:1,passRemoved:0,attendRemoved:1},'one click, on the ATTEND cell');
+    assert.deepEqual([after.entry,after.entryMemo,after.exit],[null,'',null]);
+    assert.deepEqual(await page.evaluate(()=>({...window.clicks})),{change:0,remove:2,passRemoved:0,attendRemoved:1},'one click per cell, exit then ATTEND');
   }finally{await browser.close();}
 });
 

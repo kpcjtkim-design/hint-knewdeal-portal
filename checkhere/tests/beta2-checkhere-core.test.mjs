@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sheetToCheckHere,liveForm,checkhereChangeKind,canDeleteTime,deletionGate,validTeacher,isAutoLedgerRequest,AUTO_TEXT,RELAY_STALE_MS} from '../../beta2-checkhere-core.mjs';
+import {sheetToCheckHere,liveForm,checkhereChangeKind,canDeleteTime,deleteLeaves,deletionGate,validTeacher,isAutoLedgerRequest,AUTO_TEXT,RELAY_STALE_MS,TIME_DELETE_V2_CAPABILITY,V2_NEEDED,UNMASK_ON_APPLY,relayPrivacy,privacyShort} from '../../beta2-checkhere-core.mjs';
 import {buildLiveRequest,isLiveRequest,tagOf,isAutoLedgerRequest as sharedAuto,AUTO_TEXT as sharedText} from '../../checkhere-live-core.mjs';
 import {memoDefaultTimes} from '../approval-core.mjs';
 import {beta2RequestData} from '../../beta2-guard-core.mjs';
@@ -62,42 +62,56 @@ test('recognized types send only the classified memo; an unclassifiable reason o
  for(const r of ['병가','입원','통원 치료','수술','검진'])assert.equal(reasonCategory(r),'병원',r);
 });
 
-// 관리자 1교시(ATTEND) 삭제가 꺼져 있을 때의 이유(rules.mjs ATTEND_DELETE)와, 결석이 1교시 때문에 보류될 때 덧붙는 안내
-const ATTEND_OFF='관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).',EXIT_KEPT=' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)';
+// 관리자 1교시(ATTEND) 삭제(2026-10-16 실제 체크히어 확인 뒤 켬): 퇴실이 남아 있으면 1교시만은 못 지우고, 두 칸 삭제는 time-delete-v2 연결 프로그램만.
+// 옛 연결 프로그램(v1)이면 예전처럼 결석은 보류(퇴실도 남김), ×로 퇴실만 지울 수 있음.
+const EXIT_FIRST='퇴실이 남아 있으면 1교시만 지울 수 없습니다(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다). 퇴실과 함께 지워 주세요.',EXIT_KEPT=' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)';
+const V2=`1교시 삭제는 수집 PC 프로그램 업데이트 후 가능 (${TIME_DELETE_V2_CAPABILITY})`,BOTH_LEFT='1교시·퇴실 칸은 비워지고 체크히어 입실 기록은 남을 수 있습니다';
 test('결석: none without times; held until deletion is enabled; deletes only cells with a record number',()=>{
+ assert.equal(ATTEND_DELETE,true,'rules.mjs: 관리자 1교시 삭제 켬(2026-10-16)');assert.equal(V2_NEEDED,V2);
  assert.equal(run({type:'결석'},record({entry:null,rawEntry:null,exit:null})).state,'none');
  assert.match(run({type:'결석'}).notes[0],/시간 삭제는/);
  const checkedIn=record({entryKind:'PASS',exitEventId:true,enterEventId:true});
- const r=run({type:'결석'},checkedIn,{deleteEnabled:true});
- assert.deepEqual([r.state,r.deleteTimes,r.changes],['send',['exit'],{exit:''}],'a checked-in student: only the exit is deleted, the derived period clears with it');
- assert.match(r.warnings.join(),/실제 입실/);
- // 관리자가 넣은 1교시(ATTEND): 실제 체크히어에서 확인하기 전까지 지우지 않음(2026-10-15, rules.mjs ATTEND_DELETE). 결석은 보류이고, 퇴실만 지우는 일부 삭제도 보내지 않음. ×로 퇴실만 지울 수 있음
+ for(const deleteV2 of [false,true]){
+  const r=run({type:'결석'},checkedIn,{deleteEnabled:true,deleteV2});
+  assert.deepEqual([r.state,r.deleteTimes,r.changes],['send',['exit'],{exit:''}],'a checked-in student: only the exit is deleted, the derived period clears with it');
+  assert.match(r.warnings.join(),/체크히어 실제 입실 기록은 남습니다/);
+ }
+ // 관리자가 넣은 1교시(ATTEND): v2면 퇴실과 함께 두 칸(연결 프로그램이 퇴실 먼저), v1이면 보류(퇴실만 지우는 일부 삭제도 보내지 않고 퇴실도 남는다고 알림)
  const admin=record({entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false});
- assert.deepEqual(canDeleteTime(admin,'entry'),{ok:false,reason:ATTEND_OFF});assert.deepEqual(canDeleteTime(admin,'exit'),{ok:true});
- const both=run({type:'결석'},admin,{deleteEnabled:true});
- assert.deepEqual([both.state,both.deleteTimes,both.changes,both.notes[0]],['hold',[],{},ATTEND_OFF+EXIT_KEPT],'퇴실도 남긴다고 알림(지운 것으로 읽지 않게)');
- const only=run({type:'결석'},record({entryKind:'ATTEND',entryEventId:true,enterEventId:false,exit:null}),{deleteEnabled:true});
- assert.deepEqual([only.state,only.notes[0]],['hold',ATTEND_OFF],'1교시만 있는 학생도 보류(남길 퇴실이 없음)');
- // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 기록: 1교시는 지우지 않으므로(확인하지 않은 동작) 결석은 보류, ×로 퇴실만 지울 수 있음
- const resaved=record({entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:true});
- assert.deepEqual(canDeleteTime(resaved,'entry'),{ok:false,reason:'체크인한 학생은 퇴실만 지웁니다(1교시는 관리자 사유를 저장한 기록이라 남깁니다).'});assert.deepEqual(canDeleteTime(resaved,'exit'),{ok:true});
- const held=run({type:'결석'},resaved,{deleteEnabled:true});assert.deepEqual([held.state,held.deleteTimes,held.notes[0]],['hold',[],'체크인한 학생은 퇴실만 지웁니다(1교시는 관리자 사유를 저장한 기록이라 남깁니다).'+EXIT_KEPT]);
- // 표시가 옛 build 것이라 입실 번호 표시가 없으면 1교시는 잠김
- assert.match(canDeleteTime(record({entryKind:'ATTEND',entryEventId:true,exitEventId:true}),'entry').reason,/1교시 기록 번호를 확인하지 못했습니다/);
- // 체크인했지만 아직 퇴실이 없음: 퇴실을 지우면 비워진다는 안내 대신 지울 칸이 없다고 알림
- const noExit=run({type:'결석'},record({entryKind:'PASS',exit:null,enterEventId:true}),{deleteEnabled:true});
- assert.equal(noExit.notes[0],'퇴실 시간이 아직 없어 지울 수 있는 칸이 없습니다(1교시는 입실에서 계산된 값).');assert.doesNotMatch(noExit.notes[0],/퇴실을 지우면/);
- assert.match(canDeleteTime(record({entryKind:'PASS',exitEventId:true}),'entry').reason,/입실에서 계산된 1교시/,'with an exit the PASS reason stays');
- assert.match(run({type:'결석'},record({entryKind:'PASS',exitEventId:false}),{deleteEnabled:true}).notes[0],/퇴실 기록 번호/);
- assert.deepEqual(canDeleteTime(record({exitEventId:true}),'exit'),{ok:true});
-});
-// 관리자 1교시(ATTEND) 삭제를 켰을 때(원본: da44f48의 같은 시험). rules.mjs ATTEND_DELETE가 true가 되면 저절로 돕니다.
-test('결석 with ATTEND_DELETE on: the admin 1st period and the exit are deleted together',{skip:!ATTEND_DELETE&&'관리자 1교시 삭제 꺼짐(rules.mjs ATTEND_DELETE)'},()=>{
- const admin=record({entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false});
- assert.deepEqual(canDeleteTime(admin,'entry'),{ok:true});
- const both=run({type:'결석'},admin,{deleteEnabled:true});
+ assert.deepEqual(canDeleteTime(admin,'entry',{v2:true}),{ok:false,reason:EXIT_FIRST},'1교시 ×만은 퇴실이 남아 있으면 잠김');
+ assert.deepEqual(canDeleteTime(admin,'entry',{v2:true,withExit:true}),{ok:true});
+ assert.deepEqual(canDeleteTime(admin,'entry',{withExit:true}),{ok:false,reason:V2},'옛 연결 프로그램(v1)은 1교시를 지우지 않음');
+ assert.deepEqual(canDeleteTime(admin,'entry'),{ok:false,reason:V2},'v1: 퇴실이 남아 있어도 1교시 × 제목은 업데이트 안내(퇴실과 함께 지우라는 안내는 v1에서 따를 수 없음)');
+ assert.match(canDeleteTime(record({entryKind:'PASS',exitEventId:true}),'entry').reason,/입실에서 계산된 1교시/,'v1 too: PASS keeps its own reason');
+ assert.match(canDeleteTime(record({entryKind:'ATTEND',entryEventId:false,exitEventId:true}),'entry').reason,/1교시 기록 번호를 확인하지 못했습니다/,'v1 too: a missing number is not fixed by an update');
+ assert.deepEqual(canDeleteTime(admin,'exit'),{ok:true});
+ const both=run({type:'결석'},admin,{deleteEnabled:true,deleteV2:true});
  assert.deepEqual([both.state,both.deleteTimes,both.changes],['send',['entry','exit'],{entry:'',exit:''}]);
- assert.match(both.warnings.join(),/관리자가 넣은 1교시를 지우면 그것에서 계산된 입실도 비워질 수 있습니다/);assert.doesNotMatch(both.warnings.join(),/실제 입실 기록은 남습니다/);
+ assert.equal(both.warnings.join(),BOTH_LEFT);
+ const old=run({type:'결석'},admin,{deleteEnabled:true});
+ assert.deepEqual([old.state,old.deleteTimes,old.changes,old.notes[0]],['hold',[],{},V2+EXIT_KEPT],'v1: 퇴실도 남긴다고 알림(지운 것으로 읽지 않게)');
+ // 1교시만 있는 학생(퇴실 없음): v2면 1교시만, v1이면 보류(남길 퇴실이 없음)
+ const only=record({entryKind:'ATTEND',entryEventId:true,enterEventId:false,exit:null});
+ const onlyV2=run({type:'결석'},only,{deleteEnabled:true,deleteV2:true});assert.deepEqual([onlyV2.state,onlyV2.deleteTimes,onlyV2.changes],['send',['entry'],{entry:''}]);
+ assert.deepEqual(canDeleteTime(only,'entry',{v2:true}),{ok:true},'퇴실이 비어 있으면 1교시 ×도 켜짐');
+ const onlyV1=run({type:'결석'},only,{deleteEnabled:true});assert.deepEqual([onlyV1.state,onlyV1.notes[0]],['hold',V2]);
+ // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 기록: 두 칸만 깨끗이(사용자 결정 2026-10-16) → v2면 1교시·퇴실을 함께 지움(실제 입실은 남음)
+ const resaved=record({entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:true});
+ assert.deepEqual(canDeleteTime(resaved,'entry',{v2:true,withExit:true}),{ok:true});assert.deepEqual(canDeleteTime(resaved,'exit'),{ok:true});
+ assert.deepEqual(run({type:'결석'},resaved,{deleteEnabled:true,deleteV2:true}).deleteTimes,['entry','exit']);
+ const held=run({type:'결석'},resaved,{deleteEnabled:true});assert.deepEqual([held.state,held.deleteTimes,held.notes[0]],['hold',[],V2+EXIT_KEPT]);
+ // 1교시 기록 번호가 없으면 잠김
+ assert.match(canDeleteTime(record({entryKind:'ATTEND',entryEventId:false,exitEventId:true}),'entry',{v2:true,withExit:true}).reason,/1교시 기록 번호를 확인하지 못했습니다/);
+ // 체크인했지만 아직 퇴실이 없음: 퇴실을 지우면 비워진다는 안내 대신 지울 칸이 없다고 알림
+ const noExit=run({type:'결석'},record({entryKind:'PASS',exit:null,enterEventId:true}),{deleteEnabled:true,deleteV2:true});
+ assert.equal(noExit.notes[0],'퇴실 시간이 아직 없어 지울 수 있는 칸이 없습니다(1교시는 입실에서 계산된 값).');assert.doesNotMatch(noExit.notes[0],/퇴실을 지우면/);
+ assert.match(canDeleteTime(record({entryKind:'PASS',exitEventId:true}),'entry',{v2:true}).reason,/입실에서 계산된 1교시/,'with an exit the PASS reason stays');
+ assert.match(run({type:'결석'},record({entryKind:'PASS',exitEventId:false}),{deleteEnabled:true,deleteV2:true}).notes[0],/퇴실 기록 번호/);
+ assert.deepEqual(canDeleteTime(record({exitEventId:true}),'exit'),{ok:true});
+ // 남는 것(확인창·경고): 퇴실만 지우면 입실은 남고(관리자 1교시도 남음), 1교시까지 지우면 두 칸이 빔
+ assert.equal(deleteLeaves(['exit'],checkedIn),'체크히어 실제 입실 기록은 남습니다');
+ assert.equal(deleteLeaves(['exit'],admin),'관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다');
+ assert.equal(deleteLeaves(['entry','exit'],admin),BOTH_LEFT);assert.equal(deleteLeaves(['entry']),BOTH_LEFT);
 });
 
 test('front conditions: date range, missing or partial record, teacher, schedule, other types',()=>{
@@ -117,7 +131,10 @@ test('in-progress requests: my own pending auto requests are withdrawn first, an
  const back=run({type:'출석'},record(),{active:[mine]});
  assert.deepEqual([back.state,back.withdraw],['same',['b2_a']],'지각 → 출석 again: withdraw the queued 지각 memo, nothing else to send');
  assert.equal(run({type:'조퇴',outT:'16:00'},record(),{active:[mine]}).withdraw[0],'b2_a');
- assert.equal(run({type:'조퇴',outT:'16:00'},record(),{active:[{...mine,createdBy:'other@example.com'}]}).retryWhen,'request');
+ const waits=run({type:'조퇴',outT:'16:00'},record(),{active:[{...mine,createdBy:'other@example.com'}]});
+ assert.equal(waits.retryWhen,'request');
+ // 기다린 뒤에는 다시 계산해 새 요청을 만들 뿐, 체크히어에 자동으로 쓴다고 말하지 않습니다(중계는 읽기 전용, 2026-10-16).
+ assert.deepEqual(waits.notes,['진행 중 요청이 끝나면 다시 계산해 요청']);assert.doesNotMatch(waits.notes.join(),/자동 반영/);
  assert.equal(run({type:'조퇴',outT:'16:00'},record(),{active:[{...mine,status:'approved'}]}).retryWhen,'request');
  assert.equal(run({type:'조퇴',outT:'16:00'},record(),{active:[{...mine,status:'verified'}]}).state,'send','finished requests do not block');
  assert.ok(isAutoLedgerRequest(mine));
@@ -137,7 +154,7 @@ test('which saves are sent automatically',()=>{
 
 test('time deletion stays off until rules, relay capability and permissions are all in place',()=>{
  const now=Date.parse('2026-10-14T03:00:00Z'),relay={state:'running',at:now-60000,capabilities:['time-delete-v1']};
- assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay,now}),{enabled:true,reasons:[]});
+ assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay,now}),{enabled:true,reasons:[],v2:false});
  assert.match(deletionGate({relay,now}).reasons.join(),/규칙 게시/);
  assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,capabilities:[]},now}).reasons.join(),/time-delete-v1/);
  assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:now-RELAY_STALE_MS-1},now}).reasons.join(),/중계가 꺼져/);
@@ -146,6 +163,28 @@ test('time deletion stays off until rules, relay capability and permissions are 
  assert.equal(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:{seconds:(now-60000)/1000,nanoseconds:0}},now}).enabled,true,'Firestore Timestamp shape');
  assert.equal(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:{toMillis:()=>now-60000}},now}).enabled,true);
  assert.match(deletionGate({features:{timeDeleteRules:true},relay:{...relay,at:null},now}).reasons.join(),/중계가 꺼져/,'a pending server timestamp');
+ // 읽기 전용 중계의 needsUnmask = 사람이 승인한 반영 중 가림에 막힌 수. 가린 동안에도 삭제 요청은 만듭니다(승인 대기, 2026-10-16) — 도구줄에만 보임.
+ assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:{...relay,needsUnmask:1},now}),{enabled:true,reasons:[],v2:false});
+ // v2(두 칸 삭제)는 작동 중인 중계 신호의 능력으로만 켜짐. 가린 화면(privacy masked)은 요청을 막지 않음(승인 대기, 반영할 때 해제)
+ const v2={...relay,capabilities:['time-delete-v1',TIME_DELETE_V2_CAPABILITY]};
+ assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:v2,now}),{enabled:true,reasons:[],v2:true});
+ assert.equal(deletionGate({features:{timeDeleteRules:true},relay:{...v2,at:now-RELAY_STALE_MS-1},now}).v2,false,'a stale signal tells nothing');
+ assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay:{...v2,privacy:{state:'masked',leftSec:null,writable:false}},now}),{enabled:true,reasons:[],v2:true});
+});
+
+test('the relay privacy (no names) decays with the signal age and gives the short toolbar text',()=>{
+ const now=Date.parse('2026-10-16T03:00:00Z'),relay=privacy=>({state:'running',at:now-60000,capabilities:['time-delete-v1'],privacy});
+ const open=relayPrivacy(relay({state:'unmasked',leftSec:600,writable:true}),now);
+ assert.deepEqual(open,{state:'unmasked',leftSec:540,writable:true,text:'체크히어 해제됨 · 9분 남음 — 수정·삭제 가능'},'신호 뒤 1분이 지남');
+ assert.equal(privacyShort(open),'체크히어 해제됨 · 9분 남음');
+ const short=relayPrivacy(relay({state:'unmasked',leftSec:200,writable:true}),now);
+ assert.deepEqual([short.writable,short.text],[false,'체크히어 해제 시간 140초 남음 — 연장해야 수정·삭제 가능']);assert.equal(privacyShort(short),'체크히어 해제 시간 부족 · 연장 필요');
+ const masked=relayPrivacy(relay({state:'masked',leftSec:null,writable:false}),now);
+ assert.deepEqual(masked,{state:'masked',leftSec:null,writable:false,text:'체크히어 가림 — 읽기만 가능 · 수정·삭제하려면 마스킹 해제 필요'});assert.equal(privacyShort(masked),'체크히어 가림 · 읽기만');
+ assert.equal(privacyShort(relayPrivacy(relay({state:'unknown',leftSec:null,writable:false}),now)),'');
+ assert.equal(relayPrivacy({...relay({state:'masked'}),at:now-RELAY_STALE_MS-1},now),null,'a stale signal');
+ assert.equal(relayPrivacy({...relay({state:'masked'}),state:'stopped'},now),null);assert.equal(relayPrivacy(relay(undefined),now),null,'an old relay without privacy');
+ assert.equal(UNMASK_ON_APPLY,'반영할 때 체크히어 마스킹 해제 필요');
 });
 
 test('memo safety net and in-progress requests',()=>{

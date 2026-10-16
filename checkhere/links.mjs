@@ -2,7 +2,6 @@
 // 이름·끝 4자리는 여기에 복사하지 않고, 늘 저장된 원문 기록(records)에서 꺼냅니다.
 // source: 'plain-read'(원문 화면에서 확인) | 'stored-match'(저장된 기록으로 이음 — 원문 읽기로 확인되기 전에는 읽기 전용, 쓰기 안 됨).
 import {hasMask} from './masking.mjs';
-const DAY=86400000,RETIRE_DAYS=21;
 const real=r=>r&&r.source==='live'&&typeof r.studentKey==='string'&&r.studentKey&&!hasMask(r.studentKey)&&typeof r.name==='string'&&r.name.trim()&&!hasMask(r.name)&&/^\d{4}$/.test(String(r.phoneLast4||''));
 export function createLinkStore(db,{records=()=>[]}={}){
   db.exec(`CREATE TABLE IF NOT EXISTS attendee_links(classId TEXT NOT NULL, attendeeId TEXT NOT NULL, studentKey TEXT NOT NULL, source TEXT NOT NULL, linkedAt TEXT NOT NULL, lastSeen TEXT, PRIMARY KEY(classId,attendeeId));
@@ -17,7 +16,6 @@ export function createLinkStore(db,{records=()=>[]}={}){
     confirm:db.prepare("UPDATE attendee_links SET source='plain-read',lastSeen=MAX(COALESCE(lastSeen,''),?) WHERE classId=? AND attendeeId=?"),
     remove:db.prepare('DELETE FROM attendee_links WHERE classId=? AND attendeeId=?'),
     seen:db.prepare("UPDATE attendee_links SET lastSeen=MAX(COALESCE(lastSeen,''),?) WHERE classId=? AND attendeeId=?"),
-    retire:db.prepare('DELETE FROM attendee_links WHERE classId=? AND COALESCE(lastSeen,\'\')<?'),
     day:db.prepare('INSERT INTO plain_days(classId,date,keys,savedAt) VALUES(?,?,?,?) ON CONFLICT(classId,date) DO UPDATE SET keys=excluded.keys,savedAt=excluded.savedAt'),
     lastDay:db.prepare('SELECT date,keys FROM plain_days WHERE classId=? ORDER BY date DESC LIMIT 1'),
     days:db.prepare('SELECT COUNT(*) n FROM plain_days'),
@@ -70,10 +68,10 @@ export function createLinkStore(db,{records=()=>[]}={}){
       }
       return {skipped};
     },
-    // 그날 본 학생 번호의 마지막 날을 올리고, 3주 넘게 보이지 않은 번호의 연결은 내려 둡니다(나간 학생).
+    // 그날 본 학생 번호의 마지막 날만 올립니다. 오래 보이지 않아도 연결은 지우지 않습니다(2026-10-16 결정: 과정이 끝날 때까지 둠 —
+    // 9/1~9/4 같은 옛날을 다시 읽을 때 그 뒤에 나간 학생도 이어지게).
     seen(classId,date,attendeeIds){
       classId=String(classId);for(const id of attendeeIds)q.seen.run(date,classId,String(id));
-      const t=Date.parse(date);if(Number.isFinite(t))q.retire.run(classId,new Date(t-RETIRE_DAYS*DAY).toISOString().slice(0,10));
     },
     // 충돌은 이 PC 화면에서만 풉니다: 해당 연결을 지우면 다음 원문 읽기가 새로 배웁니다.
     clearConflicts(){let n=0;for(const c of q.conflicts.all()){const a=store.link(c.classId,c.attendeeId);if(a){q.remove.run(c.classId,c.attendeeId);n++;}const b=store.attendee(c.classId,c.studentKey);if(b){q.remove.run(c.classId,b.attendeeId);n++;}}q.clearConflicts.run();return n;},

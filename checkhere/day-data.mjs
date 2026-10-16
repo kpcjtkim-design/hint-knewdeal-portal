@@ -1,7 +1,8 @@
 // Reading a whole class/day from the data the CheckHere attendance page itself
 // loads (verified by the 2026-10-12 diagnosis: times, admin memos and outing
 // pairs are all in it). Every value is cross-checked against the visible table;
-// anything unexpected sends that student back to the editor-by-editor read.
+// anything unexpected leaves that student unread (빠른 수집은 수정창을 열지 않음, 2026-10-16;
+// 수정창 읽기는 정밀 수집(비상용)과 쓰기 확인에서 표와 맞지 않는 한 줄에만).
 import {studentKey,version} from './identity.mjs';
 import {normalizeTime} from './rules.mjs';
 
@@ -19,10 +20,15 @@ const memo=v=>v===null||v===undefined?'':String(v);
 // 기록 번호(eventId)가 있는 칸만 체크히어에서 지울 수 있습니다. null이면 다른 기록에서 계산된 값입니다.
 const hasId=e=>typeof e?.eventId==='string'&&e.eventId.trim()!=='';
 // 시간 삭제용 표시: 1교시 종류(ATTEND 관리자 입력·PASS 입실에서 계산), 1교시·퇴실·입실(ENTER) 기록 번호 유무.
-// 입실 번호가 있으면 체크인한 학생입니다(1교시에 관리자 사유를 저장해 ATTEND가 되었어도 그 1교시는 지우지 않음, rules.mjs timeDeleteRefusal).
+// 입실 번호가 있으면 체크인한 학생입니다(실제 입실은 지우지 않음. 1교시에 사유를 저장해 생긴 ATTEND는 퇴실이 빈 뒤에만 지움, rules.mjs timeDeleteRefusal).
 // 값 비교와 버전(identity.mjs version)에는 넣지 않습니다(넣으면 모든 기록이 바뀐 것으로 보입니다).
 export const DELETE_MARKS=['entryKind','entryEventId','exitEventId','enterEventId'];
 export const marksOf=d=>({entryKind:d.entryKind,entryEventId:d.entryEventId,exitEventId:d.exitEventId,enterEventId:d.enterEventId});
+// 체크히어 학생 번호(attendeeId): 학생 맞춤의 1차 키로 이 PC 기록(SQLite)에만 붙입니다(2026-10-16 결정, 행 지문 방법 A).
+// 학생 키·기록 id·버전 공식은 그대로이고 버전에는 넣지 않습니다(저장본과 비교가 깨지지 않게, 옮겨 쓰기 없음).
+// 연결 프로그램 밖(포털·Firestore·중계)으로는 보내지 않습니다: 응답·플랫폼 저장 직전에 outward로 뺍니다.
+export const LOCAL_ONLY=['attendeeId'];
+export const outward=v=>v===undefined?v:JSON.parse(JSON.stringify(v,(k,x)=>LOCAL_ONLY.includes(k)?undefined:x));
 // One student entry from the page data → the fields an editor read produces, or a reason it cannot be trusted.
 export function readStudent(s){
   const events=Array.isArray(s?.eventList)?s.eventList:[],problems=[];
@@ -30,7 +36,8 @@ export function readStudent(s){
   const of=pred=>events.filter(e=>pred(e?.type));
   const enter=of(t=>t==='ENTER'),period=of(t=>PERIOD.has(t)),complete=of(t=>t==='COMPLETE');
   if(enter.length>1||period.length>1||complete.length>1)problems.push('같은 종류 기록이 여러 개');
-  if(events.some(e=>!PERIOD.has(e?.type)&&e?.type!=='COMPLETE'&&memo(e?.memoByAdmin).trim()))problems.push('입실·퇴실 외 기록에 관리자 메모');
+  // 입실(ENTER)의 메모는 화면 어느 칸에도 보이지 않아 읽지 않습니다: 관리자 1교시를 지운 뒤 남는 입실 기록이 그 1교시 메모를 달고 있음(2026-10-16 실제 확인).
+  if(events.some(e=>!PERIOD.has(e?.type)&&!['COMPLETE','ENTER'].includes(e?.type)&&memo(e?.memoByAdmin).trim()))problems.push('입실·퇴실 외 기록에 관리자 메모');
   const pairs=Array.isArray(s?.leaveEvents?.pairs)?s.leaveEvents.pairs:[];
   const times={rawEntry:localTime(enter[0]?.time),entry:localTime(period[0]?.time),exit:localTime(complete[0]?.time)};
   const outings=pairs.map(p=>({start:localTime(p?.startTime),end:localTime(p?.endTimeOrNull),cutoff:localTime(p?.judgedEndTime),recognized:p?.isRecognized===true?true:p?.isRecognized===false?false:null}));
@@ -43,6 +50,12 @@ export function dayStudent(json,key){
   const list=json?.data?.eventResultList;if(!Array.isArray(list)||!key)return null;
   const found=list.map(readStudent).filter(d=>d.phone.length>=9&&studentKey(d.name,d.phone)===key);
   return found.length===1&&!found[0].problems.length?found[0]:null;
+}
+// 그날 화면 데이터에서 이름+전화 키가 이 학생인 항목(원본)이 정확히 하나면 그것(순번으로 맞추지 못한 원문 줄용), 아니면 null.
+export function entryByKey(json,key){
+  const list=json?.data?.eventResultList;if(!Array.isArray(list)||!key)return null;
+  const found=list.filter(s=>{const d=readStudent(s);return d.phone.length>=9&&studentKey(d.name,d.phone)===key;});
+  return found.length===1?found[0]:null;
 }
 // Rows come from the visible table. A row is read from page data only when the
 // same student (name + phone key) is there once and every visible value agrees.
@@ -62,9 +75,10 @@ export function planFromPageData(rows,json,{now=()=>new Date().toISOString(),ent
     delete r.readError;r.version=version(r);Object.assign(r,marksOf(d));byId.set(row.id,r);
   }
   if(!entryFor&&list.length!==rows.length)return {byId:new Map(),fallback:rows.map(r=>r.id),reason:'화면 데이터와 표의 학생 수가 다릅니다.'};
-  return {byId,fallback,reason:fallback.length?`표와 맞지 않는 학생 ${fallback.length}명은 수정창으로 읽습니다.`:''};
+  return {byId,fallback,reason:fallback.length?`표와 맞지 않는 학생 ${fallback.length}명은 읽지 못했습니다(수정창은 열지 않음, 저장본 유지).`:''};
 }
 // Editors to open as a daily sample: a student with a memo, one with an outing, else the first.
+// 빠른 수집은 2026-10-16부터 표본 수정창을 열지 않습니다(가린 화면에서 열리지 않음). 진단·시험용으로만 남깁니다.
 export function sampleIds(records,limit=2){
   const list=[...records],picked=[];
   for(const test of [r=>r.entryMemo||r.exitMemo,r=>r.outings?.length,()=>true]){const hit=list.find(r=>test(r)&&!picked.includes(r.id));if(hit&&picked.length<limit)picked.push(hit.id);}

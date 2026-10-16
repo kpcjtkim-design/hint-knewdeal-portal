@@ -1,19 +1,19 @@
 // CheckHere live beta page: any portal administrator sees one class/day live from
-// Firestore and submits edits; the designated account's tab on the collector PC
-// relays them to CheckHere (see checkhere-live-relay.mjs).
+// Firestore and submits edit requests; the designated account's tab on the collector PC
+// keeps the day fresh (see checkhere-live-relay.mjs, 읽기 전용).
+// 수정 요청은 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만 체크히어에 쓰입니다(사용자 결정 2026-10-16).
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {getAuth,GoogleAuthProvider,signInWithPopup,signOut,onAuthStateChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {getFirestore,doc,getDoc,getDocFromServer,collection,query,where,onSnapshot,setDoc,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {latestSnapshots} from './attendance-beta-core.mjs';
-import {judge,normalizeTime} from './checkhere/rules.mjs';
-import {APPROVER,resultText,sameRequestTarget} from './checkhere/approval-core.mjs';
+import {judge,normalizeTime,privacyState} from './checkhere/rules.mjs';
+import {APPROVER,resultText} from './checkhere/approval-core.mjs';
 import {canEditCheckHere} from './checkhere/direct-edit.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from './checkhere-current-core.mjs';
 import {loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
-import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 import {within} from './attendance-io.mjs';
 import {ACTIVE,CLASS_IDS,LIVE_STATUS,buildLiveRequest,editorReason,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
-import {TIME_DELETE_RULES,createBridgeClient,createLiveRelay,relaySignal} from './checkhere-live-relay.mjs';
+import {createBridgeClient,createLiveRelay,relaySignal} from './checkhere-live-relay.mjs';
 
 const firebaseConfig={apiKey:'AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE',authDomain:'knewdeal-portal.firebaseapp.com',projectId:'knewdeal-portal',storageBucket:'knewdeal-portal.firebasestorage.app',messagingSenderId:'1054904032053',appId:'1:1054904032053:web:de18246d426776b54bca7c'};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
@@ -33,6 +33,8 @@ async function isAdmin(email){
 const hhmm=t=>t?String(t).slice(0,8):'';
 const ago=ms=>{const s=Math.round((Date.now()-ms)/1000);return s<60?'방금':s<3600?`${Math.floor(s/60)}분 전`:`${Math.floor(s/3600)}시간 전`;};
 const chipClass=s=>s==='verified'?'ok':['pending','approved','applying'].includes(s)?'wait':s==='rejected'||s==='withdrawn'?'warn':'bad';
+// 중계가 쓰지 않으므로 기다림은 사람의 승인, 반려도 사람이 합니다(운영 포털 STATUS와 같은 말).
+const STATUS_TEXT={...LIVE_STATUS,pending:'승인 대기',approved:'승인됨 · 반영 대기',rejected:'반려'};
 // 시간 칸의 ''는 시간 삭제 요청(deleteTimes, /beta2 출결대조에서 만듦), 사유 칸의 ''는 사유 비우기입니다.
 const changeText=c=>Object.entries(c||{}).map(([k,v])=>`${{entry:'입실',exit:'퇴실',entryMemo:'입실 사유',exitMemo:'퇴실 사유'}[k]||k}: ${v===''?(k==='entry'||k==='exit'?'(삭제)':'(비움)'):v}`).join(' · ');
 
@@ -65,7 +67,7 @@ async function mountLive(user){
       </div>
       <span id="fresh" class="muted"></span>
     </div>
-    <p class="note" style="margin:12px 0 0">수정하면 수집 PC가 체크히어에 입력하고, 다시 읽어 확인한 값만 이 표에 반영합니다. 수업 중에는 10분마다 자동으로 갱신됩니다. 수집 PC 중계가 꺼져 있으면 <b>반영 대기</b>로 남아 있다가 켜지면 처리됩니다.</p>
+    <p class="note" style="margin:12px 0 0">수정은 <b>요청</b>으로 남습니다. 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 체크히어에 입력하고, 다시 읽어 확인한 값을 이 표에 반영합니다. 수업 중에는 수집 PC 중계가 10분마다 체크히어를 읽어 표를 갱신합니다(중계는 체크히어에 쓰지 않습니다).</p>
   </section>
   <section><div class="table-wrap"><table><thead><tr><th>학생</th><th>실제 입실</th><th>입실(교시)</th><th>퇴실</th><th>외출</th><th>입실 사유</th><th>퇴실 사유</th><th>판정</th><th>처리 상태</th></tr></thead><tbody id="rows"><tr><td colspan="9" class="muted">불러오는 중…</td></tr></tbody></table></div></section>
   <section><h2>이 반·날짜의 수정 기록</h2><div id="reqs" class="muted">없음</div></section>
@@ -98,14 +100,14 @@ async function mountLive(user){
       const reqs=requestsFor(r,state.requests),last=reqs[0],active=reqs.some(x=>ACTIVE.includes(x.status));
       let labels='';try{labels=judge(r).labels.join(', ');}catch{labels='';}
       const changed=previous.has(r.id)&&previous.get(r.id)!==r.version;
-      const status=last?`<span class="chip ${chipClass(last.status)}">${esc(LIVE_STATUS[last.status]||last.status)}</span>${last.status==='rejected'&&last.reviewNote?`<br><small>${esc(last.reviewNote)}</small>`:''}${['failed','partial','conflict','unknown'].includes(last.status)&&last.result?.message?`<br><small>${esc(last.result.message)}</small>`:''}`:'';
+      const status=last?`<span class="chip ${chipClass(last.status)}">${esc(STATUS_TEXT[last.status]||last.status)}</span>${last.status==='rejected'&&last.reviewNote?`<br><small>${esc(last.reviewNote)}</small>`:''}${['failed','partial','conflict','unknown'].includes(last.status)&&last.result?.message?`<br><small>${esc(last.result.message)}</small>`:''}`:'';
       const outing=r.outingCount?`${r.outingCount}회${(r.outings||[]).length?'<br><small>'+r.outings.map(o=>`${hhmm(o.start)}~${hhmm(o.end)}`).map(esc).join('<br>')+'</small>':''}`:'-';
       return `<tr data-id="${esc(r.id)}" class="${changed?'changed':''}"><td><b>${esc(r.name)}</b> <small>${esc(r.phoneLast4||'')}</small><br><button data-edit="${esc(r.id)}" style="margin-top:6px;padding:4px 10px" ${active||r.readState!=='complete'||state.legacy?'disabled':''} title="${active?'처리 중인 수정이 있습니다':r.readState!=='complete'?'상세 기록을 아직 읽지 못했습니다':''}">수정</button></td><td class="time">${esc(hhmm(r.rawEntry)||'-')}</td><td class="time">${esc(hhmm(r.entry)||'-')}</td><td class="time">${esc(hhmm(r.exit)||'-')}</td><td class="time">${outing}</td><td class="memo">${esc(r.entryMemo??'…')}</td><td class="memo">${esc(r.exitMemo??'…')}</td><td><small>${esc(labels)}</small></td><td>${status}</td></tr>`;
     }).join(''):`<tr><td colspan="9" class="muted">${state.error?esc(state.error):'아직 이 반·날짜의 저장본이 없습니다. 수업 중이면 자동 갱신 후 표시됩니다.'}</td></tr>`;
     previous=new Map(state.records.map(r=>[r.id,r.version]));
     document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(state.records.find(r=>r.id===b.dataset.edit)));
     const live=[...state.requests].filter(isLiveRequest).sort((a,b)=>stamp(b.createdAt)-stamp(a.createdAt));
-    $('#reqs').innerHTML=live.length?live.map(r=>`<div class="req"><span class="chip ${chipClass(r.status)}">${esc(LIVE_STATUS[r.status]||r.status)}</span><b>${esc(r.name)}</b><span>${esc(changeText(r.changes))}</span><small>근거: ${esc(editorReason(r.reason))} · ${esc(r.createdBy)} · ${r.createdAt?new Date(stamp(r.createdAt)).toLocaleTimeString('ko-KR',{hour12:false}):''}</small>${r.reviewNote?`<small class="error">${esc(r.reviewNote)}</small>`:''}${r.result?.message?`<small>${esc(resultText(r.result.message,r.result.results))}</small>`:''}${r.status==='pending'&&r.createdBy===user.email?`<button data-withdraw="${esc(r.id)}" style="padding:2px 8px">요청 취소</button>`:''}</div>`).join(''):'<span class="muted">이 반·날짜에 베타로 보낸 수정이 없습니다.</span>';
+    $('#reqs').innerHTML=live.length?live.map(r=>`<div class="req"><span class="chip ${chipClass(r.status)}">${esc(STATUS_TEXT[r.status]||r.status)}</span><b>${esc(r.name)}</b><span>${esc(changeText(r.changes))}</span><small>근거: ${esc(editorReason(r.reason))} · ${esc(r.createdBy)} · ${r.createdAt?new Date(stamp(r.createdAt)).toLocaleTimeString('ko-KR',{hour12:false}):''}</small>${r.reviewNote?`<small class="error">${esc(r.reviewNote)}</small>`:''}${r.result?.message?`<small>${esc(resultText(r.result.message,r.result.results))}</small>`:''}${r.status==='pending'&&r.createdBy===user.email?`<button data-withdraw="${esc(r.id)}" style="padding:2px 8px">요청 취소</button>`:''}</div>`).join(''):'<span class="muted">이 반·날짜에 베타로 보낸 수정이 없습니다.</span>';
     document.querySelectorAll('[data-withdraw]').forEach(b=>b.onclick=async()=>{
       if(!confirm('이 수정 요청을 취소할까요? 체크히어에는 반영되지 않습니다.'))return;b.disabled=true;
       try{await runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',b.dataset.withdraw),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending')throw Error('이미 처리가 시작된 요청입니다.');tx.update(ref,{status:'withdrawn',withdrawnBy:user.email,withdrawnAt:serverTimestamp(),updatedAt:serverTimestamp()});});toast('요청을 취소했습니다.');}
@@ -119,7 +121,7 @@ async function mountLive(user){
       <label for="fEntryMemo">입실 관리자 사유</label><textarea id="fEntryMemo" maxlength="500">${esc(record.entryMemo||'')}</textarea>
       <label for="fExitMemo">퇴실 관리자 사유</label><textarea id="fExitMemo" maxlength="500">${esc(record.exitMemo||'')}</textarea>
       <label for="fReason">수정 근거 (필수)</label><textarea id="fReason" maxlength="900" placeholder="예: 진료확인서 제출, 담임 확인"></textarea>
-      <p class="muted"><small>사유만 입력했는데 그쪽 시간이 비어 있으면 기본 시간(입실 09:00 · 퇴실 18:00)이 함께 입력됩니다. 시간 칸을 비우는 수정은 여기서 하지 않습니다. 체크히어 시간 삭제는 2기 베타 출결대조(/beta2)에서 결석으로 저장하거나 체크히어 시간 옆 ×로 합니다(기록 번호가 있는 퇴실·관리자가 넣은 1교시만, 실제 입실 기록은 남음).</small></p>
+      <p class="muted"><small>사유만 입력했는데 그쪽 시간이 비어 있으면 기본 시간(입실 09:00 · 퇴실 18:00)이 함께 입력됩니다. 시간 칸을 비우는 수정은 여기서 하지 않습니다. 체크히어 시간 삭제는 2기 베타 출결대조(/beta2)에서 결석으로 저장하거나 체크히어 시간 옆 ×로 합니다(기록 번호가 있는 퇴실과 관리자가 넣은 1교시만 · 1교시는 퇴실과 함께 또는 퇴실이 없을 때 · 입실 기록은 남을 수 있음).</small></p>
       <p id="editError" class="error"></p>
       <div class="row" style="justify-content:flex-end"><button type="button" id="cancelEdit">취소</button><button type="submit" class="primary" id="submitEdit">체크히어에 반영 요청</button></div></form>`;
     dlg.showModal();$('#cancelEdit').onclick=()=>dlg.close();
@@ -132,7 +134,7 @@ async function mountLive(user){
         const input=buildLiveRequest(fresh,{entry:$('#fEntry').value,exit:$('#fExit').value,entryMemo:$('#fEntryMemo').value,exitMemo:$('#fExitMemo').value},$('#fReason').value);
         const id=crypto.randomUUID();
         await setDoc(doc(db,'checkhereRequests',id),{...input,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-        dlg.close();toast('반영 대기 중입니다. 수집 PC가 체크히어에 입력하고 확인하면 표가 바뀝니다.');
+        dlg.close();toast('승인 대기 중입니다. 관리자가 운영 포털 「반영 요청·승인」에서 승인하면 체크히어에 입력·확인한 뒤 표가 바뀝니다.',6000);
       }catch(err){$('#editError').textContent=err.message;btn.disabled=false;}
     };
   }
@@ -143,7 +145,7 @@ async function mountLive(user){
 }
 
 function relayMarkup(){return `<section id="relay"><h2>수집 PC 중계 <small class="muted">(지정 관리자 전용)</small></h2>
-  <p class="muted">이 PC에서 「체크히어 시작.cmd」를 실행하고 체크히어에 로그인한 뒤, 로컬 화면의 연결 키를 붙여 넣고 시작하세요. 이 탭이 열려 있는 동안 관리자들의 수정을 체크히어에 반영하고, 평일 08:50~18:40에는 10분마다 오늘 출결을 갱신합니다.</p>
+  <p class="muted">이 PC에서 「체크히어 시작.cmd」를 실행하고 체크히어에 로그인한 뒤, 로컬 화면의 연결 키를 붙여 넣고 시작하세요. 이 탭이 열려 있는 동안 평일 08:50~18:40에는 10분마다 오늘 출결을 읽어 DB에 저장합니다. 중계는 읽기만 하고 체크히어를 고치지 않습니다. 수정 요청은 운영 포털 「반영 요청·승인」에서 관리자가 승인할 때만 반영됩니다.</p>
   <div class="row"><input id="relayKey" type="password" placeholder="연결 키" autocomplete="off" style="min-width:260px"><button class="primary" id="relayStart">중계 시작</button><button id="relayStop" disabled>중계 멈춤</button><button id="relayNow" disabled>이 반 지금 갱신</button></div>
   <p id="relayStatus" class="muted" style="margin:10px 0 0">꺼져 있음</p><ul class="log" id="relayLog"></ul></section>`;}
 // Background tabs throttle page timers to about once a minute; worker timers keep
@@ -164,13 +166,16 @@ function relayLock(){
 }
 function mountRelay(user,view){
   let relay=null,release=null,beat=null,signalAt=0;const logs=[],sleep=workerSleep();
-  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중</span>':'<span class="chip warn">꺼져 있음</span>'} 대기 ${s.queue}건 · 처리 ${s.processed}건${s.needsUnmask?` · <span class="chip warn" title="수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 누르고 메일의 인증번호를 넣어 주세요. 연장·종료는 체크히어 창에서 직접 누릅니다.">체크히어 해제 필요 ${s.needsUnmask}건</span>`:''}${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
+  // needsUnmask: 사람이 승인한 반영 중 체크히어 가림에 막힌 수(연결 프로그램이 셈). 해제도 다시 반영도 사람이 합니다.
+  // privacy: 연결 프로그램이 본 체크히어 탭 해제 상태(작동 중에만, 갱신·1분 신호 때 새로 봄). 가려져도 중계 읽기는 계속합니다.
+  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중 · 읽기 전용</span>':'<span class="chip warn">꺼져 있음</span>'} DB 저장 ${s.saves}회${s.queue?` · 갱신 대기 ${s.queue}건`:''}${s.needsUnmask?` · <span class="chip warn" title="승인한 반영이 체크히어 가림에 막혀 있습니다. 수집 PC 연결 프로그램의 체크히어 창(같은 탭)에서 직접 해제하거나, 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 누르세요. 해제 뒤 운영 포털 「반영 요청·승인」에서 다시 반영합니다. 연장·종료는 체크히어 창에서 직접 누릅니다.">체크히어 해제 필요 ${s.needsUnmask}건</span>`:''}${s.state==='running'&&s.privacy?` · <span class="chip ${s.privacy.writable?'ok':'warn'}">${esc(privacyState(s.privacy).text)}</span>`:''}${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
   const addLog=e=>{logs.unshift(e);logs.length=Math.min(logs.length,40);const el=$('#relayLog');if(el)el.innerHTML=logs.map(x=>`<li class="${x.level}">${new Date(x.at).toLocaleTimeString('ko-KR',{hour12:false})} ${esc(x.text)}</li>`).join('');};
   // 중계 신호(settings/checkhereRelay): /beta2가 중계 작동 여부와 연결 프로그램 능력을 봅니다. 담임도 읽으므로 반·이름·오류 글은 넣지 않습니다(relaySignal).
   // 시작·멈춤은 바로 쓰고, 작동 중에는 상태가 자주 바뀌어도 1분에 한 번만 씁니다(바뀐 내용은 다음 신호에 담김). 쓰기에 실패해도 경고만 남기고 중계는 계속합니다.
   const writeSignal=s=>{signalAt=Date.now();const data={...relaySignal(s,{},user.email),at:serverTimestamp()};return Promise.resolve().then(()=>setDoc(doc(db,'settings','checkhereRelay'),data)).catch(e=>addLog({at:new Date().toISOString(),level:'warn',text:'중계 신호를 기록하지 못했습니다(중계는 계속합니다): '+e.message}));};
   const signalDue=t=>beat===t&&Date.now()>=signalAt+SIGNAL_MS;
-  async function heartbeat(t,r){while(beat===t){await sleep(Math.max(1000,signalAt+SIGNAL_MS-Date.now()));if(!signalDue(t))continue;await r.ping?.();if(signalDue(t))await writeSignal(r.status());}}
+  // 1분 신호 때 상태 줄도 다시 그립니다(중계는 해제 상태가 바뀔 때만 알리므로, 남은 분은 여기서 새로 보임).
+  async function heartbeat(t,r){while(beat===t){await sleep(Math.max(1000,signalAt+SIGNAL_MS-Date.now()));if(!signalDue(t))continue;await r.ping?.();if(beat===t)show(r.status());if(signalDue(t))await writeSignal(r.status());}}
   const saveRecords=createCurrentSaver({
     async read(classId,date){const snap=await within(getDocFromServer(doc(db,'classes',classId,'checkhereCurrent',date)),20000);if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('서버 저장 완료를 아직 확인하지 못했습니다.');return snap.exists()?snap.data():null;},
     readLegacy:(classId,date)=>within(loadLegacyCheckHereDay(db,classId,date),30000),
@@ -183,21 +188,14 @@ function mountRelay(user,view){
       }),30000,'DB 저장 응답이 지연됩니다.');
     },
   });
-  const store={
-    // applying도 받습니다: 중계가 같은 학생·항목의 처리 중 요청을 보고 새 실시간 요청을 반려합니다.
-    watchQueue:(cb,onError)=>onSnapshot(query(collection(db,'checkhereRequests'),where('status','in',['pending','approved','applying'])),snap=>cb(snap.docs.map(d=>({id:d.id,...d.data()}))),onError),
-    // 시간 삭제 승인(approval.after의 '')이 권한 거절이면 시간 삭제용 규칙이 아직 게시되지 않은 것입니다(중계가 그 문구로 반려).
-    approve:(id,approval,r)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending'||!sameRequestTarget(fresh.data(),r))throw Error('요청이 이미 처리되었거나 바뀌었습니다.');tx.update(ref,{status:'approved',approval,approvedBy:user.email,approvedAt:serverTimestamp(),updatedAt:serverTimestamp()});})
-      .catch(e=>{throw e?.code==='permission-denied'&&r?.deleteTimes?.length?Object.assign(Error(TIME_DELETE_RULES),{code:'permission-denied'}):e;}),
-    reject:(id,note)=>runTransaction(db,async tx=>{const ref=doc(db,'checkhereRequests',id),fresh=await tx.get(ref);if(fresh.data()?.status!=='pending')return;tx.update(ref,{status:'rejected',reviewNote:String(note).slice(0,1000),reviewedBy:user.email,updatedAt:serverTimestamp()});}),
-    isAdmin,identities:(classId,name)=>loadCheckHereIdentities(db,classId,[{name}]),saveRecords,
-  };
+  // 읽기 전용 중계: 오늘 기록 저장만 넘깁니다(요청 구독·승인·반려 없음).
+  const store={saveRecords};
   $('#relayStart').onclick=async()=>{
     const key=$('#relayKey').value.trim();if(!key)return toast('연결 키를 붙여 넣어 주세요.');
     $('#relayStart').disabled=true;
     try{
       release=await relayLock();
-      const r=relay=createLiveRelay({bridge:createBridgeClient({base:BRIDGE,key}),store,user,log:addLog,sleep}),t={};
+      const r=relay=createLiveRelay({bridge:createBridgeClient({base:BRIDGE,key}),store,log:addLog,sleep}),t={};
       r.onStatus(s=>{show(s);if(signalDue(t))void writeSignal(s);});await r.start();
       beat=t;void writeSignal(r.status());void heartbeat(t,r);
       $('#relayStop').disabled=false;$('#relayNow').disabled=false;$('#relayKey').disabled=true;show(r.status());
