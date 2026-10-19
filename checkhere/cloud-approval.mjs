@@ -1,7 +1,9 @@
 import {APPROVER,proposalFromApproval,matchRequest,prepareApproval,requestMatchesRecord} from './approval-core.mjs';
 import {hasBirthYearName} from '../checkhere-name-core.mjs';
 import {mergeCurrentRecords,containsSavedRecords} from '../checkhere-current-core.mjs';
-import {FIREBASE_KEY,PROJECT} from './firebase-public.mjs';
+import {FIREBASE_KEY,PROJECT,firebaseReady,FIREBASE_MISSING} from './firebase-public.mjs';
+import {classOk} from './cohort-bridge.mjs';
+import {cleanStudents} from './setup.mjs';
 function decode(v){if('stringValue'in v)return v.stringValue;if('booleanValue'in v)return v.booleanValue;if('integerValue'in v)return Number(v.integerValue);if('doubleValue'in v)return v.doubleValue;if('timestampValue'in v)return v.timestampValue;if('nullValue'in v)return null;if(v.arrayValue)return(v.arrayValue.values||[]).map(decode);if(v.mapValue)return unpack(v.mapValue.fields||{});return null;}
 const unpack=f=>Object.fromEntries(Object.entries(f).map(([k,v])=>[k,decode(v)]));
 function encode(v){if(v===null||v===undefined)return{nullValue:null};if(typeof v==='string')return{stringValue:v};if(typeof v==='boolean')return{booleanValue:v};if(typeof v==='number')return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};if(Array.isArray(v))return{arrayValue:{values:v.map(encode)}};return{mapValue:{fields:pack(v)}};}
@@ -9,12 +11,17 @@ const pack=o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,encode(v)]));
 export function createApprovalCloud({fetchImpl=fetch}={}){
   const base=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/checkhereRequests`;
   const documents=base.slice(0,base.lastIndexOf('/')),documentName=`projects/${PROJECT}/databases/(default)/documents`;
+  // 2기 Firebase 설정(apiKey)이 비어 있으면 Firestore·로그인 확인에 아무것도 보내지 않고 멈춥니다(fail closed). 수집은 이 경로를 쓰지 않습니다.
+  // 시험이 넣은 가짜 fetch(fetchImpl)는 밖으로 나가지 않으므로 이 확인을 건너뜁니다(운영은 늘 실제 fetch).
+  const real=fetchImpl===globalThis.fetch,ready=()=>{if(real&&!firebaseReady())throw Object.assign(Error(FIREBASE_MISSING),{code:'FIREBASE_CONFIG'});};
   async function call(url,token,options={}){
+    ready();
     const r=await fetchImpl(url,{...options,headers:{'content-type':'application/json',authorization:`Bearer ${token}`,...options.headers},signal:AbortSignal.timeout(15000)});
     if(!r.ok)throw Object.assign(Error(r.status===409||r.status===412?'다른 작업이 먼저 처리했습니다. 요청 상태를 다시 확인해 주세요.':r.status===401||r.status===403?'로그인 또는 수정 요청 저장 권한을 확인해 주세요.':'서버의 수정 요청을 확인하지 못했습니다.'),{status:r.status});
     return r.json();
   }
   async function verify(token){
+    ready();
     if(typeof token!=='string'||token.length>10000)throw Error('운영 포털에서 지정된 관리자 계정으로 로그인해 주세요.');
     const r=await fetchImpl(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken:token}),signal:AbortSignal.timeout(15000)});
     if(!r.ok)throw Error('관리자 로그인이 만료되었습니다. 포털에 다시 로그인해 주세요.');
@@ -25,7 +32,7 @@ export function createApprovalCloud({fetchImpl=fetch}={}){
   const identityCache=new Map();
   async function identitiesFor(data,token){
     if(!hasBirthYearName(data.name))return [];
-    const key=String(data.classId);if(!/^(?:[1-9]|1[0-7])$/.test(key))throw Error('반을 확인해 주세요.');
+    const key=String(data.classId);if(!classOk(key))throw Error('반을 확인해 주세요.');
     const old=identityCache.get(key);if(old&&Date.now()-old.at<300000)return old.value;
     const raw=await call(`${documents}/classes/${key}`,token),value=unpack(raw.fields||{}).surveyDuplicateIdentities||[];
     identityCache.set(key,{at:Date.now(),value});return value;
@@ -54,7 +61,23 @@ export function createApprovalCloud({fetchImpl=fetch}={}){
     if(old&&containsSavedRecords(previous,[record]))return null;
     return {update:{name:`${documentName}/${path}`,fields:pack({classId:record.classId,date:record.date,records,jobId:job.id,updatedBy:APPROVER})},updateTransforms:[{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}],currentDocument:old?{updateTime:old.updateTime}:{exists:false}};
   }
-  return {verify,get,async approved(id,token){await verify(token);const doc=await get(id,token);proposalFromApproval(doc.data);return doc;},
+  // ---- 2기 체크히어 학생 번호 등록(checkhereIdentities/{반}, 관리자만 — 사용자 결정 2026-10-19) ----
+  // 승인 계정 로그인 토큰(운영포털 실시간 화면이 보냄)으로 REST. 학생마다 이름·끝 4자리·체크히어 학생 번호만(생년월일·전체 전화번호 없음). 쓴 뒤 다시 읽어 같아야 등록으로 봅니다.
+  const identityPath=classId=>`checkhereIdentities/${classId}`;
+  const ruleHint=e=>{if(e.status===401||e.status===403)throw Object.assign(Error('IDENTITIES_RULES: 체크히어 학생 번호 등록(checkhereIdentities) 권한이 없습니다. 승인 계정 로그인과 2기 Firestore 규칙(관리자만)이 게시됐는지 확인해 주세요.'),{status:e.status});throw e;};
+  async function listIdentities(token){
+    const raw=await call(`${documents}/checkhereIdentities?pageSize=50`,token).catch(ruleHint);
+    return (raw.documents||[]).map(d=>{const data=unpack(d.fields||{});return {classId:String(d.name||'').split('/').pop(),students:Array.isArray(data.students)?data.students:[],updatedAt:data.updatedAt||null,updatedBy:data.updatedBy||null};}).filter(d=>classOk(d.classId));
+  }
+  async function putIdentities(token,classId,students,by){
+    classId=String(classId);if(!classOk(classId))throw Error('반을 확인해 주세요.');
+    const list=cleanStudents(students),row=s=>[s.name,s.last4,s.attendeeId].join('|');
+    await commit(token,[{update:{name:`${documentName}/${identityPath(classId)}`,fields:pack({classId,students:list,updatedBy:by})},updateTransforms:[{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]}]).catch(ruleHint);
+    const back=unpack((await call(`${documents}/${identityPath(classId)}`,token).catch(ruleHint)).fields||{});
+    if(back.classId!==classId||!Array.isArray(back.students)||back.students.map(row).join('\n')!==list.map(row).join('\n'))throw Error('등록 뒤 다시 읽은 목록이 이 PC의 확인 목록과 다릅니다. 다시 등록해 주세요.');
+    return {classId,count:list.length,updatedAt:back.updatedAt||null};
+  }
+  return {verify,get,listIdentities,putIdentities,async approved(id,token){await verify(token);const doc=await get(id,token);proposalFromApproval(doc.data);return doc;},
     async approveExisting(doc,token,record){
       if(doc.data.status!=='pending'||!requestMatchesRecord(doc.data,record,doc.identities))throw Error('승인 대기 요청과 체크히어 원본이 일치하지 않습니다.');
       const approval=prepareApproval(doc.data,record,{allowAlreadyApplied:true,identities:doc.identities});
