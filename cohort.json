@@ -1,0 +1,75 @@
+{
+  "_notes": [
+    "2기 기수 설정 원본입니다. 화면·api·연결 프로그램이 모두 여기서 반·기간·휴일·규칙·Firebase 설정을 읽습니다.",
+    "고친 뒤에는 node tools/build-cohort.mjs 로 cohort.mjs 안의 사본을 맞춥니다(cohort 시험이 둘이 같은지 확인합니다).",
+    "firebase는 2기 전용 새 프로젝트 값입니다. 1기 Firebase 프로젝트와 섞이지 않게 apiKey·appId가 비어 있으면 로그인을 막습니다(2기 Firebase 설정 필요).",
+    "excursions: 반별 공장견학 날짜(그날만 10:00~17:00 기준). 2기 시간표가 나오면 채웁니다.",
+    "features: false인 화면은 '11월 중 2기 기준으로 열림'으로 감춥니다(1기 운영총괄을 읽던 화면 등)."
+  ],
+  "id": "2",
+  "label": "2기",
+  "title": "HINT 2기 운영포털",
+  "officialPrefix": "[현대자동차그룹 HINT] ",
+  "period": {"start": "2026-10-28", "end": "2027-01-22", "weekBase": "2026-10-26"},
+  "holidays": [
+    {"date": "2026-12-25", "name": "성탄절"},
+    {"date": "2026-12-31", "name": "연말 휴무"},
+    {"date": "2027-01-01", "name": "신정"}
+  ],
+  "unitPeriods": [
+    {"no": 1, "from": "2026-10-28", "to": "2026-11-27"},
+    {"no": 2, "from": "2026-11-28", "to": "2026-12-27"},
+    {"no": 3, "from": "2026-12-28", "to": "2027-01-22"}
+  ],
+  "rules": {"start": "09:00", "end": "18:00", "lunchStart": "12:00", "lunchEnd": "13:00", "entryGrace": 10, "exitGrace": 10},
+  "excursionRule": {"start": "10:00", "end": "17:00", "lunchStart": "12:00", "lunchEnd": "13:00", "entryGrace": 10, "exitGrace": 10},
+  "excursions": {},
+  "disease": {"warn": 4, "max": 6},
+  "completionRate": 80,
+  "regions": ["서울", "충청", "대경", "동남", "호남"],
+  "courses": ["모빌리티 AI", "제조지능화"],
+  "classes": [
+    {"id": "1", "region": "서울", "area": "서울(관악구)", "course": "모빌리티 AI", "venue": "서울대", "capacity": 30, "rosterKey": "_서울대"},
+    {"id": "2", "region": "서울", "area": "서울(성동구)", "course": "제조지능화", "venue": "한양대", "capacity": 30, "rosterKey": "_한양대"},
+    {"id": "3", "region": "충청", "area": "대전(유성구)", "course": "모빌리티 AI", "venue": "후인원A", "capacity": 30, "rosterKey": "후인원A"},
+    {"id": "4", "region": "충청", "area": "대전(유성구)", "course": "제조지능화", "venue": "후인원B", "capacity": 31, "rosterKey": "후인원B"},
+    {"id": "5", "region": "충청", "area": "청주(청원구)", "course": "제조지능화", "venue": "청주", "capacity": 30, "rosterKey": "_청주"},
+    {"id": "6", "region": "대경", "area": "대구(동구)", "course": "모빌리티 AI", "venue": "KPC대구지부", "capacity": 30, "rosterKey": "KPC대구지부"},
+    {"id": "7", "region": "대경", "area": "대구(중구)", "course": "모빌리티 AI", "venue": "마이크로웨이브A", "capacity": 30, "rosterKey": "마이크로웨이브A"},
+    {"id": "8", "region": "대경", "area": "대구(중구)", "course": "제조지능화", "venue": "마이크로웨이브B", "capacity": 30, "rosterKey": "마이크로웨이브B"},
+    {"id": "9", "region": "동남", "area": "부산(금정구)", "course": "모빌리티 AI", "venue": "부산대", "capacity": 30, "rosterKey": "부산대"},
+    {"id": "10", "region": "동남", "area": "부산(해운대구)", "course": "모빌리티 AI", "venue": "아르피나A", "capacity": 30, "rosterKey": "아르피나A"},
+    {"id": "11", "region": "동남", "area": "부산(해운대구)", "course": "제조지능화", "venue": "아르피나B", "capacity": 30, "rosterKey": "아르피나B"},
+    {"id": "12", "region": "동남", "area": "부산(해운대구)", "course": "제조지능화", "venue": "아르피나C", "capacity": 30, "rosterKey": "아르피나C"},
+    {"id": "13", "region": "동남", "area": "울산(북구)", "course": "제조지능화", "venue": "울산", "capacity": 30, "rosterKey": "_울산"},
+    {"id": "14", "region": "호남", "area": "광주(북구)", "course": "모빌리티 AI", "venue": "전남대", "capacity": 30, "rosterKey": "전남대"},
+    {"id": "15", "region": "호남", "area": "광주(서구)", "course": "제조지능화", "venue": "기아오토랜드A", "capacity": 30, "rosterKey": "기아오토랜드A"},
+    {"id": "16", "region": "호남", "area": "광주(서구)", "course": "제조지능화", "venue": "기아오토랜드B", "capacity": 30, "rosterKey": "기아오토랜드B"}
+  ],
+  "checkhere": {"lectureNameRule": "[N반]", "lectureLinks": {}},
+  "admins": ["hint.kpc@gmail.com", "kpc.jtkim@gmail.com"],
+  "approver": "hint.kpc@gmail.com",
+  "teacherAccess": false,
+  "firebase": {
+    "apiKey": "",
+    "authDomain": "hint-knewdeal-2.firebaseapp.com",
+    "projectId": "hint-knewdeal-2",
+    "storageBucket": "hint-knewdeal-2.firebasestorage.app",
+    "messagingSenderId": "",
+    "appId": ""
+  },
+  "sheetApi": {"urlEnv": "HINT_SHEET_API_URL", "keyEnv": "HINT_SHEET_API_KEY"},
+  "site": {"url": "https://hint-knewdealportal.vercel.app", "tempUrl": "https://hint-knewdeal-2.vercel.app", "oldSiteUrl": ""},
+  "bridgePort": 8766,
+  "storagePrefix": "h2:",
+  "filePrefix": "2기_",
+  "features": {
+    "timetable": false,
+    "materials": false,
+    "surveys": false,
+    "uploads": false,
+    "periodRoster": false,
+    "operationsWork": false,
+    "studentPreview": true
+  }
+}
