@@ -9,10 +9,12 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 // 2기 마스터시트 기능(apps-script/beta2/beta2.gs). 담임에게 열 때도 자기 반으로만 읽고 신청합니다.
 // 민원·이슈(b2Voc*)는 담임·운영이 주고받습니다(2026-10-16 회의). 현장운영 체크리스트(portalCheck)는 없어졌습니다.
 // 2기는 운영총괄 동기화가 없어 b2SyncNow(가져오기)·b2Release(운영총괄 값으로)를 받지 않습니다(Apps Script에 남아 있어도 웹에서 부르지 않음).
-const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen']);
+// 모듈 시간(현장교육 일정 O~T, 견학일 지각·조퇴 기준)·교육생 상태·출결대조 메모(2026-10-19, 2기 배포 ① 버전 3): 읽기 3개는 담임도 자기 반만, 쓰기 3개는 관리자만.
+const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
+ 'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo']);
 const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
-// 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리는 담임에게 열어도 관리자만 씁니다.
-const ADMIN_ACTIONS=new Set(['portalRoster','b2Status','b2Save','b2DocUpdate']);
+// 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
+const ADMIN_ACTIONS=new Set(['portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo']);
 // 담임 열림: cohort.json teacherAccess(개강 전 false). index.html 담임 로그인도 같은 값을 봅니다.
 export const ACCESS={teacher:cohort.TEACHER_ACCESS};
 // 담임 화면에 그대로 보이므로 오류는 한국어 문장으로 돌려줍니다.
@@ -76,6 +78,10 @@ export function b2Args(user,action,rest){
   // 답글·확인: 담임은 늘 자기 반을 붙여 보내고 Apps Script가 그 건의 반과 맞는지 봅니다. 관리자는 반 없이도 됩니다.
   if(action==='b2VocReply'||action==='b2VocSeen')return [admin&&p.cls===undefined?p:{...p,cls:own(p.cls)}];
   if(action==='b2Rev'||action==='b2Status')return [];
+  // 모듈 시간·대조 메모 목록: 담임은 늘 자기 반(cls를 붙임), 관리자는 고른 반이나 반 없이(또는 'all') 전체. 그날 기준(b2DayTimes)은 반이 꼭 있어야 합니다.
+  if(action==='b2ModuleTimes'||action==='b2LedgerMemos'){const {cls,...q}=p;return [admin&&(cls===undefined||cls===''||cls==='all')?q:{...q,cls:own(cls)}];}
+  // 그날 기준 읽기·관리자 쓰기(모듈 시간·교육생 상태·대조 메모): 반 번호를 서버에서 확인해 붙입니다.
+  if(['b2DayTimes','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo'].includes(action))return [{...p,cls:own(p.cls)}];
   return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
 }
 export function vocForTeacher(voc,classIds){
