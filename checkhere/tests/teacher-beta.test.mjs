@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {loadPlaywright} from '../collector.mjs';
 import handler,{resolveClass,teacherClassIds,b2Args,vocForTeacher} from '../../api/teacher-beta.js';
 
 const base=join(import.meta.dirname,'../..');
@@ -139,65 +138,11 @@ test('2기 베타 sheet actions carry the verified user, are administrator-only 
  assert.deepEqual(b2Args(admin,'b2Rev',[{cls:'1'}]),[]);
 });
 
-const DATA={cls:1,region:'수도권',course:'임베디드 AI(HW)',teacher:'김담임',place:'본관',mainDay:'2026-10-12',days:['2026-10-12','2026-10-08'],
- week:[{date:'2026-10-12',subj:'자동차개론',place:'본관'}],summary:[{k:'총원',v:2},{k:'출석',v:1}],
- kids:[{name:'홍길동',status:'재학',off:''},{name:'김철수',status:'재학',off:''}],recs:{'홍길동|2026-10-12':{type:'출석'}},
- checks:[{label:'오전',items:[{row:5,text:'출석 확인',value:''}]}],closed:'미확인',evals:[],sats:[],vocs:[],officer:{leader:'홍길동'}};
-const teacherMarkup='<div id="host"><div class="hero">우리 반</div><div class="section-head">오늘 꼭 할 일</div><div class="task-grid"></div><div class="section-head">공지</div><div class="notice"></div></div>';
-async function workspace(api,run,{preview=true}={}){
- const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[],outside=[],posts=[];
- const js=body=>route=>route.fulfill({contentType:'text/javascript',body});
- const stub=method=>js(`export async function ${method}(){return{dispose(){}};}`);
- const routes={'/teacher-workspace.mjs':js(readFileSync(join(base,'teacher-workspace.mjs'),'utf8')),'/teacher-beta.js':js(readFileSync(join(base,'teacher-beta.js'),'utf8')),
-  '/timetable.mjs':stub('mountTeacherTimetable'),'/attendance-statistics.mjs':stub('mountAttendanceStatistics'),'/survey-view.mjs':stub('mountSurveys')};
- page.on('pageerror',e=>errors.push(e.message));
- try{
-  await page.route('**/*',async route=>{
-   const url=new URL(route.request().url());
-   if(url.hostname!=='fixture.test'){outside.push(url.href);return route.abort();}
-   if(url.pathname==='/')return route.fulfill({contentType:'text/html;charset=utf-8',body:`${teacherMarkup}<script type="module">import{mountTeacherWorkspace}from'/teacher-workspace.mjs';window.workspace=await mountTeacherWorkspace(document.querySelector('#host'),{db:{},user:{getIdToken:async()=>'id-token-1'},classInfo:{id:'1'},preview:${preview}});</script>`});
-   if(url.pathname==='/api/teacher-beta'){const r=route.request();posts.push({auth:r.headers().authorization,body:r.postDataJSON()});return route.fulfill({contentType:'application/json',...api(r.postDataJSON())});}
-   if(routes[url.pathname])return routes[url.pathname](route);
-   return route.abort();
-  });
-  await page.goto('https://fixture.test/');await page.waitForFunction(()=>window.workspace);
-  await run(page,posts);
-  assert.deepEqual(errors,[]);assert.deepEqual(outside,[],'no request leaves the portal (script.google.com included)');
- }finally{await browser.close();}
-}
-
-test('teachers do not see the 2기 베타 tab while it is administrator-only',async()=>{
- await workspace(()=>({status:500,body:'{}'}),async(page,posts)=>{
-  assert.equal(await page.locator('[data-teacher-tab]').last().innerText(),'자료·바로가기');
-  assert.equal(await page.getByRole('button',{name:'2기 베타',exact:true}).count(),0);
-  assert.equal(posts.length,0);
- },{preview:false});
-});
-
-test('in administrator preview the 2기 베타 tab is last, mounts lazily once, and shows a setup notice without breaking other tabs',async()=>{
- await workspace(()=>({status:503,body:JSON.stringify({ok:false,code:'NOT_CONFIGURED',error:'데이터 API 연결 전입니다. 운영자가 연결을 마치면 바로 사용할 수 있습니다.'})}),async(page,posts)=>{
-  assert.equal(await page.locator('[data-teacher-tab]').last().innerText(),'2기 베타');
-  assert.equal(posts.length,0,'nothing is read until the tab opens');
-  await page.getByRole('button',{name:'2기 베타',exact:true}).click();
-  await page.getByText('데이터 API 연결 전입니다').waitFor();
-  assert.equal(await page.getByText('2기 베타 준비 중').isVisible(),true);
-  assert.deepEqual(posts,[{auth:'Bearer id-token-1',body:{action:'portalData',args:[1,''],cls:1}}]);
-  await page.getByRole('button',{name:'우리 반 홈',exact:true}).click();
-  assert.equal(await page.locator('[data-teacher-panel="home"]').isVisible(),true);
-  await page.getByRole('button',{name:'2기 베타',exact:true}).click();
-  assert.equal(posts.length,1,'returning to the tab does not mount again');
- });
-});
-
-test('the beta view leaves duplicated portal sections to their existing tabs',async()=>{
- await workspace(()=>({body:JSON.stringify({ok:true,data:DATA})}),async page=>{
-  await page.getByRole('button',{name:'2기 베타',exact:true}).click();
-  await page.getByText('오늘 출결 (10/12(월))').waitFor();
-  for(const removed of ['금주교육','2기 베타 담임화면','기본 정보','현장운영 체크리스트','출석 확인'])assert.equal(await page.getByText(removed).count(),0,removed);
-  // 2026-10-16 회의: 학습자 평가는 없어지고, 민원·이슈는 2기 베타 담임 화면의 beta2-voc.mjs로 옮김
-  for(const gone of ['학습자 평가','민원·이슈'])assert.equal(await page.getByRole('button',{name:gone,exact:true}).count(),0,gone);
-  assert.equal(await page.getByText('만족도 평가').count(),0);
-  await page.getByRole('button',{name:'출결판',exact:true}).click();
-  assert.equal(await page.locator('table.g select').count(),4);
- });
+// 2기 담임 화면: teacher-workspace는 6탭 통합 화면(beta2-teacher-layout)을 띄웁니다. 화면 동작은 beta2-ui 시험('the teacher preview … six tabs')이 실제 index.html로 봅니다.
+// 1기 8탭 화면 + '2기 베타' 탭 시험은 1기(cohort1 브랜치)에 남았습니다.
+test('the 2기 teacher workspace is the six-tab layout backed by /api/teacher-beta, with later screens behind cohort features',()=>{
+ const ws=readFileSync(join(base,'teacher-workspace.mjs'),'utf8'),layout=readFileSync(join(base,'beta2-teacher-layout.mjs'),'utf8');
+ assert.ok(ws.includes("import('./beta2-teacher-layout.mjs")&&ws.includes('mountBeta2TeacherLayout'));assert.ok(!ws.includes('2기 베타'));
+ assert.ok(layout.includes("TEACHER_TABS=[['today','오늘'],['attendance','출결'],['documents','서류발급'],['feedback','민원·만족도'],['schedule','시간표·자료'],['info','반 정보']]"));
+ assert.ok(layout.includes("endpoint:'/api/teacher-beta'")&&layout.includes('feature(LATER[key])'));
 });

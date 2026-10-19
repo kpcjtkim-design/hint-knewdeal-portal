@@ -7,6 +7,8 @@ import {loadPlaywright} from '../collector.mjs';
 // Synthetic browser fixture: real summary store/views, no Firebase or production access.
 async function fixture(run){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),base=join(import.meta.dirname,'../..'),errors=[];
+ // 브라우저 날짜를 2기 교육일 뒤(2026-11-20 한국)로 옮깁니다(실제 오늘은 개강 전일 수 있음). 타이머는 그대로 흐릅니다.
+ await page.addInitScript(()=>{const offset=Date.parse('2026-11-20T10:00:00+09:00')-Date.now(),Real=Date;globalThis.Date=class extends Real{constructor(...a){super(...(a.length?a:[Real.now()+offset]));}static now(){return Real.now()+offset;}};});
  page.on('pageerror',e=>errors.push(e.message));
  try{
   await page.route('**/*',route=>{
@@ -25,7 +27,7 @@ async function fixture(run){
      import {mountAttendanceStatistics} from '/attendance-statistics.mjs';
      import {mountAttendanceEvidence} from '/attendance-evidence.mjs';
      import {readAttendanceSummary,syncAttendanceSummary} from '/attendance-derived-store.mjs';
-     const summary=cid=>({classId:cid,latestDate:'2026-09-14',dates:['2026-09-14'],students:[{id:'0_가상',name:'가상',firstDate:'2026-09-14',history:{'2026-09-14':{raw:'인정출석',status:'인정지각',basis:'관리자 구분',evidenceStatus:'미제출'}}}]});
+     const summary=cid=>({classId:cid,latestDate:'2026-11-16',dates:['2026-11-16'],students:[{id:'0_가상',name:'가상',firstDate:'2026-11-16',history:{'2026-11-16':{raw:'인정출석',status:'인정지각',basis:'관리자 구분',evidenceStatus:'미제출'}}}]});
      window.fixture={reads:[],writes:[],docs:{'attendanceBetaSummaries/1':summary('1'),'attendanceBetaSummaries/2':summary('2'),'attendanceBetaSummaries/3':summary('3'),'timetableBetaPublished/1':{entries:[]}}};
      window.api={mountAttendanceStatistics,mountAttendanceEvidence,readAttendanceSummary,syncAttendanceSummary};
      window.options={db:{},user:{uid:'fixture-admin',email:'admin@example.test'},classes:[{id:'1'},{id:'2'},{id:'3'}]};
@@ -79,12 +81,12 @@ test('discarded initial view and all-class views stop issuing later summary read
 
 test('successful summary sync invalidates the shared read result and unchanged sync avoids a second write',()=>fixture(async page=>{
  const result=await page.evaluate(async()=>{
-  const {db,user}=options,sheet={attendance:[['이름','','','','9/14'],['가상','','','','출석']]};
+  const {db,user}=options,sheet={attendance:[['이름','','','','11/16'],['가상','','','','출석']]};
   await api.readAttendanceSummary(db,'1',{user});
   const updated=await api.syncAttendanceSummary(db,user,'1',sheet);
   const after=await api.readAttendanceSummary(db,'1',{user});
   await api.syncAttendanceSummary(db,user,'1',sheet);
-  return {status:after.students[0].history['2026-09-14'].status,sameFingerprint:updated.fingerprint===after.fingerprint,writes:fixture.writes,reads:fixture.reads.filter(p=>p.startsWith('attendanceBetaSummaries/'))};
+  return {status:after.students[0].history['2026-11-16'].status,sameFingerprint:updated.fingerprint===after.fingerprint,writes:fixture.writes,reads:fixture.reads.filter(p=>p.startsWith('attendanceBetaSummaries/'))};
  });
  assert.equal(result.status,'출석');assert.equal(result.sameFingerprint,true);assert.deepEqual(result.writes,['attendanceBetaSummaries/1']);assert.equal(result.reads.length,4);
 }));
