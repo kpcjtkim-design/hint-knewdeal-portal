@@ -304,6 +304,7 @@ function b2RLinkDays_(plan) {
   plan.daysSh.getRange('A2').setFormula('=IFERROR(SORT(UNIQUE(FILTER(' + T + 'A' + S.first + ':A, ' + T + 'C' + S.first + ':C="O", ' + T + 'A' + S.first + ':A<>""))),"")');
   plan.daysSh.getRange('D2').setFormula('=' + T + '$E$4');
   plan.daysSh.getRange('F1').setValue('A열·D2는 교육일정 탭에서 옵니다(2026-10-16 개편). 이 탭은 계산용으로 숨겨 둡니다.');
+  if (String(plan.daysSh.getRange('C6').getValue()).trim() === '메모') plan.daysSh.getRange('D6').setValue('A열은 교육일정 탭에서 교육일=O인 날짜를 자동으로 모음. 직접 고치지 말고 교육일정을 고칠 것.');
 }
 // 교육일자 날짜가 달라졌을 때: 교육일자 수식을 되돌리고 새 교육일정 탭과 반정보 Q~U를 비웁니다(다시 실행할 수 있게, 바꾸기 전과 같게).
 function b2RUnlinkDays_(plan) {
