@@ -3,29 +3,34 @@
 // 설계: docs/beta2-instant-edit-plan.md 4.2(S1~S15). 사용자 결정(2026-10-14): 오늘만 자동(지난 날은 '체크히어 맞추기'를 눌러 같은 3초 흐름),
 // 3초 되돌리기는 출결원장과 요청을 모두 되돌림. 시간 삭제 요청(deleteTimes)은 켜지는 조건(G1 규칙 게시 깃발·G3 권한 거절 없음, 중계는 필요 없음 2026-10-16)이
 // 모두 맞을 때만 씁니다(결석 저장과 × 버튼). 지우기는 기록 번호가 있는 칸만(canDeleteTime), 보내기 전 확인창 필수(S8).
-// 1교시(관리자 ATTEND) 삭제는 v2일 때만(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄): 결석은 1교시·퇴실 두 칸, 1교시 ×는 퇴실이 비어 있을 때만(2026-10-16).
+// 1교시(관리자 ATTEND) 삭제는 v2일 때만(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄): 결석은 1교시·퇴실 두 칸(2026-10-16),
+// ×도 퇴실 ×·1교시 × 모두 1교시·퇴실 두 칸(사용자 결정 2026-10-19 "둘 다 삭제돼야 함", timeDeletePlan). 퇴실이 이미 빈 1교시 ×는 1교시만, 체크인 학생(PASS)의 퇴실 ×는 퇴실만.
 // 가린 화면(중계 신호 privacy)이거나 중계가 꺼져 해제 상태를 몰라도 요청은 만듭니다(승인 대기). 확인창에 '반영할 때 체크히어 마스킹 해제 필요'를 붙입니다.
 // Firestore 함수(fs)·시계·타이머는 화면이 넘깁니다(출결대조는 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js'에서 import한 함수).
 // 이 파일은 https 주소를 import하지 않습니다(Node 시험). 2기는 운영총괄 동기화가 없어 되돌리기는 출결원장 저장(b2Save)만 씁니다.
 import {memoDefaultTimes,resultText} from './checkhere/approval-core.mjs';
 import {ACTIVE,LIVE_STATUS,buildLiveRequest,isAutoLedgerRequest,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
-import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,needsUnmaskOnApply,privacyShort,relayPrivacy,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
+import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,needsUnmaskOnApply,privacyShort,relayPrivacy,removalSides,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
 import {B2_EVIDENCE,B2_TYPES,neededTimes,recognizedType} from './beta2-core.mjs';
 
 // firestore.rules checkhereRequests create 허용 키 중 요청 내용(나머지는 status·createdBy·createdAt·updatedAt).
 // deleteTimes는 시간 삭제 요청에만, 비어 있지 않을 때만 넣습니다(2기 firestore.rules가 허용, 게시 전에는 권한 거절 → S13).
 export const REQUEST_KEYS=['classId','date','name','phoneLast4','reason','changes'];
-// × 버튼이 그 시간을 지울 수 없는 이유들(없으면 켬). gate = deletionGate 결과, type = 지금 출결원장 유형(초안 포함).
+// × 버튼 하나(side = 누른 칸)가 지울 칸(sides)과 지울 수 없는 이유들(reasons, 없으면 켬). gate = deletionGate 결과, type = 지금 출결원장 유형(초안 포함).
+// 지울 칸은 removalSides(사용자 결정 2026-10-19 "둘 다 삭제돼야 함"): v2이고 번호 있는 관리자 1교시(ATTEND)와 퇴실이 있으면 퇴실 ×·1교시 × 모두
+// ['entry','exit'](연결 프로그램이 퇴실 먼저 지우고 두 칸이 빈 것을 확인), 체크인 학생(PASS)의 퇴실 ×는 ['exit'], 퇴실이 빈 1교시 ×는 ['entry'], v1이면 누른 칸만.
 // 지각류는 입실, 조퇴류는 퇴실 시간을 출결원장이 요구하고(beta2.gs b2Validate_), 외출류·인정출석은 사유를 입실(1교시) 칸 메모에 씁니다
-// (지우면 그 메모도 사라지고 시간이 없는 쪽에는 사유를 다시 넣을 수 없음). 그래서 그 칸은 유형을 먼저 바꿔야 합니다.
+// (지우면 그 메모도 사라지고 시간이 없는 쪽에는 사유를 다시 넣을 수 없음). 그래서 지울 칸에 그런 칸이 들면(두 칸이면 퇴실 ×도) 유형을 먼저 바꿔야 합니다.
 export const TYPE_FIRST='유형을 먼저 바꿔 주세요 (결석으로 바꾸면 지울 수 있는 시간을 함께 지웁니다)';
-// 1교시 ×는 그 칸만 지우므로(퇴실 없이) 퇴실이 비어 있을 때만, 그리고 v2 연결 프로그램일 때만 켭니다(canDeleteTime).
-export function timeDeleteBlock({gate:g,record,side,type='출석'}){
-  const why=[...(g?.reasons||[])],can=canDeleteTime(record,side,{v2:!!g?.v2});
-  if(!can.ok)why.push(can.reason);
-  if((side==='entry'&&/^(?:인정)?(?:지각|외출)$|^인정출석$/.test(type))||(side==='exit'&&/^(인정)?조퇴$/.test(type)))why.push(TYPE_FIRST);
-  return why;
+export function timeDeletePlan({gate:g,record,side,type='출석'}){
+  const v2=!!g?.v2,sides=removalSides(record,side,{v2}),why=[...(g?.reasons||[])];
+  // 두 칸이면 1교시는 퇴실과 함께라 받습니다(퇴실이 남은 1교시만은 canDeleteTime이 거절).
+  for(const k of sides){const can=canDeleteTime(record,k,{v2,withExit:k==='entry'&&sides.includes('exit')});if(!can.ok)why.push(can.reason);}
+  if((sides.includes('entry')&&/^(?:인정)?(?:지각|외출)$|^인정출석$/.test(type))||(sides.includes('exit')&&/^(인정)?조퇴$/.test(type)))why.push(TYPE_FIRST);
+  return {sides,reasons:[...new Set(why)]};
 }
+// × 버튼이 꺼질 이유들(화면 title). 지울 칸은 timeDeletePlan().sides.
+export const timeDeleteBlock=args=>timeDeletePlan(args).reasons;
 // × 결정은 출결원장에서 다시 계산할 수 없어 '다시 보내기'를 두지 않고 ×를 다시 누르게 합니다.
 const REMOVE_AGAIN='체크히어 시간을 지우려면 ×를 다시 눌러 주세요';
 export const PENDING_SLOW_MS=90*1000,APPLYING_SLOW_MS=3*60*1000;
@@ -47,7 +52,7 @@ const MARK_KEYS=['entryKind','entryEventId','exitEventId','enterEventId'];
 const verOf=r=>r?[r.version??'',...MARK_KEYS.map(k=>String(r[k]??''))].join('|'):null;
 // S8 확인창: 지울 시간(HH:MM)과 남는 것. 체크인한 학생(1교시 PASS)은 퇴실을 지우면 1교시·총 참여 시간도 '-'가 됩니다(Cowork 확인).
 const DEL_LABEL={entry:'입실(교시)',exit:'퇴실'};
-// 그 칸의 관리자 사유도 기록과 함께 지워집니다. 1교시를 지우면 1교시·퇴실 칸이 비고 입실 기록은 남을 수 있습니다(deleteLeaves, 2026-10-16 확인).
+// 그 칸의 관리자 사유도 기록과 함께 지워집니다. 두 칸이면 '퇴실과 1교시(09:00~18:00 칸)를 함께 지웁니다. 입실 기록은 남을 수 있습니다.'(deleteLeaves, 2026-10-16 확인·2026-10-19 문구).
 // 보내는 것은 삭제 요청이고, 체크히어에서 지우는 것은 관리자가 운영 포털에서 한 건씩 승인할 때입니다. 가린 화면이거나 해제 상태를 모르면(중계 꺼짐·옛 중계) 그때 해제가 필요하다고 덧붙입니다(privacy).
 const deleteQuestion=(name,date,record,sides,privacy=null)=>`${name} · ${date} 체크히어 시간 삭제를 요청합니다: ${sides.map(k=>`${DEL_LABEL[k]} ${hhmm(record?.[k])||'-'}`).join(' · ')}`
   +(sides.includes('exit')&&!sides.includes('entry')&&record?.entryKind==='PASS'&&hhmm(record?.entry)?`\n퇴실을 지우면 1교시(${hhmm(record.entry)})와 총 참여 시간도 비워집니다.`:'')
@@ -140,14 +145,15 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
       sheetTeacher:String(teacherOf(cls)||''),record:clone(getRecord(cls,date,name)),manual,asked,phase:'new',timer:null,deadline:0};
   }
   const compute=h=>h.remove?removeResult(h):sheetToCheckHere({row:h.row,record:h.record,sheetTeacher:h.sheetTeacher,date:h.date,deleteEnabled:gate().enabled,deleteV2:gate().v2,active:studentRequests(h.cls,h.date,h.name),me});
-  // × 버튼의 결정(h.remove = 지울 쪽): 출결원장은 그대로 두고 그 시간만 지웁니다. 보내기 직전에도 지금 기록·조건으로 다시 봅니다.
+  // × 버튼의 결정(h.remove = 누른 쪽): 출결원장은 그대로 두고 그 시간만 지웁니다. 지울 칸은 timeDeletePlan(v2 관리자 1교시 학생은 두 칸)이고,
+  // 보내기 직전에도 지금 기록·조건으로 다시 계산합니다(기록이 바뀌면 지울 칸도 다시 정하고 확인창을 다시 띄움).
   function removeResult(h){
     const out={state:'hold',changes:{},deleteTimes:[],text:'',notes:[],warnings:[],withdraw:[]},r=h.record;
     if(!r||r.source!=='live'||r.readState!=='complete'||!r.id||!r.version)return {...out,notes:['체크히어 상세 수집 대기 · 다시 지워 주세요']};
     if(studentRequests(h.cls,h.date,h.name).some(x=>ACTIVE.includes(x.status)))return {...out,notes:['진행 중 요청이 끝난 뒤 다시 지워 주세요']};
-    const why=[...new Set(h.remove.flatMap(side=>timeDeleteBlock({gate:gate(),record:r,side,type:h.row.type})))];
+    const plans=h.remove.map(side=>timeDeletePlan({gate:gate(),record:r,side,type:h.row.type})),why=[...new Set(plans.flatMap(p=>p.reasons))];
     if(why.length)return {...out,notes:why};
-    const deleteTimes=['entry','exit'].filter(k=>h.remove.includes(k));
+    const deleteTimes=['entry','exit'].filter(k=>plans.some(p=>p.sides.includes(k)));
     return {...out,state:'send',changes:Object.fromEntries(deleteTimes.map(k=>[k,''])),deleteTimes,text:`출결대조 시간 삭제 · ${deleteTimes.map(k=>DEL_LABEL[k]).join('·')}`,warnings:[deleteLeaves(deleteTimes,r)]};
   }
   const stop=h=>{if(h?.timer!=null){clearTimer(h.timer);h.timer=null;}};
@@ -216,10 +222,12 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     if(res.deleteTimes.length){
       // S8: 미뤄 둔 뒤·지금 보내기(반·날짜 이동·떠남)에는 삭제를 확인 없이 보내지 않습니다. 지금 보내기면 그 학생 이름을 알립니다.
       // × 결정이면 finish가 '다시 보내기' 대신 ×를 다시 누르라고 안내합니다.
+      // 확인한 칸(okTimes)과 지금 지울 칸이 다르면(3초 동안 연결 프로그램 능력 v1↔v2가 바뀌어 두 칸↔퇴실만) 확인을 버리고 다시 묻습니다.
+      if(h.deleteOk&&h.okTimes!==res.deleteTimes.join())h.deleteOk=false;
       if(!h.deleteOk&&(h.deferred||flush)){if(flush)unconfirmed?.push(h.name);return void finish(h,flush?CANCEL('시간 삭제는 확인 없이 보내지 않습니다'):h.remove?CANCEL('체크히어 시간 삭제 멈춤'):{...resultStatus(res),sig:h.sig});}
       if(!h.deleteOk){
         if(!ask(deleteQuestion(h.name,h.date,h.record,res.deleteTimes,privacy())))return void finish(h,CANCEL('체크히어 시간 삭제 취소'));
-        h.deleteOk=true;
+        h.deleteOk=true;h.okTimes=res.deleteTimes.join();
       }
     }
     if(res.state!=='send'&&!res.withdraw.length)return void applyResult(h,res);
@@ -358,7 +366,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     if(target&&!target.requestId&&((target.sig!=null&&sigOf(cls,date,name)!==target.sig)||(target.ver!==undefined&&target.ver!==verOf(getRecord(cls,date,name)))||(target.gate!==undefined&&target.gate!==gateMark())))target=null;
     return rowCheckHereStatus({local,request:list.find(isLiveRequest)||null,target:target||lazy(cls,date,name),now:now(),me,record:onDay(cls,date)?getRecord(cls,date,name):null});
   }
-  // × 버튼(send의 deleteTimes): 지금 지울 수 있는지 보고, 확인창(S8)에서 '예'일 때만 3초를 시작합니다(그 뒤 보내기 직전 확인 S3은 그대로).
+  // × 버튼(send의 deleteTimes = 누른 칸): 지울 칸(timeDeletePlan, v2 관리자 1교시 학생은 두 칸)을 지금 지울 수 있는지 보고, 확인창(S8)에서 '예'일 때만 3초를 시작합니다(그 뒤 보내기 직전 확인 S3은 그대로).
   function removeTimes(key,sides){
     const {cls,date,name}=parseKey(key);
     if(!Array.isArray(sides)||new Set(sides).size!==sides.length||sides.some(k=>k!=='entry'&&k!=='exit'))return {ok:false,reasons:['삭제할 시간 항목을 확인해 주세요.']};
@@ -374,7 +382,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
     const res=compute(h);
     if(res.state!=='send')return {ok:false,reasons:res.notes};
     if(!ask(deleteQuestion(name,date,h.record,res.deleteTimes,privacy())))return {ok:false,cancelled:true};
-    h.deleteOk=true;countdown(h,res);
+    h.deleteOk=true;h.okTimes=res.deleteTimes.join();countdown(h,res);
     return {ok:true,status:statusFor(key)};
   }
 
