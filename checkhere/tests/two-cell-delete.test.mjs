@@ -192,7 +192,7 @@ test('the bridge keeps reading the masking header while idle (about every 15 s, 
 test('after a person unmasks, link learning waits a minute after any write attempt even when no write is waiting (the portal no longer sends while masked), so the approver is not pushed out',async()=>{
   let header='masked',collects=0;const at=()=>Date.now();
   const adapter={page:{isClosed:()=>false},loggedIn:async()=>true,requireLogin:async()=>{},collect:async()=>{collects++;},
-    maskingState:async()=>header==='masked'?{view:'masked',header,remaining:null,unlinked:1,classes:[{classId:'2',date:'2026-10-05',count:1}]}:{view:'plain',header,remaining:600,unlinked:1,classes:[{classId:'2',date:'2026-10-05',count:1}]}};
+    maskingState:async()=>header==='masked'?{view:'masked',header,remaining:null,unlinked:1,classes:[{classId:'2',date:'2026-12-07',count:1}]}:{view:'plain',header,remaining:600,unlinked:1,classes:[{classId:'2',date:'2026-12-07',count:1}]}};
   const cloud={verify:async()=>{},get:async()=>{throw Error('가상: 요청 없음');}};
   const app=createBridge({dataDir:mkdtempSync(join(import.meta.dirname,'../test-results/learn-yield-')),collector:adapter,port:18988,approvalCloud:cloud,learnTickMs:20,privacyPollMs:20,writeGapMs:700});
   await new Promise(r=>app.server.listen(18988,'127.0.0.1',r));

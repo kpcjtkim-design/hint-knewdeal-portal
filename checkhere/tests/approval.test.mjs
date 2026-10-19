@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {APPROVER,cleanRequest,sameRequestTarget,matchRequest,prepareApproval,proposalFromApproval,requestMatchesRecord,memoDefaultTimes} from '../approval-core.mjs';
 import {createApprovalCloud} from '../cloud-approval.mjs';
 import {PROJECT} from '../firebase-public.mjs';
-const record=()=>({id:'record-id',version:'version',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',source:'live',readState:'complete',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'기존 퇴실 사유'});
-const request=()=>({classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'',changes:{entryMemo:'정정 사유'},reason:'수기 확인'});
+const record=()=>({id:'record-id',version:'version',classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'1234',source:'live',readState:'complete',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'기존 퇴실 사유'});
+const request=()=>({classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'',changes:{entryMemo:'정정 사유'},reason:'수기 확인'});
 test('request changes only selected fields and normalizes times',()=>{const r=cleanRequest({...request(),changes:{entry:'09:10'}});assert.deepEqual(r.changes,{entry:'09:10:00'});const a=prepareApproval(request(),record());assert.equal(a.after.exitMemo,record().exitMemo);assert.equal(a.after.entry,record().entry);assert.equal(a.after.entryMemo,'정정 사유');});
-test('invalid dates, blank times, unexpected fields and overlong reasons rejected',()=>{for(const patch of [{date:'2026-09-31'},{date:'2026-07-26'},{changes:{entry:''}},{changes:{delete:true}},{changes:{exit:'24:00'}},{reason:'x'.repeat(1001)}])assert.throws(()=>cleanRequest({...request(),...patch}));});
+test('invalid dates, blank times, unexpected fields and overlong reasons rejected',()=>{for(const patch of [{date:'2026-11-31'},{date:'2026-10-27'},{date:'2027-01-23'},{classId:'17'},{changes:{entry:''}},{changes:{delete:true}},{changes:{exit:'24:00'}},{reason:'x'.repeat(1001)}])assert.throws(()=>cleanRequest({...request(),...patch}));});
 test('same-name request must resolve uniquely within class and date',()=>{assert.equal(matchRequest(request(),[record()]).id,'record-id');assert.throws(()=>matchRequest(request(),[record(),{...record(),id:'other',phoneLast4:'9876'}]));assert.equal(matchRequest({...request(),phoneLast4:'9876'},[record(),{...record(),id:'other',phoneLast4:'9876'}]).id,'other');assert.throws(()=>matchRequest({...request(),classId:'1'},[record()]));assert.throws(()=>matchRequest(request(),[{...record(),source:'snapshot'}]));});
 test('pending, withdrawn, rejected or another approving administrator cannot execute',()=>{const r={...request(),approval:prepareApproval(request(),record()),approvedBy:APPROVER,status:'approved'};assert.equal(proposalFromApproval(r).entryMemo,'정정 사유');for(const status of ['pending','withdrawn','rejected','verified','unknown'])assert.throws(()=>proposalFromApproval({...r,status}));assert.throws(()=>proposalFromApproval({...r,approvedBy:'another-admin@example.com'}));});
 test('blank memo survives request, approval and collector payload without touching other fields',()=>{const r=cleanRequest({...request(),changes:{entryMemo:''}}),approval=prepareApproval(r,record()),payload=proposalFromApproval({...r,approval,status:'approved',approvedBy:APPROVER});assert.equal(payload.entryMemo,'');assert.equal(payload.exitMemo,record().exitMemo);assert.equal(payload.entry,record().entry);assert.equal(payload.exit,record().exit);});
@@ -20,8 +20,8 @@ test('bridge requires remote token verification and designated verified Google a
 });
 test('cloud claim uses update-time precondition and server timestamp; concurrent claim fails',async()=>{
   let captured;const cloud=createApprovalCloud({fetchImpl:async(url,options)=>{captured={url,body:JSON.parse(options.body)};return new Response('{}');}});
-  await cloud.claim({id:'request-id-0123456',updateTime:'2026-09-10T00:00:00Z',data:{status:'approved'}},'fixture-token','attempt-0123456789');
-  assert(captured.url.endsWith('/documents:commit'));assert.equal(captured.body.writes[0].currentDocument.updateTime,'2026-09-10T00:00:00Z');assert.equal(captured.body.writes[0].updateTransforms[0].setToServerValue,'REQUEST_TIME');
+  await cloud.claim({id:'request-id-0123456',updateTime:'2026-11-12T00:00:00Z',data:{status:'approved'}},'fixture-token','attempt-0123456789');
+  assert(captured.url.endsWith('/documents:commit'));assert.equal(captured.body.writes[0].currentDocument.updateTime,'2026-11-12T00:00:00Z');assert.equal(captured.body.writes[0].updateTransforms[0].setToServerValue,'REQUEST_TIME');
   const conflict=createApprovalCloud({fetchImpl:async()=>new Response('{}',{status:412})});await assert.rejects(()=>conflict.claim({id:'request-id-0123456',updateTime:'old',data:{status:'approved'}},'fixture-token','attempt-0123456789'));
 });
 
@@ -29,18 +29,18 @@ test('cloud claim uses update-time precondition and server timestamp; concurrent
 test('request comparison ignores stored map order but preserves identity and explicit blank fields',()=>{
  const a={...request(),changes:{entry:'09:00:00',exit:'18:00:00',entryMemo:''}};
  assert(sameRequestTarget(a,{...a,changes:{entryMemo:'',exit:'18:00:00',entry:'09:00'}}));
- for(const patch of [{classId:'3'},{date:'2026-09-14'},{name:'다른학생'},{phoneLast4:'9999'},{reason:'다른 근거'},{changes:{entry:'09:00:00',exit:'18:00:00'}},{changes:{...a.changes,exit:'17:00:00'}}])assert.equal(sameRequestTarget(a,{...a,...patch}),false);
+ for(const patch of [{classId:'3'},{date:'2026-11-16'},{name:'다른학생'},{phoneLast4:'9999'},{reason:'다른 근거'},{changes:{entry:'09:00:00',exit:'18:00:00'}},{changes:{...a.changes,exit:'17:00:00'}}])assert.equal(sameRequestTarget(a,{...a,...patch}),false);
  assert.equal(sameRequestTarget(a,null),false);
 });
 
 // 시간 삭제(deleteTimes): 관리자 요청에서 지정한 쪽만 ''. 삭제가 아닌 요청은 모양이 그대로입니다.
 const removal=(patch={})=>({...request(),reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit'],...patch});
 test('requests without deletions keep exactly the old shape',()=>{
- const shape={classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'',reason:'수기 확인',changes:{entryMemo:'정정 사유'}};
+ const shape={classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'',reason:'수기 확인',changes:{entryMemo:'정정 사유'}};
  for(const patch of [{},{deleteTimes:[]},{deleteTimes:null},{deleteTimes:undefined}]){const r=cleanRequest({...request(),...patch});assert.deepEqual(r,shape);assert.equal(Object.hasOwn(r,'deleteTimes'),false);}
 });
 test('time deletion requests are accepted and normalized only for the named side',()=>{
- assert.deepEqual(cleanRequest(removal()),{classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'',reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit']});
+ assert.deepEqual(cleanRequest(removal()),{classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'',reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit']});
  const both=cleanRequest(removal({changes:{exit:'',entry:'',exitMemo:''},deleteTimes:['exit','entry']}));
  assert.deepEqual(both.deleteTimes,['entry','exit'],'fixed order');assert.deepEqual(both.changes,{entry:'',exit:'',exitMemo:''});
  assert.deepEqual(cleanRequest(removal({changes:{entry:'09:10',exit:''}})).changes,{entry:'09:10:00',exit:''},'the other side may still change and no reversed-time check against a blank');

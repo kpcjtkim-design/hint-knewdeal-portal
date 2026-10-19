@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {canEditCheckHere,createDirectEditor} from '../direct-edit.mjs';
 const op='00000000-0000-4000-8000-000000000001';
 const user={email:'hint.kpc@gmail.com',getIdTokenResult:async()=>({claims:{email_verified:true,firebase:{sign_in_provider:'google.com'}}}),getIdToken:async()=>'test-token'};
-const record={id:'student-id',version:'v1',classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',teacher:'최유정',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'퇴실 사유',outings:[]};
-const input={classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234',reason:'수기 대조',changes:{entryMemo:'정정 사유'}};
+const record={id:'student-id',version:'v1',classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'1234',teacher:'최유정',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'퇴실 사유',outings:[]};
+const input={classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'1234',reason:'수기 대조',changes:{entryMemo:'정정 사유'}};
 function setup(account=user){
   const rows=new Map(),calls=[],state={records:[{...record}],jobs:[],capabilities:['approved-requests-v1','approval-current-sync-v1']};
   const c={refresh:async()=>{},state:()=>state,api:async(path,payload)=>{calls.push({path,payload});return{status:'verified'};}};

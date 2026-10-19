@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createSnapshotSaver} from '../../checkhere-snapshot-save.mjs';
-const row=(id='one',classId='2')=>({id,version:'v1',classId,date:'2026-07-27',name:'가상학생',source:'live',collectedAt:'2026-09-15T01:00:00Z',readState:'complete',entry:'09:02:00',exit:'17:52:00',entryMemo:'입실 사유',exitMemo:'',outings:[{start:'13:00:00',end:'14:00:00'}]});
+const row=(id='one',classId='2')=>({id,version:'v1',classId,date:'2026-10-28',name:'가상학생',source:'live',collectedAt:'2026-11-17T01:00:00Z',readState:'complete',entry:'09:02:00',exit:'17:52:00',entryMemo:'입실 사유',exitMemo:'',outings:[{start:'13:00:00',end:'14:00:00'}]});
 const job={id:'job-one',status:'manual_archive'};
 test('server round trip checks all fields; repeated manual saves reuse immutable content',async()=>{
   const db=new Map(),writes=[],progress=[];

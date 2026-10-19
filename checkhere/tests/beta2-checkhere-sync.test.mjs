@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 import {createCheckHereSync,rowCheckHereStatus,requestStatus,resultStatus,REQUEST_KEYS,STATUS_ACTIONS} from '../../beta2-checkhere-sync.mjs';
 import {holdKey,AUTO_TEXT} from '../../beta2-checkhere-core.mjs';
 import {baseTag,isLiveRequest,tagOf} from '../../checkhere-live-core.mjs';
-import {beta2RequestData} from '../../beta2-guard-core.mjs';
 import {ATTEND_DELETE} from '../rules.mjs';
 
 // 가상 학생만 씁니다. 가짜 Firestore 함수·시계·타이머로 동기화 모듈(설계 4.2 S1~S15)을 시험합니다.
-const TODAY='2026-10-14',PAST='2026-10-13',CLS='2',ME='admin@example.com',NAME='가상학생';
+const TODAY='2026-12-16',PAST='2026-12-15',CLS='2',ME='admin@example.com',NAME='가상학생';
 const record=(x={})=>({id:'rec-1',version:'v1',classId:CLS,date:TODAY,name:NAME,phoneLast4:'1234',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',
  rawEntry:'09:02:11',entry:'09:02:11',exit:'18:00:05',entryMemo:'',exitMemo:'',outings:[],...x});
 const row=(type,x={})=>({type,inT:'',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',...x});
@@ -16,7 +15,7 @@ const settle=()=>new Promise(r=>setImmediate(r));
 
 // st.today: 오늘(바꾸면 자정을 넘긴 것), st.others: 다른 가상 학생의 기록, st.hang: setDoc이 끝나지 않음(오프라인)
 function harness({date=TODAY,today=TODAY,rec=record({date}),requests=[],confirm=()=>true,hasDraft=()=>false}={}){
- let t=Date.parse('2026-10-14T01:00:00Z'),seq=0,ids=0;const timers=new Map(),log=[],subs=[];
+ let t=Date.parse('2026-12-16T01:00:00Z'),seq=0,ids=0;const timers=new Map(),log=[],subs=[];
  const st={date,today,rec,others:{},rows:{},sigs:{},saveError:null,setDocError:null,withdrawError:null,hang:false,confirm,confirms:[],saves:[],releases:[],bundles:0};
  const fs={doc:(db,...p)=>({path:p.join('/')}),collection:(db,...p)=>({path:p.join('/')}),where:(field,op,value)=>({field,op,value}),query:(c,...where)=>({path:c.path,where}),serverTimestamp:()=>'SERVER_TIME',
   setDoc:async(ref,data)=>{if(st.setDocError)throw st.setDocError;log.push(['write',ref.path,data]);if(st.hang)await new Promise(()=>{});},
@@ -44,7 +43,7 @@ function harness({date=TODAY,today=TODAY,rec=record({date}),requests=[],confirm=
  };
 }
 const request=(x={})=>({id:'b2_old',classId:CLS,date:TODAY,name:NAME,phoneLast4:'1234',status:'pending',createdBy:ME,changes:{entryMemo:'지각_담임:가상담임(09:25)'},
- reason:`[실시간 베타] [2기 베타] ${AUTO_TEXT} · 지각 · 일반 출결 [기준:0123abcd]`,createdAt:{seconds:Date.parse('2026-10-14T00:59:00Z')/1000,nanoseconds:0},...x});
+ reason:`[실시간 베타] ${AUTO_TEXT} · 지각 · 일반 출결 [기준:0123abcd]`,createdAt:{seconds:Date.parse('2026-12-16T00:59:00Z')/1000,nanoseconds:0},...x});
 
 test('saving today sends exactly one request 3 seconds later, shaped for the rules and the guard',async()=>{
  const h=harness();await h.open();
@@ -63,8 +62,9 @@ test('saving today sends exactly one request 3 seconds later, shaped for the rul
  // [기준:…]은 저장 때 화면에 보인 기록으로 만듭니다(S2).
  assert.equal(data.reason,`[실시간 베타] ${AUTO_TEXT} · 지각 · 일반 출결 [기준:${baseTag(captured,['entry','entryMemo'])}]`);
  assert.equal(data.reason,data.reason.trim());assert.match(tagOf(data.reason),/^[0-9a-f]{8}$/);
- const stored=beta2RequestData(path,data);
- assert.match(stored.reason,/^\[실시간 베타\] \[2기 베타\] 출결대조 자동 · 지각 · /);assert.ok(isLiveRequest(stored));assert.equal(tagOf(stored.reason),tagOf(data.reason));
+ // 2기는 /beta2 저장 가드가 없어 보낸 값이 그대로 저장됩니다.
+ const stored=data;
+ assert.match(stored.reason,/^\[실시간 베타\] 출결대조 자동 · 지각 · /);assert.ok(isLiveRequest(stored));assert.equal(tagOf(stored.reason),tagOf(data.reason));
  assert.deepEqual([h.sync.statusFor(h.key).kind,h.sync.statusFor(h.key).label],['pending','승인 대기'],'구독에 보이기 전');
  await h.advance(30000);assert.equal(h.writes().length,1,'once');
  // 요청 상태를 따라갑니다.
@@ -116,12 +116,12 @@ test('undo of a previous value the sheet would reject only cancels the request (
   h.save(prev,row('조퇴',{outT:'16:00'}),'sig-2');assert.equal((await h.sync.undo(h.key)).ok,true);
  }
  assert.equal(h.st.saves.length,0);await h.advance(10000);assert.equal(h.writes().length,0);
- // 운영총괄에서 온 행(출처 '1기 동기화')이면 되돌리기가 '운영총괄 값으로'(b2Release)로 출결원장도 되살립니다.
+ // 2기는 운영총괄 동기화가 없어 출처가 '1기 동기화'로 적힌 옛 행도 같은 길입니다(운영총괄 값으로 되살리기·b2Release 없음).
  s=h.save(row('중복',{reason:'가상 사유',prov:'1기 동기화'}),row('조퇴',{outT:'16:00'}),'sig-3');
- assert.match(s.detail,/되돌리기는 출결원장을 운영총괄 값으로/);
- const back=await h.sync.undo(h.key);assert.deepEqual([back.ok,back.released],[true,true]);
- assert.deepEqual(h.st.releases.at(-1),{cls:CLS,name:NAME,date:h.st.date});assert.equal(h.st.saves.length,0);
- assert.equal(h.sync.statusFor(h.key).label,'체크히어 반영 취소 · 출결원장은 운영총괄 값으로');assert.equal(h.writes().length,0);
+ assert.match(s.detail,/되돌리기는 체크히어 반영만 취소/);assert.doesNotMatch(s.detail,/운영총괄/);
+ const back=await h.sync.undo(h.key);assert.equal(back.ok,true);assert.ok(!back.released);
+ assert.equal(h.st.releases.length,0);assert.equal(h.st.saves.length,0);
+ assert.equal(h.sync.statusFor(h.key).label,'체크히어 반영 취소 · 출결원장은 그대로');assert.equal(h.writes().length,0);
  // 입력 중이라 멈춘 3초도 되돌릴 수 있습니다.
  let draft=true;const d=harness({hasDraft:()=>draft});await d.open();
  d.save(PRESENT,LATE,'sig-1');await d.advance(3000);
@@ -244,7 +244,7 @@ test('in-progress requests: my pending auto request is withdrawn first; others h
  c.save(PRESENT,LATE,'sig-1');c.st.sigs[NAME]='sig-later';c.pushRequests([request({id:'other_3',createdBy:'other@example.com',status:'withdrawn'})]);await settle();
  assert.equal(c.sync.statusFor(c.key).label,'시트가 그사이 바뀜 · 요청 안 보냄');await c.advance(5000);assert.equal(c.writes().length,0);
  // 내 승인 대기 직접 요청(자동 아님) → 보류 + 요청 취소 버튼
- const m=harness({requests:[request({id:'mine_direct',reason:'[2기 베타] 가상 직접 요청'})]});await m.open();
+ const m=harness({requests:[request({id:'mine_direct',reason:'가상 직접 요청'})]});await m.open();
  s=m.save(PRESENT,LATE,'sig-1');assert.deepEqual([s.kind,s.actions],['hold',['withdraw']]);
  assert.equal(await m.sync.withdraw(m.key),true);assert.deepEqual(m.log,[['withdraw','mine_direct']]);
 });
@@ -330,7 +330,7 @@ test('결석 holds while time deletion is off; with the gate on it asks first (S
  assert.equal(s.kind,'countdown');assert.match(s.detail,/퇴실 \(삭제\)/);assert.match(s.detail,/체크히어 실제 입실 기록은 남습니다/);
  assert.equal(g.st.confirms.length,0,'확인창은 3초 뒤 보내기 직전에');
  await g.advance(3000);
- assert.equal(g.st.confirms.length,1);assert.match(g.st.confirms[0],/가상학생 · 2026-10-14 체크히어 시간 삭제를 요청합니다: 퇴실 18:00/);assert.match(g.st.confirms[0],/관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다/);
+ assert.equal(g.st.confirms.length,1);assert.match(g.st.confirms[0],/가상학생 · 2026-12-16 체크히어 시간 삭제를 요청합니다: 퇴실 18:00/);assert.match(g.st.confirms[0],/관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다/);
  assert.match(g.st.confirms[0],/퇴실을 지우면 1교시\(09:02\)와 총 참여 시간도 비워집니다/);assert.match(g.st.confirms[0],/체크히어 실제 입실 기록은 남습니다/);
  assert.deepEqual([g.sync.statusFor(g.key).label,g.writes().length],['체크히어 시간 삭제 취소',0],'아니오: 쓰기 0');
  g.st.confirm=()=>true;g.save(row('결석'),PRESENT,'sig-2');g.save(PRESENT,row('결석'),'sig-3');await g.advance(3000);
@@ -339,7 +339,7 @@ test('결석 holds while time deletion is off; with the gate on it asks first (S
  assert.deepEqual(Object.keys(data).sort(),['changes','classId','createdAt','createdBy','date','deleteTimes','name','phoneLast4','reason','status','updatedAt'],'deleteTimes 키는 삭제 요청에만');
  assert.deepEqual([data.changes,data.deleteTimes],[{exit:''},['exit']],'PASS 1교시는 지우지 않음');
  assert.equal(data.reason,`[실시간 베타] ${AUTO_TEXT} · 결석 · 일반 출결 [기준:${baseTag(captured,['exit'])}]`,'[기준]은 지우는 퇴실을 덮음');
- const stored=beta2RequestData(path,data);assert.ok(isLiveRequest(stored));assert.deepEqual(stored.deleteTimes,['exit']);
+ const stored=data;assert.ok(isLiveRequest(stored));assert.deepEqual(stored.deleteTimes,['exit']);
  // 관리자가 넣은 1교시(ATTEND 번호)와 옛 연결 프로그램(v1): 예전처럼 결석은 보류, 퇴실만 지우는 일부 삭제도 보내지 않음(퇴실도 남는다고 알림)
  const a=harness({rec:record(ADMIN_ENTRY)});await a.open();gateOn(a);
  assert.equal(a.save(PRESENT,row('결석'),'sig-1').label,'보류 · '+V2_NEEDED+' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)');
@@ -416,7 +416,7 @@ test('× follows the sheet type and asks again when the record changes during th
 });
 
 test('front conditions keep the sheet save and only show why (date range, missing record, partial record)',async()=>{
- const far=harness({date:'2026-10-23',today:'2026-10-23'});await far.open();
+ const far=harness({date:'2027-01-23',today:'2027-01-23'});await far.open();
  assert.equal(far.save(PRESENT,LATE,'sig-1').label,'보류 · 규칙 날짜 범위 밖 · 넓히려면 사용자 확인 필요');
  // 기록이 아직 없음(아침 첫 수집 전·다시 읽는 중): '기록 없음'으로 끝내지 않고 기록이 오면 다시 계산해 새 3초
  const none=harness({rec:null});await none.open();
@@ -487,13 +487,13 @@ test('a missing record, a newer record or a new day never freezes the chip or se
  past.st.rec=record({date:PAST});assert.equal(past.sync.statusFor(past.key).label,'체크히어 맞추기','기록이 온 뒤에는 맞추기');
  // 미뤄 둔 자동 요청이 자정을 넘기면 보내지 않고 맞추기만 남김(오늘만 자동)
  const n=harness({requests:[request({id:'other_1',createdBy:'other@example.com'})]});await n.open();
- n.save(PRESENT,LATE,'sig-1');n.st.today='2026-10-15';
+ n.save(PRESENT,LATE,'sig-1');n.st.today='2026-12-17';
  n.pushRequests([request({id:'other_1',createdBy:'other@example.com',status:'rejected'})]);await settle();
  s=n.sync.statusFor(n.key);assert.deepEqual([s.kind,s.label],['suggest','체크히어 맞추기']);
  await n.advance(10000);assert.equal(n.writes().length,0);
  n.sync.suggest(n.key);await n.advance(3000);assert.equal(n.writes().length,1,'누르면 보냄');assert.equal(n.writes()[0][2].date,TODAY);
  // 3초가 도는 사이 자정을 넘김 → 보내지 않음
- const m=harness();await m.open();m.save(PRESENT,LATE,'sig-1');m.st.today='2026-10-15';await m.advance(3000);
+ const m=harness();await m.open();m.save(PRESENT,LATE,'sig-1');m.st.today='2026-12-17';await m.advance(3000);
  assert.equal(m.writes().length,0);assert.equal(m.sync.statusFor(m.key).label,'체크히어 맞추기');
 });
 
@@ -533,7 +533,7 @@ test('체크히어 맞추기 after an evidence-only save never reverts that shee
 });
 
 test('status chip labels (pure)',()=>{
- const now=Date.parse('2026-10-14T03:00:00Z'),at=ms=>({seconds:(now-ms)/1000,nanoseconds:0}),r=(status,x={})=>({id:'q1',status,createdBy:ME,createdAt:at(10000),updatedAt:at(10000),...x});
+ const now=Date.parse('2026-12-16T03:00:00Z'),at=ms=>({seconds:(now-ms)/1000,nanoseconds:0}),r=(status,x={})=>({id:'q1',status,createdBy:ME,createdAt:at(10000),updatedAt:at(10000),...x});
  const label=x=>{const s=requestStatus(x,{now,me:ME});return [s.label,s.actions,s.detail];};
  assert.deepEqual(label(r('pending')),['승인 대기',['withdraw'],'']);
  assert.match(label(r('pending',{createdAt:at(91000)}))[2],/승인해야 체크히어에 반영됩니다\(자동으로 쓰지 않음\)/);
@@ -590,7 +590,7 @@ test('changing the day or leaving never sends a deletion that skipped its confir
 
 test('a × deletion that fails, is refused or is cancelled offers no 다시 보내기 (it would only recompute the sheet); 결석 deletions keep it',async()=>{
  const del={changes:{exit:''},deleteTimes:['exit']};
- const x=request({...del,reason:'[실시간 베타] [2기 베타] 출결대조 시간 삭제 · 퇴실 [기준:0123abcd]',status:'rejected',reviewNote:'가상 반려'});
+ const x=request({...del,reason:'[실시간 베타] 출결대조 시간 삭제 · 퇴실 [기준:0123abcd]',status:'rejected',reviewNote:'가상 반려'});
  let s=requestStatus(x);assert.deepEqual([s.kind,s.actions],['rejected',[]]);assert.equal(s.detail,'가상 반려 · 체크히어 시간을 지우려면 ×를 다시 눌러 주세요');
  s=requestStatus({...x,status:'failed',result:{message:'가상 실패'}});assert.deepEqual(s.actions,[]);assert.match(s.detail,/×를 다시/);
  // 결석 저장이 만든 자동 삭제 요청은 다시 보내기가 결석을 다시 계산하므로 그대로
@@ -716,5 +716,5 @@ test('timesDeleted: the newest live request of the student is a verified deletio
  const del=request({id:'b2_del',changes:{exit:''},deleteTimes:['exit'],status:'verified'});
  h.pushRequests([del]);assert.equal(h.sync.timesDeleted(h.key),true);
  h.pushRequests([{...del,status:'rejected'}]);assert.equal(h.sync.timesDeleted(h.key),false);
- h.pushRequests([del,request({id:'b2_new',status:'verified',createdAt:{seconds:Date.parse('2026-10-14T01:00:00Z')/1000,nanoseconds:0}})]);assert.equal(h.sync.timesDeleted(h.key),false,'a newer edit after the deletion');
+ h.pushRequests([del,request({id:'b2_new',status:'verified',createdAt:{seconds:Date.parse('2026-12-16T01:00:00Z')/1000,nanoseconds:0}})]);assert.equal(h.sync.timesDeleted(h.key),false,'a newer edit after the deletion');
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {suggestReason,reasonCategory,sourceRecord,assertProposalSource,assertColumnSource,requestChanges,suggestTimes,excursionFor,requestColumn,requestsOverlap} from '../../checkhere-proposal-core.mjs';
-const record=()=>({id:'student-record',classId:'2',date:'2026-09-03',name:'가상학생',version:'v1',entry:'13:00:15',exit:'18:00:00',entryMemo:'',exitMemo:'',teacher:'홍길동',outings:[],readState:'complete'});
+const record=()=>({id:'student-record',classId:'2',date:'2026-11-05',name:'가상학생',version:'v1',entry:'13:00:15',exit:'18:00:00',entryMemo:'',exitMemo:'',teacher:'홍길동',outings:[],readState:'complete'});
 test('reason suggestions follow recognized templates and map to correct field',()=>{
  const r=record();assert.equal(suggestReason({status:'인정지각',reason:'병원 진료',record:r}).text,'(인정지각)병원_담임:홍길동(13:00)');
  const early=suggestReason({status:'인정조퇴',reason:'면접',record:{...r,exit:'15:01:45'}});assert.equal(early.field,'exitMemo');assert.equal(early.text,'(인정조퇴)면접_담임:홍길동(15:01)');
@@ -16,8 +16,8 @@ test('time proposals normalize recognized types but preserve actual excursion an
  assert.deepEqual(requestChanges(record(),'times',{entry:'09:00',exit:'18:00'}),{entry:'09:00:00'});
  assert.throws(()=>requestChanges(record(),'times',{entry:'',exit:'18:00'}));
  assert.throws(()=>requestChanges(record(),'times',{entry:'18:00',exit:'09:00'}));
- const entries=[{date:'2026-09-11',module:'공장견학',title:'화성공장'},{date:'2026-09-11',module:'실차체험',title:'분해조립'},{date:'2026-09-12',module:'공장견학'},{date:'2026-09-11',module:'직무특화',title:'SW 테스팅'}];
- assert.equal(excursionFor(entries,'2026-09-11').length,2);
+ const entries=[{date:'2026-11-13',module:'공장견학',title:'화성공장'},{date:'2026-11-13',module:'실차체험',title:'분해조립'},{date:'2026-11-14',module:'공장견학'},{date:'2026-11-13',module:'직무특화',title:'SW 테스팅'}];
+ assert.equal(excursionFor(entries,'2026-11-13').length,2);
 });
 
 test('independent column requests remain valid after another column applies; target and identity conflicts stop approval',()=>{
@@ -26,7 +26,7 @@ test('independent column requests remain valid after another column applies; tar
  assert.throws(()=>assertColumnSource(ctx,{...r,entryMemo:'외부에서 수정'}));
  assert.throws(()=>assertColumnSource(ctx,{...r,id:'different-student'}));
  const timeCtx={...ctx,column:'times'};assert.throws(()=>assertColumnSource(timeCtx,{...r,exit:'17:00:00'}));
- const base={classId:'2',date:'2026-09-03',name:'가상학생',phoneLast4:'1234'};
+ const base={classId:'2',date:'2026-11-05',name:'가상학생',phoneLast4:'1234'};
  const a={...base,changes:{entry:'09:00:00'}},b={...base,changes:{entryMemo:'사유'}};
  assert.equal(requestColumn(a),'times');assert.equal(requestColumn(b),'entryMemo');assert(!requestsOverlap(a,b));
  assert(requestsOverlap(a,{...a,changes:{entry:'09:01:00',exit:'18:00:00'}}));

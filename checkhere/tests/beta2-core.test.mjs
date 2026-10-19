@@ -1,23 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText,isConflictFlag,enrolledOn} from '../../beta2-core.mjs';
+import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText,enrolledOn} from '../../beta2-core.mjs';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 const COLS=['date','cls','name','type','inT','outT','oa','ob','reason','ev','evr','memo','evApplied','check','prov','flag','sig'];
 const L=(date,name,type,o={})=>COLS.map(k=>({date,cls:'1',name,type,inT:'',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',memo:'',evApplied:recognized(type)?(o.ev||'미제출'):'해당없음',check:'',prov:'1기 동기화',flag:'',sig:'s',...o})[k]);
 const recognized=t=>t.startsWith('인정');
-const RAW={rev:7,today:'2026-09-03',days:['2026-09-01','2026-09-02','2026-09-03','2026-09-04'],classes:[{id:'1',teacher:'김지아'}],
- roster:[['1','가','재학',''],['1','나','중도탈락','2026-09-02'],['1','다','',''],['2','라','재학','']],ledgerCols:COLS,
- ledger:[L('2026-09-01','가','지각',{inT:'09:20'}),L('2026-09-02','가','인정출석',{reason:'병원 진료'}),L('2026-09-03','가','인정지각',{reason:'병결',ev:'확인',inT:'09:40'}),
-  L('2026-09-01','나','결석'),L('2026-09-02','나','결석'),L('2026-09-02','다','인정조퇴',{reason:'면접',ev:'반려',evr:'날짜 없음',outT:'15:00',flag:'운영총괄 값: 조퇴'})]};
+const RAW={rev:7,today:'2026-11-05',days:['2026-11-03','2026-11-04','2026-11-05','2026-11-06'],classes:[{id:'1',teacher:'김지아'}],
+ roster:[['1','가','재학',''],['1','나','중도탈락','2026-11-04'],['1','다','',''],['2','라','재학','']],ledgerCols:COLS,
+ ledger:[L('2026-11-03','가','지각',{inT:'09:20'}),L('2026-11-04','가','인정출석',{reason:'병원 진료'}),L('2026-11-05','가','인정지각',{reason:'병결',ev:'확인',inT:'09:40'}),
+  L('2026-11-03','나','결석'),L('2026-11-04','나','결석'),L('2026-11-04','다','인정조퇴',{reason:'면접',ev:'반려',evr:'날짜 없음',outT:'15:00',flag:'운영총괄 값: 조퇴'})]};
 
 test('bundles decode into rows and a day view follows the roster with implied attendance and leavers',()=>{
  const b=decodeBundle(RAW);
- assert.equal(b.ledger.length,6);assert.equal(b.ledger[0].inT,'09:20');assert.equal(b.roster[1].changed,'2026-09-02');
- const day=dayView(b,'1','2026-09-03');
+ assert.equal(b.ledger.length,6);assert.equal(b.ledger[0].inT,'09:20');assert.equal(b.roster[1].changed,'2026-11-04');
+ const day=dayView(b,'1','2026-11-05');
  assert.deepEqual(day.map(r=>[r.name,r.type,r.enrolled]),[['가','인정지각',true],['나','해당없음',false],['다','출석',true]]);
- assert.deepEqual(dayCounts(dayView(b,'1','2026-09-02')),{총원:3,출석:2,결석:1,지각:0,조퇴:0,외출:0,인정:2,중복:0,확인필요:1});
+ assert.deepEqual(dayCounts(dayView(b,'1','2026-11-04')),{총원:3,출석:2,결석:1,지각:0,조퇴:0,외출:0,인정:2,중복:0});
 });
 
 test('student statistics use the master-sheet attendance rate, evidence and disease dates from the ledger',()=>{
@@ -25,24 +25,23 @@ test('student statistics use the master-sheet attendance rate, evidence and dise
  const ga=s.find(x=>x.name==='가'),na=s.find(x=>x.name==='나'),da=s.find(x=>x.name==='다');
  assert.deepEqual([ga.days,ga.absent,Math.round(ga.rate)],[3,0,100]);
  assert.deepEqual(ga.counts,{지각:1,인정출석:1,인정지각:1});
- assert.deepEqual(ga.disease,['2026-09-02','2026-09-03']);
- assert.deepEqual(ga.evidence.map(e=>e.date),['2026-09-02']);
+ assert.deepEqual(ga.disease,['2026-11-04','2026-11-05']);
+ assert.deepEqual(ga.evidence.map(e=>e.date),['2026-11-04']);
  assert.deepEqual([na.days,na.absent,Math.round(na.rate)],[2,2,0],'the change date is the last attended day; later days are not counted');
- assert.equal(enrolledOn({status:'중도탈락',changed:'2026-09-02'},'2026-09-02'),true);assert.equal(enrolledOn({status:'중도탈락',changed:'2026-09-02'},'2026-09-03'),false);
- assert.equal(isConflictFlag('운영총괄 값: 지각'),true);assert.equal(isConflictFlag('운영총괄에는 이 날 기록 없음(출석)'),true);
- assert.equal(isConflictFlag('사유: 동명이인·이름 경계 확인 필요'),false);assert.equal(isConflictFlag('운영총괄 값 확인 필요: 이상한값'),false);
- assert.deepEqual(da.flags,[{date:'2026-09-02',flag:'운영총괄 값: 조퇴'}]);
- assert.deepEqual(evidenceRows(s).map(e=>[e.name,e.date,e.state]),[['가','2026-09-02','미제출'],['다','2026-09-02','반려']]);
+ assert.equal(enrolledOn({status:'중도탈락',changed:'2026-11-04'},'2026-11-04'),true);assert.equal(enrolledOn({status:'중도탈락',changed:'2026-11-04'},'2026-11-05'),false);
+ // 2기는 운영총괄 동기화가 없어 T열 '운영총괄 값' 충돌 표시를 세지 않습니다.
+ assert.equal(da.flags,undefined);
+ assert.deepEqual(evidenceRows(s).map(e=>[e.name,e.date,e.state]),[['가','2026-11-04','미제출'],['다','2026-11-04','반려']]);
  const {left,risk}=dropoutRows(s);
  assert.deepEqual(left.map(x=>x.name),['나']);assert.deepEqual(risk.map(x=>x.name),[]);
  assert.equal(isDiseaseReason('면접결석'),false);assert.equal(isDiseaseReason('병결'),true);
 });
 
 test('disease counts follow the ledger and differences with CheckHere hospital memos are listed for review',()=>{
- const stats=[{cls:'1',name:'가',disease:['2026-09-01','2026-09-02','2026-09-03','2026-09-04']},{cls:'1',name:'나',disease:['2026-09-01']},{cls:'2',name:'라',disease:[]}];
- const r=diseaseReport(stats,{'1':{가:['2026-09-01','2026-09-02','2026-09-05'],나:['2026-09-01']},'2':{라:['2026-09-03']}});
+ const stats=[{cls:'1',name:'가',disease:['2026-11-03','2026-11-04','2026-11-05','2026-11-06']},{cls:'1',name:'나',disease:['2026-11-03']},{cls:'2',name:'라',disease:[]}];
+ const r=diseaseReport(stats,{'1':{가:['2026-11-03','2026-11-04','2026-11-07'],나:['2026-11-03']},'2':{라:['2026-11-05']}});
  assert.deepEqual(r.rows.map(x=>[x.name,x.count,x.level]),[['가',4,'주의']]);
- assert.deepEqual(r.review.map(x=>[x.name,x.onlyLedger,x.onlyCheckHere]),[['가',['2026-09-03','2026-09-04'],['2026-09-05']],['라',[],['2026-09-03']]]);
+ assert.deepEqual(r.review.map(x=>[x.name,x.onlyLedger,x.onlyCheckHere]),[['가',['2026-11-05','2026-11-06'],['2026-11-07']],['라',[],['2026-11-05']]]);
  assert.deepEqual([r.warning,r.atLimit,r.exceeded],[1,0,0]);
 });
 
@@ -56,7 +55,7 @@ test('CheckHere times are compared with the ledger type',()=>{
  assert.match(compareCheckHere('결석',null,rec('09:00:00',null)).text,/기록 있음/);
  assert.equal(compareCheckHere('결석',null,rec(null,null)).state,'ok');
  assert.match(compareCheckHere('출석',null,rec(null,null)).text,/결석 확인/);
- assert.equal(compareCheckHere('출석',null,rec(null,null),{today:'2026-09-03',date:'2026-09-03',now:9*3600}).state,'pending');
+ assert.equal(compareCheckHere('출석',null,rec(null,null),{today:'2026-11-05',date:'2026-11-05',now:9*3600}).state,'pending');
  assert.match(compareCheckHere('외출',null,rec('09:00:00','18:00:00')).text,/외출 기록 없음/);
  assert.match(compareCheckHere('출석',null,rec('09:00:00','18:00:00',{outingCount:1})).text,/외출 기록 있음/);
  assert.equal(compareCheckHere('인정출석',null,rec(null,null)).state,'ok');
@@ -83,13 +82,13 @@ test('출결대조 보정 모드는 연결 프로그램이 고치는 교시 기�
  assert.deepEqual(compareCheckHere('출석',null,deleted,fix),{state:'diff',text:'교시 기록·퇴실 없음 · 실제 입실 09:02 · 퇴실 미타각인지 확인'});
  assert.deepEqual(compareCheckHere('출석',null,rec('09:02:00',null,'18:00:00'),fix),{state:'diff',text:'입실 기록 없음 · 실제 입실 09:02'});
  // 오늘 교시·퇴실이 모두 비면 교시 기록이 늦게 찍힐 수 있어 실제 입실로 돌아감
- const today={today:'2026-09-03',date:'2026-09-03',now:10*3600,corrected:true};
+ const today={today:'2026-11-05',date:'2026-11-05',now:10*3600,corrected:true};
  assert.deepEqual(compareCheckHere('출석',null,rec('09:25:00',null,null),today),{state:'diff',text:'체크히어 지각 09:25'});
  assert.deepEqual(compareCheckHere('출석',null,rec('09:02:00',null,null),today),{state:'pending',text:'진행 중 · 지금까지 일치'});
  assert.deepEqual(compareCheckHere('출석',null,rec(null,null,null),today),{state:'pending',text:'오늘 입실 기록 아직 없음'});
  assert.deepEqual(compareCheckHere('결석',null,deleted,today),{state:'diff',text:'체크히어 입실 09:02 · 퇴실 - 기록 있음'},'오늘 퇴실 전 체크인한 학생이 결석으로 적히면 불일치(결석도 실제 입실로 돌아감)');
  assert.deepEqual(compareCheckHere('결석',null,rec(null,null,null),today),{state:'ok',text:'입퇴실 없음'});
- assert.deepEqual(compareCheckHere('결석',null,deleted,{...today,today:'2026-09-04'}),{state:'ok',text:'교시 기록·퇴실 없음 · 실제 입실 09:02 남음'},'지난 날은 삭제 뒤 모습이면 일치');
+ assert.deepEqual(compareCheckHere('결석',null,deleted,{...today,today:'2026-11-06'}),{state:'ok',text:'교시 기록·퇴실 없음 · 실제 입실 09:02 남음'},'지난 날은 삭제 뒤 모습이면 일치');
  // 교시 기록만 있는 저장본(실제 입실 없음)과 예전 저장본(rawEntry 칸 없음)
  assert.deepEqual(compareCheckHere('출석',null,rec(null,'09:00:00','18:00:00'),fix),{state:'ok',text:'일치'});
  assert.deepEqual(compareCheckHere('출석',null,{entry:'09:25:00',exit:'18:00:00',outings:[]},fix),{state:'diff',text:'체크히어 지각 09:25'});
@@ -107,15 +106,15 @@ test('체크히어 메모의 사유 힌트는 시간을 사유로 내놓지 않�
 });
 
 test('sync status text is plain Korean',()=>{
- const now=Date.parse('2026-10-13T10:00:00Z');
+ const now=Date.parse('2026-12-15T10:00:00Z');
  const t=syncText({checkedAt:now-3*60000,changedAt:now-2*3600000,last:{errors:['3반: 탭 없음'],stats:{added:1}}},now);
  assert.deepEqual([t.checked,t.changed,t.errors[0]],['3분 전','2시간 전','3반: 탭 없음']);
  assert.equal(syncText({}).checked,'기록 없음');
  // 2026-10-13 10:00Z = 화요일 19:00 KST → 평일 09:10~18:00 밖
  assert.deepEqual([t.window,t.resting,t.cut],['평일 09:10~18:00',true,'']);
- const wed=Date.parse('2026-10-14T03:00:00Z');
+ const wed=Date.parse('2026-12-16T03:00:00Z');
  assert.equal(syncText({window:'1-5 09:10-18:00'},wed).resting,false);
- assert.equal(syncText({window:'always'},Date.parse('2026-10-17T03:00:00Z')).resting,false);
+ assert.equal(syncText({window:'always'},Date.parse('2026-12-19T03:00:00Z')).resting,false);
  assert.equal(syncText({window:'6-7 10:00-12:00'},wed).window,'주말 10:00~12:00');
  assert.equal(syncText({cutAt:wed-20*60000,last:{at:wed-30*60000}},wed).cut,'20분 전','a cut after the last finished run is shown');
  assert.equal(syncText({cutAt:wed-40*60000,last:{at:wed-30*60000}},wed).cut,'','an older cut is not');
@@ -134,14 +133,10 @@ test('the client and Apps Script agree on the ledger row signature',()=>{
  assert.deepEqual(JSON.parse(JSON.stringify(gas.B2_LEDGER_COLS)),COLS);
 });
 
-test('the /beta2 guard keeps live relay requests recognisable',async()=>{
- const {beta2RequestData,LIVE_MARK:GUARD_MARK}=await import('../../beta2-guard-core.mjs');
+test('2기 has no /beta2 save guard: live relay requests keep the reason exactly as written',async()=>{
+ const {existsSync}=await import('node:fs');
+ assert.equal(existsSync(new URL('../../beta2-guard-core.mjs',import.meta.url)),false,'1기 보기 전용 가드는 2기에 없음');
  const {LIVE_MARK,isLiveRequest,editorReason,tagOf}=await import('../../checkhere-live-core.mjs');
- assert.equal(GUARD_MARK,LIVE_MARK);
- const live=beta2RequestData('checkhereRequests/a',{status:'pending',reason:`${LIVE_MARK} 지각 교통 [기준:0a1b2c3d]`});
- assert.equal(isLiveRequest(live),true);assert.equal(tagOf(live.reason),'0a1b2c3d');assert.equal(editorReason(live.reason),'[2기 베타] 지각 교통');
- assert.equal(beta2RequestData('checkhereRequests/a',live).reason,live.reason,'never tagged twice');
- assert.equal(beta2RequestData('checkhereRequests/b',{status:'pending',reason:'출결대조 메모'}).reason,'[2기 베타] 출결대조 메모');
- const long={status:'pending',reason:`${LIVE_MARK} ${'가'.repeat(980)} [기준:0a1b2c3d]`};
- assert.equal(beta2RequestData('checkhereRequests/c',long).reason,long.reason,'too long: keep the original rather than cut the fingerprint');
+ const live={status:'pending',reason:`${LIVE_MARK} 지각 교통 [기준:0a1b2c3d]`};
+ assert.equal(isLiveRequest(live),true);assert.equal(tagOf(live.reason),'0a1b2c3d');assert.equal(editorReason(live.reason),'지각 교통');
 });

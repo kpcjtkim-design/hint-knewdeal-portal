@@ -141,7 +141,7 @@ export async function fakeSite(days,{mode='unmasked'}={}){
     if(u.pathname==='/history/lecture'){w.pages.home++;return page(`<table><tr><td>[2반] 가상강의 (가상담임)</td><td><button onclick="location.href='/history/lecture/L2?academyId=A'">보기</button></td></tr></table>`);}
     if(u.pathname==='/history/lecture/L2'){
       w.pages.lecture++;
-      return page(`<table id="t"></table><script>fetch('${ADMIN}/api/v3/schedule/list/lecture/L2/start/2026-08-01T00:00:00/end/2026-12-31T23:59:59').then(r=>r.json()).then(j=>{document.querySelector('#t').innerHTML=j.data.map(s=>'<tr><td>'+s.scheduleDate+'</td><td><button data-u="/history/lecture/modify?tab=STUDENT&academyId=A&lectureId=L2&scheduleId='+s.scheduleId+'&scheduleDate='+s.scheduleDate+'&via=click">보기</button></td></tr>').join('');document.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>location.href=b.dataset.u);});</script>`);
+      return page(`<table id="t"></table><script>fetch('${ADMIN}/api/v3/schedule/list/lecture/L2/start/2026-08-01T00:00:00/end/2027-01-31T23:59:59').then(r=>r.json()).then(j=>{document.querySelector('#t').innerHTML=j.data.map(s=>'<tr><td>'+s.scheduleDate+'</td><td><button data-u="/history/lecture/modify?tab=STUDENT&academyId=A&lectureId=L2&scheduleId='+s.scheduleId+'&scheduleDate='+s.scheduleDate+'&via=click">보기</button></td></tr>').join('');document.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>location.href=b.dataset.u);});</script>`);
     }
     if(u.pathname==='/history/lecture/modify'){
       const sid=u.searchParams.get('scheduleId'),day=w.days[sid]||Object.values(w.days)[0];w.pages.day++;w.dayLoads.push({sid,at:Date.now()});if(u.searchParams.get('via')==='click')w.viewClicks++;
@@ -164,7 +164,7 @@ export function fakeCloud(docs,{verifyToken='fixture-admin'}={}){
 }
 // 가짜 체크히어 + 진짜 연결 프로그램(수집기·서버) + 가짜 승인 저장소. 먼저 한 번 수집해 학생 번호 연결을 배웁니다(가상 학생만, 다른 포트).
 // approve(id,이름,changes,deleteTimes?): 그 학생의 지금 저장본으로 승인된 요청을 만듭니다. apply(id,{writer,...}): /api/apply.
-export async function bridgeWorld(port,prefix,{sendGapMs=[0,0],itemGapMs=[0,0],date='2026-10-05',bridge={}}={}){
+export async function bridgeWorld(port,prefix,{sendGapMs=[0,0],itemGapMs=[0,0],date='2026-12-07',bridge={}}={}){
   const s=await fakeSite({S1:{date,students:roster(date)}}),docs=new Map(),fake=fakeCloud(docs);
   const c=new CheckHereCollector('',{page:s.page,dayGapMs:[0,0],sendGapMs});c.urls.set('2|'+date,urlOf('S1',date));
   s.page.on('dialog',d=>c.onDialog(d));// 전용 크롬을 열 때(connect)와 같은 확인창 처리

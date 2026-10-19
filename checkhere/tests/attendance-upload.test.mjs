@@ -16,7 +16,7 @@ test('times and dates use the upload text format',()=>{
  assert.equal(hhmm('09:01:59'),'0901');assert.equal(hhmm('9:05'),'0905');assert.equal(hhmm(null),'');
  assert.equal(ymd('2026-09-01'),'20260901');
  assert.deepEqual(UPLOAD_HEADERS,['훈련과정ID','훈련과정회차','훈련생성명','생년월일성별','훈련일자','입실시간','퇴실시간','외출시작시간','외출종료시간']);
- assert.equal(Object.keys(ASSIGNMENT_KEYS).length,17);
+ assert.equal(Object.keys(ASSIGNMENT_KEYS).length,16);assert.equal(ASSIGNMENT_KEYS['16'],'기아오토랜드B');assert.equal(ASSIGNMENT_KEYS['17'],undefined);
 });
 
 test('the roster sheet is read by header names and filtered to one class assignment',()=>{

@@ -6,8 +6,8 @@ import {applyVerified} from '../writeback.mjs';
 import {version} from '../identity.mjs';
 import {RULES,normalizeTime} from '../rules.mjs';
 import {createApprovalCloud} from '../cloud-approval.mjs';
-const makeRecord=patch=>{const r={id:'fixture-record',studentKey:'fixture-key',name:'가상학생',classId:'2',date:'2026-09-14',source:'live',readState:'complete',entry:'09:05:00',exit:'17:55:00',entryMemo:'',exitMemo:'',schedule:'09:00 ~ 18:00',outings:[],outingCount:0,collectedAt:'2026-09-22T01:00:00Z',...patch};return {...r,version:version(r)};};
-const makeRequest=changes=>({classId:'2',date:'2026-09-14',name:'가상학생',reason:'직원 요청 검토',changes});
+const makeRecord=patch=>{const r={id:'fixture-record',studentKey:'fixture-key',name:'가상학생',classId:'2',date:'2026-11-16',source:'live',readState:'complete',entry:'09:05:00',exit:'17:55:00',entryMemo:'',exitMemo:'',schedule:'09:00 ~ 18:00',outings:[],outingCount:0,collectedAt:'2026-11-24T01:00:00Z',...patch};return {...r,version:version(r)};};
+const makeRequest=changes=>({classId:'2',date:'2026-11-16',name:'가상학생',reason:'직원 요청 검토',changes});
 async function apply(patch,changes,{dropTime=false,latestBeforeEdit=null}={}){
  const original=makeRecord(patch),request=makeRequest(changes),approval=prepareApproval(request,original),input=proposalFromApproval({...request,status:'approved',approvedBy:APPROVER,approval});
  let current={...original},field;const values={},writes=[],log=[];

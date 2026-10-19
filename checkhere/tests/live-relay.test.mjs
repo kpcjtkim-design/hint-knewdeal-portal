@@ -12,12 +12,12 @@ import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveReque
 import {createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
 import {deletionGate} from '../../beta2-checkhere-core.mjs';
 
-const DATE='2026-10-12';
+const DATE='2026-12-14';
 test('Korean clock, live window and request tags',()=>{
-  assert.deepEqual(koreaClock(new Date('2026-10-12T00:30:00Z')),{date:'2026-10-12',time:'09:30',weekday:1});
-  assert.equal(inLiveWindow(new Date('2026-10-12T00:30:00Z')),true);
-  assert.equal(inLiveWindow(new Date('2026-10-12T10:00:00Z')),false,'19:00 KST');
-  assert.equal(inLiveWindow(new Date('2026-10-11T00:30:00Z')),false,'Sunday');
+  assert.deepEqual(koreaClock(new Date('2026-12-14T00:30:00Z')),{date:'2026-12-14',time:'09:30',weekday:1});
+  assert.equal(inLiveWindow(new Date('2026-12-14T00:30:00Z')),true);
+  assert.equal(inLiveWindow(new Date('2026-12-14T10:00:00Z')),false,'19:00 KST');
+  assert.equal(inLiveWindow(new Date('2026-12-13T00:30:00Z')),false,'Sunday');
   const r={id:'x',entry:'09:00:00',entryMemo:'',exit:null};
   assert.equal(baseTag(r,['entryMemo','entry']),baseTag(r,['entry','entryMemo']));
   assert.notEqual(baseTag(r,['entry']),baseTag({...r,entry:'09:01:00'},['entry']));
@@ -68,7 +68,7 @@ test('time deletion builds a blank for the named side, tags it and skips a side 
   assert.throws(()=>buildLiveRequest(live,form,'결석 확인',{deleteTimes:['exitMemo']}),/삭제할 시간 항목/);
   assert.throws(()=>buildLiveRequest({...live,entryKind:'PASS'},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),/계산된 1교시/);
   assert.throws(()=>buildLiveRequest({...live,enterEventId:true},{...form,entry:'',exit:'18:00'},'결석 확인',{deleteTimes:['entry']}),{message:EXIT_FIRST});
-  assert.deepEqual(buildLiveRequest({...live,enterEventId:true},{...form,entry:''},'결석 확인',{deleteTimes:['entry','exit']}).deleteTimes,['entry','exit'],'체크인한 학생이 사유를 저장한 1교시도 퇴실과 함께(두 칸만 깨끗이, 2026-10-16)');
+  assert.deepEqual(buildLiveRequest({...live,enterEventId:true},{...form,entry:''},'결석 확인',{deleteTimes:['entry','exit']}).deleteTimes,['entry','exit'],'체크인한 학생이 사유를 저장한 1교시도 퇴실과 함께(두 칸만 깨끗이, 2026-12-18)');
 });
 // 관리자 1교시(ATTEND) 삭제(2026-10-16 켬): 퇴실이 이미 비었으면(번호도 없음) 1교시만 지웁니다.
 test('with ATTEND_DELETE on, the admin 1st period is deleted and an already blank exit is skipped',()=>{
@@ -138,7 +138,7 @@ async function harness(w,port,opts={},{capabilities,addCapabilities=[]}={}){
   mkdirSync(join(import.meta.dirname,'../test-results'),{recursive:true});
   const app=createBridge({dataDir:mkdtempSync(join(import.meta.dirname,'../test-results/live-')),collector:w.adapter,port,approvalCloud:w.cloud,...(capabilities?{capabilities}:{})});
   await new Promise(r=>app.server.listen(port,'127.0.0.1',r));
-  let clock=new Date('2026-10-12T00:30:00Z');const logs=[];
+  let clock=new Date('2026-12-14T00:30:00Z');const logs=[];
   const client=createBridgeClient({base:`http://127.0.0.1:${port}`,key:app.key,fetchImpl:(u,o)=>fetch(u,{...o,headers:{...o.headers,connection:'close'}})});
   // calls: 중계가 부른 연결 프로그램 작업 이름(읽기 전용이면 'sync'뿐). 시험의 사람 승인(approveByPerson)은 client를 바로 써서 세지 않습니다.
   const calls=[],bridge={state:async c=>{const s=await client.state(c);return addCapabilities.length?{...s,capabilities:[...new Set([...(s.capabilities||[]),...addCapabilities])]}:s;},api:(name,body)=>{calls.push(name);return client.api(name,body);}};
@@ -277,7 +277,7 @@ test('the relay signal carries state, busy, queue, capabilities, build and error
 });
 test('relay status shows the bridge capabilities, build and busy flag, and the time of the last error',async()=>{
   let bridgeState={capabilities:['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1'],busy:null,records:[],cursor:'c1'};
-  const clock=new Date('2026-10-12T00:30:00Z'),seen=[];
+  const clock=new Date('2026-12-14T00:30:00Z'),seen=[];
   const relay=createLiveRelay({bridge:{state:async()=>structuredClone(bridgeState),api:async()=>{throw Error('연결 프로그램 가상 오류');}},store:{watchQueue:()=>()=>{}},user:{email:APPROVER},now:()=>clock,inWindow:()=>false});
   relay.onStatus(s=>seen.push(s));
   await relay.start({loop:false});

@@ -9,8 +9,8 @@ import {createLiveRelay,relaySignal,maskedFailure,stuckFailure} from '../../chec
 import {deletionGate,unmaskNote} from '../../beta2-checkhere-core.mjs';
 import {createCheckHereSync} from '../../beta2-checkhere-sync.mjs';
 
-const DATE='2026-10-14',CAPS=['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1','memo-default-time-v1','time-delete-v1','masked-identity-v1'];
-const rec=(()=>{const r={id:'2_x_k',classId:'2',date:DATE,name:'가상하나',phoneLast4:'0001',studentKey:'k',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'09:20:00',entry:'09:20:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,teacher:'가상담임',collectedAt:'2026-10-14T01:00:00.000Z'};r.version=version(r);return r;})();
+const DATE='2026-12-16',CAPS=['approval-current-sync-v1','live-approval-preview-v1','incremental-sync-v1','memo-default-time-v1','time-delete-v1','masked-identity-v1'];
+const rec=(()=>{const r={id:'2_x_k',classId:'2',date:DATE,name:'가상하나',phoneLast4:'0001',studentKey:'k',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'09:20:00',entry:'09:20:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,teacher:'가상담임',collectedAt:'2026-12-16T01:00:00.000Z'};r.version=version(r);return r;})();
 // 가짜 연결 프로그램: masking.header로 탭 상태를, waiting으로 가림에 막힌 쓰기 수(masking.waitingWrites)를 정합니다. 수집(sync) 말고는 부르면 안 됩니다.
 function fakeBridge({header='masked'}={}){
   const b={header,waiting:0,remaining:null,calls:[],jobs:[],syncJob:null};
@@ -35,7 +35,7 @@ const edit=()=>({id:'live-masked-000000001',...buildLiveRequest(rec,{entry:'09:2
 const approvedEdit=()=>{const r={...edit(),id:'live-approved-0000001',status:'approved',approvedBy:APPROVER};r.approval=prepareApproval(r,rec);return r;};
 
 test('while masked the relay touches no request; needsUnmask is the bridge count of blocked writes; an unmask wakes nothing',async()=>{
-  const clock={now:new Date('2026-10-14T01:00:00Z')},b=fakeBridge(),s=fakeStore([edit(),approvedEdit()]),relay=relayFor(b,s.store,clock);
+  const clock={now:new Date('2026-12-16T01:00:00Z')},b=fakeBridge(),s=fakeStore([edit(),approvedEdit()]),relay=relayFor(b,s.store,clock);
   const before=structuredClone([...s.docs]);
   b.waiting=2;await relay.start({loop:false});
   for(let i=0;i<8;i++){assert.equal(await relay.step(),'idle');clock.now=new Date(clock.now.getTime()+61000);}
@@ -63,7 +63,7 @@ test('masked errors are only classified (no attempts, no rejection): unmask-rela
   assert.deepEqual(['MASKED_CONFLICT: x','MASKED_GUARD: x','MASKED_AMBIGUOUS: x'].map(m=>[maskedFailure(Error(m)),stuckFailure(Error(m))]),[[false,true],[false,true],[false,false]]);
 });
 test('a mixed view stops the 17-class round after the first class; a one-class masked failure does not',async()=>{
-  const clock={now:new Date('2026-10-14T01:00:00Z')},b=fakeBridge(),s=fakeStore([]);
+  const clock={now:new Date('2026-12-16T01:00:00Z')},b=fakeBridge(),s=fakeStore([]);
   const relay=createLiveRelay({bridge:b.client,store:s.store,user:{email:APPROVER,getIdToken:async()=>'t'},now:()=>clock.now,sleep:()=>Promise.resolve(),pollMs:1,inWindow:()=>true,classIds:['2','3','4']});
   await relay.start({loop:false});
   b.syncJob={status:'failed',message:'MASKED_MIXED: 체크히어 화면의 가림 상태가 섞여 있어 이 날 수집을 멈췄습니다.'};
@@ -79,7 +79,7 @@ test('a mixed view stops the 17-class round after the first class; a one-class m
   relay.stop();
 });
 test('a link conflict in one class is a warning and the round goes on; an ambiguous pair is an error; nothing is rejected',async()=>{
-  const clock={now:new Date('2026-10-14T01:00:00Z')},b=fakeBridge({header:'unmasked'}),s=fakeStore([edit()]),logs=[];
+  const clock={now:new Date('2026-12-16T01:00:00Z')},b=fakeBridge({header:'unmasked'}),s=fakeStore([edit()]),logs=[];
   const relay=relayFor(b,s.store,clock,{inWindow:()=>true,log:e=>logs.push(e)});
   await relay.start({loop:false});
   b.syncJob={status:'failed',message:'MASKED_CONFLICT: 체크히어 학생 번호 연결이 예전과 달라 멈췄습니다. 수집 PC 연결 프로그램 화면에서 「연결 충돌 정리」를 누른 뒤 다시 수집해 주세요'};
@@ -92,7 +92,7 @@ test('a link conflict in one class is a warning and the round goes on; an ambigu
   relay.stop();
 });
 test('/beta2: the relay pill shows 체크히어 해제 필요 while approved writes wait for an unmask; deletion requests can still be made',()=>{
-  const now=Date.parse('2026-10-14T03:00:00Z'),relay={state:'running',at:now-60000,capabilities:['time-delete-v1'],needsUnmask:2};
+  const now=Date.parse('2026-12-16T03:00:00Z'),relay={state:'running',at:now-60000,capabilities:['time-delete-v1'],needsUnmask:2};
   assert.equal(unmaskNote(relay),'체크히어 해제 필요');assert.equal(unmaskNote({...relay,needsUnmask:0}),'');
   // 요청은 가린 동안에도 만들고 승인 대기로 둡니다(반영할 때만 사람이 해제, 2026-10-16).
   assert.deepEqual(deletionGate({features:{timeDeleteRules:true},relay,now}),{enabled:true,reasons:[],v2:false});
@@ -102,8 +102,8 @@ test('/beta2: the relay pill shows 체크히어 해제 필요 while approved wri
   const fs={doc:(db,...p)=>({path:p.join('/')}),collection:(db,...p)=>({path:p.join('/')}),where:(f,o,v)=>({f,o,v}),query:(c,...w)=>({path:c.path,w}),serverTimestamp:()=>'T',setDoc:async()=>{},
     onSnapshot:(ref,next)=>{subs.push({ref,next});return()=>{};}};
   const sync=createCheckHereSync({db:{},user:{email:'admin@example.com'},client:{},fs,withdraw:async()=>{},getRecord:()=>null,getSig:()=>'',getRow:()=>null,hasDraft:()=>false,teacherOf:()=>'',
-    now:()=>now,today:()=>'2026-10-14',setTimer:()=>0,clearTimer:()=>{},confirm:()=>true,uuid:()=>'00000000-0000-4000-8000-000000000001'});
-  return sync.setDay('2','2026-10-14').then(()=>{
+    now:()=>now,today:()=>'2026-12-16',setTimer:()=>0,clearTimer:()=>{},confirm:()=>true,uuid:()=>'00000000-0000-4000-8000-000000000001'});
+  return sync.setDay('2','2026-12-16').then(()=>{
     for(const s of subs.filter(s=>s.ref.path==='settings/checkhereRelay'))s.next({exists:()=>true,data:()=>({...relay,at:{seconds:(now-60000)/1000,nanoseconds:0}})});
     const r=sync.relay();assert.equal(r.needsUnmask,2);assert.match(r.text,/수집 PC 중계 작동 중 · 신호 1분 전 · 체크히어 해제 필요 2건/);
     // 중계 신호의 해제 상태: 가림이면 도구줄에 '체크히어 가림 · 읽기만', 전체 글은 privacy.text(title). 가림은 삭제 요청을 막지 않음

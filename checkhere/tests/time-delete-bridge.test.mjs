@@ -11,7 +11,7 @@ import {version} from '../identity.mjs';
 
 const OLD=CAPABILITIES.filter(c=>c!==TIME_DELETE_CAPABILITY);
 // 체크인한 가상 학생: 1교시는 입실에서 계산된 값(PASS), 퇴실에는 기록 번호가 있습니다.
-const base=(patch={})=>{const r={id:'fixture-bridge-del',studentKey:'fixture-bridge-key',classId:'9',date:'2026-09-10',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'08:55:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,collectedAt:'2026-09-10T09:00:00.000Z',entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true,...patch};r.version=version(r);return r;};
+const base=(patch={})=>{const r={id:'fixture-bridge-del',studentKey:'fixture-bridge-key',classId:'9',date:'2026-11-12',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'08:55:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,collectedAt:'2026-11-12T09:00:00.000Z',entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true,...patch};r.version=version(r);return r;};
 const request=(record,status,patch={})=>{const r={classId:'9',date:record.date,name:record.name,phoneLast4:'0009',reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit'],status,createdBy:APPROVER,...patch};if(status==='approved'){r.approvedBy=APPROVER;r.approval=prepareApproval(r,record,{allowAlreadyApplied:true});}return r;};
 // 가짜 체크히어 어댑터: 수정창 '삭제'를 흉내 냅니다(퇴실을 지우면 계산된 1교시도 함께 비움 — Cowork 확인 동작).
 function fakeAdapter(record){

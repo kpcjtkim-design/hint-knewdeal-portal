@@ -3,21 +3,22 @@ import assert from 'node:assert/strict';
 import {readFileSync,existsSync} from 'node:fs';
 import {join,extname} from 'node:path';
 import {loadPlaywright} from '../collector.mjs';
+import {CLASS_IDS} from '../../cohort.mjs';
 
 // /beta2 민원·이슈(2026-10-16 회의): 운영팀 처리함·홈 알림·어느 화면에서나 보이는 '답변 대기' 알림, 담임 화면 접수·답글 알림.
 // 실제 index.html을 열고 Firebase·/api/teacher-beta는 가짜로 답합니다(beta2-ui.test.mjs와 같은 방식). 사람 이름은 모두 가상입니다.
 const base=join(import.meta.dirname,'../..');
 const SDK='https://www.gstatic.com/firebasejs/10.12.5/';
-const BUNDLE={rev:5,today:'2026-10-16',days:['2026-10-15','2026-10-16'],classes:Array.from({length:17},(_,i)=>({id:String(i+1),region:'권역',course:`과정${i+1}`,teacher:`가상담임${i+1}`})),
+const BUNDLE={rev:5,today:'2026-12-18',days:['2026-12-17','2026-12-18'],classes:CLASS_IDS.map(id=>({id,region:'권역',course:`과정${id}`,teacher:`가상담임${id}`})),
  roster:[['1','가상학생','재학','']],ledgerCols:['date','cls','name','type','inT','outT','oa','ob','reason','ev','evr','memo','evApplied','check','prov','flag','sig'],ledger:[],sync:{checkedAt:Date.now()-60000,changedAt:Date.now()-3600000,last:{errors:[]}}};
-const PORTAL={cls:1,region:'권역',course:'과정1',teacher:'가상담임1',place:'본관',mainDay:'2026-10-16',days:['2026-10-16'],week:[],summary:[{k:'총원',v:1}],kids:[{name:'가상학생',status:'재학',off:''}],recs:{},checks:[],closed:'미확인',evals:[],sats:[],vocs:[],officer:{}};
+const PORTAL={cls:1,region:'권역',course:'과정1',teacher:'가상담임1',place:'본관',mainDay:'2026-12-18',days:['2026-12-18'],week:[],summary:[{k:'총원',v:1}],kids:[{name:'가상학생',status:'재학',off:''}],recs:{},checks:[],closed:'미확인',evals:[],sats:[],vocs:[],officer:{}};
 const STATE={rev:3,at:1,admin:2,open:{'1':2,'3':1},teacher:{'1':1}};
 const row=o=>({sig:'',id:o.key.startsWith('V')?o.key:'',region:'권역',course:'과정',action:'',done:'',days:'1',author:'',seen:'',thread:[],...o});
 const VOCS={statuses:['접수','처리중','완료','보류'],types:['수업·강사','시설·환경','출결','행정·서류','교육생 고충','안전','기타'],state:STATE,rows:[
- row({key:'V261016-001',date:'2026-10-16',cls:'3',type:'시설·환경',detail:'가상 강의장 냉방 고장',status:'접수',author:'teacher3@test.kr',lastBy:'담임',lastAt:'2026-10-16 10:00:00'}),
- row({key:'V261016-002',date:'2026-10-16',cls:'1',type:'행정·서류',detail:'가상 서류 질문',status:'처리중',lastBy:'운영',lastAt:'2026-10-16 11:00:00',thread:[{at:'2026-10-16 11:00',side:'운영',who:'',text:'확인 중입니다'}]}),
- row({key:'R7',sig:'s7',date:'2026-10-10',cls:'1',type:'출결',detail:'가상 예전 접수',status:'처리중',lastBy:'담임',lastAt:''}),
- row({key:'V261015-001',date:'2026-10-15',cls:'1',type:'기타',detail:'가상 끝난 건',status:'완료',lastBy:'운영',lastAt:'2026-10-15 15:00:00',seen:'2026-10-15 16:00:00',thread:[{at:'2026-10-15 15:00',side:'운영',who:'hint.kpc@gmail.com',text:'조치 완료'}]})
+ row({key:'V261016-001',date:'2026-12-18',cls:'3',type:'시설·환경',detail:'가상 강의장 냉방 고장',status:'접수',author:'teacher3@test.kr',lastBy:'담임',lastAt:'2026-12-18 10:00:00'}),
+ row({key:'V261016-002',date:'2026-12-18',cls:'1',type:'행정·서류',detail:'가상 서류 질문',status:'처리중',lastBy:'운영',lastAt:'2026-12-18 11:00:00',thread:[{at:'2026-12-18 11:00',side:'운영',who:'',text:'확인 중입니다'}]}),
+ row({key:'R7',sig:'s7',date:'2026-12-12',cls:'1',type:'출결',detail:'가상 예전 접수',status:'처리중',lastBy:'담임',lastAt:''}),
+ row({key:'V261015-001',date:'2026-12-17',cls:'1',type:'기타',detail:'가상 끝난 건',status:'완료',lastBy:'운영',lastAt:'2026-12-17 15:00:00',seen:'2026-12-17 16:00:00',thread:[{at:'2026-12-17 15:00',side:'운영',who:'hint.kpc@gmail.com',text:'조치 완료'}]})
 ]};
 const SDK_STUB=`
 window.sdkWrites=[];window.docStore={};
@@ -59,13 +60,13 @@ async function beta(run,{state=STATE}={}){
    if(url.href===SDK+'firebase-app.js')return route.fulfill({contentType:'text/javascript',body:'export const initializeApp=()=>({});'});
    if(url.href===SDK+'firebase-auth.js')return route.fulfill({contentType:'text/javascript',body:AUTH_STUB});
    if(url.hostname!=='fixture.test')return route.abort();
-   if(url.pathname==='/beta2')return route.fulfill({contentType:'text/html;charset=utf-8',body:readFileSync(join(base,'index.html'),'utf8')});
+   if(url.pathname==='/')return route.fulfill({contentType:'text/html;charset=utf-8',body:readFileSync(join(base,'index.html'),'utf8')});
    if(url.pathname==='/api/teacher-beta'){const body=route.request().postDataJSON();posts.push(body);return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data:answer(body)})});}
    const file=join(base,decodeURIComponent(url.pathname));
    if(file.startsWith(base)&&existsSync(file)&&TYPES[extname(file)])return route.fulfill({contentType:TYPES[extname(file)],body:readFileSync(file)});
    return route.fulfill({status:404,body:''});
   });
-  await page.goto('https://fixture.test/beta2');
+  await page.goto('https://fixture.test/');
   await run(page,posts);
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}
@@ -74,9 +75,9 @@ async function beta(run,{state=STATE}={}){
 const toastHas=(page,text)=>page.waitForFunction(t=>(document.getElementById('toast')?.textContent||'').includes(t),text,{timeout:5000});
 const sent=(posts,action)=>posts.filter(p=>p.action===action).map(p=>p.args[0]);
 
-test('the office sees waiting 민원·이슈 on the home card and in a pill on every /beta2 screen, opens the 처리함 and answers with a status',async()=>{
+test('the office sees waiting 민원·이슈 on the home card and in a pill on every 2기 screen, opens the 처리함 and answers with a status',async()=>{
  await beta(async(page,posts)=>{
-  await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
+  await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   const card=page.locator('.b2-alert',{hasText:'민원·이슈 답변 대기'});
   await card.locator('b',{hasText:'2'}).waitFor();
   assert.match(await card.innerText(),/진행 중 3건/);
@@ -129,7 +130,7 @@ test('a new teacher post while the office is on another screen raises the pill c
 
 test('the teacher screen shows an office-reply bar, files new 민원·이슈 as 담임 and marks a reply as read',async()=>{
  await beta(async(page,posts)=>{
-  await page.getByRole('heading',{name:'2기 베타 홈'}).waitFor();
+  await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   await page.getByRole('button',{name:'미리보기',exact:true}).click();
   const bar=page.locator('#t2Voc:not([hidden])');await bar.waitFor();
   assert.match(await bar.innerText(),/운영팀이 민원·이슈에 답글을 남겼습니다 · 1건/);

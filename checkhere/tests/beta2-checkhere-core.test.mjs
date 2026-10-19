@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import {sheetToCheckHere,liveForm,checkhereChangeKind,canDeleteTime,deleteLeaves,deletionGate,validTeacher,isAutoLedgerRequest,AUTO_TEXT,RELAY_STALE_MS,TIME_DELETE_V2_CAPABILITY,V2_NEEDED,UNMASK_ON_APPLY,relayPrivacy,privacyShort,needsUnmaskOnApply,PRIVACY_NEEDS_RELAY} from '../../beta2-checkhere-core.mjs';
 import {buildLiveRequest,isLiveRequest,tagOf,isAutoLedgerRequest as sharedAuto,AUTO_TEXT as sharedText} from '../../checkhere-live-core.mjs';
 import {memoDefaultTimes} from '../approval-core.mjs';
-import {beta2RequestData} from '../../beta2-guard-core.mjs';
 import {reasonCategory} from '../../checkhere-proposal-core.mjs';
 import {ATTEND_DELETE} from '../rules.mjs';
 
 // 가상 학생만 씁니다. 체크히어 기록 한 명(수정창까지 다 읽은 최신 기록)
-const DATE='2026-09-03';
+const DATE='2026-11-05';
 const record=(x={})=>({id:'rec-1',version:'v1',classId:'2',date:DATE,name:'가상학생',phoneLast4:'1234',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',
  rawEntry:'09:02:11',entry:'09:02:11',exit:'18:00:05',entryMemo:'',exitMemo:'',outings:[],...x});
 const run=(row,rec=record(),opts={})=>sheetToCheckHere({row,record:rec,sheetTeacher:'가상담임',date:DATE,me:'admin@example.com',...opts});
@@ -17,8 +16,9 @@ function asRequest(res,rec){
  assert.equal(res.state,'send',JSON.stringify(res));
  const req=buildLiveRequest(rec,liveForm(rec,res.changes),res.text);
  assert.deepEqual(memoDefaultTimes(req.changes,rec),{});
- const stored=beta2RequestData('checkhereRequests/b2_x',{...req,status:'pending'});
- assert.ok(isLiveRequest(stored));assert.equal(tagOf(stored.reason),tagOf(req.reason));assert.match(stored.reason,/^\[실시간 베타\] \[2기 베타\] 출결대조 자동 · /);
+ // 2기는 /beta2 저장 가드가 없어 요청이 그대로 저장됩니다('[2기 베타]' 표시 없음).
+ const stored={...req,status:'pending'};
+ assert.ok(isLiveRequest(stored));assert.equal(tagOf(stored.reason),tagOf(req.reason));assert.match(stored.reason,/^\[실시간 베타\] 출결대조 자동 · /);
  return req.changes;
 }
 
@@ -67,7 +67,7 @@ test('recognized types send only the classified memo; an unclassifiable reason o
 const EXIT_FIRST='퇴실이 남아 있으면 1교시만 지울 수 없습니다(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다). 퇴실과 함께 지워 주세요.',EXIT_KEPT=' · 퇴실도 그대로 둡니다(퇴실만 지우려면 ×)';
 const V2=`1교시 삭제는 수집 PC 프로그램 업데이트 후 가능 (${TIME_DELETE_V2_CAPABILITY})`,BOTH_LEFT='1교시·퇴실 칸은 비워지고 체크히어 입실 기록은 남을 수 있습니다';
 test('결석: none without times; held until deletion is enabled; deletes only cells with a record number',()=>{
- assert.equal(ATTEND_DELETE,true,'rules.mjs: 관리자 1교시 삭제 켬(2026-10-16)');assert.equal(V2_NEEDED,V2);
+ assert.equal(ATTEND_DELETE,true,'rules.mjs: 관리자 1교시 삭제 켬(2026-12-18)');assert.equal(V2_NEEDED,V2);
  assert.equal(run({type:'결석'},record({entry:null,rawEntry:null,exit:null})).state,'none');
  assert.match(run({type:'결석'}).notes[0],/시간 삭제는/);
  const checkedIn=record({entryKind:'PASS',exitEventId:true,enterEventId:true});
@@ -115,7 +115,7 @@ test('결석: none without times; held until deletion is enabled; deletes only c
 });
 
 test('front conditions: date range, missing or partial record, teacher, schedule, other types',()=>{
- assert.match(sheetToCheckHere({row:{type:'출석'},record:record(),date:'2026-10-23'}).notes[0],/날짜 범위/);
+ assert.match(sheetToCheckHere({row:{type:'출석'},record:record(),date:'2027-01-23'}).notes[0],/날짜 범위/);
  assert.equal(run({type:'지각',inT:'09:30'},null).state,'none');
  assert.equal(run({type:'지각',inT:'09:30'},record({readState:'partial'})).retryWhen,'record');
  assert.deepEqual(run({type:'지각',inT:'09:30'},record({teacher:'강의(1)'})).changes.entryMemo,'지각_담임:가상담임(09:30)','sheet teacher when the lecture teacher cannot be used');
@@ -127,7 +127,7 @@ test('front conditions: date range, missing or partial record, teacher, schedule
 });
 
 test('in-progress requests: my own pending auto requests are withdrawn first, anything else waits',()=>{
- const mine={id:'b2_a',status:'pending',createdBy:'admin@example.com',reason:`[실시간 베타] [2기 베타] ${AUTO_TEXT} · 지각 · x [기준:0123abcd]`};
+ const mine={id:'b2_a',status:'pending',createdBy:'admin@example.com',reason:`[실시간 베타] ${AUTO_TEXT} · 지각 · x [기준:0123abcd]`};
  const back=run({type:'출석'},record(),{active:[mine]});
  assert.deepEqual([back.state,back.withdraw],['same',['b2_a']],'지각 → 출석 again: withdraw the queued 지각 memo, nothing else to send');
  assert.equal(run({type:'조퇴',outT:'16:00'},record(),{active:[mine]}).withdraw[0],'b2_a');
@@ -155,7 +155,7 @@ test('which saves are sent automatically',()=>{
 // 사용자 결정(2026-10-16): /beta2 삭제 요청은 중계 없이도 만듭니다. 남는 관문은 규칙 게시 깃발과 이 세션의 권한 거절뿐이고,
 // 능력은 마지막 중계 신호에서(오래되거나 멈춘 신호도 됨): v2 → 두 칸, v1만 → 퇴실만, 신호·능력 목록 없음 → v2(build 20261016.2), 둘 다 없음 → 업데이트 필요.
 test('time deletion needs only the rules flag and no permission-denied; the latest relay signal of any age picks v1 or v2',()=>{
- const now=Date.parse('2026-10-14T03:00:00Z'),ON={timeDeleteRules:true},relay={state:'running',at:now-60000,capabilities:['time-delete-v1']},V2_ON={enabled:true,reasons:[],v2:true};
+ const now=Date.parse('2026-12-16T03:00:00Z'),ON={timeDeleteRules:true},relay={state:'running',at:now-60000,capabilities:['time-delete-v1']},V2_ON={enabled:true,reasons:[],v2:true};
  assert.deepEqual(deletionGate({features:ON,relay,now}),{enabled:true,reasons:[],v2:false},'v1: 퇴실만');
  assert.deepEqual(deletionGate({relay,now}),{enabled:false,reasons:['Firestore 규칙 게시 필요'],v2:false});
  assert.equal(deletionGate({features:{timeDeleteRules:'true'},relay,now}).enabled,false,'boolean true only');
@@ -184,7 +184,7 @@ test('time deletion needs only the rules flag and no permission-denied; the late
 });
 
 test('the relay privacy (no names) decays with the signal age and gives the short toolbar text',()=>{
- const now=Date.parse('2026-10-16T03:00:00Z'),relay=privacy=>({state:'running',at:now-60000,capabilities:['time-delete-v1'],privacy});
+ const now=Date.parse('2026-12-18T03:00:00Z'),relay=privacy=>({state:'running',at:now-60000,capabilities:['time-delete-v1'],privacy});
  const open=relayPrivacy(relay({state:'unmasked',leftSec:600,writable:true}),now);
  assert.deepEqual(open,{state:'unmasked',leftSec:540,writable:true,text:'체크히어 해제됨 · 9분 남음 — 수정·삭제 가능'},'신호 뒤 1분이 지남');
  assert.equal(privacyShort(open),'체크히어 해제됨 · 9분 남음');

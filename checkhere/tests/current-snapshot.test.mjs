@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
-const record=(id='a',extra={})=>({id,classId:'2',date:'2026-09-03',version:'v1',source:'live',readState:'complete',collectedAt:'2026-09-03T01:00:00Z',entry:'09:00:00',entryMemo:'',...extra});
+const record=(id='a',extra={})=>({id,classId:'2',date:'2026-11-05',version:'v1',source:'live',readState:'complete',collectedAt:'2026-11-05T01:00:00Z',entry:'09:00:00',entryMemo:'',...extra});
 function fixture({legacy=[],loseResponse=false}={}){
  const docs=new Map(),counts={read:0,write:0,legacy:0};
  const save=createCurrentSaver({
@@ -21,13 +21,13 @@ test('50 new collections remain one document; blank memo updates are verified',a
 });
 test('partial resave preserves other students and imports legacy on first explicit save',async()=>{
  const f=fixture({legacy:[record('b')]});await f.save([record()],{id:'job'});
- await f.save([record('a',{collectedAt:'2026-09-03T02:00:00Z',version:'v2'})],{id:'job'});
+ await f.save([record('a',{collectedAt:'2026-11-05T02:00:00Z',version:'v2'})],{id:'job'});
  assert.equal(f.docs.values().next().value.records.length,2);assert.equal(f.counts.legacy,1);
 });
 test('lost response reconciles from server; older and conflicting writes cannot overwrite',async()=>{
- const f=fixture({loseResponse:true});assert.equal((await f.save([record('a',{collectedAt:'2026-09-03T02:00:00Z'})],{id:'job'})).verified,true);
+ const f=fixture({loseResponse:true});assert.equal((await f.save([record('a',{collectedAt:'2026-11-05T02:00:00Z'})],{id:'job'})).verified,true);
  await assert.rejects(f.save([record()],{id:'job'}),/lost response|서버 저장값/);
- assert.throws(()=>mergeCurrentRecords([record()],[record('a',{entryMemo:'different'})],'2','2026-09-03'),/동일 수집/);
+ assert.throws(()=>mergeCurrentRecords([record()],[record('a',{entryMemo:'different'})],'2','2026-11-05'),/동일 수집/);
 });
 test('unconfirmed write and duplicate student fail with original PC data retained',async()=>{
  const save=createCurrentSaver({read:async()=>null,readLegacy:async()=>[],commit:async()=>{throw Error('offline');}});

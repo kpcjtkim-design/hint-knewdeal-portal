@@ -59,45 +59,18 @@ test('database quota exhaustion is shown once without an endless reader retry',a
   assert.equal(reads,1);assert.equal(pauses,0);
  }finally{globalThis.fetch=original;}
 });
-test('both reader endpoints authenticate every request and never serve cached data to an unauthorized user',async()=>{
- const original=globalThis.fetch;let role='ADMIN',bridgeCalls=0;
+// 2기: 1기 운영총괄 리더 두 곳(/api/attendance-reader·/api/attendance-colors)은 닫혀 있어 로그인·리더 호출 없이 410만 답합니다.
+test('both 1기 reader endpoints are closed on the 2기 site and never call the bridge',async()=>{
+ const original=globalThis.fetch;let calls=0;
  const call=async(handler,body,method='POST')=>{const res={headers:{},setHeader(k,v){this.headers[k]=v;},status(n){this.code=n;return this;},json(value){this.body=value;return this;}};await handler({method,body},res);return res;};
  try{
-  globalThis.fetch=async url=>{
-   if(String(url).includes('accounts:lookup'))return Response.json({users:[{email:'fixture-admin@example.com'}]});
-   if(String(url).includes('firestore.googleapis.com'))return Response.json({fields:{role:{stringValue:role},active:{booleanValue:true}}});
-   bridgeCalls++;return Response.json(valid);
-  };
-  for(const handler of [readerHandler,colorsHandler]){
-   role='ADMIN';const result=await call(handler,{idToken:'fixture',classId:'2',allowCache:true});assert.equal(result.code,200);assert.equal(result.headers['cache-control'],'no-store');
-   const count=bridgeCalls;role='TEACHER';assert.equal((await call(handler,{idToken:'fixture',classId:'2',allowCache:true})).code,403);assert.equal(bridgeCalls,count);
-   assert.equal((await call(handler,{classId:'2'})).code,401);assert.equal(bridgeCalls,count);
-   role='ADMIN';assert.equal((await call(handler,{idToken:'fixture',classId:'18'})).code,400);assert.equal(bridgeCalls,count);
-   assert.equal((await call(handler,{},'GET')).code,405);
+  globalThis.fetch=async()=>{calls++;return Response.json(valid);};
+  for(const handler of [readerHandler,colorsHandler])for(const [body,method] of [[{idToken:'fixture',classId:'2',allowCache:true},'POST'],[{classId:'2'},'POST'],[{},'GET']]){
+   const r=await call(handler,body,method);assert.equal(r.code,410);assert.equal(r.body.code,'COHORT2_CLOSED');assert.equal(r.headers['cache-control'],'no-store');
   }
+  assert.equal(calls,0);
  }finally{globalThis.fetch=original;}
+
 });
 
-test('registered legacy administrators can read without an active field; disabled and non-admin profiles remain blocked',async()=>{
- const original=globalThis.fetch;let fields,status=200,bridgeCalls=0;
- const call=async handler=>{const res={setHeader(){},status(n){this.code=n;return this;},json(body){this.body=body;return this;}};await handler({method:'POST',body:{idToken:'fixture',classId:'2'}},res);return res;};
- try{
-  globalThis.fetch=async url=>{
-   if(String(url).includes('accounts:lookup'))return Response.json({users:[{email:'legacy-admin@example.com'}]});
-   if(String(url).includes('firestore.googleapis.com'))return Response.json(status===200?{fields}:{error:{}},{status});
-   bridgeCalls++;return Response.json(valid);
-  };
-  for(const handler of [readerHandler,colorsHandler]){
-   status=200;fields={role:{stringValue:'ADMIN'}};
-   assert.equal((await call(handler)).code,200,'same legacy account semantics as portal login');
-   for(const profile of [
-    {role:{stringValue:'ADMIN'},active:{booleanValue:false}},
-    {role:{stringValue:'ADMIN'},active:{stringValue:'true'}},
-    {role:{stringValue:'TEACHER'}},{}
-   ]){fields=profile;const before=bridgeCalls;assert.equal((await call(handler)).code,403);assert.equal(bridgeCalls,before);}
-   for(const [upstream,expected] of [[401,401],[403,403],[404,403],[429,429],[500,503]]){
-    status=upstream;const before=bridgeCalls;assert.equal((await call(handler)).code,expected);assert.equal(bridgeCalls,before);if(upstream===429)assert.equal((await call(handler)).body.retryable,false);
-   }
-  }
- }finally{globalThis.fetch=original;}
-});
+// 1기 관리자 계정 판정(운영총괄 리더) 시험은 1기(cohort1 브랜치)에 남았습니다. 2기 리더는 2기 출결원장 기준으로 다시 만들 때 시험을 더합니다.

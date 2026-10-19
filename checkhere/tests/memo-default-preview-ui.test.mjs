@@ -16,7 +16,7 @@ async function fixture(page,{modern}){
   `});
   if(path==='')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">
    import{mountCheckHereRequests}from'/checkhere-requests.mjs';
-   const common={classId:'2',date:'2026-09-03',reason:'가상 검증 사유',status:'pending',createdAt:{seconds:1}};
+   const common={classId:'2',date:'2026-11-05',reason:'가상 검증 사유',status:'pending',createdAt:{seconds:1}};
    window.rows=[{...common,id:'memo-entry',name:'가상입실',changes:{entryMemo:'입실 사유 수정'}},{...common,id:'memo-exit',name:'가상퇴실',changes:{exitMemo:'퇴실 사유 수정'}}];
    window.records=[{name:'가상입실',entry:'',exit:'17:45:23',entryMemo:'기존 입실 사유',exitMemo:'유지할 퇴실 사유'},{name:'가상퇴실',entry:'08:55:07',exit:'',entryMemo:'유지할 입실 사유',exitMemo:'기존 퇴실 사유'}].map((r,i)=>({...common,...r,id:'record-'+i,version:'v1',teacher:'홍길동',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',outings:[]}));
    window.transactions=0;window.approvals=[];window.calls=[];const jobs=[];

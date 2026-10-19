@@ -20,19 +20,19 @@ const fixture=()=>({reads:0,writes:0,queries:[],legacy:[],values:{}});
 const user={email:'admin@example.com'};
 test('100 concurrent identical summary requests coalesce to one bounded current-record query',async()=>{
  const {syncAttendanceSummary}=await moduleWithMock('attendance-derived-store.mjs'),db=fixture();
- const sheet={attendance:[['이름','','','','8/27','8/28'],['가상','','','','출석','조퇴']]};
+ const sheet={attendance:[['이름','','','','10/29','10/30'],['가상','','','','출석','조퇴']]};
  await Promise.all(Array.from({length:100},()=>syncAttendanceSummary(db,user,'2',sheet)));
  assert.equal(db.writes,1);assert.equal(db.queries.length,2);assert.equal(db.reads,2);assert.deepEqual(db.legacy,[]);
  await syncAttendanceSummary(db,user,'2',sheet);assert.equal(db.writes,1,'same derived result must not write again');
 });
 test('summary queries all current dates once and falls back only for unmigrated recognized days',async()=>{
  const {syncAttendanceSummary}=await moduleWithMock('attendance-derived-store.mjs'),db=fixture();
- db.values['classes/2/checkhereCurrent/2026-08-27']={date:'2026-08-27',records:[]};
- const sheet={attendance:[['이름','','','','8/27','8/28','8/31'],['가상','','','','인정출석','인정출석','출석']]};
+ db.values['classes/2/checkhereCurrent/2026-10-29']={date:'2026-10-29',records:[]};
+ const sheet={attendance:[['이름','','','','10/29','10/30','8/31'],['가상','','','','인정출석','인정출석','출석']]};
  await syncAttendanceSummary(db,user,'2',sheet);
  const q=db.queries.find(q=>q.path.endsWith('/checkhereCurrent'));
- assert.deepEqual(q.filters,[['date','>=','2026-07-27'],['date','<=','2026-09-23']]);
- assert.deepEqual(db.legacy,['2026-08-28']);assert(!db.queries.some(q=>q.path.endsWith('/checkhereSnapshots')));
+ assert.deepEqual(q.filters,[['date','>=','2026-10-28'],['date','<=','2026-11-25']]);
+ assert.deepEqual(db.legacy,['2026-10-30']);assert(!db.queries.some(q=>q.path.endsWith('/checkhereSnapshots')));
 });
 test('identical survey results skip writes even when sync timestamp changes; actual change writes once',async()=>{
  const {createSurveyStore}=await moduleWithMock('survey-store.mjs'),db=fixture(),store=createSurveyStore(db,user,{canManage:true});
@@ -46,9 +46,9 @@ test('identical survey results skip writes even when sync timestamp changes; act
 
 test('concurrent color-only changes update the class summary, while unchanged evidence skips writes',async()=>{
  const {syncAttendanceSummary}=await moduleWithMock('attendance-derived-store.mjs'),db=fixture();
- db.values['classes/2/checkhereCurrent/2026-08-27']={date:'2026-08-27',records:[]};
- const sheet=color=>({attendance:[['이름','','','','8/27'],['가상','','','','인정출석']],attendanceBackgrounds:[[],['','','','',color]]});
+ db.values['classes/2/checkhereCurrent/2026-10-29']={date:'2026-10-29',records:[]};
+ const sheet=color=>({attendance:[['이름','','','','10/29'],['가상','','','','인정출석']],attendanceBackgrounds:[[],['','','','',color]]});
  await Promise.all([syncAttendanceSummary(db,user,'2',sheet('#ffffff')),syncAttendanceSummary(db,user,'2',sheet('#ffff00'))]);
- assert.equal(db.values['attendanceBetaSummaries/2'].students[0].history['2026-08-27'].evidenceStatus,'확인');assert.equal(db.writes,2);
+ assert.equal(db.values['attendanceBetaSummaries/2'].students[0].history['2026-10-29'].evidenceStatus,'확인');assert.equal(db.writes,2);
  await syncAttendanceSummary(db,user,'2',sheet('#ffff00'));assert.equal(db.writes,2);
 });

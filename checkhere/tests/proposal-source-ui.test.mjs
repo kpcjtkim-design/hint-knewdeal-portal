@@ -16,21 +16,21 @@ test('automatic recognized types share display and request validation, including
     export async function getDocs(){return{docs:Object.entries(window.docs).filter(([k])=>k.startsWith('checkhereRequests/')).map(([k,v])=>({id:k.split('/')[1],data:()=>v}))};}
     export async function runTransaction(db,fn){return fn({get:getDoc,set:(r,v)=>{window.docs[r.path]=v;},update:(r,v)=>Object.assign(window.docs[r.path],v)});}
    `});
-   if(u.pathname==='/api/attendance-reader')return route.fulfill({json:await page.evaluate(()=>({ok:true,attendance:[['이름','','','','9/14'],['가상학생','','','',window.sheetStatus]],reasons:[['','','','','9/14'],['','','','',window.sheetRaw]]}))});
+   if(u.pathname==='/api/attendance-reader')return route.fulfill({json:await page.evaluate(()=>({ok:true,attendance:[['이름','','','','11/16'],['가상학생','','','',window.sheetStatus]],reasons:[['','','','','11/16'],['','','','',window.sheetRaw]]}))});
    if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">
     import{createProposalReview,validateSheetSource,validateLinkedRequest}from'/checkhere-proposals.mjs';
     import{deriveRecognized}from'/attendance-derived-core.mjs';
     const user={email:'staff@example.com',getIdToken:async()=>'fixture'},s={name:'가상학생',rowIndex:0};
     window.sheetStatus='인정출석';window.sheetRaw='가상학생: 병원';
-    window.record={id:'fixture-record',version:'v1',classId:'2',date:'2026-09-14',name:s.name,teacher:'홍길동',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'12:56:01',exit:'17:50:04',entryMemo:'',exitMemo:'',outings:[]};
-    window.context={classId:'2',date:'2026-09-14',studentKey:'0_가상학생',name:s.name,status:'인정지각',reason:'병원',raw:window.sheetRaw,record:window.record,excursion:false};
+    window.record={id:'fixture-record',version:'v1',classId:'2',date:'2026-11-16',name:s.name,teacher:'홍길동',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'12:56:01',exit:'17:50:04',entryMemo:'',exitMemo:'',outings:[]};
+    window.context={classId:'2',date:'2026-11-16',studentKey:'0_가상학생',name:s.name,status:'인정지각',reason:'병원',raw:window.sheetRaw,record:window.record,excursion:false};
     const root=document.querySelector('#host').attachShadow({mode:'open'});root.innerHTML='<div id="rows"></div>';
     const render=()=>{root.querySelector('#rows').innerHTML=review.html(s,'entryMemo');review.bind([s]);};
     const review=createProposalReview({db:{},user,root,getContext:()=>context,render,showErr:e=>{window.problem=e.message},hasUnsavedReason:()=>false});
     window.validate=async()=>{try{await validateSheetSource({},user,context);return'ok';}catch(e){return e.message;}};
-    window.display=()=>deriveRecognized(sheetStatus,docs['settings/attendanceBeta_2_2026-09-14']?.students?.['0_가상학생'],context.record,{excursion:context.excursion}).status;
+    window.display=()=>deriveRecognized(sheetStatus,docs['settings/attendanceBeta_2_2026-11-16']?.students?.['0_가상학생'],context.record,{excursion:context.excursion}).status;
     window.approvalCheck=async()=>{const [path,r]=Object.entries(docs).find(([k])=>k.startsWith('checkhereRequests/'));try{await validateLinkedRequest({},user,{id:path.split('/')[1],...r},record);return'ok';}catch(e){return e.message;}};
-    await review.load('2','2026-09-14');render();
+    await review.load('2','2026-11-16');render();
    </script>`});
    const path=u.pathname.slice(1);if(['checkhere-proposals.mjs','attendance-derived-core.mjs','checkhere-request-actions.mjs','attendance-reason-parser.mjs','attendance-io.mjs','attendance-beta-core.mjs','checkhere/approval-core.mjs','checkhere/rules.mjs','checkhere-proposal-core.mjs'].includes(path))return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,path),'utf8')});
    return route.abort();
@@ -73,11 +73,11 @@ test('automatic recognized types share display and request validation, including
    {status:'인정조퇴',meta:{sheetStatus:'인정출석',portalStatus:'인정조퇴'},record:{entry:'12:56:01',exit:'15:39:59'}},
    {status:'출석',raw:'출석',record:{entry:'09:00:00',exit:'18:00:00'}}
   ]){
-   await page.evaluate(s=>{context.record={...record,outings:[],outingCount:0,exception:null,...s.record};context.excursion=!!s.excursion;context.status=s.status;sheetStatus=s.raw||'인정출석';docs['settings/attendanceBeta_2_2026-09-14']={students:{'0_가상학생':s.meta||{}}};},scenario);
+   await page.evaluate(s=>{context.record={...record,outings:[],outingCount:0,exception:null,...s.record};context.excursion=!!s.excursion;context.status=s.status;sheetStatus=s.raw||'인정출석';docs['settings/attendanceBeta_2_2026-11-16']={students:{'0_가상학생':s.meta||{}}};},scenario);
    assert.equal(await page.evaluate(()=>window.display()),scenario.status);
    assert.equal(await page.evaluate(()=>window.validate()),'ok',JSON.stringify(scenario));
   }
-  await page.evaluate(()=>{context.record={...record};context.status='인정지각';sheetStatus='인정출석';docs['settings/attendanceBeta_2_2026-09-14']={students:{'0_가상학생':{sheetStatus:'인정출석',portalStatus:'인정조퇴'}}};});
+  await page.evaluate(()=>{context.record={...record};context.status='인정지각';sheetStatus='인정출석';docs['settings/attendanceBeta_2_2026-11-16']={students:{'0_가상학생':{sheetStatus:'인정출석',portalStatus:'인정조퇴'}}};});
   assert.match(await page.evaluate(()=>window.validate()),/바뀌었습니다/,'a newer manual classification must still block');
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}

@@ -20,13 +20,13 @@ test('request dialog survives delayed reads, closure, unknown commits and reload
     assert.equal(route.request().postDataJSON().fresh,true,'approval source checks bypass display cache');
     if(readerMode==='cancel-read'){await new Promise(r=>setTimeout(r,1000));return route.fulfill({json:{ok:false}}).catch(()=>{});}
     if(readerMode==='bad-reader')return route.fulfill({status:502,contentType:'text/html',body:'<html>upstream</html>'});
-    return route.fulfill({json:{ok:true,attendance:[['이름','','','','9/3'],['가상학생','','','','출석']],reasons:[['','','','','9/3'],['','','','','']]}});
+    return route.fulfill({json:{ok:true,attendance:[['이름','','','','11/5'],['가상학생','','','','출석']],reasons:[['','','','','11/5'],['','','','','']]}});
    }
    if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">
     import{createProposalReview}from'/checkhere-proposals.mjs';window.txMode=localStorage.getItem('nextTxMode')||'${mode}';
-    const s={name:'가상학생',rowIndex:0},record={id:'fixture-record',version:'v1',classId:'2',date:'2026-09-03',name:s.name,phoneLast4:'1234',teacher:'담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'',outings:[]},root=document.querySelector('#host').attachShadow({mode:'open'});root.innerHTML='<div id="rows"></div>';
+    const s={name:'가상학생',rowIndex:0},record={id:'fixture-record',version:'v1',classId:'2',date:'2026-11-05',name:s.name,phoneLast4:'1234',teacher:'담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'',outings:[]},root=document.querySelector('#host').attachShadow({mode:'open'});root.innerHTML='<div id="rows"></div>';
     function render(){root.querySelector('#rows').innerHTML=review.html(s,'entryMemo');review.bind([s]);}
-    const review=createProposalReview({db:{},user:{email:'fixture@example.com',getIdToken:async()=>'fixture'},root,getContext:()=>({classId:'2',date:'2026-09-03',name:s.name,status:'출석',reason:'',raw:'',record}),render,showErr:e=>{window.problem=e.message},hasUnsavedReason:()=>false,timeouts:{source:400,read:150,write:200}});window.review=review;await review.load('2','2026-09-03');render();
+    const review=createProposalReview({db:{},user:{email:'fixture@example.com',getIdToken:async()=>'fixture'},root,getContext:()=>({classId:'2',date:'2026-11-05',name:s.name,status:'출석',reason:'',raw:'',record}),render,showErr:e=>{window.problem=e.message},hasUnsavedReason:()=>false,timeouts:{source:400,read:150,write:200}});window.review=review;await review.load('2','2026-11-05');render();
    </script>`});
    const file=u.pathname.slice(1);if(u.hostname==='fixture.test'&&/^(?:[\w.-]+\/)*[\w.-]+\.(?:mjs|css|json)$/.test(file)&&!file.split('/').includes('..')&&existsSync(join(base,file)))return route.fulfill({contentType:file.endsWith('.css')?'text/css':file.endsWith('.json')?'application/json':'text/javascript',body:readFileSync(join(base,file),'utf8')});return route.abort();
   });
