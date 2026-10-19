@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {mkd
 import {APPROVER,prepareApproval} from '../approval-core.mjs';
 test('loopback API authentication, idempotency and snapshot persistence',async()=>{
   const dataDir=mkdtempSync(join(import.meta.dirname,'../test-results/bridge-'));
-  let writes=0,r={id:'fake',classId:'2',date:'2026-10-29',name:'가상학생',studentKey:'fake',teacher:'최유정',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]};r.version=version(r);
+  let writes=0,r={id:'fake',classId:'2',date:'2026-11-05',name:'가상학생',studentKey:'fake',teacher:'최유정',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]};r.version=version(r);
   const adapter={loggedIn:async()=>true,requireLogin:async()=>{},read:async()=>structuredClone(r),write:async(_,f,v)=>{writes++;r[f+'Memo']=v.memo;}};
   const request={classId:'2',date:r.date,name:r.name,phoneLast4:'',changes:{entryMemo:'시험'},reason:'가상 시험 근거',status:'approved',approvedBy:APPROVER};request.approval=prepareApproval(request,r);
   let finishes=0;const approvalCloud={verify:async token=>{if(token!=='fixture-admin')throw Error('관리자 권한 없음');},get:async()=>({data:structuredClone(request)}),claim:async()=>{},finish:async(id,token,attempt,job)=>{finishes++;assert.equal(job.current.entryMemo,'시험');return{platformSaved:true};}};

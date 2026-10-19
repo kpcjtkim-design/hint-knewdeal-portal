@@ -169,7 +169,7 @@ export function fakeCloud(docs,{verifyToken='fixture-admin'}={}){
 }
 // 가짜 체크히어 + 진짜 연결 프로그램(수집기·서버) + 가짜 승인 저장소. 먼저 한 번 수집해 학생 번호 연결을 배웁니다(가상 학생만, 다른 포트).
 // approve(id,이름,changes,deleteTimes?): 그 학생의 지금 저장본으로 승인된 요청을 만듭니다. apply(id,{writer,...}): /api/apply.
-export async function bridgeWorld(port,prefix,{sendGapMs=[0,0],itemGapMs=[0,0],date='2026-11-02',bridge={}}={}){
+export async function bridgeWorld(port,prefix,{sendGapMs=[0,0],itemGapMs=[0,0],date='2026-12-07',bridge={}}={}){
   const s=await fakeSite({S1:{date,students:roster(date)}}),docs=new Map(),fake=fakeCloud(docs);
   const c=new CheckHereCollector('',{page:s.page,dayGapMs:[0,0],sendGapMs});c.urls.set('2|'+date,urlOf('S1',date));
   s.page.on('dialog',d=>c.onDialog(d));// 전용 크롬을 열 때(connect)와 같은 확인창 처리

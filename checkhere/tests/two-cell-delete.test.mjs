@@ -159,12 +159,12 @@ test('the write gate (K4) on every path: masked or under 150 s never claims or s
   }finally{await W.close();}
 });
 
-test('/api/status and /api/state carry the privacy line (no names); the bridge announces time-delete-v2 and privacy-state-v1 with build 20261016.2',async()=>{
+test('/api/status and /api/state carry the privacy line (no names); the bridge announces time-delete-v2 and privacy-state-v1 with the 2기 build',async()=>{
   const W=await bridgeWorld(18980,'two-cell-status-');
   try{
-    assert.equal(BUILD,'20261016.2');
+    assert.equal(BUILD,'2기-20261019.1');
     let s=await W.get('status');
-    assert.equal(s.build,'20261016.2');for(const c of [TIME_DELETE_V2_CAPABILITY,PRIVACY_STATE_CAPABILITY])assert.ok(s.capabilities.includes(c),c);
+    assert.equal(s.build,BUILD);for(const c of [TIME_DELETE_V2_CAPABILITY,PRIVACY_STATE_CAPABILITY])assert.ok(s.capabilities.includes(c),c);
     assert.equal(s.privacy.state,'unmasked');assert.equal(s.privacy.writable,true);assert.ok(s.privacy.leftSec>500&&s.privacy.leftSec<=570,String(s.privacy.leftSec));assert.match(s.privacy.text,/^체크히어 해제됨 · 9분 남음 — 수정·삭제 가능$/);
     const state=await W.state();assert.deepEqual(Object.keys(state.privacy).sort(),['leftSec','state','text','writable']);assert.equal(state.privacy.state,'unmasked');
     for(const text of [JSON.stringify(s),JSON.stringify(state.privacy)])for(const v of ['나가상','가상하나','att-','0001'])assert.ok(!text.includes(v),v);
@@ -192,7 +192,7 @@ test('the bridge keeps reading the masking header while idle (about every 15 s, 
 test('after a person unmasks, link learning waits a minute after any write attempt even when no write is waiting (the portal no longer sends while masked), so the approver is not pushed out',async()=>{
   let header='masked',collects=0;const at=()=>Date.now();
   const adapter={page:{isClosed:()=>false},loggedIn:async()=>true,requireLogin:async()=>{},collect:async()=>{collects++;},
-    maskingState:async()=>header==='masked'?{view:'masked',header,remaining:null,unlinked:1,classes:[{classId:'2',date:'2026-11-02',count:1}]}:{view:'plain',header,remaining:600,unlinked:1,classes:[{classId:'2',date:'2026-11-02',count:1}]}};
+    maskingState:async()=>header==='masked'?{view:'masked',header,remaining:null,unlinked:1,classes:[{classId:'2',date:'2026-12-07',count:1}]}:{view:'plain',header,remaining:600,unlinked:1,classes:[{classId:'2',date:'2026-12-07',count:1}]}};
   const cloud={verify:async()=>{},get:async()=>{throw Error('가상: 요청 없음');}};
   const app=createBridge({dataDir:mkdtempSync(join(import.meta.dirname,'../test-results/learn-yield-')),collector:adapter,port:18988,approvalCloud:cloud,learnTickMs:20,privacyPollMs:20,writeGapMs:700});
   await new Promise(r=>app.server.listen(18988,'127.0.0.1',r));
