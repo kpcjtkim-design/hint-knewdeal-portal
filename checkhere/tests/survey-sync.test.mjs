@@ -34,7 +34,7 @@ function fixture(){
  const wrap=path=>documents.has(path)?{path,data:documents.get(path),updateTime:'version'}:null;
  const store={metrics,async get(path){metrics.reads++;return wrap(path);},async batch(p){paths.push(...p);metrics.reads+=p.length;return new Map(p.filter(x=>documents.has(x)).map(x=>[x,wrap(x)]));},async query(){return[];},async list(prefix){return [...documents.keys()].filter(x=>x.startsWith(prefix+'/')).map(wrap);},async save(path,data){metrics.writes++;writes.push(path);documents.set(path,data);}};
  let responses=[{name:'가',classId:'1반',timestamp:'2026-11-18',scores:[]}];
- const input={store,classId:'1',slot:'2026-11-18T18:00+09:00',now:new Date('2026-11-18T09:00:00Z'),catalog:{events:[{id:'e1',classId:'1',date:'2026-11-17',title:'SW 테스팅',url:''}],responseSources:[{id:'s1',title:'임베디드AI-HW(SW 테스팅)',sheetUrl:'https://docs.google.com/spreadsheets/d/fixture/edit'}]},readSheet:async()=>({ok:true,attendance:[['성명','','','','09/14','09/15'],['가','','','','출석','결석'],['나','','','','결석','결석']]}),reader:{responses:async()=>responses}};
+ const input={store,classId:'1',slot:'2026-11-18T18:00+09:00',now:new Date('2026-11-18T09:00:00Z'),catalog:{events:[{id:'e1',classId:'1',date:'2026-11-17',title:'SW 테스팅',url:''}],responseSources:[{id:'s1',title:'임베디드AI-HW(SW 테스팅)',sheetUrl:'https://docs.google.com/spreadsheets/d/fixture/edit'}]},readSheet:async()=>({ok:true,attendance:[['성명','','','','11/16','11/17'],['가','','','','출석','결석'],['나','','','','결석','결석']]}),reader:{responses:async()=>responses}};
  return {documents,writes,paths,input,setResponses:r=>responses=r};
 }
 test('central worker reuses participation rules; changed-only writes; fresh response edits update counts',async()=>{
@@ -47,7 +47,7 @@ test('central worker reuses participation rules; changed-only writes; fresh resp
 test('manual core and deployed scheduler resolve duplicate names from class settings without extra reads',async()=>{
  for(const worker of [syncClassWorker]){
   const f=fixture();f.documents.get('classes/1').surveyDuplicateIdentities=[{name:'동명(98년생)',phoneLast4:'0012'},{name:'동명(01년생)',phoneLast4:'0034'}];
-  f.input.readSheet=async()=>({attendance:[['성명','','','','09/14','09/15'],['동명(98년생)','','','','출석','출석'],['동명(01년생)','','','','출석','출석']]});
+  f.input.readSheet=async()=>({attendance:[['성명','','','','11/16','11/17'],['동명(98년생)','','','','출석','출석'],['동명(01년생)','','','','출석','출석']]});
   f.setResponses([{name:'동명',classId:'1반',phoneLast4:'0012',timestamp:'2026-11-18',scores:[{id:'q1',kind:'overall',title:'만족도',value:5}]}]);
   const result=await worker(f.input),summary=f.documents.get('surveyBetaSummaries/1/surveys/e1');
   assert.equal(result.reads,4);assert.equal(summary.answered[0].name,'동명(98년생)');assert.equal(summary.missing[0].name,'동명(01년생)');assert.equal(summary.scores.overallAverage,5);

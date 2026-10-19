@@ -20,7 +20,7 @@ test('evidence filters fixed periods, recognized statuses, unknowns and future r
  const data={'1':{students:[{id:'a',name:'동명',history:{'2026-10-28':h(),'2026-10-29':h('반려'),'2026-11-03':h('확인'),'2026-11-04':h('미해당'),'2026-11-05':h('미확인'),'2026-12-03':h()}}]},'2':{students:[{id:'b',name:'동명',history:{'2026-10-30':h(),'2026-10-31':{raw:'출석',status:'출석',evidenceStatus:'미제출'}}}]},'3':null};
  const r=evidenceReport(data,{from:'2026-10-29',to:'2027-01-22',today:'2026-11-24'});
  assert.equal(r.rows.length,2);assert.equal(r.students,2);assert.equal(r.unknown.length,1);assert.deepEqual(r.missing,['3']);
- assert.equal(evidenceReport(data,{from:'2026-10-29',status:'반려'}).rows.length,1);
+ assert.equal(evidenceReport(data,{from:'2026-10-29',status:'반려',to:'2027-01-22',today:'2026-11-24'}).rows.length,1);
  const message=evidenceMessage(r,{from:'2026-10-29',to:'2026-11-24'});assert.match(message,/\[1반\]/);assert.match(message,/\[2반\]/);assert(!message.includes('2026-11-05'));
 });
 test('conducted dates follow changed timetable and explicit portal date',()=>{
@@ -30,13 +30,13 @@ test('conducted dates follow changed timetable and explicit portal date',()=>{
 });
 test('two conducted weeks gather classes together once, include late answers and duplicates, remove all contact details',async()=>{
  const calls=[],reads=[],ids=[];
- const r=await collectSurveyRaw({reader:{raw:async url=>{calls.push(url);return raw;}},catalog,classes,readSchedule:async cid=>{reads.push(cid);return schedules[cid];},readIdentities:async cid=>{ids.push(cid);return identities[cid]||[];},...weekRange(6,7),today:'2026-11-24'});
+ const r=await collectSurveyRaw({reader:{raw:async url=>{calls.push(url);return raw;}},catalog,classes,readSchedule:async cid=>{reads.push(cid);return schedules[cid];},readIdentities:async cid=>{ids.push(cid);return identities[cid]||[];},...weekRange(2,3),today:'2026-11-24'});
  assert.equal(r.failed,0);assert.equal(r.count,4);assert.equal(r.sourceCount,1);assert.equal(calls.length,1);assert.deepEqual(reads,['1','2','3']);assert.deepEqual(ids,['1','2']);
  const rows=r.tables[0][1];assert.equal(rows.filter(r=>r[0]==='SW 테스팅').length,1);assert(rows.some(r=>r[1]==='동명이(98년생)'));assert(rows.some(r=>r[1]==='동명이(00년생)'));assert(rows.some(r=>r[3]===5&&r[4]===10));assert.equal(rows.filter(r=>r[1]==='보통').length,2);assert(!rows.some(r=>r.includes('제외')));
  const text=JSON.stringify(r.tables);assert(!text.includes('@'));assert(!text.includes('010-'));assert(!text.includes('1234'));assert(!rows.some(r=>r.includes('전화번호')||r.includes('이메일 주소')));assert(text.includes('=원문'));
 });
 test('one week includes only classes conducting that week even if another class submitted then',async()=>{
- const r=await collectSurveyRaw({reader:{raw:async()=>raw},catalog,classes,readSchedule:async cid=>schedules[cid],readIdentities:async cid=>identities[cid]||[],...weekRange(6,6),today:'2026-11-24'});assert.equal(r.count,2);
+ const r=await collectSurveyRaw({reader:{raw:async()=>raw},catalog,classes,readSchedule:async cid=>schedules[cid],readIdentities:async cid=>identities[cid]||[],...weekRange(2,2),today:'2026-11-24'});assert.equal(r.count,2);
 });
 test('ambiguous classes and homonyms stay reviewable and contact fields never enter review',()=>{
  const r=rawSurveyBlock({...raw,rows:[{rowNumber:2,values:['date','동명이','1반','','',5,10,'']},{rowNumber:3,values:['date','누군가','알수없음','010-4444-9999','x@example.test',5,10,'']} ]},{title:source.title,contexts:[{classId:'1'}],identities});

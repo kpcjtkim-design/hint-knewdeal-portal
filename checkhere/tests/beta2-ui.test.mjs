@@ -12,7 +12,7 @@ const row=(date,cls,name,type,o={})=>COLS.map(k=>({date,cls,name,type,inT:'',out
 const BUNDLE={rev:5,today:'2026-11-05',days:['2026-10-29','2026-10-30','2026-11-02','2026-11-03','2026-11-04','2026-11-05','2026-11-06'],
  classes:COHORT_CLASSES.map((c,i)=>({id:c.id,region:c.region,course:c.course,teacher:i===0?'김지아':''})),
  roster:[['1','고다원','재학',''],['1','김동진','재학',''],['1','한수빈','중도포기','2026-11-04'],['2','이경수','재학','']],ledgerCols:COLS,
- ledger:[row('2026-11-05','1','고다원','결석',{reason:'개인일정'}),row('2026-11-04','1','김동진','인정출석',{reason:'병원 진료',flag:'운영총괄 값: 결석'}),row('2026-11-03','1','고다원','인정출석',{reason:'병결'}),row('2026-11-04','1','고다원','인정출석',{reason:'병원'}),row('2026-11-02','1','고다원','인정출석',{reason:'병원'}),row('2026-10-30','1','고다원','인정출석',{reason:'병원 통원'})],
+ ledger:[row('2026-11-05','1','고다원','결석',{reason:'개인일정'}),row('2026-11-04','1','김동진','인정출석',{reason:'병원 진료',flag:'확인 필요: 가상 메모'}),row('2026-11-03','1','고다원','인정출석',{reason:'병결'}),row('2026-11-04','1','고다원','인정출석',{reason:'병원'}),row('2026-11-02','1','고다원','인정출석',{reason:'병원'}),row('2026-10-30','1','고다원','인정출석',{reason:'병원 통원'})],
  sync:{checkedAt:Date.now()-120000,changedAt:Date.now()-3600000,last:{errors:[]}}};
 const DOCS={rev:5,statuses:['접수','처리중','보완 필요','처리완료','취소'],types:['출석부','교육참여확인서','훈련생 확인서','기타'],delivery:['이메일(PDF)','담임 전달','우편'],
  rows:[{id:'D261013-001',requested:'2026-12-15',cls:'1반(김지아)',name:'고다원',birth:'1999-01-01',detail:'기간: 2026-10-28 ~ 2026-11-13',submitTo:'국취제 운영기관',due:'2026-12-16',status:'접수',memo:'',docType:'출석부',qty:'1',delivery:'이메일(PDF)',requester:'teacher@test.kr',handler:'',handledAt:'',link:'',fixReason:''},
@@ -151,7 +151,7 @@ test('출결대조 shows the ledger next to CheckHere, flags mismatches and save
   assert.equal(await page.evaluate(()=>window.sdkWrites.length),0,'a past day is never sent to CheckHere automatically');
   await page.locator('#b2Date').selectOption('2026-11-04');
   await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
-  assert.equal(await dong.locator('select[data-inline="type"]').inputValue(),'인정출석');assert.doesNotMatch(await dong.innerText(),/운영총괄/,'2기는 운영총괄 충돌 표시가 없음');
+  assert.equal(await dong.locator('select[data-inline="type"]').inputValue(),'인정출석');assert.match(await dong.innerText(),/참고: 확인 필요: 가상 메모/,'T열 메모는 참고로만');assert.doesNotMatch(await dong.innerText(),/운영총괄/,'2기는 운영총괄 충돌 표시가 없음');
   assert.equal(await dong.getByRole('button',{name:'운영총괄 값으로'}).count(),0);
  });
 });
@@ -247,7 +247,8 @@ test('the old /beta2 path serves the same 2기 portal (vercel.json sends /beta2 
 });
 
 test('today\'s live CheckHere subscription keeps updating after the master sheet is reloaded, and past days are watched too',async()=>{
- const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ // 브라우저 시계를 2기 교육일(2026-11-06 10:00 한국)로 둡니다(실제 오늘은 개강 전일 수 있음).
+ const today='2026-11-06';
  const live={...BUNDLE,today,days:[...BUNDLE.days.filter(d=>d<today),today],ledger:[]};
  await beta(async page=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
@@ -268,7 +269,7 @@ test('today\'s live CheckHere subscription keeps updating after the master sheet
   await page.waitForFunction(()=>(window.snapCbs||[]).some(x=>x.path==='classes/1/checkhereCurrent/2026-11-05'));
   assert.equal(await page.evaluate(p=>window.snapCbs.filter(x=>x.path===p).length,`classes/1/checkhereCurrent/${today}`),0,'the previous day is unsubscribed');
   await page.locator('tr[data-name="김동진"]').getByText('09:25',{exact:true}).waitFor();
- },{api:body=>body.action==='b2Bundle'?{ok:true,data:live}:null});
+ },{clock:'2026-11-06T10:00:00+09:00',api:body=>body.action==='b2Bundle'?{ok:true,data:live}:null});
 });
 
 /* ---------- 행 안 편집 → 체크히어 자동 반영 (설계 docs/beta2-instant-edit-plan.md 5장·9장 beta2-ui (1)~(14), 사용자 결정 2026-10-14) ----------

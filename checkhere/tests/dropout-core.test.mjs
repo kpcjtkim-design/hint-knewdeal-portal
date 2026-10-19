@@ -1,5 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {parseSheetDate,readDropoutRows,classTabs,classAttendance,evaluateDropout,evaluateAll,locateStudent,verdictLabel,verdictText,verdictPlan,writeVerdictCells,sheetVerdict} from '../../dropout-core.mjs';
+import {parseSheetDate,readDropoutRows,classTabs,classAttendance,evaluateDropout,evaluateAll,locateStudent,verdictLabel,verdictText,verdictPlan,writeVerdictCells,sheetVerdict,useDropoutPeriods} from '../../dropout-core.mjs';
+// 판정 규칙 시험은 1기 달력(7/27~10/22, 단위기간 3개)을 가상 자료로 씁니다. 2기 화면은 cohort 단위기간(10/28~1/22)이 기본입니다.
+useDropoutPeriods([{id:'1',from:'2026-07-27',to:'2026-08-26'},{id:'2',from:'2026-08-27',to:'2026-09-26'},{id:'3',from:'2026-09-27',to:'2026-10-22'}]);
 // 운영총괄 M18:ZZ48 형태: 첫 행 [이름,출석률,출석일수,지조외,날짜...]
 function sheet(dates,students){return [['','출석률','출석일수','지/조/외/중복',...dates],...students.map(([name,values])=>[name,'','','',...values])];}
 const DAYS=['7/27','7/28','7/29','7/30','7/31','8/3','8/4','8/5','8/6','8/7','8/10','8/11','8/12','8/13','8/14','8/18','8/19','8/20','8/21','8/24','8/25','8/26','8/27','8/28','8/31','9/1','9/2','9/3','9/4','9/7','9/8','9/9','9/10','9/11','9/14','9/15','9/16','9/17','9/18','9/21','9/22','9/23','9/28','9/29','9/30','10/1','10/2','10/6','10/7','10/8','10/12','10/13','10/14','10/15','10/16','10/19','10/20','10/21','10/22'];

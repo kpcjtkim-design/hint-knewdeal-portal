@@ -6,7 +6,7 @@ import {suggestReason} from '../../checkhere-proposal-core.mjs';
 const entry=(id,date,kind='class')=>({id,date,kind,course:'임베디드 AI(HW)',module:kind==='holiday'?'휴일':'직무특화',title:kind==='holiday'?'휴일':'SW 테스팅',day:1,hours:8,note:'유지',instructorId:'same'});
 test('holiday shifts each date group once, excludes weekends and holidays, preserves records',()=>{
  const before=[entry('a','2026-11-13'),entry('b','2026-11-13'),entry('c','2026-11-16'),entry('h','2026-11-17','holiday'),entry('last','2027-01-22')],copy=structuredClone(before),r=shiftForHoliday(before,'2026-11-13');
- assert.deepEqual(before,copy);assert.equal(r.entries.find(e=>e.id==='a').date,'2026-11-16');assert.equal(r.entries.find(e=>e.id==='b').date,'2026-11-16');assert.equal(r.entries.find(e=>e.id==='c').date,'2026-11-18');assert.equal(r.entries.find(e=>e.id==='h').date,'2026-11-17');assert.equal(r.entries.find(e=>e.id==='a').instructorId,'same');assert.equal(r.lastDate,'2027-01-23');assert.equal(r.entries.length,before.length+1);
+ assert.deepEqual(before,copy);assert.equal(r.entries.find(e=>e.id==='a').date,'2026-11-16');assert.equal(r.entries.find(e=>e.id==='b').date,'2026-11-16');assert.equal(r.entries.find(e=>e.id==='c').date,'2026-11-18');assert.equal(r.entries.find(e=>e.id==='h').date,'2026-11-17');assert.equal(r.entries.find(e=>e.id==='a').instructorId,'same');assert.equal(r.lastDate,'2027-01-25');assert.equal(r.entries.length,before.length+1);
  assert.throws(()=>shiftForHoliday(r.entries,'2026-11-13'),/이미 휴일/);assert.throws(()=>shiftForHoliday(before,'2026-11-14'),/주말/);
 });
 test('attendance survey eligibility excludes absences and unresolved recognized subtypes',()=>{
@@ -17,8 +17,9 @@ test('attendance survey eligibility excludes absences and unresolved recognized 
 });
 test('duplicate roster names never counted as answered or missing',()=>{const r=summarizeResponses({classId:'1',targets:[{id:'1',name:'동명',eligible:true},{id:'2',name:'동명',eligible:true}],responses:[{name:'동명',classId:'1반'}]});assert.equal(r.review.length,2);assert.equal(r.eligibleCount,0);});
 test('venue choices identify classes; an unrecognized class label cannot create a false nonresponder',()=>{
- assert.equal(classNumber('서울대_임베디드AI(HW)'),'1');assert.equal(classNumber('기아 광주교육센터(B)_제조지능화(2)'),'17');assert.equal(classNumber('후인원(B)_제조지능화'),'4');assert.equal(classNumber('아르피나(A)_임베디드AI(HW)'),'10');assert.equal(classNumber('아르피나(B)_제조지능화(1)'),'12');assert.equal(classNumber('부산경영자총협회_제조지능화(2)'),'13');assert.equal(classNumber('알 수 없는 반'),'');
- const r=summarizeResponses({classId:'1',targets:[{id:'a',name:'가',eligible:true},{id:'b',name:'나',eligible:true}],responses:[{name:'가',classId:'서울대_임베디드AI(HW)'},{name:'나',classId:'미확인 교육장'}]});assert.equal(r.answered.length,1);assert.equal(r.missing.length,0);assert.equal(r.review[0].name,'나');
+ // 2기 반 선택지: 반 이름·공식 과정명·'장소_과정'(cohort). 1~16반만.
+ assert.equal(classNumber('서울(관악구)_모빌리티 AI_서울대'),'1');assert.equal(classNumber('기아오토랜드B_제조지능화'),'16');assert.equal(classNumber('후인원B_제조지능화'),'4');assert.equal(classNumber('[현대자동차그룹 HINT] 부산(해운대구)_모빌리티 AI_아르피나A'),'10');assert.equal(classNumber('아르피나B_제조지능화'),'11');assert.equal(classNumber('16반'),'16');assert.equal(classNumber('17반'),'');assert.equal(classNumber('알 수 없는 반'),'');
+ const r=summarizeResponses({classId:'1',targets:[{id:'a',name:'가',eligible:true},{id:'b',name:'나',eligible:true}],responses:[{name:'가',classId:'서울대_모빌리티 AI'},{name:'나',classId:'미확인 교육장'}]});assert.equal(r.answered.length,1);assert.equal(r.missing.length,0);assert.equal(r.review[0].name,'나');
 });
 test('response headers must be unique and require class identity',()=>{assert.deepEqual(responseColumns(['타임스탬프','성함을 입력해주세요','소속반']),{name:1,classId:2,timestamp:0});assert.throws(()=>responseColumns(['타임스탬프','성명','성함','분반']),/이름/);});
 test('survey matching follows lecture shifts and distinguishes courses',()=>{

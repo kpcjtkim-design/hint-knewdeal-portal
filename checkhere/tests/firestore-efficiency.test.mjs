@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {mock} from 'node:test';
+// 2기 교육일(2026-10-29~) 저장본이 '지난 날'이 되게 시계를 2기 기간 뒤(2027-01-25)로 둡니다(실제 오늘은 개강 전일 수 있음).
+mock.timers.enable({apis:['Date'],now:new Date('2027-01-25T03:00:00Z')});
 const url=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64');
 const firebase=url(`
 export const collection=(db,...parts)=>({db,path:parts.join('/')}),doc=collection;

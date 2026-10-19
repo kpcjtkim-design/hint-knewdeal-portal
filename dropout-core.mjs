@@ -11,7 +11,9 @@ export const DROPOUT_TAB='중도포기자(교육생)';
 export const OPERATIONS_SHEET_ID='';
 // 전체 무단결석 한도: 1기(59교육일) 기준 11일. 2기 60교육일 기준은 다시 확인해야 합니다.
 export const MAX_TOTAL_ABSENCE=11;
-const LAST_DAY=UNIT_PERIODS.at(-1).to,FIRST_DAY=UNIT_PERIODS[0].from;
+// 단위기간 달력: 기본은 2기(cohort). 시험·다른 기수 자료를 볼 때만 useDropoutPeriods로 바꿉니다.
+let PERIODS=UNIT_PERIODS,LAST_DAY=PERIODS.at(-1).to,FIRST_DAY=PERIODS[0].from;
+export function useDropoutPeriods(periods=UNIT_PERIODS){PERIODS=periods.map(p=>({...p}));LAST_DAY=PERIODS.at(-1).to;FIRST_DAY=PERIODS[0].from;}
 const PARTIAL={지각:1,조퇴:1,외출:1};
 const clean=v=>String(v??'').trim();
 // 'M/D' → 2기 날짜(10~12월 2026, 1월 2027, cohort isoFromMonthDay)
@@ -50,7 +52,7 @@ export function classAttendance(values){
  return {dates,students};
 }
 const partialCount=s=>s.startsWith('중복')?2:PARTIAL[s]||0;
-const periodOf=d=>UNIT_PERIODS.find(p=>d>=p.from&&d<=p.to);
+const periodOf=d=>PERIODS.find(p=>d>=p.from&&d<=p.to);
 export function evaluateDropout(entry,attendance,today){
  const issues=[],out={...entry,issues,verdict:'확인필요',scheduled:false,periods:[],totalAbsence:null,preStartAbsence:0,days:[]};
  const last=parseSheetDate(entry.lastText,{prefer:'포기일'}),start=parseSheetDate(entry.startText);
@@ -80,7 +82,7 @@ export function evaluateDropout(entry,attendance,today){
  if(unknown.length)issues.push(`알 수 없는 출결 값: ${[...new Set(unknown.map(d=>d.status))].join(', ')}`);
  out.preStartAbsence=out.days.filter(d=>d.date>last&&d.date<=required&&d.status==='결석').length;
  const reasons=[];
- out.periods=UNIT_PERIODS.map(p=>{
+ out.periods=PERIODS.map(p=>{
   const ds=out.days.filter(d=>periodOf(d.date)===p),absent=ds.filter(d=>d.status==='결석').length,partial=ds.reduce((n,d)=>n+partialCount(d.status),0),converted=Math.floor(partial/3),total=absent+converted,ok=total*2<ds.length;
   if(ds.length&&!ok)reasons.push(`${p.id}단위기간 결석 ${total}일 ≥ 수업일 ${ds.length}일의 절반`);
   return {id:p.id,from:p.from,to:p.to,days:ds.length,absent,partial,converted,total,ok};
