@@ -1,7 +1,7 @@
 // 2기 관리자 화면 묶음. index.html이 b2로 시작하는 탭을 여기로 넘깁니다. 고른 화면만 불러옵니다.
 import {createBeta2Client,onBeta2Rev,lastBeta2Rev} from './beta2-data.mjs';
 import {ensureBeta2Css,errorBox,toast} from './beta2-ui.mjs';
-const SCREENS={b2home:()=>import('./beta2-home.mjs'),b2ledger:()=>import('./beta2-ledger.mjs'),b2status:()=>import('./beta2-status.mjs'),b2downloads:()=>import('./beta2-downloads.mjs'),b2docs:()=>import('./beta2-docs.mjs'),b2vocs:()=>import('./beta2-voc.mjs')};
+const SCREENS={b2home:()=>import('./beta2-home.mjs'),b2ledger:()=>import('./beta2-ledger.mjs'),b2status:()=>import('./beta2-status.mjs'),b2downloads:()=>import('./beta2-downloads.mjs'),b2docs:()=>import('./beta2-docs.mjs'),b2vocs:()=>import('./beta2-voc.mjs'),b2notify:()=>import('./notify-inbox.mjs')}; // b2notify: 홈 › 알림(알림함)
 export async function mountBeta2Admin(host,{db,user,classes,tab,selected,context,open}){
  ensureBeta2Css();
  const client=createBeta2Client(user,{db});

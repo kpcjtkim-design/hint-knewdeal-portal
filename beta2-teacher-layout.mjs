@@ -20,7 +20,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
  const bar=document.createElement('section');bar.className='teacher-context-bar';hero.before(bar);hero.classList.add('teacher-header-class');bar.append(hero);
  const switcher=parent.querySelector('.preview-controls')||parent.querySelector('.teacher-class-switch');if(switcher){switcher.classList.add('teacher-header-switch');bar.prepend(switcher);}
  const wrap=document.createElement('div');wrap.className='b2';bar.after(wrap);
- wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button class="b2-tab" data-main="${k}">${l}</button>`).join('')}</nav><nav class="b2-tabs" id="t2Sub" hidden></nav>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" hidden></section>`).join('')}`;
+ wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button class="b2-tab" data-main="${k}">${l}</button>`).join('')}</nav><nav class="b2-tabs" id="t2Sub" hidden></nav>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" hidden></section>`).join('')}<section data-panel="notify" hidden></section>`; // notify: 머리글 종으로 여는 알림함(탭 줄에는 없음)
  const $=s=>wrap.querySelector(s),panel=k=>wrap.querySelector(`[data-panel="${k}"]`);
  // 담임 홈 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다.
  const tasks=following.find(e=>e.classList.contains('task-grid')),taskHead=tasks?.previousElementSibling,notice=following.find(e=>e.classList.contains('notice')),noticeHead=notice?.previousElementSibling,urgent=parent.querySelector('.urgent-stack');
@@ -54,6 +54,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
    if(key==='surveys'){const m=await import('./survey-view.mjs');if(alive())keep(await m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo}));}
    if(key==='documents'){const m=await import('./beta2-docs.mjs');if(alive())keep(await m.mount(slot,{client,classes:[classInfo],teacherClass:cls}));}
    if(key==='voc'){const m=await import('./beta2-voc.mjs');if(alive())keep(await m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc}));}
+   if(key==='notify'){const m=await import('./notify-inbox.mjs');if(alive())keep(await m.mount(slot,{onGo:l=>void go(...m.teacherTarget(l.tab))}));}
   }catch(e){loaded.delete(key);if(alive())slot.textContent='화면을 불러오지 못했습니다. '+e.message;}
  }
  async function go(m,s){
@@ -64,6 +65,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
   if(subs){nav.innerHTML=subs.map(([k,l])=>`<button class="b2-tab" data-subtab="${k}" aria-selected="${k===sub}">${l}</button>`).join('');panel(main).querySelectorAll('[data-sub]').forEach(d=>{d.hidden=d.dataset.sub!==sub;});}
   if(main==='today'){await betaPane('today',today.querySelector('#t2Beta_today'));await load('timetable-today',today.querySelector('#t2Timetable'));return;}
   if(main==='documents'){await load('documents',panel('documents').querySelector('#t2Docs'));return;}
+  if(main==='notify'){await load('notify',panel('notify'));return;}
   if(main==='info'){await betaPane('info',panel('info').querySelector('[data-sub="info"]'));return;}
   const slot=panel(main).querySelector(`[data-sub="${sub}"]`);
   if(BETA_PANES.has(sub)){await betaPane(sub,slot);return;}
@@ -92,8 +94,10 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
   el.hidden=false;el.classList.toggle('hard',report.rows.some(r=>r.count>=6));
   el.innerHTML=`<span>⚠ 질병 인정 ${report.rows.length?report.rows.map(r=>`${esc(r.name)} ${r.count}/6회${r.count>6?' 초과':r.count===6?' 도달':''}`).join(' · '):'4회 이상 없음'}${report.review.length?` · 체크히어 메모와 다른 날 ${report.review.length}명 확인 필요`:''}</span><button data-alert-go="1">자세히</button>`;
  }catch{}})();
+ // 알림함: 머리글 종(index.html)이 'hint:notify-open'을 보내면 알림 칸을 엽니다(사용자 요청 2026-10-19).
+ const openNotify=()=>void go('notify');document.addEventListener('hint:notify-open',openNotify);
  await go('today');
- const dispose=()=>{if(disposed)return;disposed=true;observer.disconnect();offVoc();clearInterval(vocTimer);works.forEach(w=>w?.dispose?.());};
+ const dispose=()=>{if(disposed)return;disposed=true;observer.disconnect();offVoc();clearInterval(vocTimer);document.removeEventListener('hint:notify-open',openNotify);works.forEach(w=>w?.dispose?.());};
  const observer=new MutationObserver(()=>{if(!wrap.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});
  return {canLeave:()=>works.every(w=>!w?.canLeave||w.canLeave()),dispose};
 }
