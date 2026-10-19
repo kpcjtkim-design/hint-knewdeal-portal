@@ -89,16 +89,17 @@ test('an edit from the beta page stays pending under the read-only relay; only a
   // 다른 화면 시험처럼 설치된 Chrome을 씁니다. 브라우저를 못 열면 연결 프로그램을 닫고 끝냅니다(안 닫으면 시험이 끝나지 않음).
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true,args:['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults']}).catch(e=>{app.close();throw e;});
   const types={'.html':'text/html','.mjs':'text/javascript','.js':'text/javascript','.json':'application/json','.css':'text/css'};
-  const testCohort=()=>readFileSync(join(ROOT,'cohort.mjs'),'utf8').replace('"apiKey": ""','"apiKey": "test-api-key"').replace('"appId": ""','"appId": "test-app-id"');
-  async function open(email,{realCohort=false}={}){
+  // 시험용 2기 Firebase 값(없음 = 설정이 빈 경우). cohort.json에 실제 값이 채워져 있어도 시험은 가짜 값으로만 띄웁니다.
+  const testCohort=(empty=false)=>readFileSync(join(ROOT,'cohort.mjs'),'utf8').replace(/"apiKey": "[^"]*"/,empty?'"apiKey": ""':'"apiKey": "test-api-key"').replace(/"appId": "[^"]*"/,empty?'"appId": ""':'"appId": "test-app-id"');
+  async function open(email,{emptyFirebase=false}={}){
     const context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(20000);
     await page.exposeFunction('__db',(op,...a)=>ops[op](...a));
     await page.addInitScript(({email,bridge})=>{window.__fakeUser=email;window.HINT_TEST_BRIDGE=bridge;},{email,bridge:BRIDGE});
     // 안전장치: 실제 연결 프로그램 포트로 가는 요청은 막고 기록합니다(시험 끝에 0건이어야 함).
     for(const host of ['127.0.0.1','localhost'])for(const port of [8765,8766])await context.route(`http://${host}:${port}/**`,r=>{realBridge.push(r.request().url());r.abort();});
     await context.route('https://www.gstatic.com/firebasejs/10.12.5/*',r=>r.fulfill({contentType:'text/javascript',body:FAKE[new URL(r.request().url()).pathname.split('/').pop()]}));
-    // 2기 Firebase 설정(cohort.json)은 아직 비어 있어 시험용 값을 넣은 cohort.mjs를 줍니다(realCohort면 그대로 — 로그인 없이 멈춰야 함).
-    await context.route('https://portal.test/**',r=>{const p=new URL(r.request().url()).pathname;try{r.fulfill({contentType:types[extname(p)]||'text/plain',body:p==='/cohort.mjs'&&!realCohort?testCohort():readFileSync(join(ROOT,p))});}catch{r.fulfill({status:404,body:''});}});
+    // 시험용 2기 Firebase 값을 넣은 cohort.mjs를 줍니다(emptyFirebase면 빈 설정 — 로그인 없이 멈춰야 함).
+    await context.route('https://portal.test/**',r=>{const p=new URL(r.request().url()).pathname;try{r.fulfill({contentType:types[extname(p)]||'text/plain',body:p==='/cohort.mjs'?testCohort(emptyFirebase):readFileSync(join(ROOT,p))});}catch{r.fulfill({status:404,body:''});}});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
     page.on('request',r=>{if(/\/api\/(?:apply|preview-request|confirm-existing|reconcile)\b/.test(r.url()))writeCalls.push(r.url());});
     await page.goto('https://portal.test/checkhere-live.html');pages.push(page);return {page,errors};
@@ -179,7 +180,7 @@ test('an edit from the beta page stays pending under the read-only relay; only a
     await admin.page.locator('#reqs').getByText('퇴실: (삭제) · 퇴실 사유: (비움)').waitFor();
     assert.deepEqual([...relay.errors,...admin.errors],[]);
     // 2기 Firebase 설정이 비어 있으면(지금 cohort.json) 로그인 화면도 띄우지 않고 '2기 Firebase 설정 필요'로 멈춥니다(1기 프로젝트로 새지 않음).
-    const bare=await open(APPROVER,{realCohort:true});await bare.page.getByText('2기 Firebase 설정 필요').first().waitFor();
+    const bare=await open(APPROVER,{emptyFirebase:true});await bare.page.getByText('2기 Firebase 설정 필요').first().waitFor();
     assert.equal(await bare.page.locator('#login').count(),0);assert.equal(await bare.page.locator('#relay').count(),0);
     assert.deepEqual(realBridge,[],'the real bridge port is never contacted');
     assert.deepEqual(writeCalls,[],'the pages never asked the bridge to approve or write');

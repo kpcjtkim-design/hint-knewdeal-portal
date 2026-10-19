@@ -12,7 +12,7 @@ import {buildReport,reportView,reportCounts,confirmList,pairRow,cleanStudents,ex
 import {createApprovalCloud} from '../cloud-approval.mjs';
 import {unmaskReason} from '../masking.mjs';
 import {studentKey,recordId,version} from '../identity.mjs';
-import {CLASS_IDS,BRIDGE_PORT,validIso,classOk,FIREBASE_MISSING} from '../cohort-bridge.mjs';
+import {CLASS_IDS,BRIDGE_PORT,validIso,classOk,FIREBASE_MISSING,firebaseReady} from '../cohort-bridge.mjs';
 import {fakeSite,roster as fakeRoster} from './checkhere-fake.mjs';
 
 const D='2026-10-28',NAMES=['가상하나','가상둘','가상셋','가상넷','가상다섯','가상여섯','01011110001'];
@@ -161,9 +161,15 @@ test('1기 data 폴더(2기 시작 전 기록)로는 켜지지 않음, 2기 Fire
   const dataDir=dir('old-data-'),db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('CREATE TABLE snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL)');db.prepare('INSERT INTO snapshots(id,payload) VALUES(?,?)').run('2_2026-10-15_k',JSON.stringify({id:'2_2026-10-15_k',classId:'2',date:'2026-10-15',name:'가상'}));db.close();
   assert.throws(()=>createBridge({dataDir,collector:stubAdapter({}),port:18603}),/OLD_DATA/);
-  const sent=[],cloud=createApprovalCloud();
-  await assert.rejects(cloud.verify('token'),e=>e.code==='FIREBASE_CONFIG'&&e.message===FIREBASE_MISSING);
-  await assert.rejects(cloud.putIdentities('token','3',[{name:'가상하나',last4:'0001',attendeeId:'att-1'}],'x'),/FIREBASE_CONFIG/);assert.deepEqual(sent,[]);
+  // 실제 fetch 자리를 가짜로 바꿔 둡니다(밖으로 나가지 않음). 2기 설정이 비면 보내기 전에 멈추고, 채워져 있으면 그 설정으로만 보냅니다.
+  const original=globalThis.fetch,sent=[];globalThis.fetch=async u=>{sent.push(String(u));return {ok:false,status:400,json:async()=>({})};};
+  try{
+    const cloud=createApprovalCloud();
+    if(!firebaseReady()){
+      await assert.rejects(cloud.verify('token'),e=>e.code==='FIREBASE_CONFIG'&&e.message===FIREBASE_MISSING);
+      await assert.rejects(cloud.putIdentities('token','3',[{name:'가상하나',last4:'0001',attendeeId:'att-1'}],'x'),/FIREBASE_CONFIG/);assert.deepEqual(sent,[]);
+    }else{await assert.rejects(cloud.verify('token'));assert.ok(sent.every(u=>u.includes('identitytoolkit')),'only the login check');}
+  }finally{globalThis.fetch=original;}
 });
 test('등록 REST: checkhereIdentities/{반}에 이름·끝 4자리·학생 번호만, 서버 시각, 다시 읽어 다르면 실패, 권한 없으면 규칙 안내',async()=>{
   const docs=new Map(),seen=[];let tamper=false,deny=false;
