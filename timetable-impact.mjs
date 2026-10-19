@@ -18,7 +18,8 @@ export function timetableImpact({classId,before=[],after=[],published=[],publicA
  const ends=[...new Set([...old.keys(),...next.keys()])].flatMap(key=>{const a=old.get(key),b=next.get(key);return a?.date===b?.date?[]:[{title:(b||a).title,from:a?.date||'없음',to:b?.date||'없음'}];});
  const prior=surveyDates(catalog,config,String(classId),before),future=surveyDates(catalog,config,String(classId),after);
  const surveys=[...future].flatMap(([id,b])=>{const a=prior.get(id);if(a?.date===b.date&&a?.days===b.days&&a?.matched===b.matched)return[];return[{id,title:b.title,from:configKnown?a?.date||'없음':'확인 필요',to:configKnown?b.date:'확인 필요',fixed:b.fixed,matched:b.matched,end:b.end,needsReview:!b.matched,datesChanged:a?.days!==b.days}];});
- const scoped=(catalog.events||[]).filter(e=>e.classId===String(classId)),unmapped=[...new Set(ends.filter(e=>!scoped.some(s=>eventLessons(s,[...before,...after].filter(x=>x.title===e.title)).length)).map(e=>e.title))];
+ // 이 반 설문 일정이 아직 없으면(2기 설문 카탈로그가 비어 있는 동안) '설문 연결 확인' 안내를 내지 않습니다.
+ const scoped=(catalog.events||[]).filter(e=>e.classId===String(classId)),unmapped=!scoped.length?[]:[...new Set(ends.filter(e=>!scoped.some(s=>eventLessons(s,[...before,...after].filter(x=>x.title===e.title)).length)).map(e=>e.title))];
  return{classId:String(classId),changes,ends,surveys,unmapped,teacherChanges:differences(published,publicAfter).length,configKnown};
 }
 export function timetableImpactHtml(impacts,{operation='draft',note=''}={}){

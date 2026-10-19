@@ -1,5 +1,9 @@
+import {COURSE_START,COURSE_END,HOLIDAYS} from './cohort.mjs';
 export const COLLECTIONS={draft:'timetableBetaDrafts',published:'timetableBetaPublished',instructors:'timetableBetaInstructors'};
 export const todayKST=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date());
+// 처음 보여 줄 날짜: 오늘이 기수 기간(cohort.json period) 밖이면 개강일·종강일. 기수 휴일(성탄절·연말 휴무·신정)은 주말처럼 수업을 넣지 않는 날.
+export const startDate=(today=todayKST())=>today<COURSE_START?COURSE_START:today>COURSE_END?COURSE_END:today;
+export const isOffDay=d=>[0,6].includes(new Date(d+'T12:00:00Z').getUTCDay())||HOLIDAYS.includes(d);
 export const sortEntries=entries=>[...entries].sort((a,b)=>a.date.localeCompare(b.date)||(a.start||'99:99').localeCompare(b.start||'99:99')||(a.order??0)-(b.order??0)||a.id.localeCompare(b.id));
 export function weekDays(date){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return Array.from({length:7},(_,i)=>{const x=new Date(d);x.setUTCDate(d.getUTCDate()+i);return x.toISOString().slice(0,10);});}
 export function monthDays(date){const first=date.slice(0,7)+'-01',start=weekDays(first)[0],d=new Date(start+'T12:00:00Z');return Array.from({length:42},(_,i)=>{const x=new Date(d);x.setUTCDate(d.getUTCDate()+i);return x.toISOString().slice(0,10);});}
@@ -17,7 +21,8 @@ export function conflicts(entry,classes,classId){
  if(!entry.instructorId||entry.kind==='holiday')return [];
  return Object.entries(classes).flatMap(([cid,data])=>(data.entries||[]).filter(e=>e.id!==entry.id||cid!==classId).filter(e=>e.kind!=='holiday'&&e.date===entry.date&&e.instructorId===entry.instructorId&&(!e.start||!entry.start||(e.start<entry.end&&entry.start<e.end))).map(e=>({classId:cid,date:e.date,title:e.title,start:e.start,end:e.end})));
 }
-export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,seedKey,...out}=e;return {...out,instructorName:instructors[e.instructorId]?.name||''};});}
+// 담임 사본: 엑셀 출처·판 대조 표시(origin·review)는 빼고, 강사는 등록 강사 이름 → 없으면 일정표 강사명(instructorName).
+export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,seedKey,origin,review,...out}=e;return {...out,instructorName:e.instructorId?instructors[e.instructorId]?.name||'':e.instructorName||''};});}
 export function visibleToday(entries,today=todayKST()){const sorted=sortEntries(entries);return{today:sorted.filter(e=>e.date===today),next:sorted.find(e=>e.date>today&&e.kind!=='holiday')||null};}
 // Per-class, per-lecture final scheduled date, not the end of a broad module.
 const lectureKey=e=>JSON.stringify([e.classId||'',e.course||'',e.lectureId||[e.module||'',e.title?.trim()||'']]);

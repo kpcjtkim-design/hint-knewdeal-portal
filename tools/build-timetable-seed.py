@@ -2,7 +2,9 @@
 """2기 일정표 엑셀(한 판 또는 여러 판)을 합쳐 timetable-seed.json·timetable-reference.json을 만듭니다.
 
 사용: python -I tools/build-timetable-seed.py --sheet 1014 <일정표.xlsx> <원본 파일명> [--sheet 1007 <이전 일정표.xlsx> <원본 파일명>]
-      --version YYYYMMDD [--conflicts 충돌.csv] [--check] [--no-align] [--force]
+      --version YYYYMMDD [--conflicts 충돌.csv] [--check] [--no-align] [--force] [--out 폴더(시험용, 저장소 파일 그대로)]
+2기 첫 기준(20261014) 만든 명령: --sheet 1014 <261014 파일> "261014_K-뉴딜_아카데미_2기 일정표_직무기초.xlsx"
+      --sheet 1007 <261007 파일> "261007_K-뉴딜_아카데미_2기 일정표.xlsx" --version 20261014 --conflicts tt2-conflicts.csv
 
 - 반·기간·휴일은 cohort.json(2기 16반, 2026-10-28~2027-01-22)에서 읽습니다. 엑셀 반 열은 2행 장소·4행 과정(트랙 번호)으로 찾고,
   맞는 반이 없거나 둘 이상이면 멈춥니다. 대구상공회의소 열은 사용자 결정으로 2기에서 뺐습니다.
@@ -185,7 +187,7 @@ def args_of(argv):
         a = argv[i]
         if a == '--sheet':
             sheets.append(tuple(argv[i + 1:i + 4])); i += 4
-        elif a in ('--version', '--conflicts'):
+        elif a in ('--version', '--conflicts', '--out'):
             opts[a[2:]] = argv[i + 1]; i += 2
         elif a in ('--check', '--no-align', '--force'):
             opts[a[2:]] = True; i += 1
@@ -333,6 +335,12 @@ def main():
                  'courses': {course: [l['title'] for l in lectures if l['course'] == course and l['module'] == '직무특화' and l['title'] != UNDECIDED] for course in COHORT['courses']},
                  'facilities': facilities, 'patches': [], 'additions': []}
 
+    if opts.get('out'):  # 시험·미리보기: 저장소 파일은 그대로 두고 다른 폴더에 씁니다(이력·비교 없음)
+        out = pathlib.Path(opts['out']); out.mkdir(parents=True, exist_ok=True)
+        (out / SEED.name).write_text(json.dumps(seed, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        (out / REFERENCE.name).write_text(json.dumps(reference, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        print(f'{out}에 {SEED.name}·{REFERENCE.name}를 썼습니다.')
+        return
     if same_cohort:  # 이전 2기 시드와 비교(편집본 3자 병합과 같은 열쇠: 강의+일차, 휴일은 날짜)
         key = lambda e: f"h|{e['date']}|{e['title']}" if e['kind'] == 'holiday' else f"c|{e['lectureId']}|{e['day']}"
         fields, total = ('date', 'module', 'lectureId', 'title', 'day', 'hours', 'kind', 'online', 'instructorName', 'event'), 0
