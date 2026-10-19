@@ -1,11 +1,11 @@
 import {recognized,koreaToday} from './attendance-beta-core.mjs';
+// 2기 기간·단위기간(1단위 10/28~11/27, 2단위 11/28~12/27, 3단위 12/28~1/22)은 cohort.mjs에서 만듭니다.
+import {COURSE_START,COURSE_END,UNIT_PERIODS} from './cohort.mjs';
 export const EVIDENCE_PERIODS=[
- {id:'all',label:'전체 기간',from:'2026-07-27',to:'2026-10-22'},
- {id:'1',label:'1단위 · 7/27~8/26',from:'2026-07-27',to:'2026-08-26'},
- {id:'2',label:'2단위 · 8/27~9/26',from:'2026-08-27',to:'2026-09-26'},
- {id:'3',label:'3단위 · 9/27~10/22',from:'2026-09-27',to:'2026-10-22'}
+ {id:'all',label:'전체 기간',from:COURSE_START,to:COURSE_END},
+ ...UNIT_PERIODS.map(p=>({id:String(p.no),label:p.label,from:p.from,to:p.to}))
 ];
-export function evidenceReport(summaries,{from='2026-07-27',to=koreaToday(),status='outstanding',today=koreaToday()}={}){
+export function evidenceReport(summaries,{from=COURSE_START,to=koreaToday(),status='outstanding',today=koreaToday()}={}){
  const rows=[],unknown=[],missing=[];
  for(const [cid,summary] of Object.entries(summaries)){
   if(!summary){missing.push(cid);continue;}

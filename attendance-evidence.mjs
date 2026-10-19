@@ -1,3 +1,5 @@
+// 2기 교육 시작일은 cohort.mjs에서 읽습니다.
+import {COURSE_START} from './cohort.mjs';
 import {readAttendanceSummary,syncAttendanceSummary} from './attendance-derived-store.mjs';
 import {EVIDENCE_PERIODS,evidenceReport,evidenceMessage} from './attendance-evidence-core.mjs';
 import {koreaToday} from './attendance-beta-core.mjs';
@@ -5,7 +7,7 @@ import {esc} from './metrics-ui.mjs';
 export async function mountAttendanceEvidence(host,{db,user,classes,teacherClass=null}){
  const scope=teacherClass?[teacherClass]:classes,root=host.shadowRoot||host.attachShadow({mode:'open'});
  root.innerHTML='<link rel="stylesheet" href="/metrics.css"><div id="evidence"></div>';
- const content=root.querySelector('#evidence');let selected=new Set([String(scope[0]?.id)]),loaded=new Set(),data={},period='all',from='2026-07-27',to=koreaToday(),status='outstanding',busy=false,disposed=false,notice='';
+ const content=root.querySelector('#evidence');let selected=new Set([String(scope[0]?.id)]),loaded=new Set(),data={},period='all',from=COURSE_START,to=koreaToday(),status='outstanding',busy=false,disposed=false,notice='';
  const active=()=>!disposed&&host.isConnected&&root.querySelector('#evidence')===content;
  const current=()=>Object.fromEntries([...selected].map(cid=>[cid,data[cid]||null]));
  function render(){if(!active())return;const report=evidenceReport(current(),{from,to,status}),message=evidenceMessage(report,{from,to});

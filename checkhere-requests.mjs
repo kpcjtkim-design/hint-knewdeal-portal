@@ -1,3 +1,5 @@
+// 2기 교육 기간(요청 날짜 입력 범위)은 cohort.mjs에서 읽습니다.
+import {COURSE_START,COURSE_END} from './cohort.mjs';
 import {RETRYABLE_STATUSES,isRetryableRequest,retryHeads} from './checkhere-retry-core.mjs';
 import {RETRY_IN_LEDGER,RETRY_IN_LEDGER_HELP,retryInLedger} from './checkhere-live-core.mjs';
 import {invalidateRead} from './session-read-cache.mjs';
@@ -11,7 +13,7 @@ import {collection,doc,getDocs,setDoc,query,where,orderBy,limit,runTransaction,s
 import {APPROVER,FIELDS,STATUS,cleanRequest,resultText,matchRequest as matchRequestCore,prepareApproval as prepareApprovalCore,requestMatchesRecord as requestMatchesRecordCore,sameRequestTarget,memoDefaultTimes} from './checkhere/approval-core.mjs';
 import {NEEDS_UNMASK_TEXT,PRIVACY_UPDATE_TEXT,TIME_DELETE_V2_CAPABILITY,assertChangeAllowed,privacyState} from './checkhere/rules.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-// 출결대조 자동·시간 삭제 요청은 1기에서 다시 처리하지 않습니다(한 건·일괄 모두). 2기 베타 출결대조에서 다시 보냅니다.
+// 출결대조 자동·시간 삭제 요청은 여기('실패 건 다시 처리')서 다시 처리하지 않습니다(한 건·일괄 모두). 출결대조에서 다시 보냅니다.
 const retryHere=r=>isRetryableRequest(r)&&!retryInLedger(r);
 const automaticFields=(r,a)=>['entry','exit'].filter(k=>!Object.hasOwn(r.changes,k)&&!a.before[k]&&a.after[k]);
 const approvalFields=(r,a)=>[...new Set([...Object.keys(r.changes),...automaticFields(r,a)])];
@@ -22,6 +24,8 @@ const afterText=(r,v,k)=>v||(deletesField(r,k)?'삭제':'공란');
 const isTimeDelete=r=>Array.isArray(r?.deleteTimes)?r.deleteTimes.length>0:r?.deleteTimes!=null;
 function requireMemoDefaults(c,r,a){if(automaticFields(r,a).length&&!c.state().capabilities?.includes('memo-default-time-v1'))throw Error('빈 시간 자동 입력을 사용하려면 수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요.');}
 const dateNow=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+// 요청 날짜는 2기 교육 기간(cohort REQUEST_DATE_RANGE = cleanRequest·firestore.rules와 같은 범위) 안으로 자릅니다.
+const requestDay=()=>{const d=dateNow();return d<COURSE_START?COURSE_START:d>COURSE_END?COURSE_END:d;};
 export async function createRequest(db,user,input){
   const data=cleanRequest(input),id=crypto.randomUUID();
   try{await setDoc(doc(db,'checkhereRequests',id),{...data,status:'pending',createdBy:user.email,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});}finally{invalidateRead(db,user,'operations:requests');}return id;
@@ -38,7 +42,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   const prepareApproval=(r,record,options={})=>prepareApprovalCore(r,record,{...options,identities:identityFor(r)});
   // 시간 삭제 요청은 cleanRequest가 확인한 deleteTimes만 지울 수 있습니다(연결 프로그램에 time-delete-v1이 없으면 assertChangeAllowed가 거절).
   // 1교시 삭제(퇴실 → 1교시 순서, 다시 읽어 두 칸 확인)는 time-delete-v2 연결 프로그램에서만 승인합니다. 퇴실이 남은 1교시만 삭제는 assertChangeAllowed가 거절(rules.mjs).
-  // v2가 없으면 요청 전체를 보내지 않습니다(두 칸 요청의 퇴실도 지우지 않음, 승인 대기 그대로). /beta2는 중계 신호가 없으면 v2로 보고 두 칸 요청을 만들 수 있습니다(2026-10-16).
+  // v2가 없으면 요청 전체를 보내지 않습니다(두 칸 요청의 퇴실도 지우지 않음, 승인 대기 그대로). 출결대조는 중계 신호가 없으면 v2로 보고 두 칸 요청을 만들 수 있습니다(2026-10-16).
   const judgeRequest=(r,record,c)=>{const deletions=cleanRequest(r).deleteTimes||[];if(deletions.includes('entry')&&!c.state().capabilities?.includes(TIME_DELETE_V2_CAPABILITY))throw Error(`수집 PC에서 최신 체크히어 시작.cmd를 다시 실행해 주세요. 1교시 삭제는 ${TIME_DELETE_V2_CAPABILITY} 지원이 필요합니다. 그 전에는 이 요청을 반영할 수 없습니다. 업데이트 뒤 다시 승인하거나 반려해 주세요.`);
     const defaults=memoDefaultTimes(r.changes,record),judgement=assertChangeAllowed(record,{...r.changes,...defaults},{capabilities:c.state().capabilities,requested:true,deletions});if(Object.keys(defaults).length)judgement.warning='메모 저장에 필요한 빈 시간만 기본 설정으로 자동 입력합니다. 기존 시간은 유지합니다.';return judgement;};
   async function readIdentities(){for(const classId of new Set(rows.filter(r=>ACTIVE_STATUSES.includes(r.status)||isRetryableRequest(r)).map(r=>String(r.classId))))identityMaps.set(classId,await loadCheckHereIdentities(db,classId,rows.filter(r=>String(r.classId)===classId)));}
@@ -55,7 +59,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   async function requireWritable(c){const p=await readPrivacy(c);paintPrivacy(p);if(!p?.writable)throw Object.assign(Error(`${unmaskText(p)} 요청은 그대로 둡니다.`),{code:'NEEDS_UNMASK'});return p;}
   root.innerHTML=`<style>:host{display:block;font-family:inherit;color:#172033;margin:12px 0}*{box-sizing:border-box}button,input,select,textarea{font:inherit}section{background:white;border:1px solid #dbe3ee;border-radius:12px;padding:16px}h3{margin:0 0 8px}p,small{color:#64748b;line-height:1.5}button{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;background:#f8fafc}button.primary{background:#1d4ed8;color:white;border-color:#1d4ed8}button:disabled{opacity:.5;cursor:not-allowed}.line{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}label{display:block;font-size:12px;font-weight:700}input:not([type=checkbox]),select,textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin:5px 0}textarea{min-height:75px;resize:vertical}.request{border-top:1px solid #e2e8f0;padding:12px 0}.needs-change{background:#fff8e8;border-left:4px solid #d59a2b;padding-left:12px}.badge{border-radius:8px;padding:4px 8px;background:#eef2ff;font-size:12px}.reason{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:#334155}.error{color:#b91c1c}.success{color:#166534}dialog{border:1px solid #cbd5e1;border-radius:14px;max-width:720px;width:95%;max-height:90vh;overflow:auto}dialog::backdrop{background:#0f172a88}table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}td,th{padding:9px;border:1px solid #e2e8f0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left}.note{background:#f1f5f9;padding:10px;border-radius:8px}summary{cursor:pointer;font-weight:800}@media(max-width:600px){.grid{grid-template-columns:1fr}}</style>
   <section><h3>체크히어 수정 요청${approver?' · 승인':''}</h3><p>요청 등록만으로 체크히어가 변경되지는 않습니다. 지정된 관리자가 수집 PC에서 승인한 뒤 반영 결과를 확인합니다.${approver?'<b id="privacy"></b>':''}</p>
-  <details id="new"><summary>수정 요청 작성</summary><form id="form"><div class="grid"><label>반<select id="class">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반</option>`).join('')}</select></label><label>교육일자<input id="date" type="date" min="2026-07-27" max="2026-10-22" value="${dateNow()}"></label><label>학생 이름<input id="name" maxlength="60" required autocomplete="off"></label><label>동명이인 구분 · 전화번호 끝 4자리(선택)<input id="last4" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>
+  <details id="new"><summary>수정 요청 작성</summary><form id="form"><div class="grid"><label>반<select id="class">${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반</option>`).join('')}</select></label><label>교육일자<input id="date" type="date" min="${COURSE_START}" max="${COURSE_END}" value="${requestDay()}"></label><label>학생 이름<input id="name" maxlength="60" required autocomplete="off"></label><label>동명이인 구분 · 전화번호 끝 4자리(선택)<input id="last4" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>
   <p>변경할 항목만 체크하세요. 체크하지 않은 항목은 그대로 유지합니다.</p><div class="grid">${Object.entries(FIELDS).map(([k,label])=>`<div><label><input type="checkbox" data-enable="${k}"> ${label} 수정</label>${k.endsWith('Memo')?`<textarea id="${k}" maxlength="500" disabled></textarea>`:`<input id="${k}" type="time" step="1" disabled>`}</div>`).join('')}</div><label>수정 근거<textarea id="reason" maxlength="1000" required placeholder="시트·수기출석 등에서 확인한 내용과 수정 이유를 적어 주세요."></textarea></label><button class="primary" id="submit">수정 요청 등록</button></form></details>
   <div class="line" style="margin-top:16px"><label>반 범위<select id="requestClass"><option value="">전체 반</option>${classes.map(c=>`<option value="${esc(c.id)}">${esc(c.id)}반</option>`).join('')}</select></label><label>날짜 범위<input id="requestDate" type="date"></label><label>처리 상태<select id="requestStatus"><option value="all">전체 현황</option><option value="active">승인 대기·처리 중</option><option value="failures">실패·확인 필요</option><option value="history">완료·지난 이력</option></select></label></div><div class="line" id="columnApprovals"></div><div class="line" style="margin-top:16px"><strong>${admin?'요청 처리 현황':'내 요청 처리 현황'}</strong><button id="refresh">새로고침</button>${approver?'<button id="retryFailures">실패 건 다시 처리</button>':''}</div><p id="message" role="status" aria-live="polite"></p><div id="list">불러오는 중…</div></section><dialog id="review"></dialog>`;
   function message(text,error=false){$('#message').textContent=text;$('#message').className=error?'error':'success';}
@@ -160,7 +164,7 @@ export async function mountCheckHereRequests(host,{db,user,classes,admin=false,c
   }
   async function retryReview(candidates){
     if(working)return;if(!approver)throw Error('지정된 관리자만 실패 건을 다시 처리할 수 있습니다.');
-    const ledger=candidates.filter(r=>isRetryableRequest(r)&&retryInLedger(r)),ledgerNote=ledger.length?`출결대조 자동·시간 삭제 요청 ${ledger.length}건은 여기서 다시 처리하지 않습니다 · ${RETRY_IN_LEDGER}: 2기 베타 출결대조(/beta2)에서 그 학생 행의 「체크히어 맞추기」(오늘은 「다시 보내기」)로 지금 값을 다시 계산해 보내 주세요.`:'';
+    const ledger=candidates.filter(r=>isRetryableRequest(r)&&retryInLedger(r)),ledgerNote=ledger.length?`출결대조 자동·시간 삭제 요청 ${ledger.length}건은 여기서 다시 처리하지 않습니다 · ${RETRY_IN_LEDGER}: 출결대조(출결 › 출결대조)에서 그 학생 행의 「체크히어 맞추기」(오늘은 「다시 보내기」)로 지금 값을 다시 계산해 보내 주세요.`:'';
     candidates=candidates.filter(retryHere);
     if(!candidates.length){message(ledger.length?`다시 처리할 실패 건이 없습니다. ${ledgerNote}`:'선택한 범위에 다시 처리할 실패 건이 없습니다.');return;}
     const modal=$('#review');

@@ -1,15 +1,6 @@
 {
   "version": "20260911-curriculum-1",
-  "sources": [
-    {
-      "title": "만족도조사 모듈별 응답률 시트",
-      "url": "https://docs.google.com/spreadsheets/d/1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34/edit#gid=251616448"
-    },
-    {
-      "title": "만족도조사 관리 시트",
-      "url": "https://docs.google.com/spreadsheets/d/1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34/edit#gid=2136777389"
-    }
-  ],
+  "sources": [],
   "courses": {
     "제조지능화": [
       "생산시스템 및 제조공학",

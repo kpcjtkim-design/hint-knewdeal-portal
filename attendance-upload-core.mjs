@@ -1,9 +1,10 @@
+import {CLASSES} from './cohort.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
 // HRD 출결 업로드 양식 (sheet1, 모든 칸 텍스트).
 export const UPLOAD_HEADERS=['훈련과정ID','훈련과정회차','훈련생성명','생년월일성별','훈련일자','입실시간','퇴실시간','외출시작시간','외출종료시간'];
 export const UPLOAD_WIDTHS=[17.25,12.375,14.625,14.375,16.5,11.75,11.75,11.875,11.875];
-// 교육생 명단 '반배정_확정' 문구에서 반을 가려내는 구분어.
-export const ASSIGNMENT_KEYS={1:'_서울대',2:'_한양대',3:'후인원A',4:'후인원B',5:'_청주',6:'마이크로웨이브',7:'KPC대구지부',8:'대구상공회의소',9:'경북대',10:'아르피나A',11:'부산대',12:'아르피나B',13:'부산경총',14:'_울산',15:'전남대',16:'기아오토랜드A',17:'기아오토랜드B'};
+// 교육생 명단 '반배정_확정' 문구에서 반을 가려내는 구분어(2기 16개 반, cohort.json rosterKey). 2기 명단의 실제 표기가 다르면 cohort.json만 고칩니다.
+export const ASSIGNMENT_KEYS=Object.freeze(Object.fromEntries(CLASSES.map(c=>[c.id,c.rosterKey])));
 
 function birthParts(value){
  if(value instanceof Date&&!Number.isNaN(+value))return [value.getUTCFullYear(),value.getUTCMonth()+1,value.getUTCDate()];

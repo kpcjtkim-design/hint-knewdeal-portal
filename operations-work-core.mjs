@@ -1,3 +1,5 @@
+// 2기 교육 시작일(cohort.mjs)부터 셉니다.
+import {COURSE_START} from './cohort.mjs';
 import {evidenceReport} from './attendance-evidence-core.mjs';
 import {eventsForClass,sourceCandidates,SURVEY_ATTENDANCE_VERSION} from './survey-core.mjs';
 
@@ -5,7 +7,7 @@ export const ACTIVE_REQUESTS=['pending','approved','applying'];
 export const FAILED_REQUESTS=['failed','partial','unknown','conflict'];
 export function safeSurveyLink(value){try{const u=new URL(value);return u.protocol==='https:'&&['docs.google.com','forms.gle'].includes(u.hostname)?u.href:'';}catch{return '';}}
 const dateList=entries=>[...new Set(entries.filter(e=>e.kind!=='holiday').map(e=>e.date))].sort();
-export function summarizeClassWork(meta,bundle,{date,through=date,from='2026-07-27',catalog,config={},requests=[],requestError=''}={}){
+export function summarizeClassWork(meta,bundle,{date,through=date,from=COURSE_START,catalog,config={},requests=[],requestError=''}={}){
  const classId=String(meta.id),{summary,timetable,surveys={},errors={}}=bundle||{},entries=timetable?.entries||[],notes=[],attendance=[];
  const days=dateList(entries).filter(d=>d<=date),target=days.at(-1)||(summary?.dates||[]).filter(d=>d<=date).sort().at(-1)||'';
  if(!timetable)notes.push('공개 시간표 미확인');

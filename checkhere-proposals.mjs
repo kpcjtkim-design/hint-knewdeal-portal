@@ -3,6 +3,7 @@ import {reasonFor} from './attendance-reason-parser.mjs';
 import {collection,doc,getDoc,getDocFromServer,getDocs,query,where,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {within,readJson} from './attendance-io.mjs';
 import {isoLabel} from './attendance-beta-core.mjs';
+import {feature,FEATURE_LATER_TEXT} from './cohort.mjs';
 import {deriveRecognized} from './attendance-derived-core.mjs';
 import {APPROVER,cleanRequest,matchRequest,sameRequestTarget} from './checkhere/approval-core.mjs';
 import {judge} from './checkhere/rules.mjs';
@@ -13,6 +14,8 @@ const fingerprint=c=>JSON.stringify({status:c.status,reason:c.reason,teacher:c.t
 const draftId=(cid,date)=>`checkhereProposalDrafts_${cid}_${date}`;
 const contextId=id=>`checkhereProposalRequest_${id}`;
 export async function validateSheetSource(db,user,c,cache=new Map(),{signal,timeout=55000}={}){
+  // 2기: 반별 출결 시트 리더(1기 운영총괄 기준)는 cohort features.attendanceReader가 켜질 때까지 부르지 않습니다(출결대조는 마스터시트 기준).
+  if(!feature('attendanceReader'))throw Error(FEATURE_LATER_TEXT);
   const cacheKey=String(c.classId);
   if(!cache.has(cacheKey)||Date.now()-cache.get(cacheKey).readAt>10000){const entry={readAt:Date.now()};entry.promise=(async()=>{const data=await readJson('/api/attendance-reader',{classId:c.classId,fresh:true,idToken:await within(user.getIdToken(),8000,'로그인 확인이 지연됩니다. 다시 로그인해 주세요.',signal)},{signal,timeout});entry.readAt=Date.now();return data;})();cache.set(cacheKey,entry);}
   let data;try{data=await cache.get(cacheKey).promise;}catch(e){cache.delete(cacheKey);throw e;}

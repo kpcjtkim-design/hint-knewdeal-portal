@@ -1,6 +1,9 @@
+import {ADMINS,CLASSES,COHORT,isClassId} from './cohort.mjs';
+const HOLIDAY_NAMES=COHORT.holidays.map(h=>h.name);
 import {createSurveyIdentityMatcher,surveyBaseName} from './survey-identity.mjs';
 import {isoLabel,portalStatus} from './attendance-beta-core.mjs';
-export const SURVEY_OWNER='hint.kpc@gmail.com';
+// 2기: 반·과정·휴일·운영 대표 계정은 cohort.mjs. 설문 폼의 반 선택지는 2기 폼이 나오면 실제 글로 다시 확인합니다.
+export const SURVEY_OWNER=ADMINS[0];
 export const SURVEY_COLLECTION='surveyBetaSummaries';
 export const SURVEY_ATTENDANCE_VERSION='all-lesson-days-v2:';
 export function surveyAttendanceDates(event,entries,fallbackDate){
@@ -8,22 +11,23 @@ export function surveyAttendanceDates(event,entries,fallbackDate){
  return dates.length?dates:[fallbackDate];
 }
 export const normalizeName=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').trim();
-// Exact choices verified in the operational factory/workshop survey form.
-const classChoices=['서울대_임베디드AI(HW)','한양대_제조지능화','후인원(A)_임베디드AI(SW)','후인원(B)_제조지능화','충북대 G-테크벤처센터_제조지능화','마이크로웨이브_임베디드AI(HW)','KPC대구지역본부_임베디드AI(SW)','대구상공회의소_제조지능화(1)','경북대_제조지능화(2)','아르피나(A)_임베디드AI(HW)','부산대_임베디드AI(SW)','아르피나(B)_제조지능화(1)','부산경영자총협회_제조지능화(2)','현대차 울산기술교육원_제조지능화','전남대_임베디드AI(SW)','기아 광주교육센터(A)_제조지능화(1)','기아 광주교육센터(B)_제조지능화(2)'];
+// 2기 반 선택지 후보: 반 이름('서울(관악구)_모빌리티 AI_서울대'), 공식 과정명, '장소_과정'. 2기 설문 폼 글이 정해지면 그 글을 cohort.json에 더합니다.
 const classChoiceKey=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').toLowerCase();
-const classChoiceIds=new Map(classChoices.map((v,i)=>[classChoiceKey(v),String(i+1)]));
-export const classNumber=v=>{const m=String(v||'').trim().match(/^(?:제\s*)?(\d{1,2})\s*(?:반|[.\-_]|$)/);return m&&+m[1]>=1&&+m[1]<=17?String(+m[1]):classChoiceIds.get(classChoiceKey(v))||'';};
+const classChoiceIds=new Map(CLASSES.flatMap(c=>[c.name,c.official,`${c.venue}_${c.course}`].map(v=>[classChoiceKey(v),c.id])));
+export const classNumber=v=>{const m=String(v||'').trim().match(/^(?:제\s*)?(\d{1,2})\s*(?:반|[.\-_]|$)/);return m&&isClassId(String(+m[1]))?String(+m[1]):classChoiceIds.get(classChoiceKey(v))||'';};
 export function lessonToken(value){return String(value||'').normalize('NFKC').toLowerCase().replace(/직무특화|\[실습\]|\(고정\)|\(sw\)|\(hw\)|sw전공자대상|hw전공자대상/g,'').replace(/임베디드시스템의이해/g,'임베디드시스템이해').replace(/[\s_\-+·/,()[\]]/g,'').replace('임베디드시스템의이해','임베디드시스템이해').replace('딥러닝기반영상인식','딥러닝기반영상인식').replace('임베디드리눅스시스템','임베디드리눅스').replace(/(?:sw|hw)(?:전공자대상)?$/g,'').replace('건정성','건전성').replace('제조장비건전성관리시스템설계실습','장비건전성관리시스템설계실습');}
 function keyTitle(v){const t=lessonToken(v);if(t.startsWith('현직자특강'))return '현직자특강';if(/분해조립/.test(t))return '분해조립';if(/공장.*견학|견학.*공장|공장견학생산공정이론교육/.test(t))return '공장견학';return t;}
 export function eventLessons(event,entries){
  const t=keyTitle(event.title),mot=/동기부여\s*-?\s*(\d+)/.exec(event.title);
  return entries.filter(e=>e.kind!=='holiday'&&(mot?e.module==='동기부여'&&e.day===+mot[1]:keyTitle(e.title)===t||t==='ai기반제조데이터분석입문'&&keyTitle(e.title).startsWith(t)||t==='제조장비건전성관리입문'&&keyTitle(e.title).startsWith(t)));
 }
-export function eventsForClass(catalog,classId,entries){return catalog.events.filter(e=>e.classId===String(classId)&&!(/추석|한글날|대체휴무/.test(e.title))).map(e=>{const matches=eventLessons(e,entries),dates=[...new Set(matches.map(x=>x.date))].sort();return {...e,originalDate:e.date,date:dates.at(-1)||e.date,lessonIds:matches.map(x=>x.id),scheduleMatched:!!matches.length};});}
+export function eventsForClass(catalog,classId,entries){return catalog.events.filter(e=>e.classId===String(classId)&&!HOLIDAY_TITLE.test(e.title)).map(e=>{const matches=eventLessons(e,entries),dates=[...new Set(matches.map(x=>x.date))].sort();return {...e,originalDate:e.date,date:dates.at(-1)||e.date,lessonIds:matches.map(x=>x.id),scheduleMatched:!!matches.length};});}
 // Common modules surveyed once per class at the module's last day. 현직자특강 has one form per track.
-const embeddedClasses=new Set(['1','3','6','7','10','11','15']);
+// 2기 과정: 모빌리티 AI(1·3·6·7·9·10·14반)·제조지능화. 반 과정이 비면 cohort 반 정보로 고릅니다.
+const mobilityClasses=new Set(CLASSES.filter(c=>/모빌리티/.test(c.course)).map(c=>c.id));
+const HOLIDAY_TITLE=new RegExp(['대체휴무',...HOLIDAY_NAMES].map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'));
 const moduleSurveys=new Set(['현직자특강','진로취업','문화체험']);
-function surveyTrack(course,classId){const c=String(course||'').normalize('NFKC');if(/임베디드/.test(c))return '임베디드';if(/제조/.test(c))return '제조';return classId?embeddedClasses.has(String(classId))?'임베디드':'제조':'';}
+function surveyTrack(course,classId){const c=String(course||'').normalize('NFKC');if(/모빌리티/.test(c))return '모빌리티';if(/제조/.test(c))return '제조';return classId?mobilityClasses.has(String(classId))?'모빌리티':'제조':'';}
 export function sourceCandidates(event,sources,course){
  const title=keyTitle(event.title),mot=/동기부여\s*-?\s*(\d+)/.exec(event.title),courseKey=String(course||'').toLowerCase().replace(/\(\s*\d+\s*\)\s*$/,'').replace(/[\s()\-]/g,'');
  const track=moduleSurveys.has(title)?surveyTrack(course,event.classId):'';

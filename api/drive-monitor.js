@@ -1,10 +1,11 @@
-// Drive 업로드 확인(날짜·주차 폴더). 이 Apps Script는 1기 폴더 구조(1기 주차) 기준이라 2기 Drive 구조를 확인할 때까지 닫습니다(cohort.json features.uploads).
+// Drive 업로드 확인(날짜·주차 폴더). 2기 Drive 구조를 아는 Apps Script 배포 주소는 Vercel 환경변수 HINT_DRIVE_MONITOR_URL에만 둡니다
+// (1기 배포 주소는 쓰지 않음). cohort.json features.uploads가 꺼져 있거나 주소가 없으면 닫습니다.
 import cohort from '../lib/cohort.cjs';
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxE4sXaG3r6CZArdGgFnelj8tai-urVpXJ_gjPHFapmBUhrDk-BK3-xd2oi-Tb-QLt9/exec';
+const monitorUrl = () => String(process.env.HINT_DRIVE_MONITOR_URL || '').trim();
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  if (!cohort.feature('uploads')) {
+  if (!cohort.feature('uploads') || !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(monitorUrl())) {
     return res.status(503).json({ ok: false, error: 'UPLOADS_NOT_OPEN', message: '2기 Drive 업로드 확인은 11월 중 2기 폴더 구조 기준으로 다시 엽니다.' });
   }
 
@@ -20,7 +21,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const url = new URL(APPS_SCRIPT_URL);
+    const url = new URL(monitorUrl());
     url.searchParams.set('folderId', folderId);
     url.searchParams.set('date', date);
 

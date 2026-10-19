@@ -80,12 +80,12 @@ export function diseaseReport(stats,checkhere={}){
 // 체크히어 기록과 출결원장 유형 대조. record: 체크히어 저장본 한 명(없으면 null)
 // corrected(보정 모드, 출결대조): 연결 프로그램이 고치는 교시 기록(entry)으로 지각·결석을 봅니다. 실제 입실(rawEntry)은 체크히어에서 지울 수 없어 남으므로 글로만 알립니다.
 // 오늘 교시·퇴실이 모두 비면 교시 기록이 늦게 찍힐 수 있어(퇴실을 지우면 1교시도 비므로 퇴실 전엔 빌 수 있음) 유형과 관계없이 실제 입실로 봅니다. 결석도 같음: 퇴실 전 체크인한 학생이 결석으로 잘못 적힌 것을 숨기지 않습니다.
-// 시간 기준은 그날·그 반 규칙(cohort ruleFor): 공장견학 날(excursion 또는 cohort.json excursions)은 10:00~17:00입니다.
-export function compareCheckHere(type,rec,record,{today='',date='',now=null,corrected=false,excursion=false}={}){
+// 시간 기준은 그날·그 반 규칙(cohort ruleFor): 공장견학 날(excursion 또는 cohort.json excursions)은 10:00~17:00, 관리자 시간 조정(overrides)이 있으면 그 시간입니다.
+export function compareCheckHere(type,rec,record,{today='',date='',now=null,corrected=false,excursion=false,overrides=null}={}){
  if(!record)return {state:'none',text:'체크히어 저장본 없음'};
  let entry,exit,raw;
  try{raw=seconds(Object.hasOwn(record,'rawEntry')&&record.rawEntry!==undefined?record.rawEntry:record.entry);exit=seconds(record.exit);entry=corrected?seconds(record.entry):raw;}catch{return {state:'diff',text:'체크히어 시간 형식 확인 필요'};}
- const RULES=ruleFor(date||record.date,{classId:record.classId??rec?.cls,excursion}),start=seconds(RULES.start),end=seconds(RULES.end),absent=type==='결석'||type==='해당없음';
+ const RULES=ruleFor(date||record.date,record.classId??rec?.cls??'',{excursion,items:overrides||[]}),start=seconds(RULES.start),end=seconds(RULES.end),absent=type==='결석'||type==='해당없음';
  if(corrected&&entry===null&&exit===null&&date&&date===today)entry=raw;
  const late=entry!==null&&entry>=start+(RULES.entryGrace+1)*60,early=exit!==null&&exit<end-RULES.exitGrace*60;
  const outing=(record.outings||[]).length>0||Number(record.outingCount)>0;
@@ -134,4 +134,25 @@ export function dropoutRows(stats,{threshold=COMPLETION_RATE}={}){
  const left=stats.filter(s=>s.status&&s.status!=='재학').map(s=>({...s,verdict:s.status}));
  const risk=stats.filter(s=>(!s.status||s.status==='재학')&&s.rate!==null&&s.rate<threshold).map(s=>({...s,verdict:'수료 위험'}));
  return {left,risk};
+}
+// Apps Script 동기화 상태 글(beta2.gs b2Phase_·b2InWindow_). 2기 화면은 쓰지 않습니다. GAS 시험(beta2-sync)이 쓰므로 Apps Script 동기화를 지울 때 함께 지웁니다.
+// 자동 동기화 시간 'b2InWindow_'(beta2.gs)와 같은 규칙: '1-5 09:10-18:00'(요일 1=월~7=일) 또는 'always'
+const WINDOW_RE=/^([\d,\-\s]+?)\s+(\d{2}:\d{2})\s*[-~]\s*(\d{2}:\d{2})$/,DEFAULT_WINDOW='1-5 09:10-18:00';
+function syncWindow(spec,now){
+ const s=String(spec||DEFAULT_WINDOW).trim();if(/^(always|항상)$/i.test(s))return {text:'항상',open:true};
+ const m=s.match(WINDOW_RE)||DEFAULT_WINDOW.match(WINDOW_RE),days=new Set();
+ for(const part of m[1].split(',')){const [a,b=a]=part.trim().split('-').map(Number);for(let d=a;d<=b;d++)days.add(d);}
+ const k=new Date(now+9*3600e3),dow=k.getUTCDay()||7,hm=k.toISOString().slice(11,16),key=[...days].join(',');
+ const label={'1,2,3,4,5':'평일','1,2,3,4,5,6,7':'매일','6,7':'주말'}[key]||[...days].map(d=>'월화수목금토일'[d-1]).join('·');
+ return {text:`${label} ${m[2]}~${m[3]}`,open:days.has(dow)&&hm>=m[2]&&hm<=m[3]};
+}
+// beta2.gs b2Phase_가 남기는 동기화 단계 이름(B2_SYNC_PHASE·B2_SYNC_CUT) → 화면 말. 'boards n'은 출결판 n번째 차례.
+const SYNC_PHASES={start:'시작',drive:'운영총괄 수정 시각 확인',days:'교육일자 읽기',source:'운영총괄 읽기',colours:'증빙 색 확인',lock:'문서 잠금 기다리기',read:'출결원장 읽기',write:'출결원장 쓰기',slim:'입력 확인(Q열) 계산',done:'마무리'};
+export const syncPhaseText=phase=>{const s=String(phase||''),m=s.match(/^boards (\d+)$/);return m?`출결판 그리기 ${m[1]}번째 차례`:SYNC_PHASES[s]||'';};
+export function syncText(sync,now=Date.now()){
+ const ago=t=>{if(!t)return '기록 없음';const m=Math.round((now-t)/60000);return m<1?'방금':m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`;};
+ const last=sync?.last,win=syncWindow(sync?.window,now),cutAt=Number(sync?.cutAt)||0,cut=cutAt&&cutAt>(Number(last?.at)||0)?ago(cutAt):'';
+ const cutPhase=cut?syncPhaseText(sync?.cut?.phase):'';
+ return {checked:ago(sync?.checkedAt||last?.at),changed:ago(sync?.changedAt),error:sync?.error?.message||'',errors:last?.errors||[],stats:last?.stats||null,
+  window:win.text,resting:!win.open,cut,cutPhase,cutText:cut?`시간 초과로 중단${cutPhase?`(단계: ${cutPhase})`:''}`:''};
 }

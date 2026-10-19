@@ -1,4 +1,7 @@
 // Deterministic suggestions. No attendance, evidence, or CheckHere write occurs here.
+// 지각·조퇴 기준 시각은 그날·그 반 규칙(cohort ruleFor: 기본 09:10·17:50, 공장견학 날 10:10·16:50)입니다.
+import {ruleFor,lateAfter,earlyBefore} from './cohort.mjs';
+const ruleOf=r=>ruleFor(r?.date,r?.classId),lateAt=r=>lateAfter(ruleOf(r)),earlyAt=r=>earlyBefore(ruleOf(r));
 export const ACTIVE_REQUESTS=['pending','approved','applying'];
 export const PROPOSAL_STATUS={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'반영 확인 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
 const hm=v=>/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(v||'')?v.slice(0,5):'';
@@ -25,12 +28,12 @@ export function suggestReason({status,reason,record:r,teacher=r?.teacher||''}){
   let suffix='';
   if(kind==='지각'){
     const time=hm(r?.rawEntry??r?.entry);
-    if(!time||time<='09:10'){out.incomplete=true;out.notes.push('실제 지각 시간 확인 필요 · 보정된 입실시간일 수 있습니다.');}
-    suffix=`(${time&&time>'09:10'?time:'[시간 확인]'})`;
+    const late=lateAt(r);if(!time||time<=late){out.incomplete=true;out.notes.push('실제 지각 시간 확인 필요 · 보정된 입실시간일 수 있습니다.');}
+    suffix=`(${time&&time>late?time:'[시간 확인]'})`;
   }else if(kind==='조퇴'){
     const time=hm(r?.exit);
-    if(!time||time>='17:50'){out.incomplete=true;out.notes.push('실제 조퇴 시간 확인 필요 · 보정된 퇴실시간일 수 있습니다.');}
-    suffix=`(${time&&time<'17:50'?time:'[시간 확인]'})`;
+    const early=earlyAt(r);if(!time||time>=early){out.incomplete=true;out.notes.push('실제 조퇴 시간 확인 필요 · 보정된 퇴실시간일 수 있습니다.');}
+    suffix=`(${time&&time<early?time:'[시간 확인]'})`;
   }else if(kind==='외출'){
     if(!r?.outings?.length){out.blocked=true;out.incomplete=true;out.notes.push(`${r?.classId||''}반-${r?.date||''}-${r?.name||''}-외출시간없음`);suffix='([외출시간 확인])';}
     else if(r.outingCount>r.outings.length||r.outings.some(x=>!hm(x.start)||!hm(x.end)||hm(x.end)<=hm(x.start))){out.blocked=true;out.incomplete=true;out.notes.push('외출 구간 누락·시간 확인 필요');suffix='([외출시간 확인])';}
@@ -50,10 +53,10 @@ export const requestColumn=r=>Object.keys(r.changes||{}).every(k=>['entry','exit
 export const requestsOverlap=(a,b)=>a.classId===b.classId&&a.date===b.date&&a.name===b.name&&(!a.phoneLast4||!b.phoneLast4||a.phoneLast4===b.phoneLast4)&&Object.keys(a.changes).some(k=>Object.hasOwn(b.changes,k));
 export function excursionFor(entries,date){return entries.filter(e=>e.date===date&&e.kind!=='holiday'&&(['공장견학','분해조립','실차체험'].includes(e.module)||/분해조립|공장.*견학/.test(e.title||'')));}
 export function suggestTimes({status,record:r,excursion=false}){
- const value={entry:r?.entry||'',exit:r?.exit||''},notes=[];
+ const value={entry:r?.entry||'',exit:r?.exit||''},notes=[],rule=ruleOf(r),start=rule.start+':00',end=rule.end+':00';
  if(excursion)return {value,notes:['견학일 · 실제 운영 시간을 확인한 뒤 직접 입력해 주세요.']};
- if(/^인정(출석|지각|조퇴|외출)$/.test(status))return {value:{entry:'09:00:00',exit:'18:00:00'},notes:['시트 인정출석 기준의 추천시간입니다. 실제 입퇴실 시각과 구분해 검토해 주세요.']};
- if(status==='출석')return {value:{entry:!hm(value.entry)||hm(value.entry)>'09:10'?'09:00:00':value.entry,exit:!hm(value.exit)||hm(value.exit)<'17:50'?'18:00:00':value.exit},notes:['시트 출석 기준으로 검토할 추천시간입니다. 수정 전 실제 출석 근거를 확인해 주세요.']};
+ if(/^인정(출석|지각|조퇴|외출)$/.test(status))return {value:{entry:start,exit:end},notes:['시트 인정출석 기준의 추천시간입니다. 실제 입퇴실 시각과 구분해 검토해 주세요.']};
+ if(status==='출석')return {value:{entry:!hm(value.entry)||hm(value.entry)>lateAt(r)?start:value.entry,exit:!hm(value.exit)||hm(value.exit)<earlyAt(r)?end:value.exit},notes:['시트 출석 기준으로 검토할 추천시간입니다. 수정 전 실제 출석 근거를 확인해 주세요.']};
  notes.push(status==='결석'?'결석은 시간 공란이 정상입니다. 시간 삭제는 자동 요청하지 않습니다.':'실제 수집 시간을 유지합니다. 빠진 시각은 확인 후 직접 입력해 주세요.');
  return {value,notes};
 }

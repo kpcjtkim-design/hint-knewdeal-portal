@@ -1,4 +1,4 @@
-// 2기 베타 출결대조 → 체크히어 반영 요청: 시트 값 하나를 체크히어 변경 하나로 바꾸는 순수 함수(화면·Firestore 없음).
+// 2기 출결대조 → 체크히어 반영 요청: 시트 값 하나를 체크히어 변경 하나로 바꾸는 순수 함수(화면·Firestore 없음).
 // 설계: docs/beta2-instant-edit-plan.md 3장(대응표)·4.1. 사용자 결정(2026-10-14): 시간 정책은 '메모만'(memo-only),
 // 체크히어 쓰기는 수정창 버튼, 삭제는 기록 번호(eventId)가 있는 칸만.
 // 사용자 결정(2026-10-16): 요청은 만들기만 하고 승인 대기로 남습니다. 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만(중계는 읽기 전용).
@@ -9,12 +9,14 @@ import {memoDefaultTimes} from './checkhere/approval-core.mjs';
 import {TIME_DELETE_V2_CAPABILITY,normalizeTime,privacyState,timeDeleteRefusal} from './checkhere/rules.mjs';
 import {ACTIVE,AUTO_TEXT,isAutoLedgerRequest,isLiveRequest,stamp} from './checkhere-live-core.mjs';
 import {reasonCategory} from './checkhere-proposal-core.mjs';
+// 출결 시간 기준(그날·그 반, cohort ruleFor): 지각은 lateAfter 넘긴 입실(기본 09:10, 견학 10:10), 조퇴는 earlyBefore 전 퇴실(기본 17:50, 견학 16:50).
+import {COURSE_START,COURSE_END,ruleFor,scheduleText,acceptedSchedules,lateAfter,earlyBefore} from './cohort.mjs';
 
 export const STATUS_MEMO=/^\s*(?:\(\s*인정(?:출석|지각|조퇴|외출)\s*\)|(?:지각|조퇴|외출)_담임:)/;
 const PLAIN_STATUS_MEMO=/^\s*(?:지각|조퇴|외출)_담임:/;
 export const RELAY_STALE_MS=3*60*1000;          // 중계 신호가 이보다 오래되면 '중계 꺼짐'(해제 상태 모름, 시간 삭제 요청과는 상관없음)
-export const REQUEST_DATE_RANGE={from:'2026-07-27',to:'2026-10-22'}; // checkhere/approval-core.mjs cleanRequest, firestore.rules와 같아야 함
-export {AUTO_TEXT,isAutoLedgerRequest}; // 1기 재처리 제외도 쓰므로 checkhere-live-core.mjs에 둡니다.
+export const REQUEST_DATE_RANGE={from:COURSE_START,to:COURSE_END}; // 2기 교육 기간(cohort.json). checkhere/approval-core.mjs cleanRequest, firestore.rules와 같아야 함
+export {AUTO_TEXT,isAutoLedgerRequest}; // '실패 건 다시 처리' 제외도 쓰므로 checkhere-live-core.mjs에 둡니다.
 export const TIME_DELETE_CAPABILITY='time-delete-v1';
 export {TIME_DELETE_V2_CAPABILITY};
 // 관리자 1교시(ATTEND) 삭제는 두 칸 삭제(퇴실 먼저, 다시 읽은 1교시 번호로)를 아는 연결 프로그램에서만 엽니다. 옛 연결 프로그램(v1만)이면 지금처럼 퇴실만 지웁니다.
@@ -93,9 +95,9 @@ export const needsUnmaskOnApply=p=>!p?.writable;
 export const privacyShort=p=>!p||p.state==='unknown'?'':p.state==='masked'?'체크히어 가림 · 읽기만':p.writable?`체크히어 해제됨 · ${Math.floor(p.leftSec/60)}분 남음`:'체크히어 해제 시간 부족 · 연장 필요';
 
 /* 3장 대응표. row = 방금 b2Save에 보낸 값 {type, reason, inT, outT, oa, ob}, record = 그 학생의 최신 체크히어 기록,
- * sheetTeacher = 반정보 담임, active = 이 학생의 체크히어 요청들, me = 지금 사용자 이메일.
+ * sheetTeacher = 반정보 담임, active = 이 학생의 체크히어 요청들, me = 지금 사용자 이메일, rule = 그날·그 반 출결 규칙(없으면 cohort ruleFor).
  * → {state:'send'|'same'|'hold'|'none'|'manual', changes, deleteTimes, text, notes, warnings, retryWhen, withdraw} */
-export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabled=false,deleteV2=false,active=[],me=''}){
+export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabled=false,deleteV2=false,active=[],me='',rule=null}){
   const out={state:'hold',changes:{},deleteTimes:[],text:'',notes:[],warnings:[],withdraw:[]};
   const hold=(note,retryWhen)=>({...out,state:'hold',changes:{},deleteTimes:[],notes:[note],...(retryWhen?{retryWhen}:{})});
   const type=String(row?.type||'출석'),reason=String(row?.reason||'').trim();
@@ -117,10 +119,10 @@ export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabl
   const T=validTeacher(record.teacher)?String(record.teacher).trim():validTeacher(sheetTeacher)?String(sheetTeacher).trim():'';
   if(!T)return hold('담임 이름 확인');
   if(validTeacher(record.teacher)&&validTeacher(sheetTeacher)&&String(record.teacher).trim()!==String(sheetTeacher).trim())out.warnings.push(`담임 이름 다름 · 메모에는 체크히어 강의 담임(${T})을 씁니다`);
-  // P5 강의시간이 다르면 시간은 바꾸지 않습니다.
-  const timesAllowed=record.schedule==='09:00 ~ 18:00';
+  // P5 강의시간이 그날 기준(기본 09:00 ~ 18:00, 공장견학·시간 조정 날은 그 시간 또는 기본)과 다르면 시간은 바꾸지 않습니다.
+  rule??=ruleFor(date,record.classId??row?.cls??'');const schedule=scheduleText(rule),timesAllowed=acceptedSchedules(rule).includes(record.schedule);
   const changes={};
-  const setTime=(k,hm)=>{if(!timesAllowed){out.warnings.push('강의시간이 09:00 ~ 18:00이 아니라 시간은 바꾸지 않습니다');return;}if(H(record[k])!==hm)changes[k]=hm+':00';};
+  const setTime=(k,hm)=>{if(!timesAllowed){out.warnings.push(`강의시간이 ${schedule}이 아니라 시간은 바꾸지 않습니다`);return;}if(H(record[k])!==hm)changes[k]=hm+':00';};
   const setMemo=(k,text)=>{if(text!==(record[k]??''))changes[k]=text;};
   const clearStale=k=>{if(PLAIN_STATUS_MEMO.test(String(record[k]||'')))changes[k]='';};
   const inT=H(row.inT),outT=H(row.outT),oa=H(row.oa),ob=H(row.ob);
@@ -130,12 +132,12 @@ export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabl
     case '출석':
       setMemo('entryMemo','');setMemo('exitMemo','');break;
     case '지각':
-      if(!inT||inT<='09:10')return hold('지각 입실 시간이 09:10 이후가 아닙니다');
+      if(!inT||inT<=lateAfter(rule))return hold(`지각 입실 시간이 ${lateAfter(rule)} 이후가 아닙니다`);
       setTime('entry',inT);setMemo('entryMemo',`지각_담임:${T}(${inT})`);clearStale('exitMemo');
       if(H(record.rawEntry)&&H(record.rawEntry)!==inT)out.warnings.push('실제 입실과 다름 · 교시 기록만 바뀝니다');
       break;
     case '조퇴':
-      if(!outT||outT>='17:50')return hold('조퇴 퇴실 시간이 17:50 전이 아닙니다');
+      if(!outT||outT>=earlyBefore(rule))return hold(`조퇴 퇴실 시간이 ${earlyBefore(rule)} 전이 아닙니다`);
       setTime('exit',outT);setMemo('exitMemo',`조퇴_담임:${T}(${outT})`);clearStale('entryMemo');break;
     case '외출':
       if(!oa||!ob||ob<=oa)return hold('외출 시작·종료 시간을 확인해 주세요');

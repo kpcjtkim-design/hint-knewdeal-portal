@@ -1,3 +1,4 @@
+import {CLASS_COUNT,feature,FEATURE_LATER_TEXT} from './cohort.mjs';
 import {DROPOUT_SHEET_ID,DROPOUT_TAB,OPERATIONS_SHEET_ID,MAX_TOTAL_ABSENCE,readDropoutRows,classTabs,classAttendance,evaluateAll,verdictLabel,documentStatus,oxValue,parseContractCell,contractCellValue,CONTRACT_ITEMS,isPersonal,writeDropoutCell,verdictPlan,writeVerdictCells,AUTO_MARK} from './dropout-core.mjs';
 import {koreaToday,quoteSheet} from './attendance-beta-core.mjs';
 const GOOGLE='https://sheets.googleapis.com/v4/spreadsheets/';
@@ -7,9 +8,11 @@ const KIND={수료가능:'ok',제적:'bad',확인필요:'check'},DOC_KIND={완�
 // The Google token lives in this module's memory only. Writes touch only M/N/O document cells and
 // H verdict cells that are blank or were written by the portal ("· 포털자동(M/D)").
 export async function readDropoutSources(get){
+ // 2기: 중도포기 화면은 2기 마스터시트·2기 중도포기자 시트로 다시 만든 뒤 엽니다(cohort features.dropout).
+ if(!feature('dropout')||!DROPOUT_SHEET_ID||!OPERATIONS_SHEET_ID)throw Error(FEATURE_LATER_TEXT);
  const q=encodeURIComponent,meta=await get(`${GOOGLE}${OPERATIONS_SHEET_ID}?fields=sheets.properties(title)`);
  const tabs=classTabs((meta.sheets||[]).map(s=>s.properties.title)),ids=Object.keys(tabs).sort((a,b)=>a-b);
- if(ids.length!==17)throw Error(`운영총괄 반별 탭을 17개 확인하지 못했습니다(${ids.length}개).`);
+ if(ids.length!==CLASS_COUNT)throw Error(`반별 탭을 ${CLASS_COUNT}개 확인하지 못했습니다(${ids.length}개).`);
  const [ops,faq]=await Promise.all([
   get(`${GOOGLE}${OPERATIONS_SHEET_ID}/values:batchGet?${ids.map(id=>'ranges='+q(quoteSheet(tabs[id])+'!M18:ZZ48')).join('&')}&valueRenderOption=FORMATTED_VALUE`),
   get(`${GOOGLE}${DROPOUT_SHEET_ID}/values/${q(quoteSheet(DROPOUT_TAB)+'!A1:T300')}?valueRenderOption=FORMATTED_VALUE`)

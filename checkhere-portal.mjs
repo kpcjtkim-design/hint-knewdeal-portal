@@ -1,5 +1,6 @@
 import {loadCheckHereDay,loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
 import {collectionDates} from './attendance-beta-core.mjs';
+import {CLASS_IDS} from './cohort.mjs';
 import {collection,doc,getDoc,getDocFromServer,getDocs,setDoc,query,orderBy,limit,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {createCurrentSaver,mergeCurrentRecords} from './checkhere-current-core.mjs';
 import {within} from './attendance-io.mjs';
@@ -41,7 +42,7 @@ export async function mountCheckHerePortal(host,{db,user,classes,showRequests=fa
     onController(c){controller=c;},
     save:saveSnapshots,
     async load(classId,{from,to}){
-      const classIds=classId==='all'?Array.from({length:17},(_,i)=>String(i+1)):[classId],records=[];
+      const classIds=classId==='all'?[...CLASS_IDS]:[classId],records=[];
       for(const cid of classIds)for(const date of collectionDates(from,to))records.push(...await loadCheckHereDay(db,cid,date));
       return records.map(r=>({...r,source:'snapshot'}));
 

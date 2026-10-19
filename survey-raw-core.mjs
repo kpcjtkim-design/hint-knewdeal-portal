@@ -1,3 +1,5 @@
+// 2기 교육 시작일(cohort.mjs).
+import {COURSE_START} from './cohort.mjs';
 import {exportContexts,rawSourceKey} from './survey-export-core.mjs';
 import {classNumber,eventsForClass,sourceCandidates,lessonToken} from './survey-core.mjs';
 import {createSurveyIdentityMatcher,phoneLast4} from './survey-identity.mjs';
@@ -42,7 +44,7 @@ export function rawSurveyBlock(raw,{title,contexts,identities={}}){
  }
  return {headers:keep.map(i=>withoutContacts(headers[i]||`제목 없는 ${i+1}열`)),rows,review,outside,removed:width-keep.length};
 }
-export async function collectSurveyRaw({reader,catalog,classes,readSchedule,readIdentities,config={},from='2026-07-27',to=koreaToday(),today=koreaToday(),signal,onProgress=()=>{}}){
+export async function collectSurveyRaw({reader,catalog,classes,readSchedule,readIdentities,config={},from=COURSE_START,to=koreaToday(),today=koreaToday(),signal,onProgress=()=>{}}){
  const schedules={},identities={},failures=[],review=[['설문','원본 행','확인 사항']],audit=[['기준','설문 실시일 · 포털 지정일 우선, 없으면 시간표 강의 종료일'],['기간',from,to],['응답','해당 기간에 실시한 반의 원본 응답 전체 · 늦은 제출 및 중복 포함'],['개인정보','전화번호·이메일 열 제거. 동명이인 끝 4자리는 내부 대조 후 구분된 이름만 출력'],['점수','원본 5점·10점 유지, 환산 없음'],[],['설문','반','실시일','결과','포함 행']];
  for(const c of classes){signal?.throwIfAborted();onProgress(`${c.id}반 설문 일정 확인 중…`);try{schedules[c.id]=await readSchedule(String(c.id));if(!schedules[c.id])throw Error('공개 시간표 없음');}catch(e){signal?.throwIfAborted();failures.push([c.id+'반 시간표',withoutContacts(e.message)]);}}
  const available=classes.filter(c=>schedules[c.id]),allContexts=conductedContexts(catalog,available,schedules,config),contexts=allContexts.filter(c=>c.date>=from&&c.date<=to&&c.date<=today),bySource=new Map();

@@ -1,5 +1,6 @@
 import {collection,doc,getDoc,getDocs,setDoc,query,where,documentId,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {isoLabel,koreaToday} from './attendance-beta-core.mjs';
+import {COURSE_START,feature,FEATURE_LATER_TEXT} from './cohort.mjs';
 import {loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
 import {deriveAttendanceClass} from './attendance-derived-core.mjs';
 import {within,readJson} from './attendance-io.mjs';
@@ -11,7 +12,7 @@ async function recognitionRecords(db,classId,sheet){
  const a=sheet.attendance||[],dates=(a[0]||[]).map((v,i)=>({date:isoLabel(v),i})).filter(d=>d.i>=4&&d.date&&d.date<=koreaToday()&&a.slice(1).some(r=>String(r[d.i]||'').trim()==='인정출석')).map(d=>d.date);
  // A single bounded current-record query also covers CheckHere hospital
  // recognitions on dates whose Sheet status was later corrected.
- const current=await within(getDocs(query(collection(db,'classes',classId,'checkhereCurrent'),where('date','>=','2026-07-27'),where('date','<=',koreaToday()))),30000);
+ const current=await within(getDocs(query(collection(db,'classes',classId,'checkhereCurrent'),where('date','>=',COURSE_START),where('date','<=',koreaToday()))),30000);
  const found=new Map(current.docs.map(d=>[d.data().date,d.data().records||[]]));
  const rows=[...found.values()].flat();
  for(let i=0;i<dates.length;i+=30){
@@ -26,6 +27,8 @@ export function syncAttendanceSummary(db,user,classId,data=null){
  const inFlight=flightMap(db,user),key=String(classId),signature=data?JSON.stringify([data.attendance,data.attendanceBackgrounds||data.backgrounds]):'refresh';
  const pending=inFlight.get(key);if(pending){if(pending.signature===signature)return pending.work;return pending.work.catch(()=>{}).then(()=>syncAttendanceSummary(db,user,classId,data));}
  const work=(async()=>{
+  // 2기: 반별 출결 시트 리더(/api/attendance-reader, 1기 운영총괄 기준)는 닫혀 있습니다. 2기 출결원장 기준으로 다시 만든 뒤 cohort features.attendanceReader를 켭니다.
+  if(!data&&!feature('attendanceReader'))throw Error(FEATURE_LATER_TEXT);
   const sheet=data||await readJson('/api/attendance-reader',{classId:key,idToken:await within(user.getIdToken()),allowCache:true},{timeout:55000});
   const [metas,snaps,tt,old,identities]=await Promise.all([
    within(getDocs(query(collection(db,'settings'),where(documentId(),'>=',`attendanceBeta_${key}_`),where(documentId(),'<',`attendanceBeta_${key}_\uf8ff`))),30000),

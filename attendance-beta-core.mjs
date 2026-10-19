@@ -1,3 +1,5 @@
+// 2기 기간·날짜 해석(해를 넘김)은 cohort.mjs 한 곳에서 읽습니다.
+import {COURSE_START,COURSE_END,COHORT_DATE_RE,isIsoDate,isoFromMonthDay,isHoliday,mdLabel,weekdaysBetween} from './cohort.mjs';
 import {matchingCheckHereRecords} from './checkhere-name-core.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
 export const ATTENDANCE_OPTIONS=['해당없음','출석','결석','지각','조퇴','외출','중복','인정출석','인정지각','인정조퇴','인정외출'];
@@ -32,17 +34,9 @@ export function evidenceStatus(rawColor,rawStatus,meta,colorState){
 }
 export function columnName(n){if(!Number.isInteger(n)||n<1)throw Error('잘못된 열 번호입니다.');let s='';for(;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;}
 export const quoteSheet=s=>"'"+String(s).replace(/'/g,"''")+"'";
-export function isoLabel(v){const s=String(v||'').trim();if(/^2026-\d{2}-\d{2}$/.test(s))return s;const m=s.match(/(?:^|\D)(\d{1,2})\s*[/.\-]\s*(\d{1,2})(?:\D|$)/);return m?`2026-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`:'';}
-export function resolveSheetTarget({attendance,reasons,title,sheetId},student,date){
-  if(!/^2026-\d{2}-\d{2}$/.test(date)||date<'2026-07-27'||date>'2026-10-22')throw Error('교육일자를 확인해 주세요.');
-  const dates=(attendance[0]||[]).map((x,i)=>({iso:isoLabel(x),i})).filter(x=>x.i>=4&&x.iso===date);
-  const matches=attendance.slice(1).map((r,i)=>({name:String(r[0]||'').trim(),i})).filter(x=>x.name===student);
-  const reasonDates=(reasons[0]||[]).map((x,i)=>({iso:isoLabel(x),i})).filter(x=>x.i>=4&&x.iso===date);
-  if(dates.length!==1||matches.length!==1||reasonDates.length!==1)throw Error('학생·교육일자 셀을 하나로 확인하지 못했습니다. 시트의 중복 이름과 날짜를 확인해 주세요.');
-  const col=13+dates[0].i,row=19+matches[0].i,reasonCol=13+reasonDates[0].i;
-  if(row>48)throw Error('허용된 출결 명단 범위를 벗어났습니다.');
-  return {sheetId,title,row,col,reasonRow:51,reasonCol,statusA1:`${quoteSheet(title)}!${columnName(col)}${row}`,reasonA1:`${quoteSheet(title)}!${columnName(reasonCol)}51`,nameA1:`${quoteSheet(title)}!M${row}`,dateA1:`${quoteSheet(title)}!${columnName(col)}18`,reasonDateA1:`${quoteSheet(title)}!${columnName(reasonCol)}50`};
-}
+// 시트 날짜 글('10/28', '1/4(월)', '2027-01-04')을 2기 날짜로: M/D는 cohort isoFromMonthDay(10~12월 2026, 1월 2027), ISO는 2기 연도(2026·2027)만.
+// 1기 운영총괄 칸 배치(resolveSheetTarget, M18:ZZ48·51행)는 2기에서 쓰지 않아 뺐습니다(2기는 마스터시트 Apps Script로 씀).
+export function isoLabel(v){const s=String(v||'').trim();if(isIsoDate(s))return COHORT_DATE_RE.test(s)?s:'';return isoFromMonthDay(s);}
 
 // Edit only unambiguous student entries. Unknown layouts stop rather than
 // rebuilding the entire day from parser guesses.
@@ -81,8 +75,9 @@ export function matchSnapshot(student,students,records,identities=[]){
   if(students.filter(x=>x.name===student.name).length!==1)return {error:'동명이인 · 연결 확인 필요'};
   const found=matchingCheckHereRecords(student,records,identities);return found.length===1?{record:found[0]}:{error:found.length?'동명이인 · 연결 확인 필요':records.some(x=>surveyBaseName(x.name)===surveyBaseName(student.name))?'동명이인 · 구분 정보 확인 필요':'저장본 없음'};
 }
-export function collectionDates(from,to){
-  const today=koreaToday();if(from<'2026-07-27'||to>today||to>'2026-10-22'||from>to)throw Error('수집 기간은 7/27부터 오늘 또는 교육 종료일까지입니다.');
-  if(![from,to].every(x=>/^2026-\d{2}-\d{2}$/.test(x)&&!Number.isNaN(Date.parse(x))&&new Date(x).toISOString().slice(0,10)===x))throw Error('날짜 형식을 확인해 주세요.');
-  const days=[];for(let d=new Date(from+'T00:00:00Z');d<=new Date(to+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){if(![0,6].includes(d.getUTCDay()))days.push(d.toISOString().slice(0,10));}return days;
+// 체크히어 저장본을 읽을 날짜: 2기 교육 기간(cohort) 안, 오늘까지의 평일에서 휴일(12/25·12/31·1/1)을 뺀 날.
+export function collectionDates(from,to,today=koreaToday()){
+  if(![from,to].every(x=>COHORT_DATE_RE.test(String(x))&&isIsoDate(x)))throw Error('날짜 형식을 확인해 주세요.');
+  if(from<COURSE_START||to>today||to>COURSE_END||from>to)throw Error(`수집 기간은 ${mdLabel(COURSE_START)}부터 오늘 또는 교육 종료일(${mdLabel(COURSE_END)})까지입니다.`);
+  return weekdaysBetween(from,to).filter(d=>!isHoliday(d));
 }

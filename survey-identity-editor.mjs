@@ -1,7 +1,10 @@
+import {feature,FEATURE_LATER_TEXT} from './cohort.mjs';
 import {duplicateStudents,validateDuplicateIdentities} from './survey-identity.mjs';
 import {readJson,within} from './attendance-io.mjs';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export async function editSurveyIdentities(dialog,{classId,store,user}){
+ // 2기: 반별 출결 시트 리더(1기 운영총괄 기준)는 cohort features.attendanceReader가 켜질 때까지 부르지 않습니다.
+ if(!feature('attendanceReader'))throw Error(FEATURE_LATER_TEXT);
  const [sheet,saved]=await Promise.all([readJson('/api/attendance-reader',{classId,idToken:await within(user.getIdToken()),allowCache:true},{timeout:55000}),store.identities(classId)]);
  if(!Array.isArray(sheet.attendance))throw Error('시트 학생 명단을 확인하지 못했습니다.');
  const targets=sheet.attendance.slice(1).map((r,i)=>({id:`${i}_${r[0]}`,name:String(r[0]||'').trim()})).filter(s=>s.name),students=duplicateStudents(targets);

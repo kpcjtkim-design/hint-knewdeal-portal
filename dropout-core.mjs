@@ -1,17 +1,21 @@
+import {DROPOUT_SHEET_ID as COHORT_DROPOUT_SHEET_ID,isoFromMonthDay,isClassId} from './cohort.mjs';
 import {isoLabel} from './attendance-beta-core.mjs';
 import {UNIT_PERIODS} from './attendance-period-core.mjs';
 // 중도포기자(교육생) 시트 + 운영총괄 반별 출결로 조기취업 수료 가능 여부를 판정한다.
 // 규칙: 근로개시일 직전 수업일까지 출석해야 하고(미출석=결석), 그 이후는 출석 간주.
 // 무단 지각·조퇴·외출은 단위기간별 3회=결석 1일. 단위기간 결석은 수업일 절반 미만,
 // 전체 무단결석은 11일 이하여야 수료 가능.
-export const DROPOUT_SHEET_ID='1ZU6IxnP3CqFQGB1UxC3XB9mhrC40ZArG-0cQGdLqljI';
+// 2기: 중도포기자 시트는 cohort.json sheets.dropout(아직 없음 → ''), 출결 원본은 2기 마스터시트로 다시 만들 때까지 비어 있습니다(cohort features.dropout).
+export const DROPOUT_SHEET_ID=COHORT_DROPOUT_SHEET_ID;
 export const DROPOUT_TAB='중도포기자(교육생)';
-export const OPERATIONS_SHEET_ID='1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34';
+export const OPERATIONS_SHEET_ID='';
+// 전체 무단결석 한도: 1기(59교육일) 기준 11일. 2기 60교육일 기준은 다시 확인해야 합니다.
 export const MAX_TOTAL_ABSENCE=11;
 const LAST_DAY=UNIT_PERIODS.at(-1).to,FIRST_DAY=UNIT_PERIODS[0].from;
 const PARTIAL={지각:1,조퇴:1,외출:1};
 const clean=v=>String(v??'').trim();
-const md=(m,d)=>{const mm=+m,dd=+d;return mm>=1&&mm<=12&&dd>=1&&dd<=31?`2026-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`:'';};
+// 'M/D' → 2기 날짜(10~12월 2026, 1월 2027, cohort isoFromMonthDay)
+const md=(m,d)=>isoFromMonthDay(m,d);
 // '9/1 출근', '8/7까지 출석', '=>8/31 포기일 예정' 등 자유 입력에서 날짜를 고른다.
 export function parseSheetDate(text,{prefer}={}){
  const s=clean(text);if(!s)return '';
@@ -20,7 +24,7 @@ export function parseSheetDate(text,{prefer}={}){
  return m?md(m[1],m[2]):'';
 }
 export const noEmployment=text=>/^[-–—\s]*$/.test(clean(text));
-export function classIdOf(text){const m=clean(text).match(/^(\d{1,2})\s*반/);return m&&+m[1]>=1&&+m[1]<=17?String(+m[1]):'';}
+export function classIdOf(text){const m=clean(text).match(/^(\d{1,2})\s*반/);return m&&isClassId(String(+m[1]))?String(+m[1]):'';}
 // Header row locates columns; fixed letters (B,D,E,F,G,H,Q) are the fallback.
 export function readDropoutRows(values){
  const rows=Array.isArray(values)?values:[];const head=(rows[0]||[]).map(clean);

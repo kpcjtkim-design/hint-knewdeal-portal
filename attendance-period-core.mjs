@@ -1,8 +1,10 @@
 import {isoLabel,ATTENDANCE_OPTIONS,sheetStatus,koreaToday} from './attendance-beta-core.mjs';
 import {parseAttendanceReasons} from './attendance-reason-parser.mjs';
-export const UNIT_PERIODS=[{id:'1',from:'2026-07-27',to:'2026-08-26'},{id:'2',from:'2026-08-27',to:'2026-09-26'},{id:'3',from:'2026-09-27',to:'2026-10-22'}];
+import {UNIT_PERIODS as COHORT_UNIT_PERIODS,COHORT_DATE_RE,isIsoDate,isClassId} from './cohort.mjs';
+// 2기 단위기간·반 번호·날짜 모양은 cohort.mjs(1단위 10/28~11/27, 2단위 11/28~12/27, 3단위 12/28~2027-01-22, 반 1~16).
+export const UNIT_PERIODS=COHORT_UNIT_PERIODS.map(p=>({id:String(p.no),from:p.from,to:p.to}));
 export const REVIEW_HEADERS=['반','학생명','학생 ID','날짜','운영총괄 출결','DB 출결','적용 출결','가-3 사유','확인 사유','관련 DB 근거','처리 상태'];
-export function periodClassId(name){const m=String(name).trim().match(/^(?:제\s*)?0*(\d{1,2})(?:\s*반|\s*[._-])/);return m&&+m[1]>=1&&+m[1]<=17?String(+m[1]):'';}
+export function periodClassId(name){const m=String(name).trim().match(/^(?:제\s*)?0*(\d{1,2})(?:\s*반|\s*[._-])/);return m&&isClassId(String(+m[1]))?String(+m[1]):'';}
 export function normalizePeriodReason(value){
  const s=String(value||'').trim();if(!s)return '개인사정';
  if(/^(?:병원(?:\s*(?:방문|진료|내원|치료|예약))?|진료)$/.test(s))return'병원';
@@ -30,7 +32,7 @@ export function resolvePeriodStatus(raw,meta,history){
  return {status,basis,dbStatus,issues};
 }
 export function preparePeriod({classId,data,stored,from,to,entries=[],uploaded=false}){
- if(!/^2026-\d{2}-\d{2}$/.test(from)||!/^2026-\d{2}-\d{2}$/.test(to)||from>to)throw Error('기간을 확인해 주세요.');
+ if(![from,to].every(d=>COHORT_DATE_RE.test(String(d))&&isIsoDate(d))||from>to)throw Error('기간을 확인해 주세요.');
  const a=data.attendance;if(!Array.isArray(a)||!Array.isArray(a[0]))throw Error('출결 원본을 읽지 못했습니다.');
  const holidays=new Set(entries.filter(e=>e.kind==='holiday').map(e=>e.date)),dates=a[0].map((v,col)=>({date:isoLabel(v),col})).filter(d=>d.col>=4&&d.date>=from&&d.date<=to&&!holidays.has(d.date)&&![0,6].includes(new Date(d.date+'T12:00:00Z').getUTCDay())).sort((a,b)=>a.date.localeCompare(b.date));
  if(!dates.length)throw Error('선택 기간의 교육일 열이 없습니다.');

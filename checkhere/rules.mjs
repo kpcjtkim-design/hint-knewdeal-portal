@@ -1,4 +1,6 @@
-export const RULES = Object.freeze({version:'HINT-1.2.1-20260910',start:'09:00',end:'18:00',lunchStart:'12:00',lunchEnd:'13:00',entryGrace:10,exitGrace:10});
+import {BASE_RULE,ruleFor,acceptedSchedules,lateAfter} from '../cohort.mjs';
+// 2기 기본 출결 규칙(cohort.json rules: 09:00~18:00, 점심 12~13, 입실·퇴실 유예 10분). 공장견학 날은 ruleFor가 10:00~17:00 규칙을 줍니다.
+export const RULES = BASE_RULE;
 export function seconds(v){
   if(v===null||v===undefined||v===''||v==='-')return null;
   const m=/^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(v));
@@ -11,12 +13,13 @@ export function unionLength(intervals){
   const sorted=intervals.filter(([a,b])=>b>a).sort((a,b)=>a[0]-b[0]);let total=0,end=-Infinity;
   for(const [a,b] of sorted){total+=Math.max(0,b-Math.max(a,end));end=Math.max(end,b);}return total;
 }
-export function judge(r,rules=RULES,now=new Date()){
+// rules를 넘기지 않으면 그 기록의 날짜·반 규칙(cohort ruleFor)을 씁니다. 견학·시간 조정 날은 체크히어 강의시간이 기본(09:00 ~ 18:00)이어도 받아 줍니다.
+export function judge(r,rules=ruleFor(r?.date,r?.classId),now=new Date()){
   const issues=[],labels=[],suggestions={};const add=(code,text)=>issues.push({code,text});
   const actualEntry=Object.hasOwn(r,'rawEntry')?r.rawEntry:r.entry;
   let entry,exit;try{entry=seconds(actualEntry);exit=seconds(r.exit);}catch{add('INVALID_TIME','시간을 해석하지 못했습니다.');return{labels:['판독 확인'],issues,suggestions,canApply:false,minutes:null};}
   const start=seconds(rules.start),end=seconds(rules.end),lunchA=seconds(rules.lunchStart),lunchB=seconds(rules.lunchEnd);
-  if(r.schedule!==`${rules.start} ~ ${rules.end}`)add('SCHEDULE','강의시간과 적용 기준이 다릅니다.');
+  if(!acceptedSchedules(rules).includes(r.schedule))add('SCHEDULE','강의시간과 적용 기준이 다릅니다.');
   if(r.source!=='live')add('SNAPSHOT','저장본입니다. 체크히어에서 다시 수집해야 합니다.');
   if(r.readState!=='complete')add('INCOMPLETE','메모 또는 외출 구간을 모두 읽지 못했습니다.');
   const recognized=r.reference?.status==='인정출석',absent=r.reference?.status==='결석';
@@ -34,7 +37,7 @@ export function judge(r,rules=RULES,now=new Date()){
   else if(entry===null||exit===null){labels.push('타각 누락');add('MISSING_TIME','입실 또는 퇴실 시간이 없습니다.');}
   if(entry!==null&&exit!==null&&exit<entry)add('REVERSED_TIME','퇴실이 입실보다 빠릅니다.');
   const late=entry!==null&&entry>=start+(rules.entryGrace+1)*60,early=exit!==null&&exit<end-rules.exitGrace*60;
-  if(entry!==null&&entry>start+rules.entryGrace*60&&entry<start+(rules.entryGrace+1)*60)add('SECONDS_BOUNDARY','09:10의 초 단위 경계입니다. 초 처리 기준을 확인해 주세요.');
+  if(entry!==null&&entry>start+rules.entryGrace*60&&entry<start+(rules.entryGrace+1)*60)add('SECONDS_BOUNDARY',`${lateAfter(rules)}의 초 단위 경계입니다. 초 처리 기준을 확인해 주세요.`);
   const trips=r.outings||[],hasOut=trips.length>0||r.outingCount>0;
   if(!recognized){if(late)labels.push('지각');if(early)labels.push('조퇴');if(hasOut)labels.push('외출');}
   const multiple=[late,early,hasOut].filter(Boolean).length>1;

@@ -1,6 +1,8 @@
+import {WEEK_BASE} from './cohort.mjs';
 import {isoLabel,portalStatus,ATTENDANCE_OPTIONS,sheetStatus} from './attendance-beta-core.mjs';
 import {classNumber} from './survey-core.mjs';
-export const WEEK_START='2026-07-27';
+// 1주차 = 2기 첫 주 월요일(cohort WEEK_BASE 2026-10-26, 10/28 수요일 개강 주).
+export const WEEK_START=WEEK_BASE;
 export function weekRange(first,last){
  if(!Number.isInteger(first)||!Number.isInteger(last)||first<1||last<first||last>104)throw Error('주차 범위를 확인해 주세요.');
  const day=n=>new Date(Date.parse(WEEK_START+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);

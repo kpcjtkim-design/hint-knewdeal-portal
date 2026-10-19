@@ -1,5 +1,7 @@
 import {isoLabel,portalStatus,matchSnapshot,latestSnapshots,koreaToday,evidenceStatus,overviewColorState} from './attendance-beta-core.mjs';
-import {RULES,seconds} from './checkhere/rules.mjs';
+import {seconds} from './checkhere/rules.mjs';
+// 2기: 교육 기간·휴일·그날 시간 규칙(공장견학·시간 조정)은 cohort.mjs에서 읽습니다.
+import {COURSE_START,COURSE_END,isHoliday,ruleFor,acceptedSchedules,lateAfter} from './cohort.mjs';
 import {hasHospitalRecognition} from './disease-recognition-core.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
 export const DERIVED_VERSION='20260923-disease1';
@@ -13,7 +15,8 @@ export function deriveRecognized(raw,meta={},record=null,{excursion=false}={}){
  const review=basis=>({status:'인정출석',review:true,basis});
  if(!record||record.readState!=='complete')return review('체크히어 상세 저장본 필요');
  if(excursion||record.exception)return review('견학일 · 시간 기준 별도 확인');
- if(record.schedule&&record.schedule!==`${RULES.start} ~ ${RULES.end}`)return review('강의시간 기준 확인');
+ const RULES=ruleFor(record.date,record.classId);
+ if(record.schedule&&!acceptedSchedules(RULES).includes(record.schedule))return review('강의시간 기준 확인');
  try{
   const entry=seconds(Object.hasOwn(record,'rawEntry')?record.rawEntry:record.entry),exit=seconds(record.exit),trips=record.outings||[];
   if(trips.length||record.outingCount>0){
@@ -23,7 +26,7 @@ export function deriveRecognized(raw,meta={},record=null,{excursion=false}={}){
   if(entry===null&&exit===null)return {status:'인정출석',review:false,basis:'시트 인정 · 입퇴실 없음'};
   if(entry===null||exit===null||exit<entry)return review('입퇴실 기록 불완전');
   const threshold=seconds(RULES.start)+RULES.entryGrace*60;
-  if(entry>threshold&&entry<threshold+60)return review('09:10 초 단위 경계 확인');
+  if(entry>threshold&&entry<threshold+60)return review(`${lateAfter(RULES)} 초 단위 경계 확인`);
   const late=entry>=threshold+60,early=exit<seconds(RULES.end)-RULES.exitGrace*60;
   if(late&&early)return review('인정지각·조퇴 중복 확인');
   return {status:late?'인정지각':early?'인정조퇴':'인정출석',review:false,basis:late?'체크히어 입실시간':early?'체크히어 퇴실시간':'시트 인정 · 정상 시간',sourceVersion:record.version||record.collectedAt||''};
@@ -31,7 +34,7 @@ export function deriveRecognized(raw,meta={},record=null,{excursion=false}={}){
 }
 export function deriveAttendanceClass(data,{classId,metadata={},records=[],entries=[],identities=[],today=koreaToday()}={}){
  const a=data.attendance||[],holidayDates=new Set(entries.filter(e=>e.kind==='holiday').map(e=>e.date));
- const dates=(a[0]||[]).map((v,i)=>({date:isoLabel(v),col:i})).filter(x=>x.col>=4&&x.date&&x.date<=today&&x.date>='2026-07-27'&&!holidayDates.has(x.date)&&![0,6].includes(new Date(x.date+'T12:00:00Z').getUTCDay())).sort((x,y)=>x.date.localeCompare(y.date));
+ const dates=(a[0]||[]).map((v,i)=>({date:isoLabel(v),col:i})).filter(x=>x.col>=4&&x.date&&x.date<=today&&x.date>=COURSE_START&&x.date<=COURSE_END&&!holidayDates.has(x.date)&&!isHoliday(x.date)&&![0,6].includes(new Date(x.date+'T12:00:00Z').getUTCDay())).sort((x,y)=>x.date.localeCompare(y.date));
  if(!dates.length||new Set(dates.map(x=>x.date)).size!==dates.length)throw Error('교육일 열을 확인하지 못했습니다. 기존 통계를 유지합니다.');
  const backgrounds=data.attendanceBackgrounds||data.backgrounds||[];
  const roster=a.slice(1).map((row,i)=>({rowIndex:i,id:`${i}_${String(row[0]||'').trim()}`,name:String(row[0]||'').trim(),row})).filter(s=>s.name);
