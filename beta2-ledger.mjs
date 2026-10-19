@@ -1,10 +1,10 @@
-// 2기 베타 출결대조: 마스터시트 출결원장 + 체크히어 실시간 기록. 행 안에서 유형·시간·사유를 바로 고쳐 Apps Script로 시트에 저장하고,
+// 2기 출결대조: 마스터시트 출결원장 + 체크히어 실시간 기록. 행 안에서 유형·시간·사유를 바로 고쳐 Apps Script로 시트에 저장하고,
 // 오늘 기록은 저장 3초 뒤 체크히어 반영 요청을 만듭니다(beta2-checkhere-sync.mjs, 설계 docs/beta2-instant-edit-plan.md 5장).
 // 요청은 승인 대기로 남고, 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만입니다(사용자 결정 2026-10-16, 중계는 읽기 전용).
-// Firestore 함수는 반드시 아래 주소 그대로 불러옵니다. /beta2 import map이 이 주소를 가드(beta2-firestore-guard.mjs)로 돌려 요청 근거에 [2기 베타]가 붙습니다.
+// Firestore 함수는 아래 SDK 주소에서 바로 불러옵니다(2기 전용 Firebase 프로젝트라 1기 자료 저장 가드가 없습니다). 2기에는 운영총괄 동기화가 없어 '운영총괄 가져오기·되돌리기·동기화 확인'도 없습니다.
 import {doc,setDoc,onSnapshot,query,collection,where,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,isConflictFlag,B2_TYPES} from './beta2-core.mjs';
-import {esc,md,badge,evBadge,syncPill,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
+import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,B2_TYPES} from './beta2-core.mjs';
+import {esc,md,badge,evBadge,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {loadCheckHereDay,watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {matchSnapshot} from './attendance-beta-core.mjs';
 import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
@@ -14,7 +14,7 @@ import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnAp
 import {createCheckHereSync,STATUS_ACTIONS,timeDeleteBlock} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
 
-const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치'],['flag','동기화 확인']];
+const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치']];
 const EVIDENCE=[['','자동 (인정이면 미제출)'],['미제출','미제출'],['확인','확인'],['반려','반려'],['해당없음','해당없음']];
 const TIMES=['inT','outT','oa','ob'],ALL={inT:'x',outT:'x',oa:'x',ob:'x'};
 const koreaNow=()=>{const s=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Seoul'});return {date:s.slice(0,10),seconds:+s.slice(11,13)*3600+ +s.slice(14,16)*60};};
@@ -27,13 +27,13 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // drafts: 행 안 초안(이름 → 값, typed=유형을 바꿔 「저장」·Enter가 필요), notes: 행 안내·오류, jobs: 학생마다 저장 하나(next=대기 중인 마지막 초안, done=끝나면 풀림)
  // pinned: 필터·검색을 바꾼 뒤 손댄 학생(필터에서 빠져도 3초·되돌리기·요청 상태가 보이게 남김, 필터·검색을 다시 바꾸면 풀림)
  const drafts=new Map(),notes=new Map(),jobs=new Map(),bodies=new Map(),drawn=new Map(),stale=new Set(),shown=new Map(),pinned=new Set();
- host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 행에서 유형은 「저장」·Enter로, 시간·사유는 칸을 벗어나거나 Enter로 마스터시트에 바로 저장합니다(Esc는 되돌림). 오늘 기록은 저장 3초 뒤 체크히어 반영 요청을 보내고, 관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에 반영됩니다.</p></div><div id="b2Sync"></div></div>
+ host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 행에서 유형은 「저장」·Enter로, 시간·사유는 칸을 벗어나거나 Enter로 마스터시트에 바로 저장합니다(Esc는 되돌림). 오늘 기록은 저장 3초 뒤 체크히어 반영 요청을 보내고, 관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에 반영됩니다.</p></div></div>
  <section class="b2-card"><div class="b2-toolbar">
   <label class="b2-field">반<select id="b2Class">${classOptions(classes,cls)}</select></label>
   <label class="b2-field">교육일<select id="b2Date"></select></label>
   <label class="b2-field">이름 찾기<input id="b2Search" placeholder="이름" autocomplete="off"></label>
   <div class="b2-chips" id="b2Filters"></div><span class="b2-grow"></span><span id="b2Live"></span><span id="b2Relay"></span>
-  <button class="b2-btn soft" id="b2Pull" title="운영총괄에서 이 반만 지금 가져옵니다">이 반 운영총괄 가져오기</button><button class="b2-btn" id="b2Reload">새로고침</button>
+  <button class="b2-btn" id="b2Reload">새로고침</button>
  </div><div class="b2-stats" id="b2Stats"></div><div id="b2Msg" style="padding:0 14px"></div>
  <div class="b2-table-wrap"><table class="b2-table b2-ledger" id="b2Table"><thead><tr><th style="width:130px">이름</th><th>출결원장 (마스터시트)</th><th>체크히어</th><th style="width:200px">대조</th><th style="width:130px"></th></tr></thead><tbody data-empty><tr><td colspan="5">${loading('출결원장을 불러오는 중…')}</td></tr></tbody></table></div></section></div>`;
  const $=s=>host.querySelector(s),table=$('#b2Table');
@@ -79,7 +79,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  function visible(){
   const q=search.trim(),held=new Set(sync.holds().filter(h=>h.cls===cls&&h.date===date).map(h=>h.name));
   const keep=r=>pinned.has(r.name)||held.has(r.name)||jobs.has(r.name)||hasDraft(r.name)||notes.has(r.name)||editing===r.name||typing(bodies.get(r.name));
-  return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='flag'&&isConflictFlag(r.rec?.flag)))));
+  return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff'))));
  }
  // × 버튼: 켜지는 조건(deletionGate: 규칙 게시 깃발·권한, 중계는 필요 없음)이 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
  // 1교시 ×는 v2(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄)이고 퇴실이 비어 있을 때만(퇴실이 있으면 결석 저장으로 두 칸을 함께 지움).
@@ -108,24 +108,24 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형">${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT?time('inT','입실'):''}${need.outT?time('outT','퇴실'):''}${need.oa?time('oa','외출 시작')+time('ob','외출 종료'):''}<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(v.reason)}" aria-label="${n} 사유" ${noReason?'disabled placeholder="출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)" title="출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)"':`placeholder="${recognizedType(v.type)?'사유 (필수)':'사유'}"`}>${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
  }
  function ledgerCell(row){
-  const rec=row.rec,flag=isConflictFlag(rec?.flag)?rec.flag:'',note=rec?.flag&&!flag?rec.flag:'';
+  const rec=row.rec,note=rec?.flag||'';
   if(!row.enrolled&&!rec)return `<div class="b2-inline"><select data-inline="type" disabled aria-label="${esc(row.name)} 출결 유형"><option>해당없음</option></select></div><span class="b2-sub">재학 기간 아님</span>`;
-  return `<div class="b2-inline">${inlineHtml(row)}</div><div class="b2-inline-msg" data-msg></div>${evBadge(rec?.evApplied)}${rec?.evr?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${flag?`<span class="b2-flag">${esc(flag)} <button class="b2-btn small warn" data-release>운영총괄 값으로</button></span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
+  return `<div class="b2-inline">${inlineHtml(row)}</div><div class="b2-inline-msg" data-msg></div>${evBadge(rec?.evApplied)}${rec?.evr?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
  }
  // 증빙 편집기: 증빙(ev)·반려 사유(evr)만 고칩니다. 유형·시간·사유는 행에서 바로 고칩니다.
  function editorHtml(row){
   const f=form,busy=jobs.has(row.name);
   return `<div class="b2-editor" data-editor="${esc(row.name)}"><div class="row"><label class="b2-field">증빙<select data-f="ev">${EVIDENCE.map(([v,l])=>`<option value="${v}" ${f.ev===v?'selected':''}>${l}</option>`).join('')}</select></label>${f.ev==='반려'?`<label class="b2-field b2-grow">반려 사유 (필수)<input data-f="evr" maxlength="300" value="${esc(f.evr)}"></label>`:'<span class="b2-grow"></span>'}
    <span class="b2-err">${esc(formErr)}</span><button class="b2-btn" data-cancel>취소</button><button class="b2-btn primary" data-save ${busy?'disabled':''}>${busy?'저장 중…':'증빙 저장'}</button></div>
-  <div class="b2-tiny b2-muted">저장한 기록은 출처가 '베타 수정'이 되어 10분 동기화가 덮어쓰지 않습니다. 운영총괄과 다르면 '동기화 확인'에 표시됩니다.</div></div>`;
+  <div class="b2-tiny b2-muted">저장하면 마스터시트 출결원장에 바로 반영됩니다.</div></div>`;
  }
  const evidenceOk=row=>!!row.rec&&B2_TYPES.includes(row.type)&&row.type!=='출석';
  // 학생 한 명 = <tbody data-student> 하나. 저장 안내([data-msg])와 상태 칩([data-status])은 비워 두고 따로 채웁니다(초마다 바뀌어도 입력칸을 건드리지 않게).
  function rowHtml(row){
-  const cmp=compareRow(row),out=!row.enrolled&&!row.rec,flag=isConflictFlag(row.rec?.flag),record=matchFor(row);
-  return `<tr class="${cmp.state==='diff'?'diff':''} ${flag?'flag':''} ${out?'out':''} ${editing===row.name||drafts.get(row.name)?.typed?'editing':''}" data-name="${esc(row.name)}"><td><span class="b2-name">${esc(row.name)}</span>${row.status&&row.status!=='재학'?`<span class="b2-sub">${esc(row.status)}${row.changed?' · '+md(row.changed):''}</span>`:''}</td><td>${ledgerCell(row)}</td><td>${checkhereCell(row,record)}${out?'':'<div class="b2-status" data-status></div>'}</td><td><span class="b2-match ${cmp.state}">${cmp.state==='ok'?'✓ ':cmp.state==='diff'?'⚠ ':''}${esc(cmp.text)}</span></td><td><div class="b2-chips">${evidenceOk(row)?`<button class="b2-btn small ${editing===row.name?'dark':''}" data-edit>${editing===row.name?'닫기':'증빙'}</button>`:''}<button class="b2-btn small soft" data-req aria-pressed="${opened.has(row.name)}">직접 요청</button></div></td></tr>`
+  const cmp=compareRow(row),out=!row.enrolled&&!row.rec,record=matchFor(row);
+  return `<tr class="${cmp.state==='diff'?'diff':''} ${out?'out':''} ${editing===row.name||drafts.get(row.name)?.typed?'editing':''}" data-name="${esc(row.name)}"><td><span class="b2-name">${esc(row.name)}</span>${row.status&&row.status!=='재학'?`<span class="b2-sub">${esc(row.status)}${row.changed?' · '+md(row.changed):''}</span>`:''}</td><td>${ledgerCell(row)}</td><td>${checkhereCell(row,record)}${out?'':'<div class="b2-status" data-status></div>'}</td><td><span class="b2-match ${cmp.state}">${cmp.state==='ok'?'✓ ':cmp.state==='diff'?'⚠ ':''}${esc(cmp.text)}</span></td><td><div class="b2-chips">${evidenceOk(row)?`<button class="b2-btn small ${editing===row.name?'dark':''}" data-edit>${editing===row.name?'닫기':'증빙'}</button>`:''}<button class="b2-btn small soft" data-req aria-pressed="${opened.has(row.name)}">직접 요청</button></div></td></tr>`
    +(editing===row.name?`<tr class="editing"><td colspan="5">${editorHtml(row)}</td></tr>`:'')
-   +(opened.has(row.name)?`<tr><td colspan="5"><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${['times','entryMemo','exitMemo'].map(c=>proposals.html({rowIndex:row.rowIndex,name:row.name},c)).join('')}</div><div class="b2-tiny b2-muted">자동 요청: 오늘 출결원장을 저장하면 3초 뒤 [실시간 베타] [2기 베타] 요청이 만들어집니다(지난 날은 「체크히어 맞추기」를 눌러야 보냅니다). 체크히어에는 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 입력하고 다시 읽어 확인합니다. 직접 요청: 위 칸에서 따로 요청하며, 근거 앞에 [2기 베타]가 붙고 관리자가 승인한 뒤 반영됩니다.</div></td></tr>`:'');
+   +(opened.has(row.name)?`<tr><td colspan="5"><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${['times','entryMemo','exitMemo'].map(c=>proposals.html({rowIndex:row.rowIndex,name:row.name},c)).join('')}</div><div class="b2-tiny b2-muted">자동 요청: 오늘 출결원장을 저장하면 3초 뒤 [실시간 베타] 요청이 만들어집니다(지난 날은 「체크히어 맞추기」를 눌러야 보냅니다). 체크히어에는 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 입력하고 다시 읽어 확인합니다. 직접 요청: 위 칸에서 따로 요청하며, 관리자가 승인한 뒤 반영됩니다.</div></td></tr>`:'');
  }
  function msgHtml(name){
   const d=drafts.get(name),note=notes.get(name),busy=jobs.has(name);
@@ -177,9 +177,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  function renderRows(){
   if(!life.alive()||!bundle)return;
   const list=visible(),counts=dayCounts(rows),diff=rows.filter(r=>compareRow(r).state==='diff').length;
-  $('#b2Stats').innerHTML=[['총원',counts.총원],['출석',counts.출석],['결석',counts.결석,counts.결석?'bad':''],['지각',counts.지각],['조퇴',counts.조퇴],['외출',counts.외출],['인정',counts.인정],['체크히어 불일치',diff,diff?'alert':''],['동기화 확인',counts.확인필요,counts.확인필요?'alert':'']].map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${l}</span></div>`).join('');
+  $('#b2Stats').innerHTML=[['총원',counts.총원],['출석',counts.출석],['결석',counts.결석,counts.결석?'bad':''],['지각',counts.지각],['조퇴',counts.조퇴],['외출',counts.외출],['인정',counts.인정],['체크히어 불일치',diff,diff?'alert':'']].map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${l}</span></div>`).join('');
   $('#b2Filters').innerHTML=FILTERS.map(([k,l])=>`<button class="b2-chip" data-filter="${k}" aria-pressed="${filter===k}">${l}</button>`).join('');
-  $('#b2Sync').innerHTML=syncPill(bundle.sync);
   $('#b2Live').innerHTML=live==='live'?`<span class="b2-pill live">체크히어 실시간${records.length?` · ${records.length}명`:''}</span>`:live==='day'?`<span class="b2-pill">체크히어 저장본${records.length?` · ${records.length}명`:''}</span>`:live?`<span class="b2-pill wait">${esc(live)}</span>`:'';
   paintRelay();
   const keep=new Set(list.map(r=>r.name));
@@ -188,7 +187,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   try{for(const [name,el] of bodies)if(!keep.has(name)){const row=rowOf(name);if(row&&opened.has(name))proposals.capture([{rowIndex:row.rowIndex,name}]);el.remove();bodies.delete(name);drawn.delete(name);stale.delete(name);shown.delete('msg|'+name);shown.delete('status|'+name);}}
   finally{painting=false;}
   if(list.length)table.querySelector('tbody[data-empty]')?.remove();
-  else showEmpty(`<div class="b2-muted b2-pad">${rows.length?'조건에 맞는 학생이 없습니다.':'명부에 이 반 학생이 없습니다. 운영총괄 가져오기를 먼저 실행해 주세요.'}</div>`);
+  else showEmpty(`<div class="b2-muted b2-pad">${rows.length?'조건에 맞는 학생이 없습니다.':'명부에 이 반 학생이 없습니다. 마스터시트 명부를 먼저 채워 주세요.'}</div>`);
   let prev=table.tHead;
   for(const row of list){
    let el=bodies.get(row.name);
@@ -308,9 +307,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(kind==='undo'){
    // S9: 3초 안 되돌리기는 요청을 보내지 않고 출결원장도 저장 전 값으로 되돌립니다(동기화 모듈이 client.save를 부름).
    const r=await sync.undo(key);if(r.row&&r.res)saveGen++;if(!life.alive()||!sameDay(day))return false;
-   if(r.error?.code==='CONFLICT'||r.released)await load({fresh:true,keepCheckHere:true});
-   if(r.released)toast(`${name} · ${md(date)} 체크히어 반영을 취소하고 출결원장을 운영총괄 값으로 되돌렸습니다.`);
-   else if(r.ok&&r.row){if(!r.res?.unchanged&&ledgerAt(cls,date,name)?.sig!==r.res?.sig)try{bundle=await client.bundle(cls);}catch{}toast(`${name} · ${md(date)} 체크히어 반영을 취소하고 출결원장을 ${r.row.type}(으)로 되돌렸습니다.`);}
+   if(r.error?.code==='CONFLICT')await load({fresh:true,keepCheckHere:true});
+   if(r.ok&&r.row){if(!r.res?.unchanged&&ledgerAt(cls,date,name)?.sig!==r.res?.sig)try{bundle=await client.bundle(cls);}catch{}toast(`${name} · ${md(date)} 체크히어 반영을 취소하고 출결원장을 ${r.row.type}(으)로 되돌렸습니다.`);}
    else if(r.ok&&r.kept)toast(`${name} · ${md(date)} 체크히어 반영을 취소했습니다. 이전 값은 출결원장에 다시 저장할 수 없어 그대로 둡니다.`);
    else if(!r.ok&&r.reason){notes.set(name,`되돌리지 못함 · ${r.reason}`);paintMsg(name);}
    if(!life.alive()||!sameDay(day))return false;
@@ -430,11 +428,6 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   }
   if(t.hasAttribute('data-cancel')){editing=null;form=null;formErr='';paint(name,{force:true});return;}
   if(t.hasAttribute('data-save')){queueSave(name,'evidence');return;}
-  if(t.hasAttribute('data-release')){
-   if(!confirm(`${name} · ${md(date)} 기록을 운영총괄 값으로 되돌릴까요?\n베타에서 고친 내용은 없어지고 이 반을 운영총괄에서 다시 가져옵니다.`))return;
-   t.disabled=true;say('운영총괄에서 이 반을 다시 가져오는 중…');
-   try{const r=await client.release({cls,name,date});toast(r.released?'운영총괄 값으로 되돌렸습니다.':'되돌릴 기록이 없습니다.');await load({fresh:true,keepCheckHere:true});}catch(err){say(err.message,'err');}
-  }
  });
  // 반·날짜 바꾸기: 저장 중이면 저장이 끝나기를 기다리고(칸을 벗어나며 시작된 blur 저장 때문에 거절하지 않음), 초안은 확인하고,
  // 체크히어 반영 대기는 화면 값을 바꾸기 전에 sync.setDay가 확인합니다(S10). 바꾸는 동안 표는 잠급니다(inert).
@@ -456,7 +449,6 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  });
  $('#b2Search').oninput=e=>{search=e.target.value;pinned.clear();renderRows();};
  $('#b2Reload').onclick=()=>{if(switching)return;if(jobs.size||drafts.size)return say('저장 중이거나 저장하지 않은 수정이 있어 새로 읽지 않았습니다.','warn');void load({fresh:true});};
- $('#b2Pull').onclick=async e=>{if(switching)return;e.target.disabled=true;say(`${cls}반을 운영총괄에서 가져오는 중… (보통 5초 안팎)`);try{const r=await client.syncNow({cls}),s=r?.stats||{};await load({fresh:true,keepCheckHere:true});say(`${cls}반 가져오기 완료 · 추가 ${s.added||0} · 수정 ${s.updated||0} · 삭제 ${s.removed||0} · 확인 필요 ${s.flagged||0}${r?.errors?.length?' · 오류: '+r.errors.join(', '):''}`,r?.errors?.length?'warn':'');}catch(err){say(err.message,'err');}finally{e.target.disabled=false;}};
  // 시트 변경 번호가 바뀌면 다시 읽습니다. 반·날짜를 바꾸는 중·저장 중·초안 있음·행 입력칸 포커스면 이번에는 건너뜁니다(다음 확인 때 다시).
  const stopWatch=client.watch(async()=>{
   const a=document.activeElement,focused=!!a&&host.contains(a)&&a.matches('input,select,textarea')&&!a.closest('.b2-toolbar');

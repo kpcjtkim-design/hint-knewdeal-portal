@@ -1,8 +1,5 @@
 {
   "functions": {
-    "api/attendance-reader.js": {"maxDuration": 60},
-    "api/attendance-colors.js": {"maxDuration": 60},
-    "api/survey-sync.js": {"maxDuration": 60},
     "api/teacher-beta.js": {"maxDuration": 60}
   },
   "redirects": [
@@ -10,14 +7,17 @@
       "source": "/scan-guide.jpg",
       "destination": "/scan-guide.svg",
       "permanent": false
-    }
+    },
+    {"source": "/beta2", "destination": "/", "permanent": false},
+    {"source": "/beta2/", "destination": "/", "permanent": false}
   ],
   "rewrites": [
-    {"source": "/beta2", "destination": "/index.html"},
-    {"source": "/beta2/", "destination": "/index.html"}
+    {"source": "/old", "destination": "/api/old"},
+    {"source": "/old/:path*", "destination": "/api/old?path=:path*"}
   ],
   "headers": [
-    {"source": "/beta2", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}, {"key": "Cache-Control", "value": "no-store"}]},
-    {"source": "/beta2/", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}, {"key": "Cache-Control", "value": "no-store"}]}
+    {"source": "/(.*)", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}]},
+    {"source": "/", "headers": [{"key": "Cache-Control", "value": "no-store"}]},
+    {"source": "/index.html", "headers": [{"key": "Cache-Control", "value": "no-store"}]}
   ]
 }

@@ -1,4 +1,5 @@
-// 2기 베타 마스터시트 읽기·쓰기. 브라우저 → /api/teacher-beta(로그인 확인) → Apps Script → 마스터시트.
+// 2기 마스터시트 읽기·쓰기. 브라우저 → /api/teacher-beta(로그인 확인) → Apps Script(2기 마스터시트에 붙은 프로젝트) → 마스터시트.
+// 2기는 운영총괄 동기화가 없어 '가져오기'(b2SyncNow)·'운영총괄 값으로'(b2Release)를 부르지 않습니다.
 // 변경 번호(rev)가 같으면 다시 읽지 않고, 저장한 행은 받은 값으로 바로 고쳐 Vercel·Apps Script 호출을 줄입니다.
 import {decodeBundle,ledgerKey} from './beta2-core.mjs';
 import {readAttendanceSummary} from './attendance-derived-store.mjs';
@@ -65,8 +66,6 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
  }
  return {
   call,rev,bundle,save,watch,checkhereDisease,
-  release:p=>call('b2Release',p).finally(forgetBeta2Cache),
-  syncNow:p=>call('b2SyncNow',p||{}).finally(forgetBeta2Cache),
   status:()=>call('b2Status'),
   docs:p=>call('b2Docs',p||{}),
   docCreate:p=>call('b2DocCreate',p),

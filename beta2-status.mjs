@@ -1,7 +1,8 @@
-// 2기 베타 출결 현황: 통계·증빙서류·질병 인정·중도탈락을 한 화면의 보기 전환으로 묶었습니다. 자료는 마스터시트 출결원장.
+// 2기 출결 현황: 통계·증빙서류·질병 인정·중도탈락을 한 화면의 보기 전환으로 묶었습니다. 자료는 마스터시트 출결원장. 기준(질병 4/6회·수료 80%)은 cohort.json.
 import {studentStats,evidenceRows,diseaseReport,dropoutRows,recognizedType} from './beta2-core.mjs';
 import {EVIDENCE_PERIODS} from './attendance-evidence-core.mjs';
-import {esc,md,badge,syncPill,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
+import {esc,md,badge,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
+import {DISEASE,COMPLETION_RATE as PASS} from './cohort.mjs';
 
 export const STATUS_TABS=[['stats','출결 통계'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락·수료']];
 const pct=v=>v===null?'-':`${v.toFixed(1)}%`;
@@ -9,7 +10,7 @@ const pct=v=>v===null?'-':`${v.toFixed(1)}%`;
 export async function mount(host,{client,classes,selected,context,teacherClass=null,tab,hideTabs=false}){
  const life=lifecycle(host);
  let view=tab||context?.tab||'stats',cls=teacherClass?String(teacherClass):String(context?.classId&&context?.tab?context.classId:'all'),period='all',search='',bundle=null,checkhere=null,checkhereFor='';
- host.innerHTML=`<div class="b2">${hideTabs?'':`<div class="b2-head"><div><h2>출결 현황</h2><p>마스터시트 출결원장 기준 통계·증빙서류·질병 인정·중도탈락을 한곳에서 봅니다.</p></div><div id="s2Sync"></div></div><div class="b2-tabs" role="tablist" id="s2Tabs"></div>`}
+ host.innerHTML=`<div class="b2">${hideTabs?'':`<div class="b2-head"><div><h2>출결 현황</h2><p>마스터시트 출결원장 기준 통계·증빙서류·질병 인정·중도탈락을 한곳에서 봅니다.</p></div></div><div class="b2-tabs" role="tablist" id="s2Tabs"></div>`}
  <section class="b2-card"><div class="b2-toolbar">${teacherClass?'':`<label class="b2-field">반<select id="s2Class">${classOptions(classes,cls,{all:true})}</select></label>`}
   <label class="b2-field">기간<select id="s2Period">${EVIDENCE_PERIODS.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select></label>
   <label class="b2-field">이름 찾기<input id="s2Search" autocomplete="off" placeholder="이름"></label><span class="b2-grow"></span>
@@ -24,14 +25,14 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  function statBoxes(items){return `<div class="b2-stats" style="padding-top:12px">${items.map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${esc(l)}</span></div>`).join('')}</div>`;}
  async function render(){
   if(!life.alive()||!bundle)return;
-  if(!hideTabs){$('#s2Tabs').innerHTML=STATUS_TABS.map(([k,l])=>`<button class="b2-tab" role="tab" data-view="${k}" aria-selected="${view===k}">${l}</button>`).join('');$('#s2Sync').innerHTML=syncPill(bundle.sync);}
+  if(!hideTabs){$('#s2Tabs').innerHTML=STATUS_TABS.map(([k,l])=>`<button class="b2-tab" role="tab" data-view="${k}" aria-selected="${view===k}">${l}</button>`).join('');}
   const list=stats(),{from,to}=range(),title=`${cls==='all'?'전체 반':classLabel(cls)} · ${md(from)} ~ ${md(to)}`;
   if(view==='stats'){
    const sorted=[...list].sort((a,b)=>(a.rate??101)-(b.rate??101)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
-   const active=list.filter(s=>s.status==='재학'&&s.rate!==null),avg=active.length?active.reduce((n,s)=>n+s.rate,0)/active.length:null,low=active.filter(s=>s.rate<80).length;
+   const active=list.filter(s=>s.status==='재학'&&s.rate!==null),avg=active.length?active.reduce((n,s)=>n+s.rate,0)/active.length:null,low=active.filter(s=>s.rate<PASS).length;
    const rec=s=>Object.entries(s.counts).filter(([k])=>recognizedType(k)).reduce((n,[,v])=>n+v,0);
-   body.innerHTML=statBoxes([['학생',list.length],['평균 출석률',pct(avg)],['80% 미만',low,low?'bad':''],['중도탈락 등',list.filter(s=>s.status!=='재학').length],['동기화 확인',list.reduce((n,s)=>n+s.flags.length,0),'']])+table(['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','인정','동기화 확인'],sorted.map(s=>`<tr class="${s.rate!==null&&s.rate<80&&s.status==='재학'?'diff':''}"><td>${s.cls}반</td><td class="b2-name">${esc(s.name)}</td><td>${s.status==='재학'?'재학':`${esc(s.status)}${s.changed?' · '+md(s.changed):''}`}</td><td>${s.days}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.counts['지각']||0}</td><td>${s.counts['조퇴']||0}</td><td>${s.counts['외출']||0}</td><td>${rec(s)}</td><td>${s.flags.length||''}</td></tr>`));
-   current={csv:[['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','인정'],...sorted.map(s=>[s.cls,s.name,s.status,s.days,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0,s.counts['지각']||0,s.counts['조퇴']||0,s.counts['외출']||0,rec(s)])],copy:[`출결 통계 · ${title}`,...sorted.filter(s=>s.rate!==null&&s.rate<80).map(s=>`${s.cls}반 · ${s.name} · ${pct(s.rate)} · 결석 ${s.counts['결석']||0}`)].join('\n')};
+   body.innerHTML=statBoxes([['학생',list.length],['평균 출석률',pct(avg)],[`${PASS}% 미만`,low,low?'bad':''],['중도탈락 등',list.filter(s=>s.status!=='재학').length]])+table(['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','인정'],sorted.map(s=>`<tr class="${s.rate!==null&&s.rate<PASS&&s.status==='재학'?'diff':''}"><td>${s.cls}반</td><td class="b2-name">${esc(s.name)}</td><td>${s.status==='재학'?'재학':`${esc(s.status)}${s.changed?' · '+md(s.changed):''}`}</td><td>${s.days}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.counts['지각']||0}</td><td>${s.counts['조퇴']||0}</td><td>${s.counts['외출']||0}</td><td>${rec(s)}</td></tr>`));
+   current={csv:[['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','인정'],...sorted.map(s=>[s.cls,s.name,s.status,s.days,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0,s.counts['지각']||0,s.counts['조퇴']||0,s.counts['외출']||0,rec(s)])],copy:[`출결 통계 · ${title}`,...sorted.filter(s=>s.rate!==null&&s.rate<PASS).map(s=>`${s.cls}반 · ${s.name} · ${pct(s.rate)} · 결석 ${s.counts['결석']||0}`)].join('\n')};
   }
   if(view==='evidence'){
    const rows=evidenceRows(list);
@@ -44,17 +45,17 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
    const ids=cls==='all'?classes.map(c=>String(c.id)):[cls];
    if(checkhereFor!==ids.join(',')){body.innerHTML=loading('체크히어 질병 메모 기록과 대조하는 중…');checkhereFor=ids.join(',');checkhere=await client.checkhereDisease(ids);if(!life.alive())return;}
    const report=diseaseReport(list,checkhere||{}),missing=ids.filter(id=>!checkhere?.[id]);
-   body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">출결원장의 인정 기록 중 사유가 병원·병결·병가·진료 등인 날을 셉니다. 4회 주의 · 6회 기준 · 7회부터 초과. 체크히어 '인정○○ + 병원' 메모와 날짜가 다르면 아래 '확인 필요'에 따로 보여 줍니다.</div>`
-    +statBoxes([['4회 이상',report.rows.length,report.rows.length?'alert':''],['주의 (4~5회)',report.warning],['6회 도달',report.atLimit,report.atLimit?'alert':''],['6회 초과',report.exceeded,report.exceeded?'bad':''],['확인 필요',report.review.length,report.review.length?'alert':'']])
-    +table(['반','이름','인정 횟수','상태','인정일'],report.rows.map(r=>`<tr class="${r.count>=6?'diff':''}"><td>${r.cls}반</td><td class="b2-name">${esc(r.name)}</td><td><b>${r.count}/6회</b></td><td><span class="b2-badge ${r.count>6?'t-absent':r.count===6?'t-late':'t-rec'}">${esc(r.level)}</span></td><td>${r.dates.map(md).join(', ')}</td></tr>`))
+   body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">출결원장의 인정 기록 중 사유가 병원·병결·병가·진료 등인 날을 셉니다. ${DISEASE.warn}회 주의 · ${DISEASE.max}회 기준 · ${DISEASE.max+1}회부터 초과. 체크히어 '인정○○ + 병원' 메모와 날짜가 다르면 아래 '확인 필요'에 따로 보여 줍니다.</div>`
+    +statBoxes([[`${DISEASE.warn}회 이상`,report.rows.length,report.rows.length?'alert':''],[`주의 (${DISEASE.warn}~${DISEASE.max-1}회)`,report.warning],[`${DISEASE.max}회 도달`,report.atLimit,report.atLimit?'alert':''],[`${DISEASE.max}회 초과`,report.exceeded,report.exceeded?'bad':''],['확인 필요',report.review.length,report.review.length?'alert':'']])
+    +table(['반','이름','인정 횟수','상태','인정일'],report.rows.map(r=>`<tr class="${r.count>=DISEASE.max?'diff':''}"><td>${r.cls}반</td><td class="b2-name">${esc(r.name)}</td><td><b>${r.count}/${DISEASE.max}회</b></td><td><span class="b2-badge ${r.count>DISEASE.max?'t-absent':r.count===DISEASE.max?'t-late':'t-rec'}">${esc(r.level)}</span></td><td>${r.dates.map(md).join(', ')}</td></tr>`))
     +`<h3 style="margin:16px 14px 8px">확인 필요 · 출결원장과 체크히어 메모가 다른 날</h3>`+table(['반','이름','출결원장에만 있음','체크히어 메모에만 있음'],report.review.map(r=>`<tr><td>${r.cls}반</td><td class="b2-name">${esc(r.name)}</td><td>${r.onlyLedger.map(md).join(', ')||'-'}</td><td>${r.onlyCheckHere.map(md).join(', ')||'-'}</td></tr>`))
     +(missing.length?`<div class="b2-note warn" style="margin:10px 14px">체크히어 집계 저장본이 없는 반: ${missing.map(classLabel).join(', ')} · 이 반은 출결원장 기준만 봅니다.</div>`:'');
-   current={csv:[['반','이름','인정 횟수','상태','인정일','출결원장에만','체크히어에만'],...report.rows.map(r=>[r.cls,r.name,r.count,r.level,r.dates.join(' '),r.onlyLedger.join(' '),r.onlyCheckHere.join(' ')])],copy:['질병 인정출석 제한위험자 · 출결원장 기준',...report.rows.map(r=>`${r.cls}반 · ${r.name} · ${r.count}/6회 · ${r.level} · ${r.dates.map(md).join(', ')}`)].join('\n')};
+   current={csv:[['반','이름','인정 횟수','상태','인정일','출결원장에만','체크히어에만'],...report.rows.map(r=>[r.cls,r.name,r.count,r.level,r.dates.join(' '),r.onlyLedger.join(' '),r.onlyCheckHere.join(' ')])],copy:['질병 인정출석 제한위험자 · 출결원장 기준',...report.rows.map(r=>`${r.cls}반 · ${r.name} · ${r.count}/${DISEASE.max}회 · ${r.level} · ${r.dates.map(md).join(', ')}`)].join('\n')};
   }
   if(view==='dropout'){
    const {left,risk}=dropoutRows(list);
-   body.innerHTML=statBoxes([['중도탈락·조기취업 등',left.length],['수료 위험 (80% 미만)',risk.length,risk.length?'bad':'']])+`<h3 style="margin:14px 14px 8px">재학 아님</h3>`+table(['반','이름','상태','변경일','재학 기간 출석률','결석'],left.map(s=>`<tr><td>${s.cls}반</td><td class="b2-name">${esc(s.name)}</td><td>${esc(s.status)}</td><td>${s.changed?md(s.changed):'-'}</td><td>${pct(s.rate)}</td><td>${s.counts['결석']||0}</td></tr>`))
-    +`<h3 style="margin:16px 14px 8px">수료 위험 · 출석률 80% 미만 재학생</h3>`+table(['반','이름','출석률','결석','교육일'],risk.sort((a,b)=>a.rate-b.rate).map(s=>`<tr class="diff"><td>${s.cls}반</td><td class="b2-name">${esc(s.name)}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.days}</td></tr>`));
+   body.innerHTML=statBoxes([['중도탈락·조기취업 등',left.length],[`수료 위험 (${PASS}% 미만)`,risk.length,risk.length?'bad':'']])+`<h3 style="margin:14px 14px 8px">재학 아님</h3>`+table(['반','이름','상태','변경일','재학 기간 출석률','결석'],left.map(s=>`<tr><td>${s.cls}반</td><td class="b2-name">${esc(s.name)}</td><td>${esc(s.status)}</td><td>${s.changed?md(s.changed):'-'}</td><td>${pct(s.rate)}</td><td>${s.counts['결석']||0}</td></tr>`))
+    +`<h3 style="margin:16px 14px 8px">수료 위험 · 출석률 ${PASS}% 미만 재학생</h3>`+table(['반','이름','출석률','결석','교육일'],risk.sort((a,b)=>a.rate-b.rate).map(s=>`<tr class="diff"><td>${s.cls}반</td><td class="b2-name">${esc(s.name)}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.days}</td></tr>`));
    current={csv:[['구분','반','이름','상태','변경일','출석률','결석'],...left.map(s=>['재학 아님',s.cls,s.name,s.status,s.changed,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0]),...risk.map(s=>['수료 위험',s.cls,s.name,s.status,'',s.rate.toFixed(1),s.counts['결석']||0])],copy:[`중도탈락·수료 위험 · ${title}`,...left.map(s=>`${s.cls}반 · ${s.name} · ${s.status}${s.changed?' '+md(s.changed):''}`),...risk.map(s=>`${s.cls}반 · ${s.name} · 수료 위험 ${pct(s.rate)}`)].join('\n')};
   }
  }

@@ -1,19 +1,19 @@
-// 2기 베타 출결대조 → 체크히어 반영 요청(브라우저 쪽 흐름). 출결원장 저장 3초 뒤 실시간 요청을 만들고, 되돌리기·보류·다시 계산을 맡습니다.
+// 2기 출결대조 → 체크히어 반영 요청(브라우저 쪽 흐름). 출결원장 저장 3초 뒤 실시간 요청을 만들고, 되돌리기·보류·다시 계산을 맡습니다.
 // 사용자 결정(2026-10-16): 만든 요청은 승인 대기로 남습니다. 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만(중계는 읽기 전용).
 // 설계: docs/beta2-instant-edit-plan.md 4.2(S1~S15). 사용자 결정(2026-10-14): 오늘만 자동(지난 날은 '체크히어 맞추기'를 눌러 같은 3초 흐름),
 // 3초 되돌리기는 출결원장과 요청을 모두 되돌림. 시간 삭제 요청(deleteTimes)은 켜지는 조건(G1 규칙 게시 깃발·G3 권한 거절 없음, 중계는 필요 없음 2026-10-16)이
 // 모두 맞을 때만 씁니다(결석 저장과 × 버튼). 지우기는 기록 번호가 있는 칸만(canDeleteTime), 보내기 전 확인창 필수(S8).
 // 1교시(관리자 ATTEND) 삭제는 v2일 때만(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄): 결석은 1교시·퇴실 두 칸, 1교시 ×는 퇴실이 비어 있을 때만(2026-10-16).
 // 가린 화면(중계 신호 privacy)이거나 중계가 꺼져 해제 상태를 몰라도 요청은 만듭니다(승인 대기). 확인창에 '반영할 때 체크히어 마스킹 해제 필요'를 붙입니다.
-// Firestore 함수(fs)·시계·타이머는 화면이 넘깁니다. /beta2 화면은 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js'에서
-// import한 함수를 넘겨야 가드(beta2-firestore-guard.mjs)를 거쳐 근거에 [2기 베타]가 붙습니다. 이 파일은 https 주소를 import하지 않습니다(Node 시험).
+// Firestore 함수(fs)·시계·타이머는 화면이 넘깁니다(출결대조는 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js'에서 import한 함수).
+// 이 파일은 https 주소를 import하지 않습니다(Node 시험). 2기는 운영총괄 동기화가 없어 되돌리기는 출결원장 저장(b2Save)만 씁니다.
 import {memoDefaultTimes,resultText} from './checkhere/approval-core.mjs';
 import {ACTIVE,LIVE_STATUS,buildLiveRequest,isAutoLedgerRequest,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
 import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,needsUnmaskOnApply,privacyShort,relayPrivacy,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
 import {B2_EVIDENCE,B2_TYPES,neededTimes,recognizedType} from './beta2-core.mjs';
 
 // firestore.rules checkhereRequests create 허용 키 중 요청 내용(나머지는 status·createdBy·createdAt·updatedAt).
-// deleteTimes는 시간 삭제 요청에만, 비어 있지 않을 때만 넣습니다(규칙 초안 checkhere-time-delete.rules.txt가 허용, 게시 전에는 권한 거절 → S13).
+// deleteTimes는 시간 삭제 요청에만, 비어 있지 않을 때만 넣습니다(2기 firestore.rules가 허용, 게시 전에는 권한 거절 → S13).
 export const REQUEST_KEYS=['classId','date','name','phoneLast4','reason','changes'];
 // × 버튼이 그 시간을 지울 수 없는 이유들(없으면 켬). gate = deletionGate 결과, type = 지금 출결원장 유형(초안 포함).
 // 지각류는 입실, 조퇴류는 퇴실 시간을 출결원장이 요구하고(beta2.gs b2Validate_), 외출류·인정출석은 사유를 입실(1교시) 칸 메모에 씁니다
@@ -53,7 +53,7 @@ const deleteQuestion=(name,date,record,sides,privacy=null)=>`${name} · ${date} 
   +(sides.includes('exit')&&!sides.includes('entry')&&record?.entryKind==='PASS'&&hhmm(record?.entry)?`\n퇴실을 지우면 1교시(${hhmm(record.entry)})와 총 참여 시간도 비워집니다.`:'')
   +sides.filter(k=>String(record?.[k+'Memo']??'').trim()).map(k=>`\n${DEL_LABEL[k]} 칸의 관리자 사유(「${record[k+'Memo']}」)도 함께 지워집니다.`).join('')
   +`\n${deleteLeaves(sides,record)}.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다.${needsUnmaskOnApply(privacy)?`\n${UNMASK_ON_APPLY}.`:''}\n보낼까요?`;
-// 되돌리기 저장(b2Save)이 받아 줄 이전 값인지(beta2.gs b2Validate_와 같은 기준). 못 받으면 그 이유 — 운영총괄에서 온 '중복'·시간 없는 지각 같은 값은
+// 되돌리기 저장(b2Save)이 받아 줄 이전 값인지(beta2.gs b2Validate_와 같은 기준). 못 받으면 그 이유 — 시트에 직접 적힌 '중복'·시간 없는 지각 같은 값은
 // 출결원장에 다시 저장할 수 없으므로 되돌리기는 체크히어 반영만 취소합니다.
 export function restoreBlock(p){
   if(!B2_TYPES.includes(p.type))return `이전 유형 '${p.type}'`;
@@ -136,7 +136,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   // manual = 되돌리기가 체크히어 요청만 취소(이 세션 저장을 이어받지 않은 맞추기), asked = 사람이 누른 맞추기·다시 보내기(오늘이 아니어도 보냄)
   function capture(key,{prevRow,row,sig,existedBefore=true,manual=false,asked=false}){
     const {cls,date,name}=parseKey(key),prev=existedBefore===false||!prevRow?pickRow({type:'출석'}):pickRow(prevRow);
-    return {key,cls,date,name,prevRow:prev,prevProv:existedBefore===false||!prevRow?'':String(prevRow.prov||''),row:pickRow(row),sig:String(sig??''),existedBefore:existedBefore!==false,keepSheet:manual?'':restoreBlock(prev),
+    return {key,cls,date,name,prevRow:prev,row:pickRow(row),sig:String(sig??''),existedBefore:existedBefore!==false,keepSheet:manual?'':restoreBlock(prev),
       sheetTeacher:String(teacherOf(cls)||''),record:clone(getRecord(cls,date,name)),manual,asked,phase:'new',timer:null,deadline:0};
   }
   const compute=h=>h.remove?removeResult(h):sheetToCheckHere({row:h.row,record:h.record,sheetTeacher:h.sheetTeacher,date:h.date,deleteEnabled:gate().enabled,deleteV2:gate().v2,active:studentRequests(h.cls,h.date,h.name),me});
@@ -166,7 +166,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
   function tick(){ticker=null;if(disposed)return;const keys=[...holds.values()].filter(h=>h.phase==='countdown').map(h=>h.key);if(!keys.length)return;keys.forEach(emit);ticker=setTimer(tick,1000);}
   function countdown(h,res){
     if(frozen)return finish(h,CANCEL('화면을 떠나 체크히어 반영 대기를 멈췄습니다'));
-    stop(h);Object.assign(h,{phase:'countdown',deadline:now()+undoMs,draft:false,lastRes:res,detail:[changeText(res.changes),...(res.withdraw?.length?['대기 중인 자동 요청 취소']:[]),...(res.warnings||[]),...(h.keepSheet?[h.prevProv==='1기 동기화'?'되돌리기는 출결원장을 운영총괄 값으로':`되돌리기는 체크히어 반영만 취소 (${h.keepSheet}은 출결원장에 다시 저장할 수 없음)`]:[])].filter(Boolean).join(' · ')});
+    stop(h);Object.assign(h,{phase:'countdown',deadline:now()+undoMs,draft:false,lastRes:res,detail:[changeText(res.changes),...(res.withdraw?.length?['대기 중인 자동 요청 취소']:[]),...(res.warnings||[]),...(h.keepSheet?[`되돌리기는 체크히어 반영만 취소 (${h.keepSheet}은 출결원장에 다시 저장할 수 없음)`]:[])].filter(Boolean).join(' · ')});
     h.timer=setTimer(()=>void fire(h.key),undoMs);holds.set(h.key,h);if(ticker==null)ticker=setTimer(tick,1000);emit(h.key);
   }
   function wait(h,retryWhen,note,blockers=[]){stop(h);Object.assign(h,{phase:'waiting',retryWhen,note,blockers});holds.set(h.key,h);emit(h.key);}
@@ -432,11 +432,6 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
       if(!h||!(h.phase==='countdown'||(h.phase==='paused'&&!saving.has(key))))return {ok:false,reason:!h?'되돌릴 반영 대기가 없습니다':h.phase==='sending'?'이미 보내는 중입니다 · 반영 대기가 되면 「요청 취소」로 취소해 주세요':h.phase==='undoing'?'되돌리는 중입니다':h.phase==='paused'?'저장 중이라 지금은 되돌릴 수 없습니다':'보내기 전 3초가 아니라 되돌릴 수 없습니다'};
       stop(h);h.phase='undoing';emit(key);
       if(h.manual){finish(h,S('undone','체크히어 반영 취소',{tone:'muted'}));return {ok:true};}
-      // 다시 저장할 수 없는 이전 값이라도 운영총괄에서 온 행이면 '운영총괄 값으로'(b2Release)가 그 값을 그대로 되살립니다.
-      if(h.keepSheet&&h.prevProv==='1기 동기화'&&typeof client.release==='function'){
-        try{const res=await client.release({cls:h.cls,name:h.name,date:h.date});finish(h,S('undone','체크히어 반영 취소 · 출결원장은 운영총괄 값으로',{tone:'muted'}));return {ok:true,released:true,res};}
-        catch(e){finish(h,S('undo-failed',`되돌리지 못함 · ${e?.message||e}`,{tone:'bad'}));return {ok:false,error:e};}
-      }
       if(h.keepSheet){finish(h,S('undone','체크히어 반영 취소 · 출결원장은 그대로',{tone:'warn',detail:`${h.keepSheet}은 출결원장에 다시 저장할 수 없어 되돌리지 않았습니다`}));return {ok:true,kept:h.keepSheet};}
       const p=h.prevRow,row={cls:h.cls,name:h.name,date:h.date,type:p.type,inT:p.inT,outT:p.outT,oa:p.oa,ob:p.ob,reason:p.reason.trim(),ev:p.ev,evr:p.ev==='반려'?p.evr.trim():'',before:h.sig};
       try{const res=await client.save(row);finish(h,S('undone','체크히어 반영 취소 · 출결원장도 되돌림',{tone:'muted'}));return {ok:true,row,res};}

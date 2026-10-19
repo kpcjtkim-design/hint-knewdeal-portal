@@ -1,1 +1,0 @@
-Redeploy production so the 2기 베타 tab picks up HINT_SHEET_API_URL and HINT_SHEET_API_KEY at 2026-10-12 10:25 KST.

@@ -1,9 +1,12 @@
-// 2기 베타 담임 화면: 1기 담임 8개 탭과 2기 베타 6개 탭을 하루 업무 순서대로 6개 탭으로 합쳤습니다(관리자 미리보기 전용).
+// 2기 담임 화면(담임 로그인·관리자 미리보기 공통): 하루 업무 순서대로 6개 탭. 시간표·강의자료·만족도는 cohort.json features가 켜질 때까지 '11월 중 2기 기준으로 열림'으로 감춥니다.
 // 출결판·사유·반 정보는 teacher-beta.js 한 개를 띄워 두고 탭에 따라 옮겨 씁니다(마스터시트 읽기 1번).
 // 2026-10-16 회의: 학습자 평가·현장운영 체크리스트는 없앴고, 민원·이슈는 운영팀과 주고받습니다(beta2-voc.mjs, 운영팀 답글 알림).
 import {createBeta2Client,onBeta2Rev} from './beta2-data.mjs';
 import {studentStats,diseaseReport} from './beta2-core.mjs';
 import {ensureBeta2Css,esc} from './beta2-ui.mjs';
+import {feature,FEATURE_LATER_TEXT} from './cohort.mjs';
+// 탭 → 열림 표시(cohort.json features). 1기 시간표 시드·1기 설문 카탈로그를 쓰던 화면이라 2기 자료가 생길 때까지 닫습니다.
+const LATER={'timetable-today':'timetable',timetable:'timetable',materials:'materials',surveys:'surveys'};
 
 export const TEACHER_TABS=[['today','오늘'],['attendance','출결'],['documents','서류발급'],['feedback','민원·만족도'],['schedule','시간표·자료'],['info','반 정보']];
 export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결사유'],['stats','통계'],['evidence','증빙서류'],['disease','질병 인정']],feedback:[['voc','민원·이슈'],['surveys','만족도조사']],schedule:[['timetable','전체 시간표'],['materials','강의자료'],['links','바로가기']]};
@@ -15,11 +18,11 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
  const cls=String(classInfo.id),client=createBeta2Client(user,{db});
  const bar=document.createElement('section');bar.className='teacher-context-bar';hero.before(bar);hero.classList.add('teacher-header-class');bar.append(hero);
- const switcher=parent.querySelector('.preview-controls');if(switcher){switcher.classList.add('teacher-header-switch');bar.prepend(switcher);}
+ const switcher=parent.querySelector('.preview-controls')||parent.querySelector('.teacher-class-switch');if(switcher){switcher.classList.add('teacher-header-switch');bar.prepend(switcher);}
  const wrap=document.createElement('div');wrap.className='b2';bar.after(wrap);
  wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button class="b2-tab" data-main="${k}">${l}</button>`).join('')}</nav><nav class="b2-tabs" id="t2Sub" hidden></nav>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" hidden></section>`).join('')}`;
  const $=s=>wrap.querySelector(s),panel=k=>wrap.querySelector(`[data-panel="${k}"]`);
- // 기존 1기 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다.
+ // 담임 홈 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다.
  const tasks=following.find(e=>e.classList.contains('task-grid')),taskHead=tasks?.previousElementSibling,notice=following.find(e=>e.classList.contains('notice')),noticeHead=notice?.previousElementSibling,urgent=parent.querySelector('.urgent-stack');
  const today=panel('today');
  today.innerHTML='<div id="t2Urgent"></div><div id="t2Beta_today"></div><div class="b2-head" style="margin-top:14px"><div><h3>오늘 시간표</h3></div></div><div id="t2Timetable"></div><div id="t2Tasks"></div><details class="b2-card b2-pad" id="t2Notice" style="margin-top:12px"><summary><b>일일 업무 체크리스트 · 공지</b></summary></details>';
@@ -38,11 +41,12 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo}){
  const keep=w=>{if(w)works.push(w);return w;};
  async function betaPane(k,slot){
   slot.append(betaHost);
-  if(!beta){const m=await import('./teacher-beta.js?v=20261016-voc1');if(!alive())return;beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:k,onTab:t=>{if(t==='board')void go('attendance','board');}});}
+  if(!beta){const m=await import('./teacher-beta.js?v=20261019-c2');if(!alive())return;beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:k,onTab:t=>{if(t==='board')void go('attendance','board');}});}
   else beta.setTab(k);
  }
  async function load(key,slot){
   if(loaded.has(key))return;loaded.add(key);
+  if(LATER[key]&&!feature(LATER[key])){slot.innerHTML=`<div class="b2-note">${esc(FEATURE_LATER_TEXT)}</div>`;return;}
   try{
    if(key==='timetable-today'){const m=await import('./timetable.mjs');if(alive())keep(await m.mountTeacherTimetable(slot,{db,user,classInfo,compact:true,includeSurveys:false}));}
    if(key==='timetable'){const m=await import('./timetable.mjs');if(alive())keep(await m.mountTeacherTimetable(slot,{db,user,classInfo,includeSurveys:false}));}

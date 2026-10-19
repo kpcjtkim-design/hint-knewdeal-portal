@@ -1,5 +1,6 @@
-// 2기 베타 서류발급: 담임 신청 → 마스터시트 '서류발급' 탭 + 관리자 메일 알림 → 관리자 처리. 1기 '서류발급요청' 내역도 함께 보입니다.
+// 2기 서류발급: 담임 신청 → 마스터시트 '서류발급' 탭 → 관리자 처리. 기재 기간은 2기 교육 기간(cohort.json) 안에서 고릅니다.
 import {rosterFor} from './beta2-core.mjs';
+import {COURSE_START,COURSE_END} from './cohort.mjs';
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 
 const STATE_CLASS={'접수':'t-rec','처리중':'t-late','보완 필요':'t-absent','처리완료':'e-ok','취소':'t-na'};
@@ -23,8 +24,8 @@ export async function mount(host,{client,classes,selected,teacherClass=null}){
    ${admin?`<label class="b2-field">반<select data-g="cls">${classOptions(classes,form.cls)}</select></label>`:''}
    <label class="b2-field ${admin?'':'wide'}">교육생<select data-g="name"><option value="">교육생 선택</option>${roster().map(p=>`<option ${p.name===form.name?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
    <div class="b2-field wide">서류 종류<div class="b2-chips" style="margin-top:4px">${types.map(t=>`<button class="b2-chip" data-doctype="${esc(t)}" aria-pressed="${form.docType===t}">${esc(t)}</button>`).join('')}</div>${form.docType==='기타'?`<input data-g="docOther" placeholder="서류 이름" maxlength="60" value="${esc(form.docOther)}" style="margin-top:6px">`:''}</div>
-   <label class="b2-field">기재할 기간 · 시작<input type="date" data-g="from" value="${esc(form.from)}" min="2026-07-27"></label>
-   <label class="b2-field">기재할 기간 · 끝<input type="date" data-g="to" value="${esc(form.to)}" min="2026-07-27"></label>
+   <label class="b2-field">기재할 기간 · 시작<input type="date" data-g="from" value="${esc(form.from)}" min="${COURSE_START}" max="${COURSE_END}"></label>
+   <label class="b2-field">기재할 기간 · 끝<input type="date" data-g="to" value="${esc(form.to)}" min="${COURSE_START}" max="${COURSE_END}"></label>
    <label class="b2-field">제출처 (필수)<input data-g="submitTo" maxlength="100" placeholder="예: 국민취업지원제도 운영기관" value="${esc(form.submitTo)}"></label>
    <label class="b2-field">제출 마감일<input type="date" data-g="due" value="${esc(form.due)}" min="${today}"></label>
    <label class="b2-field">발급 목적<input data-g="purpose" maxlength="100" placeholder="예: 국취제 출석 확인" value="${esc(form.purpose)}"></label>

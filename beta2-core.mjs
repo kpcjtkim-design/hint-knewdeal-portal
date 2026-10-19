@@ -1,15 +1,17 @@
-// 2기 베타: 마스터시트(출결원장·명부·교육일자) 자료로 출결 화면에 필요한 값을 계산합니다. 화면 없이 시험할 수 있는 순수 함수만 둡니다.
-import {RULES,seconds} from './checkhere/rules.mjs';
+// 2기: 마스터시트(출결원장·명부·교육일자) 자료로 출결 화면에 필요한 값을 계산합니다. 화면 없이 시험할 수 있는 순수 함수만 둡니다.
+// 2기는 운영총괄 동기화가 없어 '운영총괄과 다름' 충돌 표시·동기화 상태 글이 없습니다. 출결 시간 기준은 cohort.mjs ruleFor(공장견학 날 10:00~17:00).
+import {seconds} from './checkhere/rules.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
+import {ruleFor,DISEASE,COMPLETION_RATE} from './cohort.mjs';
 
 export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출'];
 export const B2_EVIDENCE=['','미제출','반려','확인','해당없음'];
 export const B2_PRESENT=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
 export const recognizedType=t=>String(t||'').startsWith('인정');
-// 1기 사유 표기(병결·병원·병가·진료…)와 2기 입력을 모두 질병으로 봅니다.
+// 사유 표기(병결·병원·병가·진료…)를 질병으로 봅니다.
 export const DISEASE_REASON=/병원|병결|병가|진료|질병|입원|통원|수술|치료|검진/;
 export const isDiseaseReason=reason=>DISEASE_REASON.test(String(reason||''));
-export const diseaseLevel=n=>n>6?'초과':n===6?'6회 도달':n>=4?'주의':'';
+export const diseaseLevel=n=>n>DISEASE.max?'초과':n===DISEASE.max?`${DISEASE.max}회 도달`:n>=DISEASE.warn?'주의':'';
 
 export function decodeBundle(raw){
  const cols=raw?.ledgerCols||[];
@@ -24,8 +26,6 @@ export function ledgerIndex(bundle){
 export const rosterFor=(bundle,cls)=>bundle.roster.filter(p=>p.cls===String(cls));
 // 2기 담임 화면 기준: 재학·빈 상태이거나, 상태 변경일(마지막 출석일)까지는 재학으로 셉니다. 그다음 교육일부터 빠집니다.
 export const enrolledOn=(person,date)=>!person.status||person.status==='재학'||(!!person.changed&&person.changed>=date);
-// 출결원장 T열 중 '운영총괄과 다름' 계열만 충돌입니다(사유 해석 참고 메모는 충돌이 아님). beta2.gs b2IsConflict_와 같은 기준.
-export const isConflictFlag=flag=>/^운영총괄 값:|^운영총괄에는|^같은 학생/.test(String(flag||''));
 export const courseDays=(bundle,{from='',to=bundle.today}={})=>bundle.days.filter(d=>(!from||d>=from)&&d<=to);
 export function teacherOf(bundle,cls){return bundle.classes.find(c=>String(c.id)===String(cls))?.teacher||'';}
 
@@ -37,11 +37,10 @@ export function dayView(bundle,cls,date,index=ledgerIndex(bundle)){
  });
 }
 export function dayCounts(rows){
- const c={총원:0,출석:0,결석:0,지각:0,조퇴:0,외출:0,인정:0,중복:0,확인필요:0};
+ const c={총원:0,출석:0,결석:0,지각:0,조퇴:0,외출:0,인정:0,중복:0};
  for(const r of rows){
   if(!r.enrolled&&!r.rec)continue;c.총원++;const t=r.type;
   if(t==='결석')c.결석++;else if(recognizedType(t))c.인정++;else if(['지각','조퇴','외출','중복'].includes(t))c[t]++;
-  if(isConflictFlag(r.rec?.flag))c.확인필요++;
  }
  c.출석=c.총원-c.결석;return c;
 }
@@ -50,17 +49,16 @@ export function dayCounts(rows){
 export function studentStats(bundle,{cls=null,from='',to=bundle.today}={},index=ledgerIndex(bundle)){
  const days=courseDays(bundle,{from,to});
  return bundle.roster.filter(p=>!cls||p.cls===String(cls)).map(p=>{
-  const counts={},evidence=[],disease=[],flags=[];let enrolled=0;
+  const counts={},evidence=[],disease=[];let enrolled=0;
   for(const d of days){
    const rec=index.get(ledgerKey(p.cls,p.name,d));
    if(!enrolledOn(p,d)&&!rec)continue;enrolled++;
    const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;
    if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||''});
    if(rec&&recognizedType(t)&&isDiseaseReason(rec.reason))disease.push(d);
-   if(isConflictFlag(rec?.flag))flags.push({date:d,flag:rec.flag});
   }
   const absent=counts['결석']||0;
-  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease,flags};
+  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
  });
 }
 
@@ -76,17 +74,18 @@ export function diseaseReport(stats,checkhere={}){
   if(onlyLedger.length||onlyCheckHere.length)review.push(row);
  }
  const order=(a,b)=>b.count-a.count||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko');
- return {rows:rows.sort(order),review:review.sort(order),warning:rows.filter(r=>r.count<6).length,atLimit:rows.filter(r=>r.count===6).length,exceeded:rows.filter(r=>r.count>6).length};
+ return {rows:rows.sort(order),review:review.sort(order),warning:rows.filter(r=>r.count<DISEASE.max).length,atLimit:rows.filter(r=>r.count===DISEASE.max).length,exceeded:rows.filter(r=>r.count>DISEASE.max).length};
 }
 
 // 체크히어 기록과 출결원장 유형 대조. record: 체크히어 저장본 한 명(없으면 null)
 // corrected(보정 모드, 출결대조): 연결 프로그램이 고치는 교시 기록(entry)으로 지각·결석을 봅니다. 실제 입실(rawEntry)은 체크히어에서 지울 수 없어 남으므로 글로만 알립니다.
 // 오늘 교시·퇴실이 모두 비면 교시 기록이 늦게 찍힐 수 있어(퇴실을 지우면 1교시도 비므로 퇴실 전엔 빌 수 있음) 유형과 관계없이 실제 입실로 봅니다. 결석도 같음: 퇴실 전 체크인한 학생이 결석으로 잘못 적힌 것을 숨기지 않습니다.
-export function compareCheckHere(type,rec,record,{today='',date='',now=null,corrected=false}={}){
+// 시간 기준은 그날·그 반 규칙(cohort ruleFor): 공장견학 날(excursion 또는 cohort.json excursions)은 10:00~17:00입니다.
+export function compareCheckHere(type,rec,record,{today='',date='',now=null,corrected=false,excursion=false}={}){
  if(!record)return {state:'none',text:'체크히어 저장본 없음'};
  let entry,exit,raw;
  try{raw=seconds(Object.hasOwn(record,'rawEntry')&&record.rawEntry!==undefined?record.rawEntry:record.entry);exit=seconds(record.exit);entry=corrected?seconds(record.entry):raw;}catch{return {state:'diff',text:'체크히어 시간 형식 확인 필요'};}
- const start=seconds(RULES.start),end=seconds(RULES.end),absent=type==='결석'||type==='해당없음';
+ const RULES=ruleFor(date||record.date,{classId:record.classId??rec?.cls,excursion}),start=seconds(RULES.start),end=seconds(RULES.end),absent=type==='결석'||type==='해당없음';
  if(corrected&&entry===null&&exit===null&&date&&date===today)entry=raw;
  const late=entry!==null&&entry>=start+(RULES.entryGrace+1)*60,early=exit!==null&&exit<end-RULES.exitGrace*60;
  const outing=(record.outings||[]).length>0||Number(record.outingCount)>0;
@@ -130,29 +129,9 @@ export function neededTimes(type,v){
 export function evidenceRows(stats){
  return stats.flatMap(s=>s.evidence.map(e=>({cls:s.cls,name:s.name,...e}))).sort((a,b)=>Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }
-// 중도탈락·수료 위험(출석률 80% 미만)
-export function dropoutRows(stats,{threshold=80}={}){
+// 중도탈락·수료 위험(출석률이 수료 기준 cohort COMPLETION_RATE % 미만)
+export function dropoutRows(stats,{threshold=COMPLETION_RATE}={}){
  const left=stats.filter(s=>s.status&&s.status!=='재학').map(s=>({...s,verdict:s.status}));
  const risk=stats.filter(s=>(!s.status||s.status==='재학')&&s.rate!==null&&s.rate<threshold).map(s=>({...s,verdict:'수료 위험'}));
  return {left,risk};
-}
-// 자동 동기화 시간 'b2InWindow_'(beta2.gs)와 같은 규칙: '1-5 09:10-18:00'(요일 1=월~7=일) 또는 'always'
-const WINDOW_RE=/^([\d,\-\s]+?)\s+(\d{2}:\d{2})\s*[-~]\s*(\d{2}:\d{2})$/,DEFAULT_WINDOW='1-5 09:10-18:00';
-function syncWindow(spec,now){
- const s=String(spec||DEFAULT_WINDOW).trim();if(/^(always|항상)$/i.test(s))return {text:'항상',open:true};
- const m=s.match(WINDOW_RE)||DEFAULT_WINDOW.match(WINDOW_RE),days=new Set();
- for(const part of m[1].split(',')){const [a,b=a]=part.trim().split('-').map(Number);for(let d=a;d<=b;d++)days.add(d);}
- const k=new Date(now+9*3600e3),dow=k.getUTCDay()||7,hm=k.toISOString().slice(11,16),key=[...days].join(',');
- const label={'1,2,3,4,5':'평일','1,2,3,4,5,6,7':'매일','6,7':'주말'}[key]||[...days].map(d=>'월화수목금토일'[d-1]).join('·');
- return {text:`${label} ${m[2]}~${m[3]}`,open:days.has(dow)&&hm>=m[2]&&hm<=m[3]};
-}
-// beta2.gs b2Phase_가 남기는 동기화 단계 이름(B2_SYNC_PHASE·B2_SYNC_CUT) → 화면 말. 'boards n'은 출결판 n번째 차례.
-const SYNC_PHASES={start:'시작',drive:'운영총괄 수정 시각 확인',days:'교육일자 읽기',source:'운영총괄 읽기',colours:'증빙 색 확인',lock:'문서 잠금 기다리기',read:'출결원장 읽기',write:'출결원장 쓰기',slim:'입력 확인(Q열) 계산',done:'마무리'};
-export const syncPhaseText=phase=>{const s=String(phase||''),m=s.match(/^boards (\d+)$/);return m?`출결판 그리기 ${m[1]}번째 차례`:SYNC_PHASES[s]||'';};
-export function syncText(sync,now=Date.now()){
- const ago=t=>{if(!t)return '기록 없음';const m=Math.round((now-t)/60000);return m<1?'방금':m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`;};
- const last=sync?.last,win=syncWindow(sync?.window,now),cutAt=Number(sync?.cutAt)||0,cut=cutAt&&cutAt>(Number(last?.at)||0)?ago(cutAt):'';
- const cutPhase=cut?syncPhaseText(sync?.cut?.phase):'';
- return {checked:ago(sync?.checkedAt||last?.at),changed:ago(sync?.changedAt),error:sync?.error?.message||'',errors:last?.errors||[],stats:last?.stats||null,
-  window:win.text,resting:!win.open,cut,cutPhase,cutText:cut?`시간 초과로 중단${cutPhase?`(단계: ${cutPhase})`:''}`:''};
 }

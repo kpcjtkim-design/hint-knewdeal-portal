@@ -1,23 +1,27 @@
-// 2기 베타 담임화면 ↔ Apps Script 데이터 API 중계. 담임 브라우저는 script.google.com을 직접 부르지 않습니다.
-// 환경변수: HINT_SHEET_API_URL (Apps Script 웹앱 /exec 주소), HINT_SHEET_API_KEY (setApiKey로 만든 값)
-const FIREBASE_KEY='AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE';
-const PROJECT='knewdeal-portal';
-const ADMIN=new Set(['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);
-const CLASS_IDS=Array.from({length:17},(_,i)=>String(i+1));
-// 2기 베타 마스터시트 기능(apps-script/beta2/beta2.gs). 담임에게 열 때도 자기 반으로만 읽고 신청합니다.
+// 2기 담임·운영 화면 ↔ Apps Script 데이터 API 중계. 담임 브라우저는 script.google.com을 직접 부르지 않습니다.
+// 환경변수(2기 Vercel 프로젝트): HINT_SHEET_API_URL (2기 마스터시트 Apps Script 웹앱 /exec 주소), HINT_SHEET_API_KEY (setApiKey로 만든 값). 이름은 cohort.json sheetApi.
+// 반·관리자·Firebase(2기 전용 프로젝트)·담임 열림은 cohort.json(lib/cohort.cjs)에서 읽습니다. Firebase 설정이 비면 로그인 확인 전에 막습니다.
+import cohort from '../lib/cohort.cjs';
+const {CLASS_IDS,ADMINS,SHEET_API}=cohort;
+const ADMIN=new Set(ADMINS);
+// 시험은 이 값을 바꿔 씁니다(cohort.json firebase가 비어 있어도 시험할 수 있게).
+export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,ready:cohort.FIREBASE_READY};
+// 2기 마스터시트 기능(apps-script/beta2/beta2.gs). 담임에게 열 때도 자기 반으로만 읽고 신청합니다.
 // 민원·이슈(b2Voc*)는 담임·운영이 주고받습니다(2026-10-16 회의). 현장운영 체크리스트(portalCheck)는 없어졌습니다.
-const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2SyncNow','b2Save','b2Release','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen']);
+// 2기는 운영총괄 동기화가 없어 b2SyncNow(가져오기)·b2Release(운영총괄 값으로)를 받지 않습니다(Apps Script에 남아 있어도 웹에서 부르지 않음).
+const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen']);
 const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리는 담임에게 열어도 관리자만 씁니다.
-const ADMIN_ACTIONS=new Set(['portalRoster','b2Status','b2SyncNow','b2Save','b2Release','b2DocUpdate']);
-// 일단 관리자만 씁니다. 담임에게 열 때 true로 바꾸고 teacher-workspace.mjs의 탭 조건(preview)도 함께 풉니다.
-const TEACHER_ACCESS=false;
+const ADMIN_ACTIONS=new Set(['portalRoster','b2Status','b2Save','b2DocUpdate']);
+// 담임 열림: cohort.json teacherAccess(개강 전 false). index.html 담임 로그인도 같은 값을 봅니다.
+export const ACCESS={teacher:cohort.TEACHER_ACCESS};
 // 담임 화면에 그대로 보이므로 오류는 한국어 문장으로 돌려줍니다.
 const FAILURES={
   LOGIN_REQUIRED:[401,'로그인이 필요합니다. 다시 로그인해 주세요.'],
   PROFILE_NOT_FOUND:[403,'계정 정보를 찾지 못했습니다. 운영자에게 문의해 주세요.'],
-  ACCESS_DENIED:[403,'2기 베타 화면을 볼 권한이 없습니다.'],
-  ADMIN_ONLY:[403,'2기 베타는 지금 관리자만 볼 수 있습니다.'],
+  ACCESS_DENIED:[403,'2기 화면을 볼 권한이 없습니다.'],
+  ADMIN_ONLY:[403,'담임 화면은 개강 준비 중이라 지금은 관리자만 볼 수 있습니다.'],
+  FIREBASE_NOT_CONFIGURED:[503,'2기 Firebase 설정 필요: 운영자가 cohort.json에 2기 Firebase 값을 넣으면 열립니다.'],
   NO_CLASS:[403,'담당 반 설정이 없습니다.'],
   BAD_CLASS:[400,'반 번호가 올바르지 않습니다.'],
   BAD_REQUEST:[400,'요청 형식이 올바르지 않습니다.'],
@@ -39,13 +43,14 @@ export function teacherClassIds(f){
   return [...new Set([primary,...temps].filter(Boolean))];
 }
 async function verifyUser(idToken){
+  if(!FIREBASE.ready||!FIREBASE.key||!FIREBASE.project)throw new Error('FIREBASE_NOT_CONFIGURED');
   if(!idToken)throw new Error('LOGIN_REQUIRED');
-  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken})});
+  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE.key}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken})});
   if(!r.ok)throw new Error('LOGIN_REQUIRED');
   const email=String((await r.json()).users?.[0]?.email||'').toLowerCase();
   if(!email)throw new Error('LOGIN_REQUIRED');
   if(ADMIN.has(email))return{email,role:'ADMIN',classIds:CLASS_IDS};
-  const p=await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/users/${encodeURIComponent(email)}`,{headers:{authorization:`Bearer ${idToken}`}});
+  const p=await fetch(`https://firestore.googleapis.com/v1/projects/${FIREBASE.project}/databases/(default)/documents/users/${encodeURIComponent(email)}`,{headers:{authorization:`Bearer ${idToken}`}});
   if(p.status===429)throw new Error('DATABASE_QUOTA_EXCEEDED');
   if(!p.ok)throw new Error(p.status===401?'LOGIN_REQUIRED':'PROFILE_NOT_FOUND');
   const f=(await p.json()).fields||{},role=scalar(f.role);
@@ -71,7 +76,6 @@ export function b2Args(user,action,rest){
   // 답글·확인: 담임은 늘 자기 반을 붙여 보내고 Apps Script가 그 건의 반과 맞는지 봅니다. 관리자는 반 없이도 됩니다.
   if(action==='b2VocReply'||action==='b2VocSeen')return [admin&&p.cls===undefined?p:{...p,cls:own(p.cls)}];
   if(action==='b2Rev'||action==='b2Status')return [];
-  if(action==='b2SyncNow')return [p.cls?{cls:own(p.cls)}:{}];
   return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
 }
 export function vocForTeacher(voc,classIds){
@@ -79,7 +83,7 @@ export function vocForTeacher(voc,classIds){
  return {rev:voc.rev,at:voc.at,teacher:pick(voc.teacher),open:pick(voc.open)};
 }
 async function callSheet(action,args,extra={}){
-  const url=process.env.HINT_SHEET_API_URL,key=process.env.HINT_SHEET_API_KEY;
+  const url=process.env[SHEET_API.urlEnv],key=process.env[SHEET_API.keyEnv];
   if(!url||!key)throw new Error('NOT_CONFIGURED');
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
   try{
@@ -100,7 +104,7 @@ export default async function handler(req,res){
     if(typeof body==='string'){try{body=JSON.parse(body||'{}');}catch{throw new Error('BAD_REQUEST');}}
     const bearer=String(req.headers?.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1];
     const user=await verifyUser(bearer||body.idToken);
-    if(user.role!=='ADMIN'&&(!TEACHER_ACCESS||ADMIN_ACTIONS.has(body.action)))throw new Error('ADMIN_ONLY');
+    if(user.role!=='ADMIN'&&(!ACCESS.teacher||ADMIN_ACTIONS.has(body.action)))throw new Error('ADMIN_ONLY');
     const {action}=body,rest=Array.isArray(body.args)?body.args:[];
     if(!ALLOWED.has(action))throw new Error('BAD_ACTION');
     if(JSON.stringify(rest).length>20000)throw new Error('BAD_REQUEST');

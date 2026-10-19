@@ -1,10 +1,11 @@
-// 2기 베타 화면 공통 도우미
-import {recognizedType,syncText} from './beta2-core.mjs';
+// 2기 화면 공통 도우미(운영총괄 동기화 표시는 2기에 없습니다)
+import {recognizedType} from './beta2-core.mjs';
+import {fileName} from './cohort.mjs';
 
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function ensureBeta2Css(){
  if(document.querySelector('link[data-beta2-css]'))return;
- const link=document.createElement('link');link.rel='stylesheet';link.href='/beta2.css?v=20261016-voc1';link.dataset.beta2Css='1';document.head.append(link);
+ const link=document.createElement('link');link.rel='stylesheet';link.href='/beta2.css?v=20261019-c2';link.dataset.beta2Css='1';document.head.append(link);
 }
 const W='일월화수목금토';
 export const md=iso=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||'')))return String(iso||'');const d=new Date(iso+'T00:00:00Z');return `${+iso.slice(5,7)}/${+iso.slice(8,10)}(${W[d.getUTCDay()]})`;};
@@ -16,18 +17,14 @@ export function evBadge(state){
  if(!state||state==='해당없음')return '';
  return `<span class="b2-badge ${state==='확인'?'e-ok':['미제출','반려'].includes(state)?'e-miss':'e-none'}">증빙 ${esc(state)}</span>`;
 }
-export function syncPill(sync){
- const t=syncText(sync);
- if(t.error)return `<span class="b2-pill err" title="${esc(t.error)}">운영총괄 동기화 오류 · ${esc(t.error)}</span>`;
- const title=[`자동 동기화: ${t.window}`,...(t.cut?[`${t.cut} 실행이 6분 한도에 걸려 중간에 멈췄습니다${t.cutPhase?`(단계: ${t.cutPhase})`:''}. 다음 실행이 이어서 맞춥니다.`]:[]),...t.errors].join('\n');
- return `<span class="b2-pill ${t.errors.length||t.cut?'wait':'live'}" title="${esc(title)}">운영총괄 확인 ${esc(t.checked)} · 마지막 변경 ${esc(t.changed)}${t.cut?` · 시간 초과 중단 ${esc(t.cut)}`:''}${t.errors.length?` · 일부 오류 ${t.errors.length}`:''}${t.resting?` · 자동 동기화 쉬는 시간(${esc(t.window)})`:''}</span>`;
-}
 export function toast(message){
  const el=document.getElementById('toast');if(!el){console.info(message);return;}
  el.textContent=message;el.classList.add('show');clearTimeout(el._b2);el._b2=setTimeout(()=>el.classList.remove('show'),2200);
 }
 export async function copyText(text){try{await navigator.clipboard.writeText(text);toast('복사했습니다.');}catch{toast('복사하지 못했습니다. 브라우저 권한을 확인해 주세요.');}}
+// 내려받는 파일 이름 앞에 '2기_'를 붙여 1기 파일과 섞이지 않게 합니다.
 export function downloadCsv(name,rows){
+ name=fileName(name);
  const csv='﻿'+rows.map(r=>r.map(v=>{const s=String(v??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\r\n');
  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }

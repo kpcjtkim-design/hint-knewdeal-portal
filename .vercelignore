@@ -16,3 +16,8 @@ checkhere/*.command
 apps-script/
 checkhere/probe-*.mjs
 docs/
+tools/
+BETA_ATTENDANCE.md
+*.rules
+.firebaserc
+firebase.json

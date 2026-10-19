@@ -1,7 +1,12 @@
+// Drive 업로드 확인(날짜·주차 폴더). 이 Apps Script는 1기 폴더 구조(1기 주차) 기준이라 2기 Drive 구조를 확인할 때까지 닫습니다(cohort.json features.uploads).
+import cohort from '../lib/cohort.cjs';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxE4sXaG3r6CZArdGgFnelj8tai-urVpXJ_gjPHFapmBUhrDk-BK3-xd2oi-Tb-QLt9/exec';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
+  if (!cohort.feature('uploads')) {
+    return res.status(503).json({ ok: false, error: 'UPLOADS_NOT_OPEN', message: '2기 Drive 업로드 확인은 11월 중 2기 폴더 구조 기준으로 다시 엽니다.' });
+  }
 
   if (req.method !== 'GET') {
     return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });

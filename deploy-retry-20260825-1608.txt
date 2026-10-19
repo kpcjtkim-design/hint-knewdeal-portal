@@ -1,1 +1,0 @@
-Redeploy current main for hint-knewdeal_portal production. No application code changes.
