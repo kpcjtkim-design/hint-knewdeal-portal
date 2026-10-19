@@ -10,9 +10,9 @@ import {createBridge} from '../server.mjs';
 import {studentKey,recordId,version} from '../identity.mjs';
 import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mjs';
 import {mergeCurrentRecords} from '../../checkhere-current-core.mjs';
-// 날짜는 요청 허용 범위(2026-07-27~2026-10-22) 안으로 고정합니다(docs/checkhere-handoff-review.md 8번).
-// 연결 프로그램은 수집 PC의 실제 연결 프로그램(8765)과 겹치지 않는 포트에서 열고, 화면에는 HINT_TEST_BRIDGE로 알려 줍니다.
-const ROOT=join(import.meta.dirname,'../..'),DATE='2026-10-12',PORT=18943,BRIDGE=`http://127.0.0.1:${PORT}`;
+// 날짜는 2기 요청 허용 범위(2026-10-28~2027-01-22) 안으로 고정합니다(docs/checkhere-handoff-review.md 8번).
+// 연결 프로그램은 수집 PC의 실제 연결 프로그램(1기 8765·2기 8766)과 겹치지 않는 포트에서 열고, 화면에는 HINT_TEST_BRIDGE로 알려 줍니다.
+const ROOT=join(import.meta.dirname,'../..'),DATE='2026-11-02',PORT=18943,BRIDGE=`http://127.0.0.1:${PORT}`;
 const NAMES=['가상하나','가상둘','01000000001','01000000002'],SIGNAL_KEYS=['at','build','busy','by','capabilities','lastErrorAt','privacy','queue','state'];
 const until=async(f,what,ms=20000)=>{for(const end=Date.now()+ms;!await f();){if(Date.now()>end)throw Error(what+' 대기 시간 초과');await new Promise(r=>setTimeout(r,50));}};
 
@@ -89,14 +89,16 @@ test('an edit from the beta page stays pending under the read-only relay; only a
   // 다른 화면 시험처럼 설치된 Chrome을 씁니다. 브라우저를 못 열면 연결 프로그램을 닫고 끝냅니다(안 닫으면 시험이 끝나지 않음).
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true,args:['--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults']}).catch(e=>{app.close();throw e;});
   const types={'.html':'text/html','.mjs':'text/javascript','.js':'text/javascript','.json':'application/json','.css':'text/css'};
-  async function open(email){
+  const testCohort=()=>readFileSync(join(ROOT,'cohort.mjs'),'utf8').replace('"apiKey": ""','"apiKey": "test-api-key"').replace('"appId": ""','"appId": "test-app-id"');
+  async function open(email,{realCohort=false}={}){
     const context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(20000);
     await page.exposeFunction('__db',(op,...a)=>ops[op](...a));
     await page.addInitScript(({email,bridge})=>{window.__fakeUser=email;window.HINT_TEST_BRIDGE=bridge;},{email,bridge:BRIDGE});
     // 안전장치: 실제 연결 프로그램 포트로 가는 요청은 막고 기록합니다(시험 끝에 0건이어야 함).
-    for(const host of ['127.0.0.1','localhost'])await context.route(`http://${host}:8765/**`,r=>{realBridge.push(r.request().url());r.abort();});
+    for(const host of ['127.0.0.1','localhost'])for(const port of [8765,8766])await context.route(`http://${host}:${port}/**`,r=>{realBridge.push(r.request().url());r.abort();});
     await context.route('https://www.gstatic.com/firebasejs/10.12.5/*',r=>r.fulfill({contentType:'text/javascript',body:FAKE[new URL(r.request().url()).pathname.split('/').pop()]}));
-    await context.route('https://portal.test/**',r=>{const p=new URL(r.request().url()).pathname;try{r.fulfill({contentType:types[extname(p)]||'text/plain',body:readFileSync(join(ROOT,p))});}catch{r.fulfill({status:404,body:''});}});
+    // 2기 Firebase 설정(cohort.json)은 아직 비어 있어 시험용 값을 넣은 cohort.mjs를 줍니다(realCohort면 그대로 — 로그인 없이 멈춰야 함).
+    await context.route('https://portal.test/**',r=>{const p=new URL(r.request().url()).pathname;try{r.fulfill({contentType:types[extname(p)]||'text/plain',body:p==='/cohort.mjs'&&!realCohort?testCohort():readFileSync(join(ROOT,p))});}catch{r.fulfill({status:404,body:''});}});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
     page.on('request',r=>{if(/\/api\/(?:apply|preview-request|confirm-existing|reconcile)\b/.test(r.url()))writeCalls.push(r.url());});
     await page.goto('https://portal.test/checkhere-live.html');pages.push(page);return {page,errors};
@@ -104,7 +106,8 @@ test('an edit from the beta page stays pending under the read-only relay; only a
   try{
     const relay=await open(APPROVER);
     await relay.page.getByText('아직 이 반·날짜의 저장본이 없습니다').waitFor();
-    await relay.page.fill('#date',DATE);
+    // 2기 기본 반은 1반입니다(가상 학생은 2반).
+    await relay.page.selectOption('#cls','2');await relay.page.fill('#date',DATE);
     const startedAt=Date.now();
     await relay.page.fill('#relayKey',app.key);await relay.page.click('#relayStart');
     await relay.page.getByText('작동 중').waitFor();
@@ -119,8 +122,9 @@ test('an edit from the beta page stays pending under the read-only relay; only a
     await relay.page.click('#relayNow');
     await relay.page.locator('#rows tr',{hasText:'가상둘'}).waitFor();
     const admin=await open('admin@example.com');
-    await admin.page.fill('#date',DATE);
+    await admin.page.selectOption('#cls','2');await admin.page.fill('#date',DATE);
     assert.equal(await admin.page.locator('#relay').count(),0,'relay controls are approver-only');
+    assert.equal(await admin.page.locator('#ids').count(),0,'2기 학생 번호 등록 칸도 승인 계정만');assert.equal(await relay.page.locator('#ids #idsRegister').count(),1);
     const row=admin.page.locator('#rows tr',{hasText:'가상둘'});await row.waitFor();
     await row.getByRole('button',{name:'수정'}).click();
     await admin.page.fill('#fEntryMemo','(인정지각)병원_담임:가상');await admin.page.fill('#fReason','진료확인서 제출');
@@ -174,6 +178,9 @@ test('an edit from the beta page stays pending under the read-only relay; only a
     db.set('checkhereRequests/live-delete-ui-000001',{classId:'2',date:DATE,name:'가상하나',phoneLast4:'0001',reason:'[실시간 베타] [2기 베타] 출결대조 시간 삭제 · 퇴실 [기준:0123abcd]',changes:{exit:'',exitMemo:''},deleteTimes:['exit'],status:'rejected',reviewNote:'가상 반려',createdBy:'admin@example.com',createdAt:now(),updatedAt:now()});notify();
     await admin.page.locator('#reqs').getByText('퇴실: (삭제) · 퇴실 사유: (비움)').waitFor();
     assert.deepEqual([...relay.errors,...admin.errors],[]);
+    // 2기 Firebase 설정이 비어 있으면(지금 cohort.json) 로그인 화면도 띄우지 않고 '2기 Firebase 설정 필요'로 멈춥니다(1기 프로젝트로 새지 않음).
+    const bare=await open(APPROVER,{realCohort:true});await bare.page.getByText('2기 Firebase 설정 필요').first().waitFor();
+    assert.equal(await bare.page.locator('#login').count(),0);assert.equal(await bare.page.locator('#relay').count(),0);
     assert.deepEqual(realBridge,[],'the real bridge port is never contacted');
     assert.deepEqual(writeCalls,[],'the pages never asked the bridge to approve or write');
     assert.ok(reqPath);
