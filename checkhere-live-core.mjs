@@ -3,20 +3,42 @@
 // auto-approved, and tagged with the values the editor saw.
 import {cleanRequest,memoDefaultTimes} from './checkhere/approval-core.mjs';
 import {assertChangeAllowed,normalizeTime} from './checkhere/rules.mjs';
+import {CLASS_IDS as COHORT_CLASS_IDS,isTrainingDay} from './checkhere/cohort-bridge.mjs';
 
 export const LIVE_MARK='[실시간 베타]';
 export const LIVE_FIELDS=['entry','exit','entryMemo','exitMemo'];
-// 자동 갱신 간격: 10분(사용자 결정 2026-10-13). 바뀐 학생만 상세를 읽고 바뀐 반만 저장합니다.
-export const LIVE_INTERVAL_MS=10*60*1000;
-export const LIVE_WINDOW={weekdays:[1,2,3,4,5],start:'08:50',end:'18:40'};
-export const CLASS_IDS=Array.from({length:17},(_,i)=>String(i+1));
+// 자동 갱신(사용자 결정 2026-10-19, 예전 10분마다 모든 반 → 바꿈): 반마다 한 시간에 한 번, 그 시간 안의 무작위 시각에 읽습니다.
+// 매시 반 16개의 시각을 새로 뽑고(순서도 무작위), 시각끼리는 1분 넘게 떨어뜨립니다. 바뀐 학생만 상세를 읽고 바뀐 반만 저장하는 것은 그대로입니다.
+export const LIVE_HOUR_MS=60*60*1000,LIVE_GAP_MS=60*1000;
+// 자동 갱신 창: 2기 교육일(기간 2026-10-28~2027-01-22 안 평일, 휴일 12/25·12/31·1/1 빼고)의 08:50~18:40. 공장견학 날(10:00~17:00)도 이 창 안입니다.
+export const LIVE_WINDOW={weekdays:[1,2,3,4,5],start:'08:50',end:'18:40',trainingDay:isTrainingDay};
+// 2기 16개 반(cohort-bridge)
+export const CLASS_IDS=[...COHORT_CLASS_IDS];
 export const ACTIVE=['pending','approved','applying'];
 
 export function koreaClock(now=new Date()){
   const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',weekday:'short'}).formatToParts(now).map(x=>[x.type,x.value]));
   return {date:`${p.year}-${p.month}-${p.day}`,time:`${p.hour}:${p.minute}`,weekday:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(p.weekday)};
 }
-export function inLiveWindow(now=new Date(),w=LIVE_WINDOW){const k=koreaClock(now);return w.weekdays.includes(k.weekday)&&k.time>=w.start&&k.time<=w.end;}
+// 교육일이 아니면(주말·휴일·기간 밖) 창 밖입니다: 그날은 반마다 체크히어를 찾아 다니지 않습니다. trainingDay를 넣지 않은 창(w)은 2기 교육일 기준.
+export function inLiveWindow(now=new Date(),w=LIVE_WINDOW){const k=koreaClock(now);return w.weekdays.includes(k.weekday)&&k.time>=w.start&&k.time<=w.end&&(w.trainingDay||isTrainingDay)(k.date);}
+// 한국 시각(UTC+9, 서머타임 없음)의 그 시간 시작(ms)과 이름('YYYY-MM-DD HH')
+const KST=9*LIVE_HOUR_MS;
+export const koreaHour=(now=new Date())=>{const t=now.getTime(),start=Math.floor((t+KST)/LIVE_HOUR_MS)*LIVE_HOUR_MS-KST;return {start,key:`${koreaClock(new Date(start)).date} ${new Date(start+KST).toISOString().slice(11,13)}`};};
+// 한 시간의 자동 갱신 계획: from(지금, 중계를 켠 때) 뒤 그 시간 끝까지 중 창(교육일 08:50~18:40) 안에서, 반마다 한 시각(무작위 순서), 시각끼리 gapMs 넘게.
+// 남은 시간이 모자라면(첫 시간 일부·08:50~09:00) 들어가는 만큼의 반만 무작위로 고릅니다(나머지는 다음 시간 계획에 들어감). 창 밖·교육일이 아니면 빈 계획.
+// random: 0~1 함수(시험은 고정값). 결과 {key, date, slots:[{classId, at(ms)}]}(시각 순).
+export function hourPlan({now=new Date(),classIds=CLASS_IDS,window=LIVE_WINDOW,random=Math.random,gapMs=LIVE_GAP_MS}={}){
+  const h=koreaHour(now),k=koreaClock(now),plan={key:h.key,date:k.date,slots:[]};
+  if(!window.weekdays.includes(k.weekday)||!(window.trainingDay||isTrainingDay)(k.date))return plan;
+  const at=hm=>Date.parse(`${k.date}T${hm}:00+09:00`),a=Math.max(h.start,at(window.start),now.getTime()),b=Math.min(h.start+LIVE_HOUR_MS,at(window.end)+60000);
+  // 30분 넘게 남으면 끝 3분은 비워 둡니다(읽기가 늦어져도 그 반이 다음 시간으로 밀려 빠지지 않게).
+  const span=b-a-(b-a>=30*60000?3*60000:0),n=span>0?Math.min(classIds.length,Math.floor((span-1)/gapMs)+1):0;if(!n)return plan;
+  // 반 고르기·순서(남은 반에서 하나씩 무작위), 시각(남는 여유 안에서 무작위 n개를 정렬한 뒤 i번째에 i×gap을 더함 — 서로 gap 넘게 떨어짐)
+  const pool=[...classIds],picked=[];while(picked.length<n)picked.push(pool.splice(Math.min(pool.length-1,Math.floor(random()*pool.length)),1)[0]);
+  const room=span-(n-1)*gapMs,offsets=picked.map(()=>Math.min(room-1,Math.floor(random()*room))).sort((x,y)=>x-y);
+  plan.slots=picked.map((classId,i)=>({classId,at:a+offsets[i]+i*gapMs}));return plan;
+}
 
 // FNV-1a: small, synchronous and identical in the browser and Node.
 function fnv(text){let h=0x811c9dc5;for(const ch of text){h^=ch.codePointAt(0);h=Math.imul(h,0x01000193)>>>0;}return h.toString(16).padStart(8,'0');}
