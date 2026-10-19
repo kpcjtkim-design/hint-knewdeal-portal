@@ -1,5 +1,5 @@
 // 2기 베타 민원·이슈(2026-10-16 회의): 담임 접수·답글 ↔ 운영팀 처리함(처리 상태·답글).
-// 마스터시트 민원이슈 탭에 함께 남고, 담임 쪽 글은 운영팀 메일로도 알립니다(beta2.gs b2Voc*). teacherClass가 있으면 담임 화면, 없으면 처리함.
+// 마스터시트 민원이슈 탭에 함께 남고, 알림은 포털 화면으로만 합니다(beta2.gs b2Voc*, 메일 없음). teacherClass가 있으면 담임 화면, 없으면 처리함.
 import {onBeta2Rev,lastBeta2Rev} from './beta2-data.mjs';
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 
@@ -16,7 +16,7 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
  const life=lifecycle(host),admin=!teacherClass,side=admin?'운영':'담임';
  let data=null,filter=admin?'wait':'all',cls=teacherClass?String(teacherClass):'all',search='',openKey='',busy=false,err='',vocRev=null,creating=!admin;
  const form={cls:teacherClass?String(teacherClass):String(selected||'1'),type:'',detail:''},drafts={};
- host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>${admin?'민원·이슈 처리함':'민원·이슈'}</h2><p>${admin?'담임이 접수하거나 답글을 달면 여기와 홈에 알림이 뜨고 hint.kpc · kpc.jtkim 메일로도 갑니다. 답글과 처리 상태는 담임 화면과 마스터시트 민원이슈 탭에 그대로 남습니다.':'운영팀과 민원·이슈를 주고받습니다. 접수하거나 답글을 달면 운영팀에 바로 알림이 가고, 운영팀 답글과 처리 상태를 여기서 확인합니다.'}</p></div>${admin?'<button class="b2-btn" id="v2New">새로 접수</button>':''}</div><div id="v2Form"></div><section class="b2-card"><div class="b2-toolbar" id="v2Tools"></div><div id="v2List" style="padding:0 14px 14px">${loading()}</div></section></div>`;
+ host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>${admin?'민원·이슈 처리함':'민원·이슈'}</h2><p>${admin?'담임이 접수하거나 답글을 달면 여기와 홈, 화면 오른쪽 아래에 알림이 뜹니다. 답글과 처리 상태는 담임 화면과 마스터시트 민원이슈 탭에 그대로 남습니다.':'운영팀과 민원·이슈를 주고받습니다. 접수하거나 답글을 달면 운영팀에 바로 알림이 가고, 운영팀 답글과 처리 상태를 여기서 확인합니다.'}</p></div>${admin?'<button class="b2-btn" id="v2New">새로 접수</button>':''}</div><div id="v2Form"></div><section class="b2-card"><div class="b2-toolbar" id="v2Tools"></div><div id="v2List" style="padding:0 14px 14px">${loading()}</div></section></div>`;
  const $=s=>host.querySelector(s);
  const draft=key=>drafts[key]||(drafts[key]={text:'',status:'',err:''});
  const filters=admin?[['wait','답변 대기'],['open','진행 중'],['완료','완료'],['all','전체']]:[['all','전체'],['unseen','새 답글'],['open','진행 중'],['완료','완료']];
@@ -40,7 +40,7 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
   const d=draft(r.key),statuses=data.statuses||['접수','처리중','완료','보류'];
   return `<div class="b2-editor"><label class="b2-field">답글<textarea data-reply rows="3" maxlength="2000" placeholder="${admin?'담임에게 보낼 답글·조치 내용':'운영팀에 보낼 답글'}">${esc(d.text)}</textarea></label>
    <div class="row"><div class="b2-chips">${statuses.map(s=>`<button class="b2-chip" data-status="${esc(s)}" aria-pressed="${(d.status||r.status)===s}">${esc(s)}</button>`).join('')}</div><span class="b2-grow"></span><span class="b2-err">${esc(d.err)}</span><button class="b2-btn primary" data-send ${busy?'disabled':''}>${busy?'보내는 중…':'보내기'}</button></div>
-   <p class="b2-tiny b2-muted" style="margin:0">처리 상태만 바꿔도 보낼 수 있습니다. ${admin?'답글은 담임 화면에 바로 보이고 마스터시트 조치내용에도 남습니다.':'답글을 보내면 운영팀에 알림(메일)이 갑니다.'}</p></div>`;
+   <p class="b2-tiny b2-muted" style="margin:0">처리 상태만 바꿔도 보낼 수 있습니다. ${admin?'답글은 담임 화면에 바로 보이고 마스터시트 조치내용에도 남습니다.':'답글을 보내면 운영팀 화면에 알림이 뜹니다.'}</p></div>`;
  }
  function card(r){
   const open=openKey===r.key,last=r.thread.at(-1);
@@ -73,7 +73,7 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
   busy=true;render();
   try{
    const res=await client.vocCreate({cls:form.cls,type:form.type,detail:form.detail.trim(),side});
-   toast(`접수했습니다 · ${res.id}${side==='담임'?(res.mailed?' · 운영팀 메일 알림 완료':' · 메일 알림 실패(시트에는 저장됨)'):''}`);
+   toast(`접수했습니다 · ${res.id}`);
    form.type='';form.detail='';creating=!admin;busy=false;openKey=res.id;took(res.state);await load();
   }catch(e){busy=false;err=e.message;render();}
  }
@@ -84,7 +84,7 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
   try{
    const res=await client.vocReply({key:r.key,sig:r.sig,cls:r.cls,text,status,side});
    delete drafts[r.key];busy=false;if(res.id&&res.id!==r.key)openKey=res.id; // 예전 기록은 이때 번호가 생깁니다
-   toast(res.unchanged?'바뀐 것이 없습니다.':`보냈습니다${side==='담임'?(res.mailed?' · 운영팀 메일 알림 완료':''):''}`);took(res.state);await load();
+   toast(res.unchanged?'바뀐 것이 없습니다.':'보냈습니다');took(res.state);await load();
   }catch(e){busy=false;d.err=e.message;render();}
  }
  async function seen(r){

@@ -1985,7 +1985,8 @@ function b2DocUpdate_(p) {
   return { ok: true, rev: b2Bump_() };
 }
 
-/* 민원·이슈 주고받기 (2026-10-16 회의: 관리자·담임 화면에서 주고받고 처리현황을 보고 알림. 사용자 결정: 포털 알림 + 운영팀 메일)
+/* 민원·이슈 주고받기 (2026-10-16 회의: 관리자·담임 화면에서 주고받고 처리현황을 보고 알림. 사용자 결정 2026-10-19: 포털 알림만, 메일 없음.
+ * 이 프로젝트는 메일 보내기 권한(script.send_mail)이 승인돼 있지 않아 메일이 나가지 않았음 — 서류발급 알림 메일도 같음)
  * 민원이슈 탭 A~J는 예전 그대로입니다(접수일자·반·권역·분반·민원유형·상세내용·처리상태·조치내용·처리일·경과일, C·D·J는 1행 배열 수식이라 쓰지 않음).
  * K~P를 더합니다: 번호 · 접수자 · 주고받은 기록 · 마지막 글(담임/운영) · 마지막 글 시각 · 담임 확인 시각. 머리글은 처음 쓸 때 붙입니다.
  * 처음 글은 F(상세내용)이고, 그 뒤 답글·처리 상태 변경은 M에 한 줄씩 쌓습니다: '[2026-10-16 14:03 운영 hint.kpc@gmail.com] 내용'
@@ -2068,28 +2069,17 @@ function b2VocOut_(r, admin) {
     thread: b2VocThread_(r.raw).map(function (x) { return { at: x.at, side: x.side, who: admin ? x.who : '', text: x.text }; })
   };
 }
-function b2VocMail_(kind, r, text, side) {
-  var info = b2Info_().filter(function (c) { return c.id === r.cls; })[0] || {};
-  try {
-    MailApp.sendEmail({
-      to: B2.MAIL.join(','), name: 'HINT 운영포털',
-      subject: '[HINT 민원·이슈] ' + r.cls + '반 · ' + (r.type || '민원') + ' · ' + kind,
-      body: [kind === '새 접수' ? '새 민원·이슈가 접수됐습니다.' : side + ' 쪽에서 답글을 남겼습니다.', '',
-        '번호: ' + (r.id || '-'), '반: ' + r.cls + '반' + (info.teacher ? ' (담임 ' + info.teacher + ')' : ''), '유형: ' + (r.type || '-'), '처리 상태: ' + (r.status || '접수'),
-        (kind === '새 접수' ? '내용: ' : '답글: ') + text, '작성: ' + b2Actor_(), '',
-        '처리함: ' + B2.BETA_URL + '#vocs', '마스터시트: ' + b2Ss_().getUrl() + '#gid=' + b2Sheet_(B2.SHEETS.voc).getSheetId()].join('\n')
-    });
-    return true;
-  } catch (e) { return false; }
-}
 // p: {cls} 없으면 전체(관리자). 담임에게는 작성자 이메일을 보내지 않습니다.
+// 목록을 읽은 김에 알림 건수가 저장값과 다르면 다시 저장합니다(시트에서 줄을 지우거나 정렬하면 onEdit이 없어 건수가 남기 때문. 2026-10-19 시험 줄 삭제 때 확인).
 function b2Vocs_(p) {
   var cls = p && p.cls ? String(p.cls) : '', admin = __ACTOR_ROLE === 'ADMIN' || !__ACTOR_ROLE;
-  var rows = b2VocRead_().rows.filter(function (r) { return B2.SOURCE_TABS[r.cls] && (!cls || r.cls === cls); });
+  var all = b2VocRead_().rows, state = b2JsonProp_('B2_VOC_STATE', null), now = b2VocState_(all);
+  if (!state || JSON.stringify([state.admin, state.open, state.teacher]) !== JSON.stringify([now.admin, now.open, now.teacher])) state = b2VocSaveState_(all);
+  var rows = all.filter(function (r) { return B2.SOURCE_TABS[r.cls] && (!cls || r.cls === cls); });
   rows.sort(function (a, b) { return (b.lastAt || b.date).localeCompare(a.lastAt || a.date) || b.row - a.row; });
-  return { statuses: B2.VOC_STATUS, types: B2.VOC_TYPES, state: b2JsonProp_('B2_VOC_STATE', null), rows: rows.map(function (r) { return b2VocOut_(r, admin); }) };
+  return { statuses: B2.VOC_STATUS, types: B2.VOC_TYPES, state: state, rows: rows.map(function (r) { return b2VocOut_(r, admin); }) };
 }
-// 새 민원·이슈. p: {cls, type, detail, side}. 담임 쪽 글이면 운영팀에 메일을 보냅니다.
+// 새 민원·이슈. p: {cls, type, detail, side}. 알림은 포털로만 합니다(메일 없음, 사용자 결정 2026-10-19).
 function b2VocCreate_(p) {
   p = p || {};
   var cls = String(p.cls || '').trim(), type = String(p.type || '').trim(), detail = String(p.detail || '').trim(), side = b2VocSide_(p);
@@ -2108,10 +2098,9 @@ function b2VocCreate_(p) {
     SpreadsheetApp.flush();
     state = b2VocRefresh_();
   } finally { lock.releaseLock(); }
-  var mailed = side === '담임' ? b2VocMail_('새 접수', rec, detail, side) : false;
-  return { id: rec.id, mailed: mailed, state: state };
+  return { id: rec.id, state: state };
 }
-// 답글·처리 상태. p: {key, sig, cls, text, status, side}. 처리 상태를 바꾸면 그 줄도 기록에 남습니다. 담임 쪽 답글이면 운영팀에 메일을 보냅니다.
+// 답글·처리 상태. p: {key, sig, cls, text, status, side}. 처리 상태를 바꾸면 그 줄도 기록에 남습니다.
 function b2VocReply_(p) {
   p = p || {};
   var side = b2VocSide_(p), text = String(p.text || '').trim(), status = String(p.status || '').trim();
@@ -2134,8 +2123,7 @@ function b2VocReply_(p) {
     SpreadsheetApp.flush();
     state = b2VocRefresh_();
   } finally { lock.releaseLock(); }
-  var mailed = side === '담임' && text ? b2VocMail_('답글', r, text, side) : false;
-  return { ok: true, id: r.id, mailed: mailed, state: state };
+  return { ok: true, id: r.id, state: state };
 }
 // 담임이 운영팀 답글을 열어 봄(담임 쪽 알림 끄기). 담임 계정일 때만 적습니다(관리자가 담임 화면 미리보기에서 열어도 담임 알림은 그대로).
 function b2VocSeen_(p) {

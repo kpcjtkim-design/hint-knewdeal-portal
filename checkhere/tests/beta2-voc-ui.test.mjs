@@ -47,8 +47,8 @@ async function beta(run,{state=STATE}={}){
   if(a==='b2Rev')return {rev:BUNDLE.rev,sync:BUNDLE.sync,voc:cur};
   if(a==='b2Docs')return {rev:5,statuses:[],types:[],delivery:[],rows:[]};
   if(a==='b2Vocs')return {...VOCS,state:cur};
-  if(a==='b2VocReply'){cur={...cur,rev:cur.rev+1,admin:Math.max(0,cur.admin-1)};return {ok:true,id:p.key.startsWith('R')?'V261016-009':p.key,mailed:p.side==='담임',state:cur};}
-  if(a==='b2VocCreate'){cur={...cur,rev:cur.rev+1,admin:cur.admin+(p.side==='담임'?1:0)};return {id:'V261016-003',mailed:p.side==='담임',state:cur};}
+  if(a==='b2VocReply'){cur={...cur,rev:cur.rev+1,admin:Math.max(0,cur.admin-1)};return {ok:true,id:p.key.startsWith('R')?'V261016-009':p.key,state:cur};}
+  if(a==='b2VocCreate'){cur={...cur,rev:cur.rev+1,admin:cur.admin+(p.side==='담임'?1:0)};return {id:'V261016-003',state:cur};}
   if(a==='b2VocSeen'){cur={...cur,rev:cur.rev+1,teacher:{}};return {ok:true,state:cur};}
   return {};
  };
@@ -150,6 +150,6 @@ test('the teacher screen shows an office-reply bar, files new 민원·이슈 as 
   await page.getByRole('button',{name:'접수하기'}).click();
   await page.waitForTimeout(300);
   assert.deepEqual(sent(posts,'b2VocCreate'),[{cls:'1',type:'교육생 고충',detail:'가상 교육생 상담 요청',side:'담임'}]);
-  await toastHas(page,'접수했습니다 · V261016-003 · 운영팀 메일 알림 완료');
+  await toastHas(page,'접수했습니다 · V261016-003');
  });
 });

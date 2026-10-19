@@ -230,12 +230,12 @@ test('민원·이슈 goes back and forth: a teacher files it (mail to the office
  const env=setup(),{gas,voc}=env;
  as(gas,'teacher3@example.com','TEACHER');gas.resetLog();
  const c=plain(gas.call('b2VocCreate_',{cls:'3',type:'시설·환경',detail:'가상 강의장 냉방\n고장',side:'운영'}));
- assert.deepEqual([c.id,c.mailed,c.state.admin,c.state.open],['V261016-001',true,1,{'3':1}],'a teacher account always writes as 담임');
+ assert.deepEqual([c.id,c.mailed,c.state.admin,c.state.open],['V261016-001',undefined,1,{'3':1}],'a teacher account always writes as 담임; no mail (portal alerts only)');
  assert.deepEqual(gas.log.outsideLock,[]);
  assert.deepEqual(voc.rows(2,1,1,9)[0].map((v,i)=>i===0?iso(gas,v):v),['2026-10-16',3,'','','시설·환경','가상 강의장 냉방\n고장','접수','','']);
  assert.equal(voc.getRange('C1').getFormula().startsWith('={"권역"'),true,'array formulas in C·D·J are left alone');
  assert.deepEqual(voc.rows(1,11,2,4),[['번호','접수자','주고받은 기록','마지막 글'],['V261016-001','teacher3@example.com','','담임']]);
- const mail=gas.log.mails[0];assert.equal(mail.to,'hint.kpc@gmail.com,kpc.jtkim@gmail.com');assert.match(mail.subject,/^\[HINT 민원·이슈\] 3반 · 시설·환경 · 새 접수$/);assert.match(mail.body,/가상담임3/);
+ assert.deepEqual(gas.log.mails,[],'no mail: portal alerts only (사용자 결정 2026-10-19)');
  assert.equal(gas.scriptProps.getProperty('B2_REV'),'5','attendance screens are not made to reload');
  // 담임은 작성자 이메일을 보지 않음, 운영은 봄
  assert.equal(plain(gas.call('b2Vocs_',{cls:'3'})).rows[0].author,'');
@@ -245,7 +245,7 @@ test('민원·이슈 goes back and forth: a teacher files it (mail to the office
  // 운영 답글 + 처리중
  gas.advance(60000);gas.resetLog();
  const r=plain(gas.call('b2VocReply_',{key:'V261016-001',text:'내일 수리 기사 방문',status:'처리중'}));
- assert.deepEqual([r.ok,r.mailed,r.state.admin,r.state.teacher],[true,false,0,{'3':1}]);
+ assert.deepEqual([r.ok,r.mailed,r.state.admin,r.state.teacher],[true,undefined,0,{'3':1}]);
  assert.deepEqual(voc.rows(2,7,1,3)[0],['처리중','내일 수리 기사 방문','']);
  const t=plain(gas.call('b2Vocs_',{})).rows[0].thread;
  assert.deepEqual(t.map(x=>[x.at,x.side,x.who,x.text]),[['2026-10-16 19:01','운영','hint.kpc@gmail.com','처리 상태: 접수 → 처리중'],['2026-10-16 19:01','운영','hint.kpc@gmail.com','내일 수리 기사 방문']]);
@@ -256,10 +256,10 @@ test('민원·이슈 goes back and forth: a teacher files it (mail to the office
  as(gas,'teacher3@example.com','TEACHER');gas.advance(60000);
  assert.deepEqual(plain(gas.call('b2VocSeen_',{key:'V261016-001',cls:'3'})).state.teacher,{});
  assert.equal(plain(gas.call('b2VocSeen_',{key:'V261016-001',cls:'3'})).unchanged,true,'only once');
- // 담임 답글(메일) → 운영 답변 대기, 운영이 완료 → 처리일
+ // 담임 답글 → 운영 답변 대기, 운영이 완료 → 처리일
  gas.advance(60000);gas.resetLog();
- assert.equal(plain(gas.call('b2VocReply_',{key:'V261016-001',cls:'3',text:'감사합니다.\n오후에 확인 부탁드려요'})).mailed,true);
- assert.match(gas.log.mails[0].subject,/답글$/);assert.equal(state(gas).admin,1);
+ assert.equal(plain(gas.call('b2VocReply_',{key:'V261016-001',cls:'3',text:'감사합니다.\n오후에 확인 부탁드려요'})).ok,true);
+ assert.deepEqual(gas.log.mails,[]);assert.equal(state(gas).admin,1);
  as(gas,'hint.kpc@gmail.com','ADMIN');gas.advance(60000);
  plain(gas.call('b2VocReply_',{key:'V261016-001',status:'완료'}));
  assert.equal(voc.get(2,7),'완료');assert.equal(iso(gas,voc.get(2,9)),'2026-10-16');assert.equal(voc.get(2,8),'내일 수리 기사 방문','a status-only change keeps the last answer');
@@ -271,7 +271,7 @@ test('an admin previewing the teacher screen can write as 담임; old rows witho
  const env=setup(),{gas,voc}=env;
  voc.fill(2,1,[[gas.date(2026,10,10),5,'','','출결','가상 예전 접수','접수','','']]); // 예전 담임 포털로 들어온 기록
  as(gas,'kpc.jtkim@gmail.com','ADMIN');
- assert.equal(plain(gas.call('b2VocCreate_',{cls:'5',type:'기타',detail:'미리보기에서 써 봄',side:'담임'})).mailed,true);
+ assert.equal(plain(gas.call('b2VocCreate_',{cls:'5',type:'기타',detail:'미리보기에서 써 봄',side:'담임'})).id,'V261016-001');
  const rows=plain(gas.call('b2Vocs_',{cls:'5'})).rows,old=rows.find(r=>!r.id);
  assert.deepEqual([old.key,old.lastBy,old.sig.length>0],['R2','담임',true]);assert.equal(state(gas).admin,2,'the old open row counts as waiting');
  assert.throws(()=>gas.call('b2VocReply_',{key:'R2',sig:'wrong',text:'x'}),/찾지 못했습니다/);
@@ -305,4 +305,19 @@ test('운영총괄 교육일정표 fills each class\'s 분야·강사 on the nex
  gas.resetLog();const again=plain(gas.call('b2SyncNow_',{}));
  assert.equal(gas.log.writes.filter(w=>w.sheet==='교육일정').length,0,'unchanged source → no write');assert.equal(again.sched||0,0);
  assert.throws(()=>gas.call('b2ParseSchedule_',[['x']]),/'날짜' 머리글 줄/);
+});
+
+test('if rows are deleted in the sheet (no onEdit), opening the 민원·이슈 list puts the alert counts right again',()=>{
+ const env=setup(),{gas,voc}=env;
+ as(gas,'hint.kpc@gmail.com','ADMIN');
+ plain(gas.call('b2VocCreate_',{cls:'2',type:'안전',detail:'가상 시험',side:'담임'}));
+ plain(gas.call('b2VocReply_',{key:'V261016-001',text:'가상 답글',status:'완료'}));
+ assert.deepEqual([state(gas).admin,state(gas).teacher],[0,{'2':1}]);
+ const rev=state(gas).rev;
+ voc.deleteRow(2); // 시트에서 시험 줄을 지움(Sheets API·행 삭제는 onEdit이 없음)
+ assert.deepEqual(state(gas).teacher,{'2':1},'still the old count');
+ const list=plain(gas.call('b2Vocs_',{}));
+ assert.deepEqual([list.rows.length,list.state.teacher,list.state.admin],[0,{},0]);
+ assert.equal(state(gas).rev,rev+1,'saved once with a new rev so open screens refresh');
+ plain(gas.call('b2Vocs_',{}));assert.equal(state(gas).rev,rev+1,'not saved again when nothing changed');
 });
