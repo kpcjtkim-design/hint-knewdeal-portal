@@ -492,8 +492,8 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
 });
 
 // 시간 삭제 ×: 기록 번호 표시(entryKind·entryEventId·exitEventId)는 연결 프로그램이 그날 화면 데이터에서 붙입니다. 가상출석은 체크인한 학생(1교시 PASS),
-// 가상지각은 관리자가 1교시를 넣은 학생(ATTEND). 켜지는 조건은 가짜 settings 문서(규칙 게시 깃발)로 켜고, 능력은 마지막 중계 신호(없으면 v2로 봄, 2026-10-16)입니다.
-const DEL_DAYS={[CUR]:{records:VDAYS[CUR].records.map(r=>r.name==='가상출석'?{...r,entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true}:r.name==='가상지각'?{...r,entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false}:r)}};
+// 가상지각(지각)·가상인정(출석)은 관리자가 1교시를 넣은 학생(ATTEND). 켜지는 조건은 가짜 settings 문서(규칙 게시 깃발)로 켜고, 능력은 마지막 중계 신호(없으면 v2로 봄, 2026-10-16)입니다.
+const DEL_DAYS={[CUR]:{records:VDAYS[CUR].records.map(r=>r.name==='가상출석'?{...r,entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true}:r.name==='가상지각'||r.name==='가상인정'?{...r,entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false}:r)}};
 test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, and with the gate on × asks, counts down and writes one deletion request',async()=>{
  await beta(async(page,posts)=>{
   const asked=[];let answer=false;page.on('dialog',d=>{asked.push(d.message());void(answer?d.accept():d.dismiss());});
@@ -512,8 +512,11 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상출석"] [data-ch-del="exit"]')?.disabled);
   await page.locator('#b2Relay').getByText('중계 꺼짐 · 자동 수집·해제 표시 없음 (삭제 요청은 가능, 반영은 승인 때)').waitFor();
   assert.match(await page.locator('#b2Relay .b2-pill').getAttribute('title'),/\(읽기 전용\)\. 요청\(시간 삭제 포함\)은 중계 없이도 만들 수 있습니다/);
-  assert.equal(await x('가상지각','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다 · 반영할 때 체크히어 마스킹 해제 필요)');
-  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${EXIT_FIRST} · ${TYPE_FIRST}`,'신호가 없으면 v2: 퇴실이 남은 1교시 ×만은 잠김(결석으로 두 칸)');
+  // 신호가 없으면 v2: 관리자 1교시 학생은 퇴실 ×·1교시 × 모두 1교시·퇴실 두 칸(사용자 결정 2026-10-19 "둘 다 삭제돼야 함"). 지각은 1교시를 쓰므로 퇴실 ×도 유형부터
+  const BOTH='퇴실과 1교시(09:00~18:00 칸)를 함께 지웁니다. 입실 기록은 남을 수 있습니다';
+  for(const side of ['exit','entry'])assert.equal(await x('가상인정',side).getAttribute('title'),`체크히어 ${side==='exit'?'퇴실':'입실(교시)'} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${BOTH} · 반영할 때 체크히어 마스킹 해제 필요)`,side);
+  assert.equal(await x('가상지각','exit').getAttribute('title'),`퇴실 시간 삭제 불가 · ${TYPE_FIRST}`);
+  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${TYPE_FIRST}`);
   // 옛 연결 프로그램(v1)의 중계 신호가 오면 기록 번호가 있고 유형이 쓰지 않는 칸만 켜지고, 관리자 1교시 ×는 업데이트 안내가 먼저
   await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1','time-delete-v1'],build:'20261014.2',at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
   await page.waitForFunction(()=>/\(time-delete-v2\)/.test(document.querySelector('tbody[data-student="가상지각"] [data-ch-del="entry"]')?.title||''));
@@ -525,7 +528,9 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${V2_NEEDED} · ${TYPE_FIRST}`);
   // 이 중계는 해제 상태를 알리지 않는 옛 중계라(privacy 없음) 모름 → '반영할 때 해제 필요'
   assert.equal(await x('가상지각','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다 · 반영할 때 체크히어 마스킹 해제 필요)');
-  assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음');
+  assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음(v1은 퇴실만 지움)');
+  assert.equal(await x('가상인정','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다 · 반영할 때 체크히어 마스킹 해제 필요)','v1: 퇴실만');
+  assert.equal(await x('가상인정','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${V2_NEEDED}`);
   assert.equal(await x('가상메모','exit').isDisabled(),true,'기록 번호가 없는 칸');
   // 확인창 아니오: 아무것도 시작하지 않음
   await x('가상출석','exit').click();
@@ -546,11 +551,18 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1','time-delete-v1','time-delete-v2'],build:'20261016.2',privacy:{state:'masked',leftSec:null,writable:false},at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
   await page.locator('#b2Relay').getByText('수집 PC 중계 작동 중 · 신호 방금 · 체크히어 가림 · 읽기만').waitFor();
   assert.match(await page.locator('#b2Relay .b2-pill').getAttribute('title'),/^체크히어 가림 — 읽기만 가능 · 수정·삭제하려면 마스킹 해제 필요\n/);
-  await page.waitForFunction(()=>/반영할 때 체크히어 마스킹 해제 필요/.test(document.querySelector('tbody[data-student="가상지각"] [data-ch-del="exit"]')?.title||''));
-  assert.equal(await x('가상지각','exit').isDisabled(),false,'가려져도 요청은 만듦(승인 대기)');
-  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${EXIT_FIRST} · ${TYPE_FIRST}`,'v2여도 퇴실이 남은 1교시 ×는 잠김');
-  answer=false;await x('가상지각','exit').click();await askedAt(3);
-  assert.match(asked[2],/가상지각 · 2026-09-03 체크히어 시간 삭제를 요청합니다: 퇴실 /);assert.match(asked[2],/관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다\.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
+  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상인정"] [data-ch-del="entry"]')?.disabled);
+  assert.equal(await x('가상인정','exit').getAttribute('title'),`체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · ${BOTH} · 반영할 때 체크히어 마스킹 해제 필요)`,'가려져도 요청은 만듦(승인 대기)');
+  assert.equal(await x('가상지각','exit').getAttribute('title'),`퇴실 시간 삭제 불가 · ${TYPE_FIRST}`,'v2: 지각은 퇴실 ×도 1교시를 함께 지우므로 유형부터');
+  answer=false;await x('가상인정','exit').click();await askedAt(3);
+  assert.match(asked[2],/^가상인정 · 2026-09-03 체크히어 시간 삭제를 요청합니다: 입실\(교시\) 09:02 · 퇴실 18:00\n퇴실과 1교시\(09:00~18:00 칸\)를 함께 지웁니다\. 입실 기록은 남을 수 있습니다\.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
+  // 예: 두 칸 요청 1건(출결원장 저장 없음)
+  answer=true;await x('가상인정','exit').click();await askedAt(4);
+  await chip(page,'가상인정').getByText('승인 대기').waitFor({timeout:6000});
+  const both=(await requestWrites(page)).filter(w=>w.name==='가상인정');assert.equal(both.length,1);
+  assert.deepEqual([both[0].changes,both[0].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
+  assert.match(both[0].reason,/^\[실시간 베타\] \[2기 베타\] 출결대조 시간 삭제 · 입실\(교시\)·퇴실 \[기준:[0-9a-f]{8}\]$/);
+  assert.equal(savesOf(posts,'가상인정').length,0);
  },{...virtual(),days:DEL_DAYS});
 });
 

@@ -11,7 +11,7 @@ import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
 import {createProposalReview} from './checkhere-proposals.mjs';
 import {withdrawRequest} from './checkhere-request-actions.mjs';
 import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnApply} from './beta2-checkhere-core.mjs';
-import {createCheckHereSync,STATUS_ACTIONS,timeDeleteBlock} from './beta2-checkhere-sync.mjs';
+import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
 
 const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치'],['flag','동기화 확인']];
@@ -82,13 +82,13 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='flag'&&isConflictFlag(r.rec?.flag)))));
  }
  // × 버튼: 켜지는 조건(deletionGate: 규칙 게시 깃발·권한, 중계는 필요 없음)이 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
- // 1교시 ×는 v2(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄)이고 퇴실이 비어 있을 때만(퇴실이 있으면 결석 저장으로 두 칸을 함께 지움).
- // 꺼져 있으면 title에 이유를 보입니다(timeDeleteBlock). 누르면 확인창 → 3초 되돌리기 → 시간 삭제 요청(sync.send). 가렸거나 해제 상태를 몰라도(중계 꺼짐) 요청은 만들고 title에 해제 필요를 붙입니다.
+ // v2(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄)면 관리자 1교시(ATTEND) 학생의 퇴실 ×·1교시 ×는 1교시·퇴실 두 칸을 함께 지웁니다(사용자 결정 2026-10-19, timeDeletePlan).
+ // 꺼져 있으면 title에 이유를 보입니다(timeDeletePlan().reasons), 켜져 있으면 지울 칸(timeDeletePlan().sides)에 맞는 남는 것을 보입니다. 누르면 확인창 → 3초 되돌리기 → 시간 삭제 요청(sync.send). 가렸거나 해제 상태를 몰라도(중계 꺼짐) 요청은 만들고 title에 해제 필요를 붙입니다.
  // 재학 기간이 아닌 행에는 상태 칩이 없어 3초·되돌리기가 보이지 않으므로 ×를 두지 않습니다.
  function delButton(row,record,side){
   if(!hm(record?.[side])||(!row.enrolled&&!row.rec))return '';
-  const why=timeDeleteBlock({gate:sync.gate(),record,side,type:valuesOf(row).type}),label=side==='entry'?'입실(교시)':'퇴실',p=sync.relay().privacy;
-  return `<button class="b2-x" data-ch-del="${side}" ${why.length?'disabled':''} title="${esc(why.length?`${label} 시간 삭제 불가 · ${why.join(' · ')}`:`체크히어 ${label} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${deleteLeaves([side],record)}${needsUnmaskOnApply(p)?` · ${UNMASK_ON_APPLY}`:''})`)}" aria-label="체크히어 ${label} 시간 삭제">×</button>`;
+  const plan=timeDeletePlan({gate:sync.gate(),record,side,type:valuesOf(row).type}),why=plan.reasons,label=side==='entry'?'입실(교시)':'퇴실',p=sync.relay().privacy;
+  return `<button class="b2-x" data-ch-del="${side}" ${why.length?'disabled':''} title="${esc(why.length?`${label} 시간 삭제 불가 · ${why.join(' · ')}`:`체크히어 ${label} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${deleteLeaves(plan.sides,record)}${needsUnmaskOnApply(p)?` · ${UNMASK_ON_APPLY}`:''})`)}" aria-label="체크히어 ${label} 시간 삭제">×</button>`;
  }
  function checkhereCell(row,record){
   if(!record)return `<span class="b2-muted b2-small">${esc(recordsNote||'저장본 없음')}</span>`;
