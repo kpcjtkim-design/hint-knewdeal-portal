@@ -62,23 +62,10 @@ test('admin navigation skips module mounting if the import arrives after leaving
  });
 });
 
-test('teacher teardown owns every late summary and is idempotent',async()=>{
- await fixture(`${teacherMarkup}<script type="module">import{mountTeacherWorkspace}from'/teacher-workspace.mjs';window.started=[];window.releases=[];window.disposed=0;window.live=0;window.pending=mountTeacherWorkspace(document.querySelector('#host'),{db:{},user:{},classInfo:{id:'1'}});</script>`,{
-  '/timetable.mjs':deferredStub('TeacherTimetable'),
-  '/attendance-statistics.mjs':deferredStub('AttendanceStatistics'),
-  '/survey-view.mjs':deferredStub('Surveys')
- },async page=>{
-  await page.waitForFunction(()=>window.releases.length===3);
-  await page.evaluate(()=>document.querySelector('#host').remove());
-  await page.evaluate(async()=>{window.releases.forEach(resolve=>resolve());window.finished=await window.pending;});
-  assert.deepEqual(await page.evaluate(()=>({started:window.started.length,disposed:window.disposed,live:window.live})),{started:3,disposed:3,live:0});
-  await page.evaluate(()=>{window.finished.dispose();window.finished.dispose();});
-  assert.equal(await page.evaluate(()=>window.disposed),3);
- });
-});
+// 1기 8탭 담임 화면(teacher-workspace 안의 요약 탭) teardown 시험은 1기(cohort1 브랜치)에 남았습니다. 2기 담임 화면(6탭)은 beta2-ui 미리보기 시험이 봅니다.
 
 test('slow legacy settings reads cannot overwrite the next administrator menu',async()=>{
- const settings=index.slice(index.indexOf('async function settingsAdmin('),index.indexOf('function overviewAdmin('));
+ const settings=index.slice(index.indexOf('async function settingsAdmin('),index.indexOf('onAuthStateChanged(auth,'));
  await fixture(`<main class="page"><div id="adminBody">settings pending</div></main><script type="module">${helper}
  const db={},DEFAULTS={};const doc=()=>null,getDoc=()=>new Promise(resolve=>window.releaseSettings=()=>resolve({exists:()=>false}));
  ${settings}
@@ -93,7 +80,7 @@ test('slow legacy settings reads cannot overwrite the next administrator menu',a
 test('auth changes clear the read session and ignore a previous account profile result',async()=>{
  const authHandler=index.slice(index.indexOf('onAuthStateChanged(auth,async user=>'),index.indexOf('\n',index.indexOf('onAuthStateChanged(auth,async user=>')));
  await fixture(`<script type="module">${helper}
- const db={},auth={},BETA2=false;window.profiles={};window.events=[];
+ const db={},auth={},TEACHER_ACCESS=true;window.profiles={};window.events=[];
  const onAuthStateChanged=(_auth,callback)=>window.authChange=callback;
  const clearReadSession=()=>window.events.push('clear'),profileFor=user=>new Promise(resolve=>window.profiles[user.id]=resolve);
  const loginView=()=>window.events.push('login'),denied=()=>window.events.push('denied'),fatal=()=>window.events.push('fatal');
@@ -106,24 +93,4 @@ test('auth changes clear the read session and ignore a previous account profile 
  });
 });
 
-test('teacher navigation respects active work canLeave and mounts each tab once',async()=>{
- const basic=method=>js(`export async function ${method}(){return{dispose(){}};}`);
- await fixture(`${teacherMarkup}<script type="module">import{mountTeacherWorkspace}from'/teacher-workspace.mjs';window.materialMounts=0;window.allowLeave=false;window.workspace=await mountTeacherWorkspace(document.querySelector('#host'),{db:{},user:{},classInfo:{id:'1'}});</script>`,{
-  '/timetable.mjs':basic('mountTeacherTimetable'),
-  '/attendance-statistics.mjs':basic('mountAttendanceStatistics'),
-  '/survey-view.mjs':basic('mountSurveys'),
-  '/lecture-materials.mjs':js('export async function mountLectureMaterials(host){window.materialMounts++;host.textContent="자료 편집";return{canLeave:()=>window.allowLeave,dispose(){}};}')
- },async page=>{
-  await page.waitForFunction(()=>window.workspace);
-  await page.getByRole('button',{name:'강의자료',exact:true}).click();
-  await page.waitForFunction(()=>window.materialMounts===1);
-  await page.getByRole('button',{name:'우리 반 홈',exact:true}).click();
-  assert.equal(await page.locator('[data-teacher-panel="materials"]').isVisible(),true);
-  assert.equal(await page.evaluate(()=>window.workspace.canLeave()),false);
-  await page.evaluate(()=>window.allowLeave=true);
-  await page.getByRole('button',{name:'우리 반 홈',exact:true}).click();
-  assert.equal(await page.locator('[data-teacher-panel="home"]').isVisible(),true);
-  await page.getByRole('button',{name:'강의자료',exact:true}).click();
-  assert.equal(await page.evaluate(()=>window.materialMounts),1);
- });
-});
+// 1기 8탭 담임 화면 탭 이동 시험도 1기에 남았습니다.
