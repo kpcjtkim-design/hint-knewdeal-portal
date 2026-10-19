@@ -9,8 +9,8 @@ import {encodeFields} from '../../lib/survey-sync-store.mjs';
 import {readRequestRecord} from '../request-record.mjs';
 
 const identities=[{name:'가상민수(99년생)',phoneLast4:'1234'},{name:'가상민수(02년생)',phoneLast4:'5678'}];
-const record=(tail='5678')=>({id:'id-'+tail,studentKey:'key-'+tail,version:'v-'+tail,classId:'9',date:'2026-08-28',name:'가상민수',phoneLast4:tail,source:'live',readState:'complete',entry:'12:00:00',rawEntry:'12:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],collectedAt:'2026-09-18T01:00:00Z'});
-const request=()=>({classId:'9',date:'2026-08-28',name:identities[1].name,phoneLast4:'',changes:{entryMemo:'(인정지각)병원_담임:가상'},reason:'가상 검증'});
+const record=(tail='5678')=>({id:'id-'+tail,studentKey:'key-'+tail,version:'v-'+tail,classId:'9',date:'2026-10-30',name:'가상민수',phoneLast4:tail,source:'live',readState:'complete',entry:'12:00:00',rawEntry:'12:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],collectedAt:'2026-11-20T01:00:00Z'});
+const request=()=>({classId:'9',date:'2026-10-30',name:identities[1].name,phoneLast4:'',changes:{entryMemo:'(인정지각)병원_담임:가상'},reason:'가상 검증'});
 
 test('same-class Sheet birth-year alias resolves to phone suffix while preserving real CheckHere identity',()=>{
  const rs=[record('1234'),record()],r=request();
@@ -29,22 +29,22 @@ test('missing, conflicting or ambiguous identity never chooses the other homonym
  assert.equal(checkHerePhoneFor({...r,phoneLast4:'1234'},identities),null);
  assert.throws(()=>matchRequest(r,[record('1234')],identities));
  assert.throws(()=>matchRequest({...r,classId:'12'},rs,identities));
- assert.throws(()=>matchRequest({...r,date:'2026-08-31'},rs,identities));
+ assert.throws(()=>matchRequest({...r,date:'2026-11-02'},rs,identities));
  assert.throws(()=>matchRequest(r,[record(),record()],identities));
  assert.equal(matchingCheckHereRecords(r,[{...record(),name:identities[0].name}],identities).length,0);
  assert.equal(matchRequest({...r,name:'가상민수',phoneLast4:'1234'},rs,identities),rs[0]);
 });
 test('recognized subtype and survey participation use the same homonym match without storing phones',()=>{
- const sheet={attendance:[['이름','','','','8/28'],[identities[0].name,'','','','인정출석'],[identities[1].name,'','','','인정출석']]};
- const derived=deriveAttendanceClass(sheet,{classId:'9',today:'2026-08-28',identities,records:[{...record('1234'),entry:'',rawEntry:'',exit:''},record()]});
- assert.equal(derived.students[0].history['2026-08-28'].status,'인정출석');
- assert.equal(derived.students[1].history['2026-08-28'].status,'인정지각');
- assert.deepEqual(targetsFromDerived(derived,'2026-08-28').map(x=>x.eligible),[false,true]);
+ const sheet={attendance:[['이름','','','','10/30'],[identities[0].name,'','','','인정출석'],[identities[1].name,'','','','인정출석']]};
+ const derived=deriveAttendanceClass(sheet,{classId:'9',today:'2026-10-30',identities,records:[{...record('1234'),entry:'',rawEntry:'',exit:''},record()]});
+ assert.equal(derived.students[0].history['2026-10-30'].status,'인정출석');
+ assert.equal(derived.students[1].history['2026-10-30'].status,'인정지각');
+ assert.deepEqual(targetsFromDerived(derived,'2026-10-30').map(x=>x.eligible),[false,true]);
  assert(!JSON.stringify(derived).includes('phoneLast4'));
 });
 test('empty collector automatically reads only the matching student, retaining real student identity',async()=>{
  const reads=[],saved=[];let days=0;
- const adapter={requireLogin:async()=>{},openDay:async(cid,date)=>{days++;assert.equal(cid,'9');assert.equal(date,'2026-08-28');return[record('1234'),{...record(),readState:'partial'}];},read:async r=>{reads.push(r.id);return record();}};
+ const adapter={requireLogin:async()=>{},openDay:async(cid,date)=>{days++;assert.equal(cid,'9');assert.equal(date,'2026-10-30');return[record('1234'),{...record(),readState:'partial'}];},read:async r=>{reads.push(r.id);return record();}};
  const result=await readRequestRecord(adapter,request(),[],identities,r=>saved.push(r));
  assert.equal(result.id,'id-5678');assert.deepEqual(reads,['id-5678']);assert.equal(saved.length,1);assert.equal(days,1);
  await readRequestRecord(adapter,request(),[record()],identities);assert.equal(days,1,'existing day needs no extra roster collection');

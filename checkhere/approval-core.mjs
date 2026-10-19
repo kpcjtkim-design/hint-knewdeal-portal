@@ -1,5 +1,6 @@
 import {matchingCheckHereRecords,hasBirthYearName} from '../checkhere-name-core.mjs';
 import {RULES,normalizeTime} from './rules.mjs';
+import {classOk,validIso,inPeriod} from './cohort-bridge.mjs';
 export const APPROVER = 'hint.kpc@gmail.com';
 export const FIELDS = {entry:'입실·교시 시간',exit:'퇴실 시간',entryMemo:'입실·교시 관리자 사유',exitMemo:'퇴실 관리자 사유'};
 export const STATUS = {pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'검증 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
@@ -10,8 +11,9 @@ const blankTime=v=>{try{return !normalizeTime(v);}catch{return false;}};
 // 지정하지 않은 ''는 지금처럼 거절하고, 삭제가 아닌 요청은 결과 모양이 그대로입니다(deleteTimes 키 없음).
 export function cleanRequest(input){
   const classId=String(input.classId||''),date=String(input.date||''),name=String(input.name||'').trim(),phoneLast4=String(input.phoneLast4||'').trim(),reason=String(input.reason||'').trim();
-  if(!/^(?:[1-9]|1[0-7])$/.test(classId))throw Error('반을 확인해 주세요.');
-  if(!/^2026-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date||date<'2026-07-27'||date>'2026-10-22')throw Error('교육 기간 안의 날짜를 선택해 주세요.');
+  // 2기: 반 1~16, 날짜는 교육 기간(2026-10-28~2027-01-22, cohort.json) 안. 웹 beta2-checkhere-core REQUEST_DATE_RANGE·2기 Firestore 규칙과 같아야 합니다.
+  if(!classOk(classId))throw Error('반을 확인해 주세요.');
+  if(!validIso(date)||!inPeriod(date))throw Error('교육 기간 안의 날짜를 선택해 주세요.');
   if(!name||name.length>60||!reason||reason.length>1000)throw Error('학생 이름과 수정 근거(1,000자 이내)를 입력해 주세요.');
   // 체크히어 가린 이름(가**)으로는 요청하지 않습니다(가린 값이 학생 이름이 되지 않게).
   if(name.includes('*'))throw Error('학생 이름에 가린 글자(*)가 있습니다. 체크히어 원문 이름으로 요청해 주세요.');

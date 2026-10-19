@@ -1,9 +1,9 @@
-param([string]$ClassId = '2', [string[]]$Dates = @('2026-09-01','2026-09-02','2026-09-03','2026-09-04'))
+param([string]$ClassId = '1', [string[]]$Dates = @('2026-10-28','2026-10-29','2026-10-30'))
 # Real-site check of the page-data read: a precise (editor) collection first, then a fast one.
 # The fast run should find every student identical ("unchanged") if both methods agree.
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'Start.ps1')
-$base = 'http://127.0.0.1:8765'
+$base = 'http://127.0.0.1:8766'
 $session = $null
 for ($i = 0; $i -lt 30 -and -not $session; $i++) { try { $session = Invoke-RestMethod -Uri "$base/api/session" -TimeoutSec 3 } catch { Start-Sleep -Seconds 1 } }
 if ($session.capabilities -notcontains 'page-data-v1') { throw 'An older bridge is still running. Close its window and run this again.' }

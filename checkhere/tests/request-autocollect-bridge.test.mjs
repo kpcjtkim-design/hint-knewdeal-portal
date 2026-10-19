@@ -10,7 +10,7 @@ import {encodeFields,decodeFields} from '../../lib/survey-sync-store.mjs';
 
 test('approval with no local snapshot collects the right homonym, writes only requested fields and commits readback to DB',async()=>{
  const identities=[{name:'가상학생(99년생)',phoneLast4:'1111'},{name:'가상학생(02년생)',phoneLast4:'2222'}];
- let current={id:'target',studentKey:'key2',classId:'9',date:'2026-08-28',name:'가상학생',teacher:'가상',phoneLast4:'2222',source:'live',readState:'complete',outingCount:0,entry:'12:00:00',rawEntry:'12:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',schedule:'09:00 ~ 18:00',outings:[],collectedAt:'2026-09-18T01:00:00Z'};current.version=version(current);
+ let current={id:'target',studentKey:'key2',classId:'9',date:'2026-10-30',name:'가상학생',teacher:'가상',phoneLast4:'2222',source:'live',readState:'complete',outingCount:0,entry:'12:00:00',rawEntry:'12:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',schedule:'09:00 ~ 18:00',outings:[],collectedAt:'2026-11-20T01:00:00Z'};current.version=version(current);
  const request={classId:'9',date:current.date,name:identities[1].name,phoneLast4:'',reason:'가상 확인',changes:{entryMemo:'(인정지각)병원_담임:가상(12:00)'}};
  let data={...request,status:'approved',approvedBy:APPROVER,approval:prepareApproval(request,current,{identities})};
  // A later unrelated memo must be preserved even on a fresh collector PC.
@@ -39,7 +39,7 @@ test('approval with no local snapshot collects the right homonym, writes only re
 });
 
 test('existing pending time request with blank lesson times keeps its ID and history through approval and verified DB save',async()=>{
- let current={id:'old-record',studentKey:'student-key',classId:'9',date:'2026-09-10',name:'가상학생',teacher:'',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:null,rawEntry:'09:05:00',exit:null,entryMemo:'기존 사유',exitMemo:'',outings:[],outingCount:0};current.version=version(current);
+ let current={id:'old-record',studentKey:'student-key',classId:'9',date:'2026-11-12',name:'가상학생',teacher:'',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:null,rawEntry:'09:05:00',exit:null,entryMemo:'기존 사유',exitMemo:'',outings:[],outingCount:0};current.version=version(current);
  const id='existing-time-request-20260910',original={classId:'9',date:current.date,name:current.name,reason:'기존 요청 근거',changes:{entry:'09:00:00',exit:'18:00:00'},createdBy:'fixture-admin',createdAt:{seconds:123}};
  let request={...original,status:'approved',approvedBy:APPROVER,approval:prepareApproval(original,current)},saved=null;const writes=[];
  const cloud={verify:async()=>{},get:async()=>({data:structuredClone(request)}),claim:async()=>{request.status='applying';},finish:async(requestId,token,attempt,job)=>{assert.equal(requestId,id);assert.equal(job.status,'verified');saved=structuredClone(job.current);request={...request,status:'verified',result:{platformSaved:true}};return{platformSaved:true};}};

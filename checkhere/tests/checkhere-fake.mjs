@@ -75,8 +75,10 @@ function dayApp(cfg){
 // ignoreDelete(그 종류의 삭제는 200을 주고 지우지 않음 — 덜 지워짐), afterWrite(받은 쓰기 뒤 부름: 시험이 남은 시간 등을 바꿈),
 // passStays(퇴실을 지워도 계산된 1교시 PASS가 남음 — 측정과 다른 예외), attendWithExit(퇴실을 지우면 관리자 1교시 ATTEND도 함께 빔 — 측정 안 된 경우).
 // 센 것: writes(받은 쓰기 본문), writeAt, auth·privacy(쓰기마다 인증·해제 헤더가 맞았는지), detailUnmask(읽기마다 해제 헤더가 있었는지).
+// home: 강의 목록 줄 [{label, lecture(강의 번호 L…), title?(출석부 제목 앞부분, 없으면 label)}] — 2기 이름 규칙·직접 연결 시험용. 강의마다 같은 날짜들(days)을 보입니다.
 export async function fakeSite(days,{mode='unmasked'}={}){
   const w={mode,days,left:'9분 30초',token:'fake-session-token-0001',unmask:'fake-unmask-session-0001',browser:'fake-browser-session-0001',hide:[],skew:[],broken:false,confirm:false,plainJson:false,trueDelayMs:0,reject:0,applyThenFail:false,skewFor:null,dataDate:null,leftoverEnter:true,renumber:false,ignoreDelete:null,afterWrite:null,passStays:false,attendWithExit:false,
+    home:[{label:'[2반] 가상강의 (가상담임)',lecture:'L2'}],
     writes:[],writeAt:[],auth:[],privacy:[],detailUnmask:[],sessionCalls:0,detail:{true:0,false:0},scheduleLists:0,pages:{home:0,lecture:0,day:0},dayLoads:[],viewClicks:0};
   const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),context=await browser.newContext();
   const quiet=f=>route=>f(route).catch(()=>{});
@@ -93,7 +95,8 @@ export async function fakeSite(days,{mode='unmasked'}={}){
       const plain=w.mode==='legacy'||(w.mode==='unmasked'&&w.plainJson),list=(w.days[detail[1]]?.students||[]).map(s=>({...s,...(plain?{}:{name:maskName(s.name),userName:maskName(s.name),phone:maskPhone(s.phone),identifier:'*'})}));
       return json(route,{code:'OK',data:{eventResultList:list,...(w.dataDate?{scheduleDate:w.dataDate}:{})}});
     }
-    if(/\/schedule\/list\/lecture\/L2\/start\//.test(u.pathname)){w.scheduleLists++;return json(route,{code:'OK',data:Object.entries(w.days).map(([sid,d])=>({scheduleId:sid,lectureId:'L2',scheduleDate:d.date,timeStart:d.date+'T09:00:00'}))});}
+    const list=/\/schedule\/list\/lecture\/(L\w*)\/start\//.exec(u.pathname);
+    if(list){w.scheduleLists++;return json(route,{code:'OK',data:Object.entries(w.days).map(([sid,d])=>({scheduleId:sid,lectureId:list[1],scheduleDate:d.date,timeStart:d.date+'T09:00:00'}))});}
     const write=/\/api\/v3\/history\/event\/(update|delete)$/.exec(u.pathname);
     if(write){
       const body=JSON.parse(req.postData()||'{}'),authOk=!!w.token&&h.authorization===`Bearer ${w.token}`,unmaskOk=w.mode==='legacy'||(w.mode==='unmasked'&&h['x-privacy-unmask-session']===w.unmask);
@@ -138,15 +141,17 @@ export async function fakeSite(days,{mode='unmasked'}={}){
     const u=new URL(route.request().url());
     if(u.pathname==='/api/auth/session'){w.sessionCalls++;return route.fulfill({contentType:'application/json',body:JSON.stringify(w.token?{accessToken:w.token,user:{}}:{})});}
     const page=(body,head='')=>route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><meta charset="utf-8"><a href="/account/admin">관리자</a>${head}${body}`});
-    if(u.pathname==='/history/lecture'){w.pages.home++;return page(`<table><tr><td>[2반] 가상강의 (가상담임)</td><td><button onclick="location.href='/history/lecture/L2?academyId=A'">보기</button></td></tr></table>`);}
-    if(u.pathname==='/history/lecture/L2'){
+    if(u.pathname==='/history/lecture'){w.pages.home++;return page(`<table>${w.home.map(h=>`<tr><td>${h.label}</td><td><button onclick="location.href='/history/lecture/${h.lecture}?academyId=A'">보기</button></td></tr>`).join('')}</table>`);}
+    const lecture=/^\/history\/lecture\/(L\w*)$/.exec(u.pathname)?.[1];
+    if(lecture){
       w.pages.lecture++;
-      return page(`<table id="t"></table><script>fetch('${ADMIN}/api/v3/schedule/list/lecture/L2/start/2026-08-01T00:00:00/end/2026-12-31T23:59:59').then(r=>r.json()).then(j=>{document.querySelector('#t').innerHTML=j.data.map(s=>'<tr><td>'+s.scheduleDate+'</td><td><button data-u="/history/lecture/modify?tab=STUDENT&academyId=A&lectureId=L2&scheduleId='+s.scheduleId+'&scheduleDate='+s.scheduleDate+'&via=click">보기</button></td></tr>').join('');document.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>location.href=b.dataset.u);});</script>`);
+      return page(`<table id="t"></table><script>fetch('${ADMIN}/api/v3/schedule/list/lecture/${lecture}/start/2026-08-01T00:00:00/end/2027-02-28T23:59:59').then(r=>r.json()).then(j=>{document.querySelector('#t').innerHTML=j.data.map(s=>'<tr><td>'+s.scheduleDate+'</td><td><button data-u="/history/lecture/modify?tab=STUDENT&academyId=A&lectureId=${lecture}&scheduleId='+s.scheduleId+'&scheduleDate='+s.scheduleDate+'&via=click">보기</button></td></tr>').join('');document.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>location.href=b.dataset.u);});</script>`);
     }
     if(u.pathname==='/history/lecture/modify'){
       const sid=u.searchParams.get('scheduleId'),day=w.days[sid]||Object.values(w.days)[0];w.pages.day++;w.dayLoads.push({sid,at:Date.now()});if(u.searchParams.get('via')==='click')w.viewClicks++;
       const cfg={api:ADMIN,mode:w.mode,left:w.left,date:day.date,hide:w.hide,skew:w.skew,broken:w.broken,confirm:w.confirm,token:w.token,unmask:w.unmask,browser:w.browser,plain:Object.fromEntries(day.students.map(s=>[s.sequence,{name:s.name,phone:showPhone(s.phone)}]))};
-      return page(`<header id="hd"></header><h2>[2반] 가상강의 (가상담임) | ${day.date} 출석부</h2><label><input type="radio" name="basis" id="rt">실제 시간 기반</label><label><input type="radio" name="basis" id="allow" checked>강의 출석/퇴실 허용 시간 기반</label><button>초</button><button>표시</button><div id="t"></div><div id="m"></div><div id="toast"></div><script>(${dayApp.toString()})(${JSON.stringify(cfg)})</script>`);
+      const h=w.home.find(x=>x.lecture===u.searchParams.get('lectureId'))||w.home[0],title=h?.title||h?.label||'[2반] 가상강의 (가상담임)';
+      return page(`<header id="hd"></header><h2>${title} | ${day.date} 출석부</h2><label><input type="radio" name="basis" id="rt">실제 시간 기반</label><label><input type="radio" name="basis" id="allow" checked>강의 출석/퇴실 허용 시간 기반</label><button>초</button><button>표시</button><div id="t"></div><div id="m"></div><div id="toast"></div><script>(${dayApp.toString()})(${JSON.stringify(cfg)})</script>`);
     }
     return route.fulfill({status:404,body:'{}'});
   }));
@@ -164,7 +169,7 @@ export function fakeCloud(docs,{verifyToken='fixture-admin'}={}){
 }
 // 가짜 체크히어 + 진짜 연결 프로그램(수집기·서버) + 가짜 승인 저장소. 먼저 한 번 수집해 학생 번호 연결을 배웁니다(가상 학생만, 다른 포트).
 // approve(id,이름,changes,deleteTimes?): 그 학생의 지금 저장본으로 승인된 요청을 만듭니다. apply(id,{writer,...}): /api/apply.
-export async function bridgeWorld(port,prefix,{sendGapMs=[0,0],itemGapMs=[0,0],date='2026-10-05',bridge={}}={}){
+export async function bridgeWorld(port,prefix,{sendGapMs=[0,0],itemGapMs=[0,0],date='2026-11-02',bridge={}}={}){
   const s=await fakeSite({S1:{date,students:roster(date)}}),docs=new Map(),fake=fakeCloud(docs);
   const c=new CheckHereCollector('',{page:s.page,dayGapMs:[0,0],sendGapMs});c.urls.set('2|'+date,urlOf('S1',date));
   s.page.on('dialog',d=>c.onDialog(d));// 전용 크롬을 열 때(connect)와 같은 확인창 처리

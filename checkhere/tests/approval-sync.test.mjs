@@ -4,8 +4,8 @@ import {createApprovalCloud} from '../cloud-approval.mjs';
 import {applyVerified} from '../writeback.mjs';
 import {APPROVER,prepareApproval,proposalFromApproval,requestMatchesRecord} from '../approval-core.mjs';
 import {version} from '../identity.mjs';
-const record=(patch={})=>{const r={id:'record-1',studentKey:'student-1',classId:'2',date:'2026-09-14',name:'가상학생',phoneLast4:'1234',teacher:'홍길동',source:'live',readState:'complete',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'',outings:[],schedule:'09:00 ~ 18:00',collectedAt:'2026-09-17T01:00:00.000Z',...patch};return{...r,version:version(r)};};
-const request=(changes={entryMemo:''})=>({classId:'2',date:'2026-09-14',name:'가상학생',phoneLast4:'1234',reason:'가상 검증 근거',changes});
+const record=(patch={})=>{const r={id:'record-1',studentKey:'student-1',classId:'2',date:'2026-11-02',name:'가상학생',phoneLast4:'1234',teacher:'홍길동',source:'live',readState:'complete',entry:'09:00:00',exit:'18:00:00',entryMemo:'기존 사유',exitMemo:'',outings:[],schedule:'09:00 ~ 18:00',collectedAt:'2026-11-05T01:00:00.000Z',...patch};return{...r,version:version(r)};};
+const request=(changes={entryMemo:''})=>({classId:'2',date:'2026-11-02',name:'가상학생',phoneLast4:'1234',reason:'가상 검증 근거',changes});
 const enc=v=>v===null?{nullValue:null}:Array.isArray(v)?{arrayValue:{values:v.map(enc)}}:typeof v==='object'?{mapValue:{fields:pack(v)}}:typeof v==='string'?{stringValue:v}:typeof v==='boolean'?{booleanValue:v}:Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
 const pack=o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,enc(v)]));
 const dec=v=>'mapValue'in v?unpack(v.mapValue.fields):'arrayValue'in v?(v.arrayValue.values||[]).map(dec):'integerValue'in v?+v.integerValue:Object.values(v)[0];
@@ -29,7 +29,7 @@ function fixture({missing=false,fail=false,loseResponse=false,conflict=false}={}
   if(url.includes('/checkhereCurrent/'))return snapshot?Response.json({fields:pack(snapshot),updateTime:'s'+snapshotRev}):new Response('{}',{status:404});
   return Response.json({fields:pack(req),updateTime:'r'+rev});
  }});
- const current=record({entryMemo:'',collectedAt:'2026-09-17T02:00:00.000Z'}),job={id,status:'verified',current,results:[],alreadyApplied:true};
+ const current=record({entryMemo:'',collectedAt:'2026-11-05T02:00:00.000Z'}),job={id,status:'verified',current,results:[],alreadyApplied:true};
  return{cloud,job,id,get req(){return req;},get snapshot(){return snapshot;},get commits(){return commits;},calls,writes};
 }
 test('completion atomically saves current day and request, preserves other students and decimals, and retries idempotently',async()=>{
@@ -41,7 +41,7 @@ test('first current save preserves legacy classmates and concurrent snapshot wri
  for(const options of [{missing:true},{conflict:true}]){const f=fixture(options);await f.cloud.finish(f.id,'fixture','attempt-0123456789',f.job);assert.equal(f.snapshot.records.length,options.conflict?3:2);assert.equal(f.req.result.platformSaved,true);}
 });
 test('partially applied jobs save the actual readback while retaining partial status',async()=>{
- const f=fixture();const job={...f.job,status:'partial',alreadyApplied:false,current:record({entryMemo:'일부만 저장됨',collectedAt:'2026-09-17T02:00:00.000Z'}),message:'일부 반영 · 재확인'};
+ const f=fixture();const job={...f.job,status:'partial',alreadyApplied:false,current:record({entryMemo:'일부만 저장됨',collectedAt:'2026-11-05T02:00:00.000Z'}),message:'일부 반영 · 재확인'};
  const result=await f.cloud.finish(f.id,'fixture','attempt-0123456789',job);assert.equal(result.platformSaved,true);assert.equal(f.req.status,'partial');assert.equal(f.snapshot.records.find(r=>r.id==='record-1').entryMemo,'일부만 저장됨');assert.equal(result.alreadyApplied,false);
 });
 test('DB save rejection cannot mark request complete; ambiguous commit can be reconciled without another write',async()=>{

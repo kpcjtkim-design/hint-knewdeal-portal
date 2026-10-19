@@ -37,53 +37,53 @@ async function bridge(collector,port,dataDir=mkdtempSync(join(import.meta.dirnam
   return {app,api,wait,dataDir,rows:()=>app.db.prepare('SELECT COUNT(*) n FROM snapshots').get().n};
 }
 const lectures=()=>({
-  '2':{'2026-09-01':[{name:'가',in:'09:00:00',out:'18:00:00'},{name:'나',in:'09:05:00',out:'18:00:00'}],'2026-09-03':[{name:'가',in:'08:58:00',out:'18:00:00'},{name:'나',in:'09:30:00',out:'17:00:00'}]},
+  '2':{'2026-11-03':[{name:'가',in:'09:00:00',out:'18:00:00'},{name:'나',in:'09:05:00',out:'18:00:00'}],'2026-11-05':[{name:'가',in:'08:58:00',out:'18:00:00'},{name:'나',in:'09:30:00',out:'17:00:00'}]},
 });
 test('one batch job covers several classes and a period, rules out non-lecture days from one scan and retries unread students',async()=>{
-  const {c,calls}=fakeCollector({lectures:lectures(),failOnce:new Set(['2-2026-09-03-나'])}),b=await bridge(c,18811);
+  const {c,calls}=fakeCollector({lectures:lectures(),failOnce:new Set(['2-2026-11-05-나'])}),b=await bridge(c,18811);
   try{
-    const started=await b.api('sync-batch',{classIds:['3','2'],dates:['2026-09-03','2026-09-01','2026-09-02'],mode:'incremental'});
+    const started=await b.api('sync-batch',{classIds:['3','2'],dates:['2026-11-05','2026-11-03','2026-11-04'],mode:'incremental'});
     assert.equal(started.kind,'batch');assert.equal(started.total,6);
     const job=await b.wait(started.id),by=Object.fromEntries(job.results.map(r=>[`${r.classId}|${r.date}`,r]));
-    assert.equal(by['2|2026-09-02'].status,'no-lecture');assert(!calls.openDay.includes('2|2026-09-02'),'no paged search for a day the scan ruled out');
-    assert.equal(by['2|2026-09-01'].status,'complete');assert.equal(by['2|2026-09-03'].status,'complete','second attempt read the student that failed');
-    assert.equal(by['2|2026-09-03'].attempt,2);
+    assert.equal(by['2|2026-11-04'].status,'no-lecture');assert(!calls.openDay.includes('2|2026-11-04'),'no paged search for a day the scan ruled out');
+    assert.equal(by['2|2026-11-03'].status,'complete');assert.equal(by['2|2026-11-05'].status,'complete','second attempt read the student that failed');
+    assert.equal(by['2|2026-11-05'].attempt,2);
     assert.deepEqual(calls.details,[],'fast reads never open an editor, not even for the unread student');
-    const latest=JSON.parse(b.app.db.prepare("SELECT payload FROM snapshots WHERE id='2-2026-09-03-나' ORDER BY seq DESC LIMIT 1").get().payload);
+    const latest=JSON.parse(b.app.db.prepare("SELECT payload FROM snapshots WHERE id='2-2026-11-05-나' ORDER BY seq DESC LIMIT 1").get().payload);
     assert.equal(latest.readState,'complete','the retry read the student from page data');
-    for(const d of ['2026-09-01','2026-09-02','2026-09-03'])assert.equal(by['3|'+d].status,'failed');
+    for(const d of ['2026-11-03','2026-11-04','2026-11-05'])assert.equal(by['3|'+d].status,'failed');
     assert.equal(calls.scans.filter(x=>x==='3').length,1);assert(!calls.openDay.some(x=>x.startsWith('3|')),'a class that does not exist is not retried day by day');
     assert.equal(job.status,'partial');assert.match(job.message,/6\/6 반·날짜/);assert.match(job.message,/강의 없음 1/);
     // Repeating the period reads nobody and adds no history rows.
     const before=b.rows();calls.details.length=0;
-    const again=await b.wait((await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'incremental'})).id);
+    const again=await b.wait((await b.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'incremental'})).id);
     assert.deepEqual(calls.details,[]);assert.equal(again.skipped,4);assert.equal(b.rows(),before);assert.equal(again.status,'complete');
     assert.equal(calls.scans.filter(x=>x==='2').length,1,'remembered day addresses skip the schedule scan');
     // Precise mode (emergency) re-reads everyone through editors.
-    const precise=await b.wait((await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01'],mode:'full'})).id);
+    const precise=await b.wait((await b.api('sync-batch',{classIds:['2'],dates:['2026-11-03'],mode:'full'})).id);
     assert.equal(precise.count,2);assert.equal(precise.skipped,0);assert.equal(calls.details.length,2);
   }finally{b.app.close();}
 });
 test('remembered addresses survive a restart; a lost login stops the batch instead of failing every day',async()=>{
   const first=fakeCollector({lectures:lectures()}),b1=await bridge(first.c,18812);
-  await b1.wait((await b1.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'incremental'})).id);b1.app.close();
+  await b1.wait((await b1.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'incremental'})).id);b1.app.close();
   const second=fakeCollector({lectures:lectures()});const b2=await bridge(second.c,18813,b1.dataDir);
   try{
-    assert.equal(second.c.urls.get('2|2026-09-01'),URL_OF('2','2026-09-01'));
-    second.c.loggedOut=false;const job=await b2.wait((await b2.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'full'})).id);
+    assert.equal(second.c.urls.get('2|2026-11-03'),URL_OF('2','2026-11-03'));
+    second.c.loggedOut=false;const job=await b2.wait((await b2.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'full'})).id);
     assert.deepEqual(second.calls.scans,[]);assert.equal(job.status,'complete');
     let n=0;second.c.readDetails=async row=>{if(++n===2)second.c.loggedOut=true;const r={...row,entryMemo:'',exitMemo:'',readState:'complete',collectedAt:new Date().toISOString()};r.version=version(r);return r;};
-    const lost=await b2.wait((await b2.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'full'})).id);
+    const lost=await b2.wait((await b2.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'full'})).id);
     assert.match(lost.message,/LOGIN_REQUIRED/);assert(lost.results.length<=2);
   }finally{b2.app.close();}
 });
 test('cancelling stops between days and rejects bad input',async()=>{
   const {c}=fakeCollector({lectures:lectures(),scan:false}),b=await bridge(c,18814);
   try{
-    await assert.rejects(b.api('sync-batch',{classIds:['18'],dates:['2026-09-01']}),/반\(1~17\)/);
+    await assert.rejects(b.api('sync-batch',{classIds:['17'],dates:['2026-11-03']}),/반\(1~16\)/);
     await assert.rejects(b.api('sync-batch',{classIds:['2'],dates:['2026-02-30']}),/날짜/);
     const slow=c.readDetails;c.readDetails=async r=>{await new Promise(x=>setTimeout(x,30));return slow(r);};
-    const started=await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'full'});
+    const started=await b.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'full'});
     await new Promise(r=>setTimeout(r,40));await b.api('cancel',{});
     const job=await b.wait(started.id);assert.equal(job.status,'cancelled');assert(job.results.length<2);
   }finally{b.app.close();}
@@ -91,33 +91,33 @@ test('cancelling stops between days and rejects bad input',async()=>{
 test('schedule scan reads every page once and reports whether it saw them all; a stale remembered address is looked up again',async()=>{
   const {chromium}=loadPlaywright(),browser=await chromium.launch({headless:true}),page=await browser.newPage();
   try{
-    await page.setContent(`<table id="t"><tr><td>2026-09-01 (월)</td><td><button>보기</button></td></tr><tr><td>2026.09.02</td><td><button>보기</button></td></tr></table><button>1</button><button onclick="document.querySelector('#t').innerHTML='<tr><td>2026-09-04</td><td><button>보기</button></td></tr>'">2</button>`);
+    await page.setContent(`<table id="t"><tr><td>2026-11-03 (월)</td><td><button>보기</button></td></tr><tr><td>2026.09.02</td><td><button>보기</button></td></tr></table><button>1</button><button onclick="document.querySelector('#t').innerHTML='<tr><td>2026-11-06</td><td><button>보기</button></td></tr>'">2</button>`);
     const c=new CheckHereCollector('',{page});c.openLecture=async()=>{};page.setDefaultTimeout(3000);
-    assert.deepEqual(await c.lectureDates('2'),{dates:['2026-09-01','2026-09-02','2026-09-04'],complete:true});
-    const key='2|2026-09-01';c.urls.set(key,'https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-09-01&old=1');const seen=[];
+    assert.deepEqual(await c.lectureDates('2'),{dates:['2026-11-03','2026-11-04','2026-11-06'],complete:true});
+    const key='2|2026-11-03';c.urls.set(key,'https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-11-03&old=1');const seen=[];
     c.openDayOnce=async(classId,date,url)=>{const u=url||await c.discover(classId,date);seen.push(u);if(u.includes('old=1'))throw Error('반·날짜 확인에 실패했습니다.');return ['ok'];};
-    c.discover=async(classId,date)=>{if(c.urls.has(`${classId}|${date}`))return c.urls.get(`${classId}|${date}`);const fresh='https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-09-01&new=1';c.urls.set(`${classId}|${date}`,fresh);return fresh;};
-    assert.deepEqual(await c.openDay('2','2026-09-01'),['ok']);assert.equal(seen.length,2);assert.match(c.urls.get(key),/new=1/);
-    await assert.rejects(c.openDay('2','2026-09-01','https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-09-01&old=1'),/반·날짜 확인/,'a supplied verification address is never swapped');
+    c.discover=async(classId,date)=>{if(c.urls.has(`${classId}|${date}`))return c.urls.get(`${classId}|${date}`);const fresh='https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-11-03&new=1';c.urls.set(`${classId}|${date}`,fresh);return fresh;};
+    assert.deepEqual(await c.openDay('2','2026-11-03'),['ok']);assert.equal(seen.length,2);assert.match(c.urls.get(key),/new=1/);
+    await assert.rejects(c.openDay('2','2026-11-03','https://check.ihereapp.com/history/lecture/modify?scheduleDate=2026-11-03&old=1'),/반·날짜 확인/,'a supplied verification address is never swapped');
   }finally{await browser.close();}
 });
 test('the busy lock is taken before the login wait and only its owner releases it; a cancel while the next day waits for login is kept',{timeout:15000},async()=>{
   const {c,calls}=fakeCollector({lectures:lectures(),scan:false}),b=await bridge(c,18942),sleep=ms=>new Promise(r=>setTimeout(r,ms));
   try{
     let open;const gate=new Promise(r=>open=r);const login=c.requireLogin;c.requireLogin=async()=>{await gate;return login();};
-    const first=b.api('sync',{classId:'2',dates:['2026-09-01'],mode:'full'});await sleep(20);
-    await assert.rejects(b.api('sync-batch',{classIds:['2'],dates:['2026-09-03']}),/진행 중/,'a second job cannot slip in while the first waits for login');
-    await assert.rejects(b.api('sync',{classId:'2',dates:['2026-09-03']}),/진행 중/);
+    const first=b.api('sync',{classId:'2',dates:['2026-11-03'],mode:'full'});await sleep(20);
+    await assert.rejects(b.api('sync-batch',{classIds:['2'],dates:['2026-11-05']}),/진행 중/,'a second job cannot slip in while the first waits for login');
+    await assert.rejects(b.api('sync',{classId:'2',dates:['2026-11-05']}),/진행 중/);
     assert.match(String((await b.api('state?delta=1')).busy),/^start:/);
     open();const job=await b.wait((await first).id);assert.equal(job.status,'complete');
     assert.equal((await b.api('state?delta=1')).busy,null);
     // 다음 날짜가 로그인 확인을 기다리는 동안 누른 '수집 중단'이 지워지지 않습니다.
     calls.openDay.length=0;let waiting=false,go;const hold=new Promise(r=>go=r);
     c.requireLogin=async()=>{if(calls.openDay.length===1&&!waiting){waiting=true;await hold;}};
-    const started=await b.api('sync-batch',{classIds:['2'],dates:['2026-09-01','2026-09-03'],mode:'full'});
+    const started=await b.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'full'});
     for(let i=0;i<200&&!waiting;i++)await sleep(5);assert.ok(waiting);
     await b.api('cancel',{});go();
     const cancelled=await b.wait(started.id);assert.equal(cancelled.status,'cancelled');
-    assert.deepEqual(calls.openDay,['2|2026-09-01'],'the second day is not opened');
+    assert.deepEqual(calls.openDay,['2|2026-11-03'],'the second day is not opened');
   }finally{b.app.close();}
 });

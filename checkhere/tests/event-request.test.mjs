@@ -14,11 +14,11 @@ import {buildBody,formatFor,formatWith,sendEvent,eventOf,NOT_WIRED,EVENT_REQUEST
 import {describeRequest,describeBody,saveFormat,loadFormat,formatFile} from '../format-record.mjs';
 import {ADMIN,roster,bridgeWorld} from './checkhere-fake.mjs';
 
-const D1='2026-10-05',TOKEN='fixture-admin';
+const D1='2026-11-02',TOKEN='fixture-admin';
 mkdirSync(join(import.meta.dirname,'../test-results'),{recursive:true});
 // 가상 본문 두 개로 형식을 기록해 둡니다(사람이 수정창으로 한 건씩 고친 것과 같은 모양).
-const UPDATE={scheduleId:'S0',typeEvent:'ATTEND',attendeeId:'att-x',baseTime:'2026-10-01T09:00:00',existEventId:null,time:'2026-10-01T09:10:00',memoByAdmin:'가상'};
-const DELETE={scheduleId:'S0',typeEvent:'COMPLETE',attendeeId:'att-x',baseTime:'2026-10-01T18:00:00',existEventId:'ev-x'};
+const UPDATE={scheduleId:'S0',typeEvent:'ATTEND',attendeeId:'att-x',baseTime:'2026-10-29T09:00:00',existEventId:null,time:'2026-10-29T09:10:00',memoByAdmin:'가상'};
+const DELETE={scheduleId:'S0',typeEvent:'COMPLETE',attendeeId:'att-x',baseTime:'2026-10-29T18:00:00',existEventId:'ev-x'};
 const recordBoth=dataDir=>{saveFormat(dataDir,describeRequest({method:'PUT',url:ADMIN+'/api/v3/history/event/update',body:UPDATE}));return saveFormat(dataDir,describeRequest({method:'DELETE',url:ADMIN+'/api/v3/history/event/delete',body:DELETE}));};
 const world=(port,prefix,options)=>bridgeWorld(port,prefix,options);
 // 화면 안 evaluate가 Node로 돌려준 값을 모두 모읍니다(헤더 값이 나오지 않는지 보려고).
@@ -53,7 +53,7 @@ test('event-request: the built-in 2026-10-16 format builds the same bodies as a 
   const text=JSON.stringify(BUILTIN_FORMAT);for(const v of ['uthorization','privacy','Bearer','att-','2026-10-16T'])assert.ok(!text.includes(v),v);
   // 형식 기록은 값을 남기지 않습니다(키·종류·열거값만)
   const shape=describeBody(UPDATE),shown=JSON.stringify(shape);
-  for(const v of ['S0','att-x','2026-10-01','09:10','가상'])assert.ok(!shown.includes(v),v);
+  for(const v of ['S0','att-x','2026-10-29','09:10','가상'])assert.ok(!shown.includes(v),v);
   assert.deepEqual(shape.fields.typeEvent,{types:['string'],shapes:['text'],values:['ATTEND']});
   assert.equal(describeRequest({method:'PUT',url:'https://example.com/api/v3/history/event/update',body:UPDATE}),null,'only CheckHere write requests are recorded');
 });

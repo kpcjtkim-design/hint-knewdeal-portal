@@ -10,9 +10,9 @@ import {checkLiveEdit} from '../../checkhere-live-core.mjs';
 
 // 오늘(build 20261014.1) 연결 프로그램이 알리는 능력. 시간 삭제 능력은 아직 없습니다.
 const TODAY=['memo-default-time-v1','approved-requests-v1','memo-only-requests-v1','approval-current-sync-v1','live-approval-preview-v1','automatic-request-collection-v1','phone-identity-v1','state-delta-v1','incremental-sync-v1','batch-sync-v1','probe-v1','page-data-v1'];
-const base=(patch={})=>{const r={id:'fixture-del',studentKey:'fixture-del-key',classId:'9',date:'2026-09-10',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,entryKind:'PASS',exitEventId:'ev-exit',enterEventId:true,...patch};r.version=version(r);return r;};
+const base=(patch={})=>{const r={id:'fixture-del',studentKey:'fixture-del-key',classId:'9',date:'2026-10-29',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,entryKind:'PASS',exitEventId:'ev-exit',enterEventId:true,...patch};r.version=version(r);return r;};
 const admin=patch=>base({entryKind:'ATTEND',entryEventId:'ev-period',enterEventId:false,rawEntry:'09:00:00',...patch});
-const req=(changes={exit:''},deleteTimes=['exit'])=>({classId:'9',date:'2026-09-10',name:'가상삭제',phoneLast4:'',reason:'[가상] 결석 확인',changes,...(deleteTimes?{deleteTimes}:{})});
+const req=(changes={exit:''},deleteTimes=['exit'])=>({classId:'9',date:'2026-10-29',name:'가상삭제',phoneLast4:'',reason:'[가상] 결석 확인',changes,...(deleteTimes?{deleteTimes}:{})});
 // 2026-10-15에 막았던 관리자 1교시(ATTEND) 삭제는 2026-10-16 실제 확인 뒤 켬(rules.mjs ATTEND_DELETE). 옛 규칙은 attend:false로만 봅니다.
 // 퇴실이 남은 채 1교시만 지우면 체크히어가 퇴실 시간으로 다시 채우므로, 1교시는 같은 요청이 퇴실도 지울 때(퇴실 먼저) 또는 퇴실이 이미 빈 뒤에만 지웁니다.
 const ATTEND_OFF='관리자가 넣은 1교시 삭제는 실제 체크히어에서 확인한 뒤 엽니다(지금은 퇴실만 지웁니다).';

@@ -4,7 +4,7 @@ import {mkdtempSync} from 'node:fs';
 import {join} from 'node:path';
 import {createBridge} from '../server.mjs';
 
-const row=id=>({id,studentKey:id,classId:'2',date:'2026-09-03',name:'가상'+id,teacher:'가상',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]});
+const row=id=>({id,studentKey:id,classId:'2',date:'2026-10-29',name:'가상'+id,teacher:'가상',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',entry:'09:00:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[]});
 test('delta state persists updates, replays retries and resets a restarted or invalid cursor',async()=>{
  const dataDir=mkdtempSync(join(import.meta.dirname,'../test-results/state-delta-')),port=18872;
  let duringLogin=null;

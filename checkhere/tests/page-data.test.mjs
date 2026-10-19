@@ -7,7 +7,7 @@ import {createBridge} from '../server.mjs';
 import {studentKey,version} from '../identity.mjs';
 import {localTime,readStudent,planFromPageData,sampleIds,sameReading} from '../day-data.mjs';
 
-const DATE='2026-09-03';
+const DATE='2026-10-29';
 // Virtual students in the shape the CheckHere page loads (keys confirmed by the diagnosis).
 function student(name,phone,{enter,period='ATTEND',attend=enter,complete,entryMemo=null,exitMemo=null,leaves=[]},iso=t=>`${DATE}T${t}`){
   const ev=(type,t,memo=null)=>({eventId:'e',userId:'u',time:iso(t),baseTime:iso(t),timeIndex:0,type,isRecognized:false,status:'NORMAL',memoByAdmin:memo,updatedAt:null});
@@ -22,7 +22,7 @@ const roster=()=>[
   student('가상셋','01011110003',{enter:'08:59:00',complete:'15:00:00',exitMemo:'조퇴_병원',leaves:[{start:'13:00:00',end:'13:40:00',ok:false}]}),
 ];
 test('page data values are read as Korean local times and suspicious entries are refused',()=>{
-  assert.equal(localTime('2026-09-03T08:55:01'),'08:55:01');assert.equal(localTime('2026-09-02T23:55:01Z'),'08:55:01');assert.equal(localTime(null),null);assert.equal(localTime('어제'),undefined);
+  assert.equal(localTime('2026-10-29T08:55:01'),'08:55:01');assert.equal(localTime('2026-10-28T23:55:01Z'),'08:55:01');assert.equal(localTime(null),null);assert.equal(localTime('어제'),undefined);
   const s=readStudent(roster()[2]);assert.deepEqual([s.rawEntry,s.entry,s.exit,s.entryMemo,s.exitMemo],['08:59:00','08:59:00','15:00:00','','조퇴_병원']);
   assert.deepEqual(s.outings,[{start:'13:00:00',end:'13:40:00',cutoff:'13:40:00',recognized:false}]);assert.deepEqual(s.problems,[]);
   const odd=roster()[2];odd.eventList[2].memoByAdmin='메모 위치 이상';assert.equal(odd.eventList[2].type,'LEAVE');assert.match(readStudent(odd).problems.join(),/관리자 메모/);
@@ -73,7 +73,7 @@ test('a day is read from page data without opening any editor and matches the ed
     const v=list=>Object.fromEntries(list.map(r=>[r.id,r.version]));assert.deepEqual(v(fast),v(slow),'identical records either way');
     assert.equal(fast.find(r=>r.name==='가상셋').outings[0].recognized,false);
     // Times sent with a zone are read as Korean time too.
-    state.list=roster().map(s=>JSON.parse(JSON.stringify(s).replace(/"(2026-09-03)T(\d\d):(\d\d:\d\d)"/g,(m,d,h,rest)=>`"${+h-9<0?'2026-09-02':d}T${String((+h+15)%24).padStart(2,'0')}:${rest}Z"`)));
+    state.list=roster().map(s=>JSON.parse(JSON.stringify(s).replace(/"(2026-10-29)T(\d\d):(\d\d:\d\d)"/g,(m,d,h,rest)=>`"${+h-9<0?'2026-10-28':d}T${String((+h+15)%24).padStart(2,'0')}:${rest}Z"`)));
     const zoned=await run(c,{pageData:true});assert.deepEqual(v(zoned),v(slow));
   }finally{await browser.close();}
 });

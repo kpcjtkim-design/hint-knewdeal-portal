@@ -4,14 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync,mkdtempSync} from 'node:fs';
 import {join} from 'node:path';
-import {createBridge,CAPABILITIES} from '../server.mjs';
+import {createBridge,CAPABILITIES,BUILD} from '../server.mjs';
 import {APPROVER,prepareApproval} from '../approval-core.mjs';
 import {TIME_DELETE_CAPABILITY} from '../rules.mjs';
 import {version} from '../identity.mjs';
 
 const OLD=CAPABILITIES.filter(c=>c!==TIME_DELETE_CAPABILITY);
 // 체크인한 가상 학생: 1교시는 입실에서 계산된 값(PASS), 퇴실에는 기록 번호가 있습니다.
-const base=(patch={})=>{const r={id:'fixture-bridge-del',studentKey:'fixture-bridge-key',classId:'9',date:'2026-09-10',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'08:55:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,collectedAt:'2026-09-10T09:00:00.000Z',entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true,...patch};r.version=version(r);return r;};
+const base=(patch={})=>{const r={id:'fixture-bridge-del',studentKey:'fixture-bridge-key',classId:'9',date:'2026-10-29',name:'가상삭제',phoneLast4:'0009',teacher:'가상담임',source:'live',readState:'complete',schedule:'09:00 ~ 18:00',rawEntry:'08:55:00',entry:'08:55:00',exit:'18:00:00',entryMemo:'',exitMemo:'',outings:[],outingCount:0,collectedAt:'2026-10-29T09:00:00.000Z',entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true,...patch};r.version=version(r);return r;};
 const request=(record,status,patch={})=>{const r={classId:'9',date:record.date,name:record.name,phoneLast4:'0009',reason:'[가상] 결석 확인',changes:{exit:''},deleteTimes:['exit'],status,createdBy:APPROVER,...patch};if(status==='approved'){r.approvedBy=APPROVER;r.approval=prepareApproval(r,record,{allowAlreadyApplied:true});}return r;};
 // 가짜 체크히어 어댑터: 수정창 '삭제'를 흉내 냅니다(퇴실을 지우면 계산된 1교시도 함께 비움 — Cowork 확인 동작).
 function fakeAdapter(record){
@@ -53,8 +53,8 @@ test('a bridge without time-delete-v1 refuses deletion requests before reading, 
   const b=await bridge(18797,record,docs,OLD);
   try{
     const session=await (await fetch('http://127.0.0.1:18797/api/session')).json();
-    assert.equal(session.build,'20261016.2');assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
-    const state=await b.get('state?delta=1');assert.equal(state.build,'20261016.2','/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
+    assert.equal(session.build,BUILD);assert.equal(session.capabilities.includes(TIME_DELETE_CAPABILITY),false,'the injected list is what the bridge announces');
+    const state=await b.get('state?delta=1');assert.equal(state.build,BUILD,'/api/state carries the build');assert.equal(state.capabilities.includes(TIME_DELETE_CAPABILITY),false);
     const applied=await b.post('apply','fixture-delete-approved-01');
     assert.equal(applied.code,400);assert.match(applied.body.error,/시간 삭제를 지원하지 않습니다/);
     assert.equal(docs.get('fixture-delete-approved-01').status,'approved','an approved deletion stays approved (not claimed)');
@@ -75,7 +75,7 @@ test('a bridge with time-delete-v1 deletes an approved exit, verifies it by re-r
   const b=await bridge(18798,record,docs);
   try{
     const session=await (await fetch('http://127.0.0.1:18798/api/session')).json();
-    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,'20261016.2');
+    assert(session.capabilities.includes(TIME_DELETE_CAPABILITY),'the default bridge announces time deletion');assert.equal(session.build,BUILD);
     const started=await b.post('apply','fixture-delete-approved-02');assert.equal(started.code,202,JSON.stringify(started.body));
     const j=await b.job('fixture-delete-approved-02');
     assert.equal(j.status,'verified',j.message);assert.equal(j.results[0].deleted,true);assert.equal(j.results[0].field,'exit');
