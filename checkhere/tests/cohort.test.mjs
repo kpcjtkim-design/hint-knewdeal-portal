@@ -64,22 +64,68 @@ test('weeks start on Monday 2026-10-26 and unit periods cover the course without
 });
 
 test('attendance rule: 09:00~18:00 normally, 10:00~17:00 on factory-visit days',()=>{
- const base=C.ruleFor('2026-11-03',{classId:'1'});
- assert.deepEqual([base.start,base.end,base.lunchStart,base.lunchEnd,base.entryGrace,base.exitGrace,base.excursion],['09:00','18:00','12:00','13:00',10,10,false]);
- const visit=C.ruleFor('2026-11-03',{classId:'1',excursion:true});
- assert.deepEqual([visit.start,visit.end,visit.excursion],['10:00','17:00',true]);assert.equal(C.scheduleText(visit),'10:00 ~ 17:00');
+ const base=C.ruleFor('2026-11-03','1');
+ assert.deepEqual([base.start,base.end,base.lunchStart,base.lunchEnd,base.entryGrace,base.exitGrace,base.excursion,base.source],['09:00','18:00','12:00','13:00',10,10,false,'base']);
+ assert.equal(base,C.BASE_RULE,'조정이 없으면 기본 규칙 그대로');assert.ok(Object.isFrozen(base));
+ assert.deepEqual([C.lateAfter(base),C.earlyBefore(base)],['09:10','17:50']);assert.deepEqual(C.acceptedSchedules(base),['09:00 ~ 18:00']);
+ const visit=C.ruleFor('2026-11-03','1',{excursion:true});
+ assert.deepEqual([visit.start,visit.end,visit.excursion,visit.source],['10:00','17:00',true,'excursion']);assert.equal(C.scheduleText(visit),'10:00 ~ 17:00');
+ assert.deepEqual([C.lateAfter(visit),C.earlyBefore(visit)],['10:10','16:50']);
+ assert.deepEqual(C.acceptedSchedules(visit),['10:00 ~ 17:00','09:00 ~ 18:00'],'체크히어 강의는 기본 시간으로 만들어져 있어 함께 받음');
  assert.notEqual(visit.version,base.version);
+ // 예전 모양(둘째 인자 객체)도 같은 값
+ assert.equal(C.ruleFor('2026-11-03',{classId:'1',excursion:true}),visit);assert.equal(C.ruleFor('2026-11-03',{classId:'1'}),base);
  assert.equal(C.isExcursionDay('1','2026-11-03'),false,'견학 날짜는 시간표가 나오면 cohort.json excursions에 넣습니다');
  assert.deepEqual([C.DISEASE.warn,C.DISEASE.max,C.COMPLETION_RATE],[4,6,80]);
 });
 
-test('Firebase fails closed until the 2기 project values are filled; bridge, storage and file names carry the cohort',()=>{
+test('admin time overrides per date/class: all-class then class entries, invalid entries fall back to the base rule',()=>{
+ const items=[
+  {date:'2026-11-05',start:'09:30',end:'17:30',note:'전체 행사'},
+  {date:'2026-11-05',classIds:['3','4'],start:'10:00',end:'16:00',exitGrace:5,note:'3·4반 이동'},
+  {date:'2026-11-06',classIds:['7'],excursion:true},
+  {date:'2026-11-09',classIds:['2'],start:'25:00'},
+  {date:'2026-11-10',start:'13:00',end:'12:00'},
+  {date:'2026-11-11',lunchStart:'08:00'}
+ ];
+ const all=C.ruleFor('2026-11-05','1',items);
+ assert.deepEqual([all.start,all.end,all.source,all.note],['09:30','17:30','override','전체 행사']);assert.ok(Object.isFrozen(all));
+ assert.deepEqual([C.lateAfter(all),C.earlyBefore(all)],['09:40','17:20']);assert.deepEqual(C.acceptedSchedules(all),['09:30 ~ 17:30','09:00 ~ 18:00']);
+ const three=C.ruleFor('2026-11-05','3',items);
+ assert.deepEqual([three.start,three.end,three.exitGrace,three.entryGrace,three.lunchStart],['10:00','16:00',5,10,'12:00'],'반 항목이 전체 항목보다 우선, 안 적은 칸은 그대로');
+ assert.equal(three.note,'전체 행사 · 3·4반 이동');assert.notEqual(three.version,all.version);
+ assert.equal(C.ruleFor('2026-11-05',4,{items}).start,'10:00','반 번호는 숫자로 와도 됨');
+ const seven=C.ruleFor('2026-11-06','7',items);assert.deepEqual([seven.start,seven.end,seven.excursion,seven.source],['10:00','17:00',true,'override'],'조정으로 견학 날 지정');
+ assert.equal(C.ruleFor('2026-11-06','8',items),C.BASE_RULE,'다른 반은 기본');
+ assert.equal(C.ruleFor('2026-11-09','2',items),C.BASE_RULE,'틀린 시간 항목은 버림');
+ assert.equal(C.ruleFor('2026-11-10','1',items),C.BASE_RULE,'합친 결과가 맞지 않으면(시작>끝) 기본');
+ assert.equal(C.ruleFor('2026-11-11','1',items),C.BASE_RULE,'점심이 수업 시간 밖이면 기본');
+ assert.equal(C.ruleFor('2026-11-05','1',null),C.BASE_RULE);assert.equal(C.ruleFor('2026-11-05','1',{}),C.BASE_RULE);
+ // 견학 날 + 조정: 견학 규칙 위에 덧씀. 1월(2027) 날짜도 같은 방식
+ const both=C.ruleFor('2026-11-12','5',{excursion:true,items:[{date:'2026-11-12',end:'16:30'}]});assert.deepEqual([both.start,both.end,both.excursion],['10:00','16:30',true]);
+ assert.equal(C.ruleFor('2027-01-14','16',[{date:'2027-01-14',classIds:['16'],start:'09:20'}]).start,'09:20');
+ // 항목 검사(나중 관리자 화면이 저장 전에 씀)
+ assert.deepEqual(C.ruleOverrideProblems({date:'2026-11-05',start:'09:30'}),[]);
+ assert.ok(C.ruleOverrideProblems({date:'2026-10-27'}).length,'교육 기간 밖');assert.ok(C.ruleOverrideProblems({date:'2027-01-04',classIds:['17']}).length,'반 번호');
+ assert.ok(C.ruleOverrideProblems({date:'2027-01-04',entryGrace:-1}).length);assert.ok(C.ruleOverrideProblems([]).length);
+ assert.deepEqual(C.ruleOverrideProblems({date:'2027-01-04',classIds:['16'],excursion:true}),[],'1월 날짜·16반');
+ assert.deepEqual(C.ruleProblems(C.BASE_RULE),[]);assert.deepEqual(C.ruleProblems(C.EXCURSION_RULE),[]);
+});
+
+test('Firebase is the 2기 project; /old goes to the 1기 alias; bridge, storage and file names carry the cohort',()=>{
  assert.equal(C.FIREBASE_PROJECT,'hint-knewdeal-2');
- if(!json.firebase.apiKey||!json.firebase.appId){assert.equal(C.firebaseConfig(),null);assert.equal(C.firebaseReady(),false);assert.equal(N.FIREBASE_READY,false);assert.match(C.FIREBASE_MISSING_TEXT,/2기 Firebase 설정 필요/);}
- else assert.equal(C.firebaseConfig().projectId,'hint-knewdeal-2');
+ assert.deepEqual(C.firebaseConfig(),{apiKey:'AIzaSyBAmlzBuD21IGRSK5yT7cpatHuelqn98do',authDomain:'hint-knewdeal-2.firebaseapp.com',projectId:'hint-knewdeal-2',storageBucket:'hint-knewdeal-2.firebasestorage.app',messagingSenderId:'179773915875',appId:'1:179773915875:web:036dab2c2e18b875947bd6'});
+ assert.equal(C.firebaseReady(),true);assert.equal(N.FIREBASE_READY,true);assert.equal(N.FIREBASE_KEY,C.FIREBASE_KEY);assert.match(C.FIREBASE_MISSING_TEXT,/2기 Firebase 설정 필요/);
+ assert.equal(C.OLD_SITE_URL,'https://hint-knewdeal-1gi.vercel.app');
+ const vercel=JSON.parse(readFileSync(new URL('../../vercel.json',import.meta.url),'utf8')),to=src=>vercel.redirects.find(r=>r.source===src)?.destination;
+ assert.equal(to('/old'),C.OLD_SITE_URL+'/');assert.equal(to('/old/:path*'),C.OLD_SITE_URL+'/:path*');assert.equal(to('/beta2'),'/');
+ assert.ok(!(vercel.rewrites||[]).some(r=>/^\/old/.test(r.source)),'/old는 넘김(redirect)만');
+ assert.match(C.TEACHER_PORTAL_URL,/^https:\/\/script\.google\.com\/macros\/s\/AKfycbyohCVK[\w-]+\/exec$/);
+ assert.equal(C.MASTER_SHEET_ID,'1rbe97EuzlECGrRZ0RBLCTNmjm30SMd41RaSQfLfmq6g');assert.equal(C.DROPOUT_SHEET_ID,'');
  assert.equal(C.BRIDGE_PORT,8766);assert.equal(C.BRIDGE_URL,'http://127.0.0.1:8766');assert.equal(C.lectureTag(3),'[3반]');
  assert.equal(C.storageKey('live.class'),'h2:live.class');assert.equal(C.fileName('출결.xlsx'),'2기_출결.xlsx');assert.equal(C.fileName('2기_출결.xlsx'),'2기_출결.xlsx');
  assert.deepEqual([...C.ADMINS],['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);assert.equal(C.APPROVER,'hint.kpc@gmail.com');
  assert.equal(C.SHEET_API.urlEnv,'HINT_SHEET_API_URL');assert.equal(C.SHEET_API.keyEnv,'HINT_SHEET_API_KEY');
- assert.equal(typeof C.OLD_SITE_URL,'string');assert.equal(C.feature('nope'),false);
+ assert.ok(!JSON.stringify(json).includes('AKfycbzChr0p'),'데이터 API 주소는 cohort.json에 두지 않고 Vercel 환경변수에만');
+ assert.equal(C.feature('nope'),false);for(const f of ['timetable','materials','surveys','uploads','periodRoster','operationsWork','dropout'])assert.equal(C.feature(f),false,f);
 });

@@ -9,11 +9,9 @@
       "permanent": false
     },
     {"source": "/beta2", "destination": "/", "permanent": false},
-    {"source": "/beta2/", "destination": "/", "permanent": false}
-  ],
-  "rewrites": [
-    {"source": "/old", "destination": "/api/old"},
-    {"source": "/old/:path*", "destination": "/api/old?path=:path*"}
+    {"source": "/beta2/", "destination": "/", "permanent": false},
+    {"source": "/old", "destination": "https://hint-knewdeal-1gi.vercel.app/", "permanent": false},
+    {"source": "/old/:path*", "destination": "https://hint-knewdeal-1gi.vercel.app/:path*", "permanent": false}
   ],
   "headers": [
     {"source": "/(.*)", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}]},

@@ -2,8 +2,10 @@
   "_notes": [
     "2기 기수 설정 원본입니다. 화면·api·연결 프로그램이 모두 여기서 반·기간·휴일·규칙·Firebase 설정을 읽습니다.",
     "고친 뒤에는 node tools/build-cohort.mjs 로 cohort.mjs 안의 사본을 맞춥니다(cohort 시험이 둘이 같은지 확인합니다).",
-    "firebase는 2기 전용 새 프로젝트 값입니다. 1기 Firebase 프로젝트와 섞이지 않게 apiKey·appId가 비어 있으면 로그인을 막습니다(2기 Firebase 설정 필요).",
-    "excursions: 반별 공장견학 날짜(그날만 10:00~17:00 기준). 2기 시간표가 나오면 채웁니다.",
+    "firebase는 2기 전용 새 프로젝트(hint-knewdeal-2) 웹 설정(공개값)입니다. 1기 Firebase 프로젝트와 섞이지 않게 apiKey·appId가 비어 있으면 로그인을 막습니다(2기 Firebase 설정 필요).",
+    "excursions: 반별 공장견학 날짜(그날만 10:00~17:00 기준). 2기 시간표가 나오면 채웁니다. 날짜·반별 시간 조정은 cohort.mjs ruleFor(날짜, 반, overrides)로 넘깁니다(저장·화면은 다음 단계).",
+    "sheets.master: 2기 마스터시트 id(웹은 Apps Script API로만 읽고 씀). sheets.dropout: 2기 중도포기자 시트(아직 없음, 비면 중도포기 화면을 닫음).",
+    "site.teacherPortalUrl: 2기 담임 PIN 포털(Apps Script doGet). 데이터 API 주소는 비밀값이라 여기에 두지 않고 Vercel 환경변수 HINT_SHEET_API_URL에만 둡니다.",
     "features: false인 화면은 '11월 중 2기 기준으로 열림'으로 감춥니다(1기 운영총괄을 읽던 화면 등)."
   ],
   "id": "2",
@@ -51,15 +53,16 @@
   "approver": "hint.kpc@gmail.com",
   "teacherAccess": false,
   "firebase": {
-    "apiKey": "",
+    "apiKey": "AIzaSyBAmlzBuD21IGRSK5yT7cpatHuelqn98do",
     "authDomain": "hint-knewdeal-2.firebaseapp.com",
     "projectId": "hint-knewdeal-2",
     "storageBucket": "hint-knewdeal-2.firebasestorage.app",
-    "messagingSenderId": "",
-    "appId": ""
+    "messagingSenderId": "179773915875",
+    "appId": "1:179773915875:web:036dab2c2e18b875947bd6"
   },
   "sheetApi": {"urlEnv": "HINT_SHEET_API_URL", "keyEnv": "HINT_SHEET_API_KEY"},
-  "site": {"url": "https://hint-knewdealportal.vercel.app", "tempUrl": "https://hint-knewdeal-2.vercel.app", "oldSiteUrl": ""},
+  "sheets": {"master": "1rbe97EuzlECGrRZ0RBLCTNmjm30SMd41RaSQfLfmq6g", "dropout": ""},
+  "site": {"url": "https://hint-knewdealportal.vercel.app", "tempUrl": "https://hint-knewdeal-2.vercel.app", "oldSiteUrl": "https://hint-knewdeal-1gi.vercel.app", "teacherPortalUrl": "https://script.google.com/macros/s/AKfycbyohCVKFIBZSoceYUGz1AsVPU9iJkkFWx20ZUkcnR577BwyPB-7RPdu3KSpZad1s5nt/exec"},
   "bridgePort": 8766,
   "storagePrefix": "h2:",
   "filePrefix": "2기_",
@@ -70,6 +73,7 @@
     "uploads": false,
     "periodRoster": false,
     "operationsWork": false,
+    "dropout": false,
     "studentPreview": true
   }
 }
