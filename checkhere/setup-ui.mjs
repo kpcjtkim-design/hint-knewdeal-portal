@@ -80,7 +80,8 @@ function paintDetail(){
   if($('#maskedOne'))$('#maskedOne').onclick=()=>run($('#maskedOne'),async()=>{const job=await api('sync',{classId:c.classId,dates:[$('#checkDate').value],mode:'incremental'});const j=await waitJob(job.id);state=await api('setup/state',{});paint();return `${c.classId}반: ${j.message||j.status}`;},'#detailNote');
 }
 function paint(){paintTop();paintLectures();paintClasses();paintDetail();}
-async function run(button,task,note){button.disabled=true;$(note).textContent='처리 중…';try{$(note).textContent=await task()||'';}catch(e){$(note).textContent=e.message;}finally{button.disabled=false;}}
+// 글은 일이 끝난 뒤 다시 찾은 칸에 씁니다(그 사이 화면을 다시 그리면 옛 칸이 사라짐).
+async function run(button,task,note){button.disabled=true;$(note).textContent='처리 중…';let text;try{text=await task()||'';}catch(e){text=e.message;}finally{button.disabled=false;}if($(note))$(note).textContent=text;}
 async function refresh(){state=await api('setup/state',{});paint();return state;}
 async function waitJob(id){let j={status:'running'};for(let i=0;i<900&&j.status==='running';i++){await new Promise(r=>setTimeout(r,1500));j=(await api('state?delta=1')).jobs.find(x=>x.id===id)||j;if(i%2===0)await refresh();}return j;}
 function startCheck(classIds,button,note){return run(button,async()=>{const job=await api('setup/check',{date:$('#checkDate').value,...(classIds?{classIds}:{})});await refresh();const j=await waitJob(job.id);await refresh();return `${j.status==='paused'?'멈춤':j.status==='complete'?'끝':j.status} · ${j.message||''}`;},note);}

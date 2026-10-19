@@ -7,8 +7,8 @@ import {randomBytes} from 'node:crypto';
 import {hasMask} from './masking.mjs';
 import {CLASS_IDS,classOk} from './cohort-bridge.mjs';
 export const ATTENDEE_ID=/^[A-Za-z0-9][\w-]{0,79}$/;
-// 반 하나에 등록하는 학생 수 한도(정원 30·31명 + 여유)
-export const MAX_STUDENTS=60;
+// 반 하나에 등록하는 학생 수 한도(정원 30·31명 + 여유, 2기 Firestore 규칙 checkhereIdentities students.size() <= 40과 같음)
+export const MAX_STUDENTS=40;
 export const SETUP_TEXT={
   UNMASK:'SETUP_UNMASK: 반별 확인은 체크히어 원문 화면에서만 합니다. 연결 프로그램이 연 체크히어 창(같은 탭)에서 사람이 마스킹을 해제한 뒤 다시 눌러 주세요(이 화면의 「마스킹 해제 시작」도 됨).',
   TIME:'SETUP_TIME: 체크히어 해제 남은 시간이 1분보다 적습니다. 체크히어 창에서 연장(또는 다시 해제)한 뒤 「이어서 확인」을 눌러 주세요. 연장·다시 해제는 사람이 정합니다.',

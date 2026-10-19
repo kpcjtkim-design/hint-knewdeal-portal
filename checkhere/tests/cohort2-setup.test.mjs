@@ -6,7 +6,7 @@ import {mkdirSync,mkdtempSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createBridge,BUILD,OLD_DATA} from '../server.mjs';
-import {CheckHereCollector,ruleMatches,ruleClass,oldLectureRow,lectureLabel,presetLecture} from '../collector.mjs';
+import {CheckHereCollector,loadPlaywright,ruleMatches,ruleClass,oldLectureRow,lectureLabel,presetLecture} from '../collector.mjs';
 import {parseRoster,rosterKeys,birthOf,classFrom,createRosterStore} from '../roster.mjs';
 import {buildReport,reportView,reportCounts,confirmList,pairRow,cleanStudents,exportText,createSetupStore} from '../setup.mjs';
 import {createApprovalCloud} from '../cloud-approval.mjs';
@@ -222,4 +222,22 @@ test('가짜 체크히어: [2반] 2기 강의를 고르고(1기 줄은 건너뜀
     st=(await call('setup/link-lecture',{classId:'5',label:list.lectures[2].label})).body;assert.deepEqual([st.classes.find(x=>x.classId==='5').lecture.mode,st.classes.find(x=>x.classId==='5').lecture.checked],['manual',true]);
     j=await done((await call('sync',{classId:'5',dates:[D],mode:'incremental'})).body.id);assert.notEqual(j.status,'failed',j.message);assert.equal(j.count,4);
   }finally{app.close();await s.close();}
+});
+// 이 PC 화면(/setup)을 실제 크롬으로 열어 봅니다: 오류 없이 16개 반·명단 확인 결과를 그리고, 사람이 줄을 빼고 「이 반 확인」을 누르면 확인 수가 바뀝니다(가짜 수집기).
+test('the /setup page renders 16 classes, the check result with names on this PC only, and confirms a class with a row left out',{timeout:60000},async()=>{
+  const days={'3':[{name:'가상하나',phone:'010-1111-0001',attendeeId:'att-1'},{name:'가상둘',phone:'010-2222-0002',attendeeId:'att-2'}]},adapter=stubAdapter(days);
+  const app=createBridge({dataDir:dir('setup-ui-'),collector:adapter,port:18604,approvalCloud:identityCloud().cloud,learnTickMs:600000}),{base,call,done}=await serve(app,18604);
+  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}).catch(e=>{app.close();throw e;});
+  try{
+    adapter.header={state:'unmasked',remaining:600};const j=await done((await call('setup/check',{date:D,classIds:['3']})).body.id);assert.equal(j.status,'complete',j.message);
+    const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+    await page.goto(base+'/');assert.equal(new URL(page.url()).pathname,'/setup','first install opens the setup screen');
+    await page.locator('#classRows tr').nth(15).waitFor();assert.equal(await page.locator('#classRows tr').count(),16);
+    await page.locator('#privacy',{hasText:'해제'}).waitFor();assert.equal(await page.locator('#unmaskBtn').count(),0,'already unmasked: no unmask button');
+    await page.locator('#classRows tr[data-row="3"]').click();await page.getByText('가상하나 · 0001').waitFor();
+    await page.locator('[data-inc]').nth(1).uncheck();await page.getByRole('button',{name:'이 반 확인(1명)'}).click();
+    await page.getByText(/3반 확인 1명/).waitFor();
+    assert.equal((await call('setup/state')).body.classes.find(c=>c.classId==='3').confirmed.count,1);
+    assert.deepEqual(errors.filter(e=>!/Failed to load resource/.test(e)),[],'no script errors (the favicon 404 is fine)');
+  }finally{await browser.close();app.close();}
 });
