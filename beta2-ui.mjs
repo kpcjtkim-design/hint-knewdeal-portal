@@ -5,7 +5,7 @@ import {fileName} from './cohort.mjs';
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function ensureBeta2Css(){
  if(document.querySelector('link[data-beta2-css]'))return;
- const link=document.createElement('link');link.rel='stylesheet';link.href='/beta2.css?v=20261019-c2';link.dataset.beta2Css='1';document.head.append(link);
+ const link=document.createElement('link');link.rel='stylesheet';link.href='/beta2.css?v=20261019-t1';link.dataset.beta2Css='1';document.head.append(link);
 }
 const W='일월화수목금토';
 export const md=iso=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||'')))return String(iso||'');const d=new Date(iso+'T00:00:00Z');return `${+iso.slice(5,7)}/${+iso.slice(8,10)}(${W[d.getUTCDay()]})`;};

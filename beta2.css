@@ -146,3 +146,22 @@
 .b2 .proposal-box.compact .btn{padding:2px 7px;font-size:11px;border-radius:6px}
 .b2 .proposal-box.compact .btn.ghost{background:transparent;color:var(--b2-sub);padding:2px 4px}
 .b2 .proposal-box.compact .btn.dark:disabled{background:#cbd5e1;opacity:1;color:#fff}
+/* 담임 화면(beta2-teacher-layout.mjs, 2026-10-19): hidden이 display:flex에 지지 않게(출결 하위 탭이 다른 탭에 남던 버그), 큰 탭은 채운 단추·하위 탭은 밑줄로 구분, 누르기 쉬운 44px, 머리말, 휴대폰 폭 */
+.b2 .b2-tabs[hidden],.b2 [data-panel][hidden],.b2 [data-sub][hidden]{display:none}
+.b2.t2 .t2-main{gap:8px;margin:0 0 8px}
+.b2.t2 .t2-main .b2-tab{min-height:46px;padding:10px 18px;font-size:15px;border-radius:12px}
+.b2.t2 .t2-sub{gap:2px 20px;margin:0 0 6px;padding:0 4px;border-bottom:1px solid var(--b2-line);flex-wrap:wrap}
+.b2.t2 .t2-sub .b2-tab{min-height:44px;padding:10px 2px 9px;border-radius:0;background:transparent;color:#475569;border-bottom:3px solid transparent;font-size:14px}
+.b2.t2 .t2-sub .b2-tab[aria-selected="true"]{background:transparent;color:var(--b2-ink);border-bottom-color:var(--b2-blue)}
+.b2.t2 .b2-tab:focus-visible,.b2.t2 .b2-btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.b2.t2 .t2-head{margin:12px 2px 14px}
+.b2.t2 .t2-head h2{font-size:21px}
+.b2.t2 .t2-ctx{margin:5px 0 0;font-size:13px;font-weight:800;color:#334155}
+.b2.t2 .t2-hint{margin:3px 0 0;font-size:13px;line-height:1.5;color:var(--b2-sub)}.b2.t2 .t2-hint:empty{display:none}
+.b2.t2 .t2-section{margin:18px 2px 10px}
+.b2.t2 [data-panel] .b2>.b2-head:first-child{display:none}
+.b2.t2 .b2-alertbar button,.b2.t2 .b2-vocbar button{min-height:40px;padding:8px 16px;font-size:13px}
+.b2.t2 .t2-fail{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:8px 0}
+.b2.t2 .t2-fail .b2-btn{min-height:40px;background:#fff;color:#991b1b}
+.b2.t2 .b2-btn{min-height:38px}.b2.t2 .b2-chip{min-height:34px}
+@media(max-width:680px){.b2.t2 .t2-main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.b2.t2 .t2-main .b2-tab{padding:10px 4px;font-size:14px;white-space:nowrap}.b2.t2 .t2-sub{flex-wrap:nowrap;overflow-x:auto;gap:18px}.b2.t2 .t2-sub .b2-tab{white-space:nowrap;flex:none}.b2.t2 .t2-head h2{font-size:19px}}
