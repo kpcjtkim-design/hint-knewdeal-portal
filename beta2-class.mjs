@@ -5,7 +5,7 @@
 // 다시 읽기: 변경 번호가 바뀌면(client.watch, 홈과 같은 1분) 묶음·메모만, 민원·이슈는 변경 번호 응답의 voc가 바뀔 때만, 나머지는 「새로고침」으로.
 // 체크히어 대조 요약은 그날 저장본 문서 하나(classes/반/checkhereCurrent/날짜)를 한 번 읽습니다(실시간 구독 없음, 날짜·반을 바꿀 때만 다시).
 // 17반 테스트반도 고를 수 있고 똑같이 보입니다(공식 합계에서만 빠짐).
-import {dayView,dayCounts,studentStats,diseaseReport,evidenceRows,extraEvidenceRows,rosterFor,classDays,courseDays,ledgerIndex,compareCheckHere,recognizedType} from './beta2-core.mjs';
+import {dayView,dayCounts,studentStats,diseaseReport,evidenceRows,extraEvidenceRows,rosterFor,classDays,courseDays,ledgerIndex,compareCheckHere,recognizedType,convertedText,convertedUnitsText} from './beta2-core.mjs';
 import {absenceRows,byTeacher,maxOf,MAX_ABSENCE} from './beta2-dropout-core.mjs';
 import {esc,md,badge,evBadge,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {onBeta2Rev} from './beta2-data.mjs';
@@ -128,10 +128,11 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
   const rate=sum.d?(sum.d-sum.ab)/sum.d*100:null,taught=courseDays(b,{cls}).length,total=classDays(b,cls).length;
   const risk=absenceRows(b,{cls,max}).filter(r=>r.status==='재학'&&r.level),lv=l=>risk.filter(r=>r.level===l).length;
   const disease=diseaseReport(stats).rows,evidence=evidenceRows(stats),extra=extraEvidenceRows(b,{cls}).filter(r=>!r.done);
-  const item=r=>`<li data-risk="${esc(r.name)}"><b class="b2-name">${esc(r.name)}</b><span class="b2-badge ${r.tone==='bad'?'t-absent':'t-late'}">${esc(r.level)}</span><span class="b2-small">결석 ${r.absent}일 / 한도 ${max}일</span><span class="b2-small b2-muted">${r.level==='주의'?`${r.left}일 더 결석하면 한도`:r.level==='한도 도달'?'1일 더 결석하면 제적 대상':'한도 초과'}${r.remaining?` · 남은 교육일 ${r.remaining}일`:''}</span></li>`;
+  // 결석 한도 위험은 환산 결석(결석 + 지·조·외 단위기간마다 3회 = 1일, 사용자 결정 2026-10-20)으로 봅니다(absenceRows level). 지·조·외가 있으면 나눔을 함께 보입니다.
+  const item=r=>`<li data-risk="${esc(r.name)}"><b class="b2-name">${esc(r.name)}</b><span class="b2-badge ${r.tone==='bad'?'t-absent':'t-late'}">${esc(r.level)}</span><span class="b2-small">환산 결석 ${r.total}일 / 한도 ${max}일</span>${r.partial?`<span class="b2-sub" data-conv title="${esc(convertedUnitsText(r.conv))}">${esc(convertedText(r.conv))}</span>`:''}<span class="b2-small b2-muted">${r.level==='주의'?`${r.left}일 더 결석하면 한도`:r.level==='한도 도달'?'1일 더 결석하면 제적 대상':'한도 초과'}${r.remaining?` · 남은 교육일 ${r.remaining}일`:''}</span></li>`;
   card('total','누적',
    `${nums([['반 출석률',pct(rate)],['교육일',`${taught}/${total}`],['지·조·외(중복 포함)',sum.p],['제적 대상',lv('제적 대상'),lv('제적 대상')?'bad':''],['한도 도달',lv('한도 도달'),lv('한도 도달')?'bad':''],['주의',lv('주의'),lv('주의')?'alert':'']])}
-   <div class="b2-tiny b2-muted">출석률 = (재학 교육일 − 결석) ÷ 재학 교육일, 오늘까지 교육일만 셉니다. 결석 한도 ${max}일(넘으면 제적 대상).</div>
+   <div class="b2-tiny b2-muted">출석률 = (재학 교육일 − 결석) ÷ 재학 교육일, 오늘까지 교육일만 셉니다. 결석 한도 ${max}일(넘으면 제적 대상)은 환산 결석으로 봅니다: 결석 + 지·조·외(중복 포함) 단위기간마다 3회 = 1일.</div>
    ${list(risk.slice(0,5).map(item),'결석 한도 주의 이상 재학생이 없습니다.')}${risk.length>5?`<div class="b2-tiny b2-muted">외 ${risk.length-5}명</div>`:''}
    ${nums([[`질병 인정 ${DISEASE.warn}회 이상`,disease.length,disease.length?'alert':''],['증빙 미제출·반려',evidence.length,evidence.length?'alert':''],['추가 증빙 미이행',extra.length,extra.length?'alert':'']])}
    ${disease.length?`<div class="b2-small">질병 인정: ${disease.slice(0,5).map(d=>`${esc(d.name)} ${d.count}회${d.level&&d.level!=='주의'?`(${esc(d.level)})`:''}`).join(' · ')}</div>`:''}`,

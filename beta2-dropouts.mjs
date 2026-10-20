@@ -9,12 +9,16 @@
 // 17반 테스트반은 목록에 '테스트반'으로 보이고 위 숫자 상자(공식 합계)에서는 빠집니다.
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle,downloadCsv} from './beta2-ui.mjs';
 import {forgetBeta2Cache} from './beta2-data.mjs';
-import {ledgerIndex,studentStats} from './beta2-core.mjs';
+import {ledgerIndex,studentStats,convertedText,convertedUnitsText} from './beta2-core.mjs';
 import {DROPOUT_KINDS,DROPOUT_VERDICTS,DROPOUT_DOCS,DOC_FIELDS,DROPOUT_COLUMNS,OUTCOMES,maxOf,dropoutKey,absenceRows,absenceLevel,suggestVerdict,checkDropout,savePayload,formOf,sameForm,completionRows,official,statusBatches,requestPayload,byTeacher,requestState,canCancel} from './beta2-dropout-core.mjs';
 import {COURSE_START,COURSE_END,isTestClass} from './cohort.mjs';
 import {linkFor} from './notify-core.mjs';
 
 const ADMIN_VIEWS=[['list','중도탈락·조기취업'],['absence','결석 한도'],['complete','수료 명단']],TEACHER_VIEWS=[['list','중도탈락 신청'],['complete','수료 확인']];
+// 환산 결석(사용자 결정 2026-10-20 '수료·단위기간 이수 판정은 3회=1일'): 결석 한도와 견주는 수는 total(결석 + 지·조·외 단위기간마다 3회 = 1일, beta2-core convertedAbsences).
+// 칸에는 환산 결석을 크게, 아래에 '결석 n일 + 지·조·외 m회(→ k일) = 환산 결석 x일'과 단위기간 나눔을 작게 보입니다.
+const CONVERT_NOTE='지각·조퇴·외출·중복은 단위기간마다 3회를 결석 1일로 더합니다(1기와 같음, 인정지각·인정조퇴·인정외출 제외).';
+const convSub=c=>c?.partial?`<span class="b2-sub" data-conv title="${esc(convertedUnitsText(c))}">${esc(convertedText(c))}</span>`:'';
 const VERDICT_TONE={'수료가능':'e-ok','제적':'t-absent','확인중':'t-late'},KIND_TONE={'중도탈락':'t-absent','조기취업':'t-rec'},OUTCOME_TONE={'수료':'e-ok','수료 예정':'t-rec','확인 대기':'t-late','미수료':'t-absent'};
 const STYLE=`.b2d .b2d-filters{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
 .b2d .b2d-batch{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;background:#f0f9ff;border-top:1px solid var(--b2-line);font-size:13px;font-weight:800}
@@ -179,7 +183,7 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
   const {stats}=derived();
   const docs=r=>`<div class="b2d-docs">${DOC_FIELDS.map(([k,l])=>`<span class="b2-badge ${r.docs?.[k]==='O'?'e-ok':r.docs?.[k]==='X'?'e-miss':'e-none'}" title="${esc(l)}">${esc(l)} ${esc(r.docs?.[k]||'-')}</span>`).join('')}</div>`;
   const tr=r=>{
-   const sg=suggest(r),st=stats.get(dropoutKey(r)),abs=r.kind==='조기취업'&&sg.absent!==null?`근로개시 전 <b>${sg.absent}</b>일 / ${max}`:st?`<b>${st.absent}</b>일 (마지막 출석까지)`:'-';
+   const sg=suggest(r),st=stats.get(dropoutKey(r)),abs=r.kind==='조기취업'&&sg.absent!==null?`근로개시 전 <b>${sg.absent}</b>일 / ${max}`:st?`<b>${st.conv.total}</b>일 (마지막 출석까지)${convSub(st.conv)}`:'-';
    const differs=sg.verdict&&r.verdict&&sg.verdict!==r.verdict;
    const acts=`<button class="b2-btn small" data-act="edit" ${busy?'disabled':''}>고치기</button>${r.confirmed?`<button class="b2-btn small ghost" data-act="unconfirm" ${busy?'disabled':''}>확인 풀기</button>`:`<button class="b2-btn small primary" data-act="confirm" ${busy?'disabled':''}>확인</button>`}`;
    return `<tr data-row="${r.row}" class="${editor?.key===String(r.row)?'editing':''} ${differs?'diff':''}"><td><input type="checkbox" data-pick="${r.row}" aria-label="${esc(r.name)} 고르기" ${picked.has(r.row)?'checked':''} ${busy?'disabled':''}></td>
@@ -193,7 +197,7 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
     <td class="b2d-act">${acts}</td></tr>${editor?.key===String(r.row)?`<tr class="editing"><td colspan="11">${editorHtml()}</td></tr>`:''}`;
   };
   const count=(f)=>off.filter(f).length;
-  const head=['<input type="checkbox" data-pickall aria-label="모두 고르기">','이름','구분 · 사유','날짜','결석(계산)','판정','서류','연락 확인 · 비고','등록','관리자 확인',''];
+  const head=['<input type="checkbox" data-pickall aria-label="모두 고르기">','이름','구분 · 사유','날짜','환산 결석(계산)','판정','서류','연락 확인 · 비고','등록','관리자 확인',''];
   const pickable=vis.filter(r=>picked.has(r.row));
   csv=[[...DROPOUT_COLUMNS.map(c=>c[1]),'계산 판정','계산 근거'],...vis.map(r=>{const sg=suggest(r);return [...DROPOUT_COLUMNS.map(([k])=>{const v=k.startsWith('docs.')?r.docs?.[k.slice(5)]:r[k];return k==='confirmed'?(v?'TRUE':'FALSE'):v??'';}),sg.verdict,sg.basis];})];
   body.innerHTML=statBoxes([['등록',off.length],['중도탈락',count(r=>r.kind==='중도탈락')],['조기취업',count(r=>r.kind==='조기취업')],['확인 대기',count(r=>!r.confirmed),count(r=>!r.confirmed)?'alert':''],['판정 수료가능',count(r=>r.verdict==='수료가능')],['판정 제적',count(r=>r.verdict==='제적')]])
@@ -208,27 +212,27 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
   const all=absenceRows(bundle,{cls:cls==='all'?null:cls,max}).filter(found),active=all.filter(r=>r.status==='재학'),off=official(active,cls);
   const reg=new Map(rows.map(r=>[dropoutKey(r),r])),risky=r=>!!r.level;
   const list=(riskOnly?active.filter(risky):all);
-  csv=[['반','이름','상태','교육일(재학)','결석','남은 결석 가능','남은 교육일','판정','중도탈락 탭'],...list.map(r=>[r.cls,r.name,r.status,r.days,r.absent,r.status==='재학'?r.left:'',r.remaining,r.level,reg.get(dropoutKey(r))?.kind||''])];
-  body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">2기는 60교육일의 80%(48일) 이상 출석해야 수료합니다. 결석 ${max}일까지는 수료할 수 있고 ${max+1}일부터 제적 대상입니다. 결석은 교육일·재학 기간의 출결원장 「결석」만 셉니다(인정 결석 제외).</div>`
+  csv=[['반','이름','상태','교육일(재학)','결석','지·조·외(회)','환산(일)','환산 결석','단위기간별 지·조·외','남은 결석 가능','남은 교육일','판정','중도탈락 탭'],...list.map(r=>[r.cls,r.name,r.status,r.days,r.absent,r.partial,r.converted,r.total,convertedUnitsText(r.conv),r.status==='재학'?r.left:'',r.remaining,r.level,reg.get(dropoutKey(r))?.kind||''])];
+  body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">2기는 60교육일의 80%(48일) 이상 출석해야 수료합니다. 환산 결석 ${max}일까지는 수료할 수 있고 ${max+1}일부터 제적 대상입니다. 환산 결석 = 교육일·재학 기간의 출결원장 「결석」 + 지·조·외 환산. ${CONVERT_NOTE}</div>`
    +statBoxes([['재학생',off.length],[`주의 (${max-2}~${max-1}일)`,off.filter(r=>r.level==='주의').length,'alert'],[`한도 도달 (${max}일)`,off.filter(r=>r.level==='한도 도달').length,'bad'],[`제적 대상 (${max+1}일~)`,off.filter(r=>r.level==='제적 대상').length,'bad']])
    +testNote(active.filter(risky).length-off.filter(risky).length,'결석 주의 이상')
    +`<div class="b2d-filters">${chips('risk',[['risk','주의 이상 재학생',active.filter(risky).length],['all','모든 학생',all.length]],riskOnly?'risk':'all')}</div>`
-   +table(['반','이름','상태','교육일(재학)','결석','남은 결석 가능','남은 교육일','판정',''],list.map(r=>{const d=reg.get(dropoutKey(r));
-    return `<tr class="${r.tone==='bad'?'diff':''}" data-key="${esc(dropoutKey(r))}"><td>${esc(classLabel(r.cls))}</td><td class="b2-name">${esc(r.name)}</td><td>${esc(r.status)}${r.changed&&r.status!=='재학'?`<span class="b2-sub">${md(r.changed)}</span>`:''}</td><td>${r.days}</td><td><b>${r.absent}</b> / ${max}</td><td>${r.status==='재학'?`${r.left}일`:'-'}</td><td>${r.remaining||'-'}</td>
+   +table(['반','이름','상태','교육일(재학)','환산 결석','남은 결석 가능','남은 교육일','판정',''],list.map(r=>{const d=reg.get(dropoutKey(r));
+    return `<tr class="${r.tone==='bad'?'diff':''}" data-key="${esc(dropoutKey(r))}"><td>${esc(classLabel(r.cls))}</td><td class="b2-name">${esc(r.name)}</td><td>${esc(r.status)}${r.changed&&r.status!=='재학'?`<span class="b2-sub">${md(r.changed)}</span>`:''}</td><td>${r.days}</td><td><b>${r.total}</b> / ${max}${convSub(r.conv)}</td><td>${r.status==='재학'?`${r.left}일`:'-'}</td><td>${r.remaining||'-'}</td>
      <td>${r.level?`<span class="b2-badge ${r.tone==='bad'?'t-absent':'t-late'}">${esc(r.level)}</span>`:'-'}</td><td class="b2d-act">${d?`<span class="b2-badge ${KIND_TONE[d.kind]||''}">${esc(d.kind)} 등록됨</span>`:r.status==='재학'&&r.level?`<button class="b2-btn small" data-act="register">중도탈락 등록</button>`:''}</td></tr>`;}),riskOnly?'결석 주의 이상인 재학생이 없습니다.':'학생이 없습니다.');
  }
  function renderComplete(){
   const all=completionRows(bundle,{completions,dropouts:rows,cls:cls==='all'?null:cls,max}).filter(found),off=official(all,cls),list=all.filter(r=>outcomeF==='all'||r.outcome===outcomeF);
   const canPick=r=>(r.outcome==='수료 예정'&&r.status==='재학')||r.status==='수료';
   const sel=list.filter(r=>pickedDone.has(dropoutKey(r))&&canPick(r)),toDone=sel.filter(r=>r.status==='재학'),toUndo=sel.filter(r=>r.status==='수료');
-  csv=[['반','이름','명부 상태','결석','결과','까닭'],...list.map(r=>[r.cls,r.name,r.status,r.absent,r.outcome,r.why])];
-  body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">수료: 명부 「수료」와, 조기취업 가운데 판정 「수료가능」이고 관리자 확인까지 된 학생(마스터시트 수료 명단 기준). 수료 예정: 재학 중이고 결석 ${max}일 이하. 교육이 끝나면 수료 예정 학생을 골라 「수료 처리」하면 명부 상태가 수료로 바뀝니다.</div>`
+  csv=[['반','이름','명부 상태','결석','지·조·외(회)','환산 결석','결과','까닭'],...list.map(r=>[r.cls,r.name,r.status,r.absent,r.partial,r.total,r.outcome,r.why])];
+  body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">수료: 명부 「수료」와, 조기취업 가운데 판정 「수료가능」이고 관리자 확인까지 된 학생(마스터시트 수료 명단 기준). 수료 예정: 재학 중이고 환산 결석 ${max}일 이하(${CONVERT_NOTE}) 교육이 끝나면 수료 예정 학생을 골라 「수료 처리」하면 명부 상태가 수료로 바뀝니다.</div>`
    +statBoxes(OUTCOMES.map(o=>[o,off.filter(r=>r.outcome===o).length,o==='미수료'&&off.some(r=>r.outcome===o)?'bad':o==='확인 대기'&&off.some(r=>r.outcome===o)?'alert':'']))
    +testNote(all.length-off.length,'학생')
    +`<div class="b2d-filters">${chips('outcome',[['all','전체',all.length],...OUTCOMES.map(o=>[o,o,all.filter(r=>r.outcome===o).length])],outcomeF)}</div>`
    +`<div class="b2d-batch" ${sel.length||busy?'':'hidden'}>${busy?esc(busy):`선택 ${sel.length}명`}<span class="b2-grow"></span><button class="b2-btn small primary" data-done="on" ${busy||!toDone.length?'disabled':''}>수료 처리 ${toDone.length||''}</button><button class="b2-btn small ghost" data-done="off" ${busy||!toUndo.length?'disabled':''}>수료 취소 ${toUndo.length||''}</button></div>`
    +(batchNote?`<div class="b2-note err" style="margin:8px 14px;white-space:pre-line">${esc(batchNote)}</div>`:'')
-   +table(['<input type="checkbox" data-pickall-done aria-label="모두 고르기">','반','이름','명부 상태','결석','결과','까닭'],list.map(r=>`<tr data-key="${esc(dropoutKey(r))}" class="${r.outcome==='미수료'?'diff':''}"><td>${canPick(r)?`<input type="checkbox" data-pickdone="${esc(dropoutKey(r))}" aria-label="${esc(r.name)} 고르기" ${pickedDone.has(dropoutKey(r))?'checked':''} ${busy?'disabled':''}>`:''}</td><td>${esc(classLabel(r.cls))}</td><td class="b2-name">${esc(r.name)}</td><td>${esc(r.status)}${r.changed&&r.status!=='재학'?`<span class="b2-sub">${md(r.changed)}</span>`:''}</td><td>${r.absent}</td><td><span class="b2-badge ${OUTCOME_TONE[r.outcome]}">${esc(r.outcome)}</span></td><td>${esc(r.why)}</td></tr>`),'학생이 없습니다.');
+   +table(['<input type="checkbox" data-pickall-done aria-label="모두 고르기">','반','이름','명부 상태','환산 결석','결과','까닭'],list.map(r=>`<tr data-key="${esc(dropoutKey(r))}" class="${r.outcome==='미수료'?'diff':''}"><td>${canPick(r)?`<input type="checkbox" data-pickdone="${esc(dropoutKey(r))}" aria-label="${esc(r.name)} 고르기" ${pickedDone.has(dropoutKey(r))?'checked':''} ${busy?'disabled':''}>`:''}</td><td>${esc(classLabel(r.cls))}</td><td class="b2-name">${esc(r.name)}</td><td>${esc(r.status)}${r.changed&&r.status!=='재학'?`<span class="b2-sub">${md(r.changed)}</span>`:''}</td><td>${r.total}${convSub(r.conv)}</td><td><span class="b2-badge ${OUTCOME_TONE[r.outcome]}">${esc(r.outcome)}</span></td><td>${esc(r.why)}</td></tr>`),'학생이 없습니다.');
  }
  function render(){
   if(!life.alive())return;
@@ -338,12 +342,12 @@ async function mountTeacher(host,{client,teacherClass,me='',context,hideHead=fal
  }
  function renderComplete(){
   const all=completionRows(bundle,{completions,dropouts:rows,cls,max}).filter(found),list=all.filter(r=>outcomeF==='all'||r.outcome===outcomeF);
-  const absence=r=>{if(r.status!=='재학')return `${r.absent}일`;const lv=absenceLevel(r.absent,max);return `<b>${r.absent}</b> / ${max}일${lv.level?` <span class="b2-badge ${lv.tone==='bad'?'t-absent':'t-late'}">${esc(lv.level)}</span>`:''}<span class="b2-sub">${r.absent>max?'한도 초과':`${lv.left}일 더 결석하면 한도`}</span>`;};
-  body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">확인만 합니다(처리는 운영팀). 2기는 60교육일의 80% 이상 출석해야 수료합니다. 결석 ${max}일까지는 수료할 수 있고 ${max+1}일부터 제적 대상입니다(인정 결석 제외).
-   수료: 명부 수료, 조기취업 가운데 판정 수료가능 · 운영팀 확인. 수료 예정: 재학 중이고 결석 ${max}일 이하. 확인 대기: 조기취업 판정·확인 전. 미수료: 중도탈락·제적·결석 한도 초과.</div>`
+  const absence=r=>{if(r.status!=='재학')return `${r.total}일${convSub(r.conv)}`;const lv=absenceLevel(r.total,max);return `<b>${r.total}</b> / ${max}일${lv.level?` <span class="b2-badge ${lv.tone==='bad'?'t-absent':'t-late'}">${esc(lv.level)}</span>`:''}${convSub(r.conv)}<span class="b2-sub">${r.total>max?'한도 초과':`${lv.left}일 더 결석하면 한도`}</span>`;};
+  body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">확인만 합니다(처리는 운영팀). 2기는 60교육일의 80% 이상 출석해야 수료합니다. 환산 결석 ${max}일까지는 수료할 수 있고 ${max+1}일부터 제적 대상입니다(인정 결석 제외). ${CONVERT_NOTE}
+   수료: 명부 수료, 조기취업 가운데 판정 수료가능 · 운영팀 확인. 수료 예정: 재학 중이고 환산 결석 ${max}일 이하. 확인 대기: 조기취업 판정·확인 전. 미수료: 중도탈락·제적·환산 결석 한도 초과.</div>`
    +statBoxes(OUTCOMES.map(o=>[o,all.filter(r=>r.outcome===o).length,o==='미수료'&&all.some(r=>r.outcome===o)?'bad':o==='확인 대기'&&all.some(r=>r.outcome===o)?'alert':'']))
    +`<div class="b2d-filters">${chips('outcome',[['all','전체',all.length],...OUTCOMES.map(o=>[o,o,all.filter(r=>r.outcome===o).length])],outcomeF)}</div>`
-   +table(['이름','명부 상태','결석 / 한도','결과','까닭'],list.map(r=>`<tr data-key="${esc(dropoutKey(r))}" class="${r.outcome==='미수료'?'diff':''}"><td class="b2-name">${esc(r.name)}</td><td>${esc(r.status)}${r.changed&&r.status!=='재학'?`<span class="b2-sub">${md(r.changed)}</span>`:''}</td><td>${absence(r)}</td><td><span class="b2-badge ${OUTCOME_TONE[r.outcome]}">${esc(r.outcome)}</span></td><td>${esc(r.why)}</td></tr>`),'학생이 없습니다.');
+   +table(['이름','명부 상태','환산 결석 / 한도','결과','까닭'],list.map(r=>`<tr data-key="${esc(dropoutKey(r))}" class="${r.outcome==='미수료'?'diff':''}"><td class="b2-name">${esc(r.name)}</td><td>${esc(r.status)}${r.changed&&r.status!=='재학'?`<span class="b2-sub">${md(r.changed)}</span>`:''}</td><td>${absence(r)}</td><td><span class="b2-badge ${OUTCOME_TONE[r.outcome]}">${esc(r.outcome)}</span></td><td>${esc(r.why)}</td></tr>`),'학생이 없습니다.');
  }
  function render(){
   if(!life.alive())return;

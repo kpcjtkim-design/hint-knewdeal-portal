@@ -2,7 +2,7 @@
 // 2기는 운영총괄 동기화가 없어 '운영총괄과 다름' 충돌 표시·동기화 상태 글이 없습니다. 출결 시간 기준은 그날 기준(beta2-daytimes.mjs, 마스터시트 현장교육 일정) → 없으면 cohort.mjs ruleFor(공장견학 날 10:00~17:00).
 import {seconds} from './checkhere/rules.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
-import {ruleFor,DISEASE,COMPLETION_RATE,isIsoDate,isTestClass} from './cohort.mjs';
+import {ruleFor,DISEASE,COMPLETION_RATE,isIsoDate,isTestClass,UNIT_PERIODS} from './cohort.mjs';
 import {ruleOn,SOURCE_SHEET} from './beta2-daytimes.mjs';
 import {extraEvidence,isDiseaseText} from './attendance-reason-catalog.mjs'; // 취업박람회 추가 증빙·질병 판정(2026-10-20)
 
@@ -92,6 +92,32 @@ export function dayCounts(rows){
  c.출석=c.총원-c.결석;return c;
 }
 
+// 환산 결석(사용자 결정 2026-10-20 "'수료' 및 단위기간 이수 판정 기준 판정시에는 3회=1일로 넣어줘야함"): 지각·조퇴·외출(중복은 DUP_RULE.partialWeight회) 3회 = 결석 1일.
+// 1기 dropout-core evaluateDropout과 같은 셈: 단위기간(cohort UNIT_PERIODS)마다 결석 + floor(그 단위기간 지·조·외 횟수 ÷ 3), 전체는 단위기간 값의 합
+// (단위기간에서 남은 1~2회는 다음 단위기간으로 넘어가지 않음). 인정 유형(인정지각·인정조퇴·인정외출)·인정출석·해당없음은 세지 않습니다.
+// 출석률(rate)은 1기 출석부 수식(출석일수 ÷ 훈련일수)처럼 환산 없이 그대로 둡니다. 결석 한도·수료 판정·조기취업 판정만 이 값을 씁니다.
+// entries: [{date,type}] 센 날(교육일·재학, 해당없음 뺀 날). 단위기간 밖 날짜(테스트반 개강 전 기록)는 no 0 묶음으로 따로 셉니다.
+export const PARTIALS_PER_ABSENCE=3;
+export function convertedAbsences(entries,{periods=UNIT_PERIODS}={}){
+ const units=periods.map(p=>({no:p.no,from:p.from,to:p.to,days:0,absent:0,partial:0,converted:0,total:0})),outside={no:0,from:'',to:'',days:0,absent:0,partial:0,converted:0,total:0};
+ for(const e of entries||[]){
+  const t=String(e?.type||'');if(t===NONE_TYPE)continue;
+  const u=units.find(p=>e.date>=p.from&&e.date<=p.to)||outside;
+  u.days++;if(t==='결석'||(t===DUP_TYPE&&DUP_RULE.absent))u.absent++;u.partial+=partialCount(t);
+ }
+ const list=[...units,...(outside.days?[outside]:[])];
+ for(const u of list){u.converted=Math.floor(u.partial/PARTIALS_PER_ABSENCE);u.total=u.absent+u.converted;}
+ const sum=k=>list.reduce((n,u)=>n+u[k],0);
+ return {absent:sum('absent'),partial:sum('partial'),converted:sum('converted'),total:sum('total'),units:list};
+}
+// 화면 글: '결석 n일 + 지·조·외 m회(→ k일) = 환산 결석 x일'. 지·조·외가 없으면 '결석 n일'. 단위기간 나눔은 convertedUnitsText.
+export function convertedText(c){
+ if(!c)return '';
+ return c.partial?`결석 ${c.absent}일 + 지·조·외 ${c.partial}회(→ ${c.converted}일) = 환산 결석 ${c.total}일`:`결석 ${c.absent}일`;
+}
+// 단위기간마다 3회 = 1일이라 전체 회수 ÷ 3과 다를 수 있어 지·조·외가 있는 단위기간을 따로 적습니다: '1단위 4회→1일 · 2단위 2회→0일'.
+export const convertedUnitsText=c=>(c?.units||[]).filter(u=>u.partial).map(u=>`${u.no?`${u.no}단위`:'기간 밖'} ${u.partial}회→${u.converted}일`).join(' · ');
+
 // 학생별 기간 통계: 교육일 중 재학일만 세고, 출석률은 마스터시트와 같이 (재학 교육일 - 결석) / 재학 교육일
 // 출결 통계·증빙·질병 인정 모두 교육일만 셉니다(사용자 2026-10-20: 인정 출결은 교육일에만). 실제 반의 교육일이 아닌 날 인정 기록은 offDayRecords로 따로 알립니다.
 export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=false}={},index=ledgerIndex(bundle)){
@@ -99,19 +125,20 @@ export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=f
  // 전체(cls 없음) 합계·집계에서는 시험용 테스트반(cohort test)을 뺍니다. 테스트반을 골라 보면 그 반만 보입니다.
  // withTest: 증빙서류·질병 인정 '전체 반' 목록처럼 테스트반 줄도 보여야 할 때(합계는 부르는 쪽에서 테스트반을 뺍니다).
  return bundle.roster.filter(p=>cls?p.cls===String(cls):withTest||!isTestClass(p.cls)).map(p=>{
-  const counts={},evidence=[],disease=[];let enrolled=0;
+  const counts={},evidence=[],disease=[],entries=[];let enrolled=0;
   for(const d of daysOf(p.cls)){
    const rec=index.get(ledgerKey(p.cls,p.name,d));
    if(!enrolledOn(p,d)&&!rec)continue;
    if(rec?.type===NONE_TYPE)continue; // 해당없음(현황 없음): 재학일 수(분모)·결석·증빙·질병 어디에도 넣지 않음
    enrolled++;
-   const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;
+   const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;entries.push({date:d,type:t});
    if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||'',reason:rec.reason||'',extra:!!extraEvidence(rec)});
    if(rec&&recognizedType(t)&&isDiseaseReason(rec.reason))disease.push(d);
   }
   const absent=(counts['결석']||0)+(DUP_RULE.absent?counts[DUP_TYPE]||0:0); // 중복은 결석이 아님(출석률에서 출석한 날, counts.중복으로 따로 셈)
   const partial=Object.entries(counts).reduce((n,[t,c])=>n+partialCount(t)*c,0); // 지·조·외 합계(무단 지각·조퇴·외출 횟수, 중복 하루 = DUP_RULE.partialWeight회)
-  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,partial,rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
+  // conv: 환산 결석(convertedAbsences, 단위기간마다 지·조·외 3회 = 1일). 결석 한도·수료 판정은 conv.total, 출석률은 환산 없이 absent로.
+  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,partial,conv:convertedAbsences(entries),rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
  });
 }
 

@@ -1,8 +1,9 @@
 // 2기 중도탈락·수료(사용자 요청 2026-10-20: "중도탈락 시트(gid 4002)도 관리자페이지에서 전부 처리"). 화면 없이 시험할 수 있는 순수 함수만 둡니다.
 // 원본은 마스터시트 '중도탈락' 탭(A~R, Apps Script b2Dropouts·b2DropoutSave)과 명부 상태(b2Completions·b2RosterStatusMany). 판정(G·H)은 시트가 계산하지 않고 웹이 계산해 보냅니다(여기 suggestVerdict).
 // 결석 한도: 2기 60교육일의 80% 출석 → 결석 12일까지 수료 가능, 13일부터 제적 대상(시트 maxAbsence, 스크립트 속성 B2_MAX_ABSENCE로 바꿀 수 있음).
+// 한도와 견주는 결석은 환산 결석(beta2-core convertedAbsences, 사용자 결정 2026-10-20: 지각·조퇴·외출·중복 3회 = 결석 1일, 1기처럼 단위기간마다)입니다.
 // 17반 테스트반(cohort test)은 목록에는 보이고 합계(숫자 상자)에서는 뺍니다.
-import {studentStats,courseDays,ledgerIndex,ledgerKey} from './beta2-core.mjs';
+import {studentStats,courseDays,ledgerIndex,ledgerKey,convertedAbsences,convertedText,NONE_TYPE} from './beta2-core.mjs';
 import {ADMINS,COURSE_START,COURSE_END,isIsoDate,isClassId,isTestClass,mdLabel} from './cohort.mjs';
 
 export const DROPOUT_KINDS=Object.freeze(['중도탈락','조기취업']);
@@ -31,21 +32,23 @@ export function absenceLevel(n,max=MAX_ABSENCE){
  return {level:'',tone:'',left:max-n};
 }
 
-// 학생별 결석(교육일·재학 기간만, beta2-core studentStats)과 결석 한도 판정. 결석 많은 순.
+// 학생별 결석(교육일·재학 기간만, beta2-core studentStats)과 결석 한도 판정. 한도는 환산 결석(total = 결석 + 단위기간마다 지·조·외 3회 = 1일)으로 봅니다. 환산 결석 많은 순.
+// absent는 출결원장 「결석」만(출석률과 같은 값), partial은 지·조·외 횟수, converted는 그것을 환산한 일수, conv는 단위기간 나눔까지.
 // withTest: 전체 반 목록에 테스트반 줄도 넣습니다(합계는 부르는 쪽이 official()로 뺌).
 export function absenceRows(bundle,{cls=null,max=MAX_ABSENCE,withTest=true}={}){
  const left=courseDays(bundle,{from:bundle.today?nextDay(bundle.today):'',to:COURSE_END}).length;
  return studentStats(bundle,{cls,withTest:withTest&&!cls}).map(st=>{
-  const lv=absenceLevel(st.absent,max);
-  return {cls:st.cls,name:st.name,status:st.status,changed:st.changed,days:st.days,absent:st.absent,partial:st.partial,rate:st.rate,remaining:st.status==='재학'?left:0,...lv};
- }).sort((a,b)=>b.absent-a.absent||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
+  const lv=absenceLevel(st.conv.total,max);
+  return {cls:st.cls,name:st.name,status:st.status,changed:st.changed,days:st.days,absent:st.absent,partial:st.partial,converted:st.conv.converted,total:st.conv.total,conv:st.conv,rate:st.rate,remaining:st.status==='재학'?left:0,...lv};
+ }).sort((a,b)=>b.total-a.total||b.absent-a.absent||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
 }
 const nextDay=iso=>{const d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);};
 
 // 판정 계산(시트 G·H에 넣을 값). 1기 규칙(dropout-core)과 같은 뜻:
 // - 중도탈락: 제적.
 // - 조기취업: 근로개시일 직전 교육일까지 출석해야 합니다. 마지막 출석일까지는 출결원장 결석, 그 뒤 근로개시 전 교육일은 미출석(결석)으로 셉니다.
-//   근로개시일부터는 출석으로 봅니다. 합이 한도(12일)를 넘으면 제적, 아니면 수료가능. 셀 날이 아직 오지 않았으면 확인중.
+//   근로개시일부터는 출석으로 봅니다. 마지막 출석일까지의 지각·조퇴·외출·중복은 단위기간마다 3회 = 결석 1일(convertedAbsences, 1기와 같음).
+//   환산 결석이 한도(12일)를 넘으면 제적, 아니면 수료가능. 셀 날이 아직 오지 않았으면 확인중. absent는 환산 결석입니다.
 export function suggestVerdict(row,bundle,{max=MAX_ABSENCE,index=null}={}){
  max=maxOf(max);
  const kind=s(row?.kind),cls=s(row?.cls),name=s(row?.name),last=s(row?.lastDate),start=s(row?.startDate),today=bundle?.today||'';
@@ -56,13 +59,15 @@ export function suggestVerdict(row,bundle,{max=MAX_ABSENCE,index=null}={}){
  if(!bundle?.roster?.some(p=>p.cls===cls&&p.name===name))return {verdict:'확인중',basis:'명부에서 학생을 찾지 못했습니다.',absent:null};
  index=index||ledgerIndex(bundle);
  const required=courseDays(bundle,{to:COURSE_END,cls}).filter(d=>d<start);
- let recorded=0,gap=0,future=0;
+ let recorded=0,gap=0,future=0;const entries=[];
  for(const d of required){
-  if(d<=last){if(index.get(ledgerKey(cls,name,d))?.type==='결석')recorded++;}
-  else gap++;
+  if(d<=last){const t=index.get(ledgerKey(cls,name,d))?.type||'출석';if(t===NONE_TYPE)continue;if(t==='결석')recorded++;entries.push({date:d,type:t});}
+  else {gap++;entries.push({date:d,type:'결석'});}
   if(today&&d>today&&d<=last)future++;
  }
- const absent=recorded+gap,why=`근로개시(${md(start)}) 전 결석 ${absent}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일)`;
+ const conv=convertedAbsences(entries),absent=conv.total;
+ const why=conv.partial?`근로개시(${md(start)}) 전 결석 ${recorded+gap}일 + 지·조·외 ${conv.partial}회(→ ${conv.converted}일) = 환산 결석 ${absent}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일, 단위기간마다 3회 = 1일)`
+  :`근로개시(${md(start)}) 전 결석 ${absent}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일)`;
  const order=last>=start?' · 마지막 출석일이 근로개시일보다 늦습니다(날짜 확인)':'';
  if(absent>max)return {verdict:'제적',basis:`${why} · 한도 ${max}일 초과${order}`,absent};
  if(future)return {verdict:'확인중',basis:`${why} · 마지막 출석일까지 교육일 ${future}일이 남아 있습니다${order}`,absent};
@@ -115,7 +120,8 @@ export const formOf=r=>({cls:s(r?.cls),name:s(r?.name),kind:s(r?.kind)||'중도�
 export function sameForm(a,b){return JSON.stringify(formOf(a))===JSON.stringify(formOf(b));}
 
 // 수료 명단(사용자: "중도탈락 및 수료 명단 직접 사이트에서"): 명부 학생마다 결과와 까닭.
-// 결과: 수료(b2Completions: 명부 수료 + 조기취업 수료가능·관리자 확인) · 수료 예정(재학, 결석 한도 안) · 확인 대기(조기취업인데 판정·확인 전) · 미수료(중도탈락·조기취업 제적·결석 한도 초과)
+// 결과: 수료(b2Completions: 명부 수료 + 조기취업 수료가능·관리자 확인) · 수료 예정(재학, 환산 결석 한도 안) · 확인 대기(조기취업인데 판정·확인 전) · 미수료(중도탈락·조기취업 제적·환산 결석 한도 초과)
+// absent는 출결원장 「결석」, total은 환산 결석(지·조·외 단위기간마다 3회 = 1일), conv는 나눔(화면 글 convertedText).
 export const OUTCOMES=Object.freeze(['수료','수료 예정','확인 대기','미수료']);
 export function completionRows(bundle,{completions=[],dropouts=[],cls=null,max=MAX_ABSENCE,withTest=true}={}){
  max=maxOf(max);
@@ -131,9 +137,9 @@ export function completionRows(bundle,{completions=[],dropouts=[],cls=null,max=M
    else {outcome='확인 대기';why=`조기취업 · ${d.verdict||'판정 전'}`;}
   }
   else if(status==='수료'){outcome='수료';why='명부 수료';}
-  else if(st.absent>max){outcome='미수료';why=`결석 ${st.absent}일 · 한도 ${max}일 초과(제적 대상)`;}
-  else {outcome='수료 예정';why=`재학 · 결석 ${st.absent}일 / 한도 ${max}일`;}
-  return {cls:st.cls,name:st.name,status,changed:st.changed,absent:st.absent,outcome,why};
+  else if(st.conv.total>max){outcome='미수료';why=`${convertedText(st.conv)} · 한도 ${max}일 초과(제적 대상)`;}
+  else {outcome='수료 예정';why=`재학 · ${convertedText(st.conv)} / 한도 ${max}일`;}
+  return {cls:st.cls,name:st.name,status,changed:st.changed,absent:st.absent,partial:st.partial,converted:st.conv.converted,total:st.conv.total,conv:st.conv,outcome,why};
  }).sort((a,b)=>OUTCOMES.indexOf(a.outcome)-OUTCOMES.indexOf(b.outcome)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
 }
 // 공식 합계(숫자 상자): 전체 반이면 테스트반을 뺍니다.

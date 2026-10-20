@@ -17,7 +17,7 @@ const BUNDLE={rev:5,today:TODAY,days:['2026-10-29','2026-10-30','2026-11-02','20
  roster:[['1','고다원','재학',''],['1','김동진','재학',''],['1','한수빈','중도탈락','2026-11-04'],['1','박민지','재학',''],['2','이경수','재학',''],['17','테스트갑','재학','']],ledgerCols:COLS,
  ledger:[
   row('2026-11-02','1','고다원','결석'),row('2026-11-03','1','고다원','결석'),row('2026-11-05','1','고다원','결석',{reason:'개인일정'}),
-  row('2026-11-05','1','김동진','지각',{inT:'10:25',reason:'교통'}),row('2026-11-04','1','김동진','인정출석',{reason:'취업박람회'}),
+  row('2026-11-05','1','김동진','지각',{inT:'10:25',reason:'교통'}),row('2026-10-29','1','김동진','지각',{inT:'09:30'}),row('2026-10-30','1','김동진','조퇴',{outT:'17:00'}),row('2026-11-04','1','김동진','인정출석',{reason:'취업박람회'}),
   row('2026-10-29','1','박민지','인정출석',{reason:'병원'}),row('2026-10-30','1','박민지','인정출석',{reason:'병원'}),row('2026-11-04','1','박민지','인정출석',{reason:'병원 진료'}),row('2026-11-05','1','박민지','인정출석',{reason:'병원'}),
   row('2026-11-05','2','이경수','결석')],
  sync:{}};
@@ -144,6 +144,11 @@ test('홈 반 카드는 반 현황을 열고, 카드마다 그 반 자료를 보
   await total.locator('li[data-risk="고다원"]').waitFor();
   assert.match(await total.locator('li[data-risk="고다원"]').innerText(),/한도 도달[\s\S]*결석 3일 \/ 한도 3일/);
   assert.equal(await stat(page,'total','한도 도달'),'1');
+  // 환산 결석(사용자 결정 2026-10-20 '3회=1일'): 김동진은 결석 0일이지만 지각·조퇴 3회 → 1일 → 한도 3일의 주의
+  assert.deepEqual(await total.locator('li[data-risk]').evaluateAll(l=>l.map(x=>x.dataset.risk)),['고다원','김동진']);
+  assert.match(await total.locator('li[data-risk="김동진"]').innerText(),/주의[\s\S]*환산 결석 1일 \/ 한도 3일[\s\S]*결석 0일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 1일[\s\S]*2일 더 결석하면 한도/);
+  assert.equal(await stat(page,'total','주의'),'1');
+  assert.match(await total.innerText(),/결석 한도 3일\(넘으면 제적 대상\)은 환산 결석으로 봅니다/);
   assert.equal(await stat(page,'total','질병 인정 4회 이상'),'1');
   assert.equal(await stat(page,'total','증빙 미제출·반려'),'5');
   assert.equal(await stat(page,'total','추가 증빙 미이행'),'1');

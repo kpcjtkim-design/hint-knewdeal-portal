@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,extraEvidenceRows,offDayRecords,classDays,dropoutRows,isDiseaseReason,syncText,enrolledOn} from '../../beta2-core.mjs';
+import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,extraEvidenceRows,offDayRecords,classDays,dropoutRows,isDiseaseReason,syncText,enrolledOn,convertedAbsences,convertedText,convertedUnitsText,PARTIALS_PER_ABSENCE} from '../../beta2-core.mjs';
+import {TRAINING_DAYS,UNIT_PERIODS} from '../../cohort.mjs';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
@@ -251,4 +252,35 @@ test("'중복' is a saved type: attended (not absent), its own bucket, counted o
  assert.equal(res.state,'manual');assert.deepEqual(res.changes,{});assert.deepEqual(res.notes,['중복 출결 · 개별 검토 필요']);
  // 시트가 아직 중복을 받지 않으면 기다림 안내(해당없음과 같음)
  assert.match(sheetWait('유형을 골라 주세요.','중복'),/^시트 업데이트 대기 · 마스터시트가 아직 중복을 받지 않습니다/);assert.equal(sheetWait('유형을 골라 주세요.','지각'),'유형을 골라 주세요.');
+});
+
+// 환산 결석(사용자 결정 2026-10-20 "'수료' 및 단위기간 이수 판정 기준 판정시에는 3회=1일로"): 1기 dropout-core evaluateDropout과 같이 단위기간마다 floor(지·조·외 ÷ 3).
+test('converted absences: 지각·조퇴·외출·중복 3회 = 결석 1일 per unit period (1기 rule), 인정 types and 해당없음 do not count, 출석률 stays plain',()=>{
+ assert.equal(PARTIALS_PER_ABSENCE,3);
+ const [u1,u2]=UNIT_PERIODS,in1=TRAINING_DAYS.filter(d=>d>=u1.from&&d<=u1.to),in2=TRAINING_DAYS.filter(d=>d>=u2.from&&d<=u2.to);
+ const e=(days,type)=>days.map(date=>({date,type}));
+ // 11 결석 + 3 지각 → 12, + 6 지각 → 13 (한 단위기간 안)
+ const base=e(in1.slice(0,11),'결석');
+ assert.deepEqual((({absent,partial,converted,total})=>({absent,partial,converted,total}))(convertedAbsences([...base,...e(in1.slice(11,14),'지각')])),{absent:11,partial:3,converted:1,total:12});
+ assert.equal(convertedAbsences([...base,...e(in1.slice(11,17),'지각')]).total,13);
+ // 지각·조퇴·외출·중복(1회)을 섞어도 3회 = 1일, 인정지각·인정조퇴·인정외출·인정출석·해당없음은 세지 않음
+ const mixed=convertedAbsences([...e(in1.slice(0,1),'지각'),...e(in1.slice(1,2),'조퇴'),...e(in1.slice(2,3),'중복'),...e(in1.slice(3,6),'인정지각'),...e(in1.slice(6,8),'인정외출'),...e(in1.slice(8,9),'인정출석'),...e(in1.slice(9,12),'해당없음')]);
+ assert.deepEqual([mixed.absent,mixed.partial,mixed.converted,mixed.total,mixed.units[0].days],[0,3,1,1,9],'해당없음 days leave the unit');
+ // 단위기간마다: 1단위 2회 + 2단위 2회 = 4회지만 각 단위기간에서 3회가 안 되어 0일(전체 4 ÷ 3 = 1일이 아님), 1단위 4회 + 2단위 2회 → 1일
+ const split=convertedAbsences([...e(in1.slice(0,2),'지각'),...e(in2.slice(0,2),'외출')]);
+ assert.deepEqual([split.partial,split.converted,split.total],[4,0,0]);
+ const split2=convertedAbsences([...e(in1.slice(0,4),'지각'),...e(in2.slice(0,2),'외출'),...e(in2.slice(2,3),'결석')]);
+ assert.deepEqual(split2.units.map(u=>[u.no,u.days,u.absent,u.partial,u.converted,u.total]),[[1,4,0,4,1,1],[2,3,1,2,0,1],[3,0,0,0,0,0]]);
+ assert.equal(convertedText(split2),'결석 1일 + 지·조·외 6회(→ 1일) = 환산 결석 2일');
+ assert.equal(convertedUnitsText(split2),'1단위 4회→1일 · 2단위 2회→0일');
+ assert.equal(convertedText(convertedAbsences(e(in1.slice(0,2),'결석'))),'결석 2일','no 지·조·외 → plain');
+ // 단위기간 밖(테스트반 개강 전 기록)은 따로 묶음
+ const outside=convertedAbsences(e(['2026-10-20','2026-10-21','2026-10-22'],'지각'));
+ assert.deepEqual([outside.converted,outside.units.at(-1).no,convertedUnitsText(outside)],[1,0,'기간 밖 3회→1일']);
+ // studentStats: conv는 환산, absent·rate는 출결원장 결석 그대로(1기 출석부 출석률 = 출석일수 ÷ 훈련일수)
+ const days=in1.slice(0,6),raw={rev:1,today:days.at(-1),days,classes:[{id:'1'}],roster:[['1','가','재학','']],ledgerCols:COLS,
+  ledger:[L(days[0],'가','결석'),L(days[1],'가','지각',{inT:'09:20'}),L(days[2],'가','조퇴',{outT:'16:00'}),L(days[3],'가','외출',{oa:'13:00',ob:'14:00'}),L(days[4],'가','인정지각',{reason:'병원'})]};
+ const st=studentStats(decodeBundle(raw),{cls:'1'})[0];
+ assert.deepEqual([st.days,st.absent,st.partial,Math.round(st.rate*10)/10],[6,1,3,83.3],'rate keeps 결석 only');
+ assert.deepEqual([st.conv.absent,st.conv.partial,st.conv.converted,st.conv.total],[1,3,1,2]);
 });
