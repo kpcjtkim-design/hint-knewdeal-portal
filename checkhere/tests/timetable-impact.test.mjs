@@ -26,7 +26,7 @@ test('holiday shift reports every moved lesson and keeps holidays out of lecture
 });
 test('draft save and publish explanations distinguish teacher visibility and avoid unknown date claims',()=>{
  const impact=timetableImpact({classId:'1',before,after:[...before,lesson('d','2026-09-24',3)],published:before,catalog,configKnown:false});
- const draft=timetableImpactHtml([impact]);assert.match(draft,/공개하기 전까지 그대로 유지/);assert.match(draft,/설문 설정을 읽지 못했습니다/);assert.equal(impact.surveys[0].to,'확인 필요');
+ const draft=timetableImpactHtml([impact]);assert.match(draft,/저장하면 편집본과 함께 담임 화면/);assert.match(draft,/설문 설정을 읽지 못했습니다/);assert.equal(impact.surveys[0].to,'확인 필요');
  assert.match(timetableImpactHtml([impact],{operation:'publish'}),/공개하면 담임의 오늘의 수업·전체 시간표에 1개 변경/);
 });
 test('removed or renamed linked lecture reports survey mapping review and escapes user content',()=>{

@@ -21,8 +21,8 @@ export function conflicts(entry,classes,classId){
  if(!entry.instructorId||entry.kind==='holiday')return [];
  return Object.entries(classes).flatMap(([cid,data])=>(data.entries||[]).filter(e=>e.id!==entry.id||cid!==classId).filter(e=>e.kind!=='holiday'&&e.date===entry.date&&e.instructorId===entry.instructorId&&(!e.start||!entry.start||(e.start<entry.end&&entry.start<e.end))).map(e=>({classId:cid,date:e.date,title:e.title,start:e.start,end:e.end})));
 }
-// 담임 사본: 엑셀 출처·판 대조 표시(origin·review)는 빼고, 강사는 등록 강사 이름 → 없으면 일정표 강사명(instructorName).
-export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,seedKey,origin,review,...out}=e;return {...out,instructorName:e.instructorId?instructors[e.instructorId]?.name||'':e.instructorName||''};});}
+// 담임 사본: 엑셀·시트 출처·판 대조 표시(origin·review·seedTitle)는 빼고, 강사는 등록 강사 이름 → 없으면 일정표 강사명(instructorName).
+export function publishEntries(entries,instructors){return sortEntries(entries).map(e=>{const {sourceText,sourceRow,seedKey,origin,review,seedTitle,...out}=e;return {...out,instructorName:e.instructorId?instructors[e.instructorId]?.name||'':e.instructorName||''};});}
 export function visibleToday(entries,today=todayKST()){const sorted=sortEntries(entries);return{today:sorted.filter(e=>e.date===today),next:sorted.find(e=>e.date>today&&e.kind!=='holiday')||null};}
 // Per-class, per-lecture final scheduled date, not the end of a broad module.
 const lectureKey=e=>JSON.stringify([e.classId||'',e.course||'',e.lectureId||[e.module||'',e.title?.trim()||'']]);

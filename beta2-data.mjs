@@ -4,8 +4,8 @@
 import {decodeBundle,ledgerKey} from './beta2-core.mjs';
 import {readAttendanceSummary} from './attendance-derived-store.mjs';
 
-const bundles=new Map();
-export function forgetBeta2Cache(){bundles.clear();}
+const bundles=new Map(),schedules=new Map();
+export function forgetBeta2Cache(){bundles.clear();schedules.clear();}
 // 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
 // 민원·이슈 알림(beta2-admin.mjs·담임 화면)은 다른 화면이 방금 확인한 값을 그대로 써서 Apps Script 호출을 늘리지 않습니다.
 const revListeners=new Set();let lastRev={at:0,value:null};
@@ -33,6 +33,24 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
    const r=await rev();if(r.rev===hit.bundle.rev){hit.at=Date.now();hit.bundle.sync=r.sync;return hit.bundle;}
   }
   const b=decodeBundle(await call('b2Bundle',key));bundles.set(key,{at:Date.now(),bundle:b});return b;
+ }
+ // 시간표(마스터시트 교육일정, b2Schedule {cls?, from?, to?}): 묶음처럼 변경 번호(rev)가 같으면 다시 읽지 않습니다. 담임은 Vercel이 자기 반으로 고정합니다.
+ async function schedule(p={},{fresh=false,maxAge=20000}={}){
+  const q={};if(p.cls&&p.cls!=='all')q.cls=String(p.cls);if(p.from)q.from=p.from;if(p.to)q.to=p.to;
+  const key=JSON.stringify([q.cls||'all',q.from||'',q.to||'']),hit=schedules.get(key);
+  if(hit&&!fresh){
+   if(Date.now()-hit.at<maxAge)return hit.data;
+   const r=await rev();if(r.rev===hit.data.rev){hit.at=Date.now();return hit.data;}
+  }
+  const data=await call('b2Schedule',q);schedules.set(key,{at:Date.now(),data});return data;
+ }
+ // 시간표 고치기(관리자만, b2ScheduleSave {rows:[{cls,date,subject?,hours?,instructor?,was:{subject,instructor,hours?}}]}, 1~200줄, 하나라도 틀리면 아무것도 쓰지 않음).
+ // 쓰고 나면 들고 있던 시간표를 버려 다음 읽기가 시트에서 새로 읽게 합니다.
+ async function scheduleSave(rows){
+  const list=[...rows];let count=0,rev=0;const changed=[];
+  try{for(let i=0;i<list.length;i+=200){const r=await call('b2ScheduleSave',{rows:list.slice(i,i+200)});count+=r?.count||0;changed.push(...(r?.changed||[]));rev=r?.rev??rev;}}
+  finally{schedules.clear();}
+  return {count,changed,rev};
  }
  // 저장 결과를 들고 있는 묶음에 반영합니다(다시 읽지 않음).
  function patch(row,res){
@@ -65,7 +83,7 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   return ()=>{stopped=true;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  }
  return {
-  call,rev,bundle,save,watch,checkhereDisease,
+  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,
   status:()=>call('b2Status'),
   docs:p=>call('b2Docs',p||{}),
   docCreate:p=>call('b2DocCreate',p),
