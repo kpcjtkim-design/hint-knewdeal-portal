@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {readFileSync,existsSync} from 'node:fs';
 import {join,extname} from 'node:path';
 import {loadPlaywright} from '../collector.mjs';
-import handler,{b2Args,keepAdminDropoutFields,FIREBASE,ACCESS} from '../../api/teacher-beta.js';
+import handler,{b2Args,teacherCancelError,FIREBASE,ACCESS} from '../../api/teacher-beta.js';
 import {decodeBundle} from '../../beta2-core.mjs';
-import {absenceLevel,absenceRows,suggestVerdict,checkDropout,savePayload,formOf,sameForm,completionRows,official,statusBatches,TEACHER_FIELDS,DROPOUT_COLUMNS} from '../../beta2-dropout-core.mjs';
+import {absenceLevel,absenceRows,suggestVerdict,checkDropout,savePayload,formOf,sameForm,completionRows,official,statusBatches,TEACHER_FIELDS,DROPOUT_COLUMNS,requestPayload,byTeacher,requestState,canCancel} from '../../beta2-dropout-core.mjs';
 import {TRAINING_DAYS,COURSE_END} from '../../cohort.mjs';
 import {KINDS,teacherTarget} from '../../notify-core.mjs';
 
@@ -65,6 +65,15 @@ test('input check mirrors the sheet; teachers send only their fields and confirm
  assert.equal(DROPOUT_COLUMNS.length,18,'sheet columns A~R');
 });
 
+test('teacher request helpers: payload has only teacher columns (근로개시일 only for 조기취업), teacher-made rows, state, and who may cancel',()=>{
+ assert.deepEqual(requestPayload({cls:'1',name:' 정민호 ',kind:'중도탈락',reason:'이사',startDate:'2026-12-14',lastDate:'2026-12-11',note:'',verdict:'제적',confirmed:true}),{cls:'1',name:'정민호',kind:'중도탈락',reason:'이사',startDate:'',lastDate:'2026-12-11',note:''});
+ assert.equal(requestPayload({kind:'조기취업',startDate:'2026-12-14'}).startDate,'2026-12-14');
+ assert.deepEqual([byTeacher({by:'teacher@test.kr'}),byTeacher({by:'HINT.KPC@gmail.com'}),byTeacher({by:''}),byTeacher({by:'Apps Script'})],[true,false,false,false],'admins (cohort.json) and hand-entered rows are not teacher requests');
+ assert.deepEqual([requestState({confirmed:false}),requestState({confirmed:true})],['접수','확인 완료']);
+ const [confirmed,open]=DROPS();
+ assert.deepEqual([canCancel(open,'teacher@test.kr'),canCancel(open,'TEACHER@test.kr'),canCancel(open,'other@test.kr'),canCancel(open,''),canCancel(confirmed,'teacher@test.kr')],[true,true,false,false,false]);
+});
+
 test('completion list: 명부 수료 and confirmed 조기취업 수료가능 complete; the rest say why not; batches split per class',()=>{
  const b=decodeBundle(rawBundle(ROSTER().map(r=>r[1]==='정민호'?['1','정민호','수료','2027-01-22']:r)));
  const drops=DROPS().map(d=>d.name==='최유진'?{...d,verdict:'수료가능'}:d);
@@ -118,31 +127,59 @@ test('administrators read every class and send every column; class numbers (also
  assert.equal(calls.length,before,'bad class numbers never reach the sheet');
 });
 
-test('teachers: own class only, teacher columns only, no batch status; editing keeps the admin columns from the sheet',async t=>{
- const rows=DROPS();
+test('teachers only request (사용자 2026-10-20 신청 개념): own class, teacher columns, new rows only; cancel only their own unconfirmed request; no batch status',async t=>{
+ const rows=[...DROPS(),DROP({row:5,cls:'1',name:'이하늘',kind:'중도탈락',reason:'운영팀 등록',lastDate:'2026-12-01',by:ADMIN_EMAIL}),DROP({row:6,cls:'1',name:'박서연',kind:'중도탈락',lastDate:'2026-12-02',by:'Teacher@Test.kr'})];
  const calls=backend(t,body=>body.action==='b2Dropouts'?{ok:true,data:{rev:7,maxAbsence:12,rows:rows.filter(r=>r.cls===body.args[0].cls)}}:{ok:true,data:{ok:true,row:9,rev:8}});
  await call({action:'b2Dropouts',args:[{}]},TEACHER);await call({action:'b2Dropouts',args:[{cls:'5'}]},TEACHER);await call({action:'b2Completions',args:[{cls:'all'}]},TEACHER);await call({action:'b2Dropouts',args:[{cls:'7'}]},TEACHER);
  assert.deepEqual(calls.map(c=>[c.action,c.args[0].cls,c.role]),[['b2Dropouts','1','TEACHER'],['b2Dropouts','1','TEACHER'],['b2Completions','1','TEACHER'],['b2Dropouts','7','TEACHER']],'temporary class 7 is theirs too');
  calls.length=0;
- // 새로 등록: 다른 반·관리자 칸·확인은 빠집니다
+ // 신청(새 줄): 다른 반·관리자 칸·확인·등록자는 빠집니다. 목록을 먼저 읽지 않습니다.
  await call({action:'b2DropoutSave',args:[{cls:'5',name:'정민호',kind:'조기취업',reason:'입사',startDate:'2026-12-14',lastDate:'2026-12-11',note:'n',verdict:'수료가능',basis:'x',docs:{resign:'O'},contact:'y',confirm:true,by:'someone'}]},TEACHER);
  assert.deepEqual(calls.map(c=>[c.action,c.args]),[['b2DropoutSave',[{cls:'1',name:'정민호',kind:'조기취업',reason:'입사',startDate:'2026-12-14',lastDate:'2026-12-11',note:'n'}]]]);
  calls.length=0;
- // 있는 줄 고치기: 먼저 그 반 목록을 읽고 판정·근거·서류·연락 확인을 시트 값으로 채움
- await call({action:'b2DropoutSave',args:[{row:3,was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',kind:'조기취업',reason:'11/23 입사(정규직)',startDate:'2026-11-23',lastDate:'2026-11-20',note:'',verdict:'제적',docs:{offer:'X'}}]},TEACHER);
- assert.deepEqual(calls.map(c=>c.action),['b2Dropouts','b2DropoutSave']);assert.deepEqual(calls[0].args,[{cls:'1'}]);
- assert.deepEqual(calls[1].args[0],{cls:'1',name:'최유진',kind:'조기취업',reason:'11/23 입사(정규직)',startDate:'2026-11-23',lastDate:'2026-11-20',note:'',row:3,was:{cls:'1',name:'최유진'},verdict:'',basis:'',docs:{resign:'',offer:'O',proof:''},contact:'인사팀 확인'});
+ // 있는 줄 고치기는 거절(시트에 가지 않음): row나 was가 있는 저장
+ for(const arg of [{row:3,was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',kind:'조기취업',reason:'11/23 입사(정규직)',startDate:'2026-11-23',lastDate:'2026-11-20'},{row:3,cls:'1',name:'최유진',kind:'조기취업',lastDate:'2026-11-20',startDate:'2026-11-23'},{was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',kind:'중도탈락',lastDate:'2026-11-20'}]){
+  const res=await call({action:'b2DropoutSave',args:[arg]},TEACHER);
+  assert.deepEqual([res.statusCode,res.body.code,res.body.error],[403,'DROPOUT_REQUEST_ONLY','신청한 뒤에는 고칠 수 없습니다. 고칠 내용은 운영팀에 알려 주세요.'],JSON.stringify(arg));
+ }
+ assert.equal(calls.length,0,'edits never reach the sheet');
+ // 신청 취소: 먼저 그 반 목록을 읽어 자기 신청·확인 전인지 보고, 괜찮으면 row·was·remove만 보냄
+ await call({action:'b2DropoutSave',args:[{row:3,was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',remove:true,kind:'중도탈락',verdict:'제적',confirm:true}]},TEACHER);
+ assert.deepEqual(calls.map(c=>[c.action,c.args]),[['b2Dropouts',[{cls:'1'}]],['b2DropoutSave',[{cls:'1',name:'최유진',row:3,was:{cls:'1',name:'최유진'},remove:true}]]]);
  calls.length=0;
- // 다른 반 줄(was.cls)을 보내도 자기 반으로 바뀌어 시트가 '그 줄이 바뀌었습니다'로 거절합니다. 지우기는 읽지 않고 바로
- await call({action:'b2DropoutSave',args:[{row:4,was:{cls:'17',name:'테스트을'},cls:'17',name:'테스트을',remove:true}]},TEACHER);
- assert.deepEqual(calls.map(c=>[c.action,c.args]),[['b2DropoutSave',[{cls:'1',name:'테스트을',row:4,was:{cls:'1',name:'테스트을'},remove:true}]]]);
+ await call({action:'b2DropoutSave',args:[{row:6,was:{cls:'1',name:'박서연'},cls:'1',name:'박서연',remove:true}]},TEACHER);
+ assert.deepEqual(calls.map(c=>c.action),['b2Dropouts','b2DropoutSave'],'registrant e-mail is compared without case');
  calls.length=0;
+ // 거절: 관리자 확인된 줄, 남(관리자)이 넣은 줄, 없는 줄·바뀐 줄, 다른 반 줄(자기 반으로 바뀌어 그 반에서 못 찾음), 줄 번호 없음
+ for(const [arg,code,status] of [[{row:2,was:{cls:'1',name:'한수빈'},cls:'1',name:'한수빈'},'DROPOUT_CANCEL_DENIED',403],[{row:5,was:{cls:'1',name:'이하늘'},cls:'1',name:'이하늘'},'DROPOUT_CANCEL_DENIED',403],
+  [{row:99,was:{cls:'1',name:'x'},cls:'1',name:'x'},'DROPOUT_GONE',409],[{row:3,was:{cls:'1',name:'다른이름'},cls:'1',name:'다른이름'},'DROPOUT_GONE',409],[{row:4,was:{cls:'17',name:'테스트을'},cls:'17',name:'테스트을'},'DROPOUT_GONE',409]]){
+  calls.length=0;
+  const res=await call({action:'b2DropoutSave',args:[{...arg,remove:true}]},TEACHER);
+  assert.deepEqual([res.statusCode,res.body.code],[status,code],JSON.stringify(arg));
+  assert.deepEqual(calls.map(c=>c.action),['b2Dropouts'],'only the read reaches the sheet');
+ }
+ calls.length=0;
+ for(const arg of [{was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',remove:true},{row:3,cls:'1',name:'최유진',remove:true},{row:'x',was:{cls:'1',name:'최유진'},remove:true}]){
+  const res=await call({action:'b2DropoutSave',args:[arg]},TEACHER);assert.deepEqual([res.statusCode,res.body.code],[400,'BAD_REQUEST'],JSON.stringify(arg));
+ }
+ assert.equal(calls.length,0);
+ assert.equal(teacherCancelError({row:3,was:{cls:'1',name:'최유진'}},rows,'teacher@test.kr'),'');
+ assert.equal(teacherCancelError({row:3,was:{cls:'1',name:'최유진'}},rows,'other@test.kr'),'DROPOUT_CANCEL_DENIED');
  const res=await call({action:'b2RosterStatusMany',args:[{rows:[{cls:'1',name:'이하늘',status:'수료',changed:COURSE_END}]}]},TEACHER);
  assert.deepEqual([res.statusCode,res.body.code,calls.length],[403,'ADMIN_ONLY',0]);
- assert.deepEqual(keepAdminDropoutFields({row:99,name:'x'},rows),{row:99,name:'x'},'unknown row → sent as is (the sheet refuses)');
  const teacher={role:'TEACHER',classIds:['1']};
  assert.deepEqual(b2Args(teacher,'b2Completions',[]),[{cls:'1'}]);
  assert.deepEqual(b2Args({role:'ADMIN'},'b2Completions',[{cls:''}]),[{}]);
+});
+
+test('teacher cancel: if reading the class rows fails, that error is returned and nothing is removed; admins remove without the read',async t=>{
+ const calls=backend(t,body=>body.action==='b2Dropouts'?{ok:false,error:'마스터시트를 읽지 못했습니다.'}:{ok:true,data:{ok:true,removed:3,rev:8}});
+ const res=await call({action:'b2DropoutSave',args:[{row:3,was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',remove:true}]},TEACHER);
+ assert.deepEqual([res.statusCode,res.body.error],[400,'마스터시트를 읽지 못했습니다.']);
+ assert.deepEqual(calls.map(c=>c.action),['b2Dropouts']);
+ calls.length=0;
+ const ok=await call({action:'b2DropoutSave',args:[{row:3,was:{cls:'1',name:'최유진'},cls:'1',name:'최유진',remove:true}]});
+ assert.equal(ok.statusCode,200);assert.deepEqual(calls.map(c=>[c.action,c.role]),[['b2DropoutSave','ADMIN']]);
 });
 
 /* ---------- 가짜 마스터시트(Apps Script b2Dropouts_·b2DropoutSave_·b2Completions_·b2RosterStatusMany_와 같은 규칙) ---------- */
@@ -207,7 +244,7 @@ const TEACHER_PAGE=`<!doctype html><meta charset="utf-8"><div id="toast"></div><
 import {createBeta2Client} from '/beta2-data.mjs';import {mount} from '/beta2-dropouts.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';
 ensureBeta2Css();window.notes=[];
 const client=createBeta2Client({email:'${TEACHER}',getIdToken:async()=>'tok'});
-window.screen2=await mount(document.getElementById('host'),{client,classes:[{id:'1'}],teacherClass:'1',notify:async(kind,p)=>{window.notes.push([kind,p]);}});
+window.screen2=await mount(document.getElementById('host'),{client,classes:[{id:'1'}],teacherClass:'1',me:'${TEACHER}',notify:async(kind,p)=>{window.notes.push([kind,p]);}});
 </script>`;
 
 // 브라우저 → /api/teacher-beta는 실제 api/teacher-beta.js(로그인·반 확인·담임 칸 거르기)를 거쳐 가짜 시트로 갑니다.
@@ -263,6 +300,8 @@ test('관리자: 중도탈락 탭 목록(테스트반은 합계에서 빠짐), �
   assert.match(stats,/2\s*등록[\s\S]*1\s*중도탈락[\s\S]*1\s*조기취업[\s\S]*1\s*확인 대기/,'test class row not counted');
   assert.match(await page.locator('#d2Body').innerText(),/테스트반 중도탈락·조기취업 1건은 목록에만 보이고/);
   const choi=rowOf(page,'최유진');
+  // 담임이 신청한 줄에는 '담임 신청' 표시(등록자가 cohort.json 관리자가 아님)
+  assert.equal(await choi.getByText('담임 신청',{exact:true}).count(),1);
   assert.match(await choi.innerText(),/근로개시 11\/23\(월\)[\s\S]*근로개시 전 2일 \/ 12[\s\S]*판정 전[\s\S]*계산: 수료가능[\s\S]*채용통보 O[\s\S]*연락: 인사팀 확인[\s\S]*확인 대기/);
   assert.match(await rowOf(page,'한수빈').innerText(),/제적[\s\S]*포기사유서 O[\s\S]*확인\s*hint\.kpc@gmail\.com · 2026-11-04 09:00/);
   // 관리자 확인: 판정이 비어 있으면 계산값을 함께 저장, 다른 칸(서류·연락 확인)은 그대로
@@ -288,6 +327,7 @@ test('관리자: 중도탈락 탭 목록(테스트반은 합계에서 빠짐), �
   await page.locator('[data-editor="new"] [data-f="docs.resign"]').selectOption('X');
   await page.locator('[data-editor="new"]').getByRole('button',{name:'저장'}).click();
   await rowOf(page,'고다원').waitFor();
+  assert.equal(await rowOf(page,'고다원').getByText('담임 신청',{exact:true}).count(),0,'admin-made row has no teacher badge');
   assert.equal(dialogs.at(-1),'1반 고다원 학생을 「중도탈락」(으)로 등록할까요?\n명부 상태도 함께 바뀌어 마지막 출석일 12/1(화) 다음 교육일부터 출결판·출석률에서 빠집니다.');
   assert.deepEqual(saves(sheet).at(-1),{cls:'1',name:'고다원',kind:'중도탈락',reason:'장기 결석',startDate:'',lastDate:'2026-12-01',note:'',verdict:'제적',basis:'중도탈락(조기취업 아님) · 마지막 출석 12/1',docs:{resign:'X',offer:'',proof:''},contact:''});
   assert.deepEqual(sheet.roster.find(r=>r[1]==='고다원').slice(2,5),['중도탈락','2026-12-01','장기 결석']);
@@ -324,9 +364,12 @@ test('관리자: 중도탈락 탭 목록(테스트반은 합계에서 빠짐), �
 });
 
 test('관리자: 여러 건 관리자 확인, 결석 한도 12일 판정, 수료 명단과 수료 처리(명부 여러 명)',async t=>{
- const sheet=fakeSheet();sheet.drops.push(DROP({row:5,cls:'2',name:'이경수',kind:'중도탈락',reason:'이사',lastDate:'2026-12-04'}));sheet.roster.find(r=>r[1]==='이경수').splice(2,2,'중도탈락','2026-12-04');
+ const sheet=fakeSheet();sheet.drops.push(DROP({row:5,cls:'2',name:'이경수',kind:'중도탈락',reason:'이사',lastDate:'2026-12-04',by:ADMIN_EMAIL}));sheet.roster.find(r=>r[1]==='이경수').splice(2,2,'중도탈락','2026-12-04');
  await site(t,async(page,posts,dialogs)=>{
   await openScreen(page);
+  // 담임 신청 대기: 담임이 신청했고 관리자 확인 전인 줄만(관리자가 넣은 이경수는 빠짐)
+  await page.getByRole('button',{name:/^담임 신청 대기/}).click();
+  assert.deepEqual(await page.locator('tr[data-row] .b2-name').allInnerTexts(),['최유진','테스트을']);
   await page.getByRole('button',{name:/^확인 대기/}).click();
   assert.deepEqual(await page.locator('tr[data-row] .b2-name').allInnerTexts(),['최유진','테스트을','이경수']);
   await page.locator('[data-pickall]').click();
@@ -381,44 +424,75 @@ test('출결 현황 no longer has its own 중도탈락 view: the header links to
  });
 });
 
-test('담임: 자기 반만 보고, 담임 칸으로 등록·고치기(관리자 칸은 시트 값 그대로), 확인된 줄은 못 고치고, 등록하면 관리자에게 알림',async t=>{
- await site(t,async(page,posts,dialogs,sheet)=>{
+test('담임: 신청만(교육생·구분·사유·마지막 출석일·근로개시일·메모), 우리 반 신청 현황은 보기만, 자기 신청·확인 전만 취소, 수료 확인은 보기만',async t=>{
+ const sheet=fakeSheet();
+ sheet.drops.push(DROP({row:5,cls:'1',name:'박서연',kind:'중도탈락',reason:'운영팀 등록',lastDate:'2026-12-01',by:ADMIN_EMAIL}));sheet.roster.find(r=>r[1]==='박서연').splice(2,2,'중도탈락','2026-12-01');
+ await site(t,async(page,posts,dialogs)=>{
   await page.locator('tr[data-row]').first().waitFor();
-  assert.deepEqual(await page.locator('#d2Tabs .b2-tab').allInnerTexts(),['신청 목록','결석 한도']);
-  assert.equal(await page.locator('#d2Class').count(),0,'no class picker');
-  assert.deepEqual(await page.locator('tr[data-row] .b2-name').allInnerTexts(),['한수빈','최유진']);
-  assert.deepEqual(posts.filter(p=>p.action==='b2Dropouts').map(p=>p.args[0]),[{cls:'1'}]);
-  assert.match(await rowOf(page,'한수빈').innerText(),/운영팀 확인됨/);assert.equal(await rowOf(page,'한수빈').getByRole('button').count(),0);
-  assert.equal(await page.locator('[data-pick]').count(),0,'no batch confirm for teachers');
-  // 등록
-  await page.getByRole('button',{name:'중도탈락·조기취업 등록'}).click();
-  const ed=page.locator('[data-editor="new"]');
-  assert.equal(await ed.locator('[data-f="verdict"]').count(),0,'no admin columns');
-  await ed.locator('[data-f="name"]').selectOption('정민호');await page.locator('[data-editor="new"] [data-f="kind"]').selectOption('조기취업');
-  await page.locator('[data-editor="new"] [data-f="lastDate"]').fill('2026-12-11');
-  await page.locator('[data-editor="new"]').getByRole('button',{name:'저장'}).click();
-  assert.equal(await page.locator('[data-editor="new"] [data-err]').innerText(),'조기취업은 근로개시일을 넣어 주세요.');
-  await page.locator('[data-editor="new"] [data-f="startDate"]').fill('2026-12-14');await page.locator('[data-editor="new"] [data-f="reason"]').fill('12/14 ○○㈜ 입사');
-  await page.locator('[data-editor="new"]').getByRole('button',{name:'저장'}).click();
+  assert.deepEqual(await page.locator('#d2Tabs .b2-tab').allInnerTexts(),['중도탈락 신청','수료 확인']);
+  for(const sel of ['#d2Class','#d2New','#d2Csv','[data-pick]','[data-pickall]','[data-editor]','[data-f]','[data-batch]','[data-act]'])assert.equal(await page.locator(sel).count(),0,`no ${sel} for teachers`);
+  assert.deepEqual(posts.filter(p=>['b2Dropouts','b2Completions'].includes(p.action)).map(p=>[p.action,p.args[0]]),[['b2Dropouts',{cls:'1'}],['b2Completions',{cls:'1'}]]);
+  // 우리 반 신청 현황(보기만)
+  assert.match(await page.locator('#d2Body').innerText(),/우리 반 신청 현황 \(3건\)/);
+  assert.deepEqual(await page.locator('tr[data-row] .b2-name').allInnerTexts(),['한수빈','최유진','박서연']);
+  assert.match(await rowOf(page,'한수빈').innerText(),/중도탈락\s*개인 사정[\s\S]*11\/21\(토\) 10:00[\s\S]*마지막 출석 11\/2\(월\)[\s\S]*확인 완료\s*hint\.kpc@gmail\.com · 2026-11-04 09:00\s*제적/);
+  assert.doesNotMatch(await rowOf(page,'한수빈').innerText(),/포기사유서|중도탈락\(조기취업 아님\)|11\/3 통화/,'no documents, basis or contact for teachers');
+  assert.equal(await rowOf(page,'한수빈').getByRole('button').count(),0,'confirmed: nothing to press');
+  assert.match(await rowOf(page,'최유진').innerText(),/조기취업[\s\S]*마지막 출석 11\/20\(금\)\s*근로개시 11\/23\(월\)[\s\S]*접수\s*운영팀 확인 전/);
+  assert.deepEqual(await rowOf(page,'최유진').getByRole('button').allInnerTexts(),['신청 취소']);
+  assert.match(await rowOf(page,'박서연').innerText(),/hint\.kpc@gmail\.com[\s\S]*접수/);assert.equal(await rowOf(page,'박서연').getByRole('button').count(),0,'not their own request: no cancel');
+  // 신청 칸: 재학이고 아직 신청이 없는 학생만, 근로개시일은 조기취업일 때만
+  const req=page.locator('[data-request]');
+  assert.deepEqual(await req.locator('[data-g="name"] option').allInnerTexts(),['교육생 선택','고다원','김동진','이하늘','정민호']);
+  assert.equal(await req.locator('[data-g="startDate"]').count(),0);
+  await req.getByRole('button',{name:'신청하기'}).click();
+  assert.equal(await page.locator('[data-request] [data-err]').innerText(),'교육생을 골라 주세요.');
+  await page.locator('[data-request] [data-g="name"]').selectOption('정민호');await page.locator('[data-request] [data-g="kind"]').selectOption('조기취업');
+  await page.locator('[data-request] [data-g="startDate"]').waitFor();
+  assert.equal(await page.locator('[data-request] [data-g="name"]').inputValue(),'정민호','choosing the kind keeps the student');
+  await page.locator('[data-request] [data-g="lastDate"]').fill('2026-12-11');
+  await page.locator('[data-request]').getByRole('button',{name:'신청하기'}).click();
+  assert.equal(await page.locator('[data-request] [data-err]').innerText(),'조기취업은 근로개시일을 넣어 주세요.');assert.equal(sheet.saves.length,0);
+  await page.locator('[data-request] [data-g="startDate"]').fill('2026-12-14');await page.locator('[data-request] [data-g="reason"]').fill('12/14 ○○㈜ 입사');await page.locator('[data-request] [data-g="note"]').fill('서류는 다음 주');
+  page.dialogAnswer.push(false);await page.locator('[data-request]').getByRole('button',{name:'신청하기'}).click();
+  assert.equal(dialogs.at(-1),'1반 정민호 학생을 「조기취업」(으)로 신청할까요?\n명부 상태도 함께 바뀌어 마지막 출석일 12/11(금) 다음 교육일부터 출결판·출석률에서 빠집니다. 판정·서류·수료 처리는 운영팀이 합니다.');
+  assert.equal(sheet.saves.length,0,'declined: nothing sent');
+  await page.locator('[data-request]').getByRole('button',{name:'신청하기'}).click();
   await rowOf(page,'정민호').waitFor();
-  assert.deepEqual(sheet.saves.at(-1),{role:'TEACHER',args:{cls:'1',name:'정민호',kind:'조기취업',reason:'12/14 ○○㈜ 입사',startDate:'2026-12-14',lastDate:'2026-12-11',note:''}});
+  assert.match(await page.locator('#toast').innerText(),/신청했습니다 · 운영팀이 확인 후 처리합니다/);
+  assert.deepEqual(sheet.saves.at(-1),{role:'TEACHER',args:{cls:'1',name:'정민호',kind:'조기취업',reason:'12/14 ○○㈜ 입사',startDate:'2026-12-14',lastDate:'2026-12-11',note:'서류는 다음 주'}});
   assert.deepEqual(sheet.roster.find(r=>r[1]==='정민호').slice(2,4),['조기취업','2026-12-11']);
-  const sent=await page.evaluate(()=>window.notes);
-  assert.deepEqual(sent,[['중도탈락',{audience:'admins',cls:'1',title:'1반 조기취업 등록 · 정민호',body:'마지막 출석 12/11(금) · 근로개시 12/14(월) · 12/14 ○○㈜ 입사',link:'#b2dropouts?cls=1'}]]);
-  // 고치기: 운영팀이 넣은 서류(채용통보 O)·연락 확인은 그대로 남음
-  await rowOf(page,'최유진').getByRole('button',{name:'고치기'}).click();
-  await page.locator('[data-editor] [data-f="note"]').fill('정규직');await page.locator('[data-editor]').getByRole('button',{name:'저장'}).click();
-  await rowOf(page,'최유진').getByText('정규직').waitFor();
-  const d=sheet.drops.find(r=>r.name==='최유진');assert.deepEqual([d.note,d.docs.offer,d.contact],['정규직','O','인사팀 확인']);
-  assert.equal((await page.evaluate(()=>window.notes)).at(-1)[1].title,'1반 조기취업 수정 · 최유진');
-  // 취소(지우기)
-  await rowOf(page,'정민호').getByRole('button',{name:'고치기'}).click();await page.locator('[data-editor]').getByRole('button',{name:'등록 취소'}).click();
+  assert.deepEqual(await page.evaluate(()=>window.notes),[['중도탈락',{audience:'admins',cls:'1',title:'1반 조기취업 신청 · 정민호',body:'마지막 출석 12/11(금) · 근로개시 12/14(월) · 12/14 ○○㈜ 입사',link:'#b2dropouts?cls=1'}]]);
+  assert.equal(await page.locator('[data-request] [data-g="name"]').inputValue(),'','the form is cleared');
+  assert.deepEqual(await page.locator('[data-request] [data-g="name"] option').allInnerTexts(),['교육생 선택','고다원','김동진','이하늘'],'a requested student is not offered again');
+  assert.match(await rowOf(page,'정민호').innerText(),/조기취업\s*12\/14 ○○㈜ 입사\s*메모: 서류는 다음 주[\s\S]*접수/);
+  // 신청 취소: 확인창(아니오 → 그대로), 예 → 줄이 빠지고 명부는 재학, 관리자에게 알림
+  page.dialogAnswer.push(false);await rowOf(page,'정민호').getByRole('button',{name:'신청 취소'}).click();
+  assert.equal(dialogs.at(-1),'정민호 (조기취업) 신청을 취소할까요?\n명부 상태가 아직 「조기취업」이면 재학으로 되돌립니다.');
+  assert.equal(sheet.drops.some(r=>r.name==='정민호'),true);
+  await rowOf(page,'정민호').getByRole('button',{name:'신청 취소'}).click();
   await rowOf(page,'정민호').waitFor({state:'detached'});
+  assert.deepEqual(sheet.saves.at(-1),{role:'TEACHER',args:{cls:'1',name:'정민호',row:6,was:{cls:'1',name:'정민호'},remove:true}});
   assert.deepEqual(sheet.roster.find(r=>r[1]==='정민호').slice(2,4),['재학','']);
-  assert.equal((await page.evaluate(()=>window.notes)).at(-1)[1].title,'1반 조기취업 취소 · 정민호');
-  // 결석 한도: 자기 반만
-  await page.getByRole('tab',{name:'결석 한도'}).click();await page.locator('#d2Body tbody tr').first().waitFor();
-  assert.deepEqual(await page.locator('#d2Body tbody tr .b2-name').allInnerTexts(),['고다원','김동진','박서연']);
-  assert.ok(dialogs.length>=2);
- },{email:TEACHER,page:'/teacher-test.html'});
+  assert.equal((await page.evaluate(()=>window.notes)).at(-1)[1].title,'1반 조기취업 신청 취소 · 정민호');
+  // 운영팀이 그 사이 확인했으면 서버가 거절하고 줄은 그대로
+  sheet.drops.find(r=>r.name==='최유진').confirmed=true;
+  await rowOf(page,'최유진').getByRole('button',{name:'신청 취소'}).click();
+  await page.locator('#toast',{hasText:'취소하지 못했습니다: 직접 신청하고 운영팀이 아직 확인하지 않은 신청만 취소할 수 있습니다.'}).waitFor();
+  assert.equal(sheet.drops.some(r=>r.name==='최유진'),true);
+  sheet.drops.find(r=>r.name==='최유진').confirmed=false;
+  // 수료 확인: 자기 반만, 결과와 결석 한도(보기만)
+  await page.getByRole('tab',{name:'수료 확인'}).click();await page.locator('#d2Body tbody tr').first().waitFor();
+  const rowText=async name=>page.locator(`#d2Body tr[data-key="1|${name}"]`).innerText();
+  assert.deepEqual(await page.locator('#d2Body tbody tr .b2-name').allInnerTexts(),['김동진','이하늘','정민호','최유진','고다원','박서연','한수빈']);
+  assert.match(await rowText('김동진'),/재학\s*12 \/ 12일 한도 도달\s*0일 더 결석하면 한도\s*수료 예정\s*재학 · 결석 12일 \/ 한도 12일/);
+  assert.match(await rowText('이하늘'),/0 \/ 12일\s*12일 더 결석하면 한도\s*수료 예정/);
+  assert.match(await rowText('고다원'),/13 \/ 12일 제적 대상\s*한도 초과\s*미수료\s*결석 13일 · 한도 12일 초과\(제적 대상\)/);
+  assert.match(await rowText('최유진'),/조기취업[\s\S]*확인 대기\s*조기취업 · 판정 전/);
+  assert.match(await rowText('한수빈'),/중도탈락[\s\S]*미수료\s*중도탈락 · 마지막 출석 11\/2/);
+  assert.match(await page.locator('.b2-stats').innerText(),/0\s*수료[\s\S]*3\s*수료 예정[\s\S]*1\s*확인 대기[\s\S]*3\s*미수료/);
+  assert.equal(await page.locator('#d2Body input').count(),0,'no checkboxes');
+  assert.deepEqual(await page.locator('#d2Body button:not(.b2-chip)').count(),0,'no 수료 처리 buttons');
+  assert.equal(await page.locator('#d2Body').getByText('테스트갑').count(),0,'own class only');
+ },{email:TEACHER,page:'/teacher-test.html',sheet});
 });

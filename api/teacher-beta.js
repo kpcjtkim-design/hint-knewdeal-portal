@@ -10,16 +10,16 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 // 민원·이슈(b2Voc*)는 담임·운영이 주고받습니다(2026-10-16 회의). 현장운영 체크리스트(portalCheck)는 없어졌습니다.
 // 2기는 운영총괄 동기화가 없어 b2SyncNow(가져오기)·b2Release(운영총괄 값으로)를 받지 않습니다(Apps Script에 남아 있어도 웹에서 부르지 않음).
 // 모듈 시간(현장교육 일정 O~T, 견학일 지각·조퇴 기준)·교육생 상태·출결대조 메모(2026-10-19, 2기 배포 ① 버전 3): 읽기 3개는 담임도 자기 반만, 쓰기 3개는 관리자만.
-// 중도탈락·수료(2026-10-20, 2기 배포 ① 버전 10, 마스터시트 '중도탈락' 탭 A~R): 목록·수료 명단은 담임도 자기 반만, 등록·고치기(b2DropoutSave)는 담임도 자기 반·담임 칸만(b2Args·keepAdminDropoutFields),
-// 여러 명 상태 바꾸기(b2RosterStatusMany, 수료 처리)는 관리자만.
+// 중도탈락·수료(2026-10-20, 2기 배포 ① 버전 10, 마스터시트 '중도탈락' 탭 A~R): 목록·수료 명단은 담임도 자기 반만. 여러 명 상태 바꾸기(b2RosterStatusMany, 수료 처리)는 관리자만.
+// 담임의 b2DropoutSave는 '신청'만(사용자 2026-10-20 "담임 화면의 중도탈락은 보다 간단히 '신청' 개념임. 완벽한 시트 업무처리는 우리 관리자가 해야함"):
+// 새 줄 만들기(자기 반·담임 칸만, b2Args)와 자기가 신청하고 아직 관리자 확인 전인 줄 지우기(신청 취소, 먼저 그 반 목록을 읽어 teacherCancelError로 확인)만. 있는 줄 고치기는 거절합니다.
 const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
  'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany']);
 const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
-// 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭으로 등록, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
+// 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭에서 신청, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
 const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany']);
-// 중도탈락 탭에서 담임이 정할 수 있는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
+// 중도탈락 탭에서 담임이 신청할 때 정하는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
 export const TEACHER_DROPOUT_FIELDS=['name','kind','reason','startDate','lastDate','note'];
-const ADMIN_DROPOUT_FIELDS=['verdict','basis','docs','contact'];
 // 담임 열림: cohort.json teacherAccess(개강 전 false). index.html 담임 로그인도 같은 값을 봅니다.
 export const ACCESS={teacher:cohort.TEACHER_ACCESS};
 // 담임 화면에 그대로 보이므로 오류는 한국어 문장으로 돌려줍니다.
@@ -33,6 +33,9 @@ const FAILURES={
   BAD_CLASS:[400,'반 번호가 올바르지 않습니다.'],
   BAD_REQUEST:[400,'요청 형식이 올바르지 않습니다.'],
   BAD_ACTION:[400,'지원하지 않는 요청입니다.'],
+  DROPOUT_REQUEST_ONLY:[403,'신청한 뒤에는 고칠 수 없습니다. 고칠 내용은 운영팀에 알려 주세요.'],
+  DROPOUT_CANCEL_DENIED:[403,'직접 신청하고 운영팀이 아직 확인하지 않은 신청만 취소할 수 있습니다.'],
+  DROPOUT_GONE:[409,'그 신청을 찾지 못했습니다. 새로고침한 뒤 다시 확인해 주세요.'],
   DATABASE_QUOTA_EXCEEDED:[503,'계정 확인이 잠시 지연되고 있습니다. 잠시 후 다시 시도해 주세요.'],
   NOT_CONFIGURED:[503,'데이터 API 연결 전입니다. 운영자가 연결을 마치면 바로 사용할 수 있습니다.'],
   SHEET_UNAUTHORIZED:[502,'데이터 API 인증에 실패했습니다. 운영자에게 알려 주세요.'],
@@ -89,25 +92,30 @@ export function b2Args(user,action,rest){
   if(['b2DayTimes','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo'].includes(action))return [{...p,cls:own(p.cls)}];
   // 중도탈락 목록·수료 명단: 담임은 늘 자기 반, 관리자는 고른 반이나 전체(반 없이).
   if(action==='b2Dropouts'||action==='b2Completions'){const {cls,...q}=p;return [admin&&(cls===undefined||cls===''||cls==='all')?q:{...q,cls:own(cls)}];}
-  // 중도탈락 등록·고치기·지우기: 반(새 반·고칠 줄의 반 was.cls)을 서버에서 확인해 붙입니다. 담임은 담임 칸만 남기고 관리자 확인(confirm)·판정·서류는 뺍니다.
+  // 중도탈락 등록·고치기·지우기: 반(새 반·고칠 줄의 반 was.cls)을 서버에서 확인해 붙입니다.
+  // 담임은 신청(새 줄, 담임 칸만, 관리자 확인(confirm)·판정·서류는 뺌)과 신청 취소(row·was·remove만)뿐입니다. 있는 줄 고치기(row·was가 있는 저장)는 거절합니다.
   if(action==='b2DropoutSave'){
    const was=p.was&&typeof p.was==='object'?{cls:own(p.was.cls),name:String(p.was.name??'')}:undefined;
    if(admin)return [{...p,cls:own(p.cls),...(was?{was}:{})}];
+   if(p.remove===true){
+    const row=Number(p.row);if(!Number.isInteger(row)||row<2||!was)throw new Error('BAD_REQUEST');
+    return [{cls:own(p.cls),name:String(p.name??''),row,was,remove:true}];
+   }
+   if(p.row!==undefined||p.was!==undefined)throw new Error('DROPOUT_REQUEST_ONLY');
    const q={cls:own(p.cls)};for(const k of TEACHER_DROPOUT_FIELDS)if(p[k]!==undefined)q[k]=p[k];
-   if(p.row!==undefined)q.row=p.row;if(was)q.was=was;if(p.remove===true)q.remove=true;
    return [q];
   }
   // 여러 명 상태(관리자만): 줄마다 반 번호를 확인합니다.
   if(action==='b2RosterStatusMany')return [{rows:(Array.isArray(p.rows)?p.rows:[]).map(r=>({cls:own(r?.cls),name:String(r?.name??''),status:String(r?.status??''),changed:String(r?.changed??''),reason:String(r?.reason??'')}))}];
   return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
 }
-// 담임이 이미 있는 줄을 고칠 때: 시트(b2DropoutSave_)는 A~M을 한 번에 다시 쓰므로, 관리자가 정한 판정·근거·서류·연락 확인을 지금 시트 값으로 채워 지워지지 않게 합니다.
-// rows: b2Dropouts 응답 rows(그 반). 그 줄이 없으면 그대로 보내고 시트가 '그 줄을 찾지 못했습니다'로 거절합니다.
-export function keepAdminDropoutFields(p,rows){
-  if(!p?.row||p.remove)return p;
-  const cur=(rows||[]).find(r=>Number(r.row)===Number(p.row));if(!cur)return p;
-  const out={...p};for(const k of ADMIN_DROPOUT_FIELDS)out[k]=k==='docs'?{resign:cur.docs?.resign||'',offer:cur.docs?.offer||'',proof:cur.docs?.proof||''}:cur[k]??'';
-  return out;
+// 담임 신청 취소: 그 반 목록(b2Dropouts rows)에서 그 줄을 찾아 '자기가 신청(등록자 = 로그인 이메일)했고 아직 관리자 확인 전'인지 봅니다. 괜찮으면 ''.
+// 시트(b2DropoutSave_)도 담임의 관리자 확인된 줄·다른 반 줄은 거절하지만, 같은 반의 다른 사람(관리자·다른 담임)이 넣은 줄까지는 막지 않아 여기서 막습니다.
+export function teacherCancelError(p,rows,email){
+  const cur=(rows||[]).find(r=>Number(r.row)===Number(p?.row));
+  if(!cur||String(cur.cls)!==String(p.was?.cls)||String(cur.name)!==String(p.was?.name))return 'DROPOUT_GONE';
+  if(cur.confirmed===true||String(cur.by||'').trim().toLowerCase()!==String(email||'').toLowerCase())return 'DROPOUT_CANCEL_DENIED';
+  return '';
 }
 export function vocForTeacher(voc,classIds){
  const pick=o=>Object.fromEntries(Object.entries(o||{}).filter(([k])=>classIds.includes(String(k))));
@@ -142,10 +150,14 @@ export default async function handler(req,res){
     let out;
     if(B2_ACTIONS.has(action)){
       const args=b2Args(user,action,rest),who={actor:user.email,role:user.role};
-      // 담임이 있는 줄을 고치면 먼저 그 반 목록을 읽어 관리자 칸을 지금 값으로 채웁니다(읽기가 실패하면 그 오류를 그대로 돌려줌).
-      const keep=action==='b2DropoutSave'&&user.role!=='ADMIN'&&args[0].row&&!args[0].remove?await callSheet('b2Dropouts',[{cls:args[0].was?.cls||args[0].cls}],who):null;
-      if(keep&&!keep.ok)out=keep;
-      else out=await callSheet(action,keep?[keepAdminDropoutFields(args[0],keep.data?.rows)]:args,who);
+      // 담임 신청 취소: 먼저 그 반 목록을 읽어 자기 신청·확인 전인지 봅니다(읽기가 실패하면 그 오류를 그대로 돌려줌).
+      const check=action==='b2DropoutSave'&&user.role!=='ADMIN'&&args[0].remove?await callSheet('b2Dropouts',[{cls:args[0].was.cls}],who):null;
+      if(check&&!check.ok)out=check;
+      else{
+        const denied=check?teacherCancelError(args[0],check.data?.rows,user.email):'';
+        if(denied)throw new Error(denied);
+        out=await callSheet(action,args,who);
+      }
     }
     else{
       const cls=resolveClass(user,body,action,rest);

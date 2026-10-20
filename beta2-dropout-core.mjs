@@ -3,7 +3,7 @@
 // 결석 한도: 2기 60교육일의 80% 출석 → 결석 12일까지 수료 가능, 13일부터 제적 대상(시트 maxAbsence, 스크립트 속성 B2_MAX_ABSENCE로 바꿀 수 있음).
 // 17반 테스트반(cohort test)은 목록에는 보이고 합계(숫자 상자)에서는 뺍니다.
 import {studentStats,courseDays,ledgerIndex,ledgerKey} from './beta2-core.mjs';
-import {COURSE_START,COURSE_END,isIsoDate,isClassId,isTestClass,mdLabel} from './cohort.mjs';
+import {ADMINS,COURSE_START,COURSE_END,isIsoDate,isClassId,isTestClass,mdLabel} from './cohort.mjs';
 
 export const DROPOUT_KINDS=Object.freeze(['중도탈락','조기취업']);
 export const DROPOUT_VERDICTS=Object.freeze(['수료가능','제적','확인중']);
@@ -13,7 +13,8 @@ export const MAX_ABSENCE=12;
 // 시트 열(A~R) ↔ b2Dropouts 응답 필드. 화면 머리글·CSV가 같은 순서를 씁니다.
 export const DROPOUT_COLUMNS=Object.freeze([['cls','반'],['name','이름'],['kind','구분'],['reason','사유'],['startDate','근로개시일'],['lastDate','마지막 출석일'],['verdict','판정'],['basis','판정 근거'],
  ['docs.resign','포기사유서'],['docs.offer','채용통보'],['docs.proof','채용인정서류'],['contact','연락 확인'],['note','비고'],['by','등록자'],['at','등록시각'],['confirmed','관리자 확인'],['confirmedBy','확인자'],['confirmedAt','확인시각']]);
-// 담임이 정할 수 있는 칸(나머지 판정·근거·서류·연락 확인·관리자 확인은 관리자만, api/teacher-beta.js가 담임 요청에서 뺍니다).
+// 담임이 신청할 때 정하는 칸(나머지 판정·근거·서류·연락 확인·관리자 확인은 관리자만, api/teacher-beta.js가 담임 요청에서 뺍니다).
+// 담임은 '신청'만 합니다(사용자 2026-10-20 "담임 화면의 중도탈락은 보다 간단히 '신청' 개념"): 새 줄 만들기와 자기가 신청하고 아직 확인 전인 줄 취소만. 고치기는 운영팀.
 export const TEACHER_FIELDS=Object.freeze(['name','kind','reason','startDate','lastDate','note']);
 
 const s=v=>String(v??'').trim();
@@ -96,6 +97,18 @@ export function savePayload(form,cur=null,{admin=true}={}){
  if(admin&&typeof form.confirmed==='boolean'&&form.confirmed!==!!cur?.confirmed)p.confirm=form.confirmed;
  return cur?{row:cur.row,was:{cls:cur.cls,name:cur.name},...p}:p;
 }
+// 담임 신청(b2DropoutSave 새 줄). 근로개시일은 조기취업일 때만 보냅니다.
+export function requestPayload(f){
+ const kind=s(f?.kind);
+ return {cls:s(f?.cls),name:s(f?.name),kind,reason:s(f?.reason),startDate:kind==='조기취업'?s(f?.startDate):'',lastDate:s(f?.lastDate),note:s(f?.note)};
+}
+// 담임이 신청한 줄인지(등록자가 cohort.json 관리자가 아닌 이메일). 시트에 손으로 넣은 줄(등록자 없음·'Apps Script')은 담임 신청이 아닙니다.
+const ADMIN_EMAILS=new Set((ADMINS||[]).map(e=>String(e).toLowerCase()));
+export const byTeacher=(r,admins=ADMIN_EMAILS)=>{const by=s(r?.by).toLowerCase();return by.includes('@')&&!admins.has(by);};
+// 담임 화면의 처리 상태: 관리자 확인 전 '접수', 확인 뒤 '확인 완료'.
+export const requestState=r=>r?.confirmed?'확인 완료':'접수';
+// 담임이 취소할 수 있는 줄: 자기가 신청했고 아직 관리자 확인 전(서버 api/teacher-beta.js와 시트도 같은 기준으로 막습니다).
+export const canCancel=(r,me)=>!!r&&!r.confirmed&&!!s(me)&&s(r.by).toLowerCase()===s(me).toLowerCase();
 // 시트 줄 → 편집 칸 값
 export const formOf=r=>({cls:s(r?.cls),name:s(r?.name),kind:s(r?.kind)||'중도탈락',reason:s(r?.reason),startDate:s(r?.startDate),lastDate:s(r?.lastDate),verdict:s(r?.verdict),basis:s(r?.basis),
  docs:Object.fromEntries(DOC_FIELDS.map(([k])=>[k,s(r?.docs?.[k])])),contact:s(r?.contact),note:s(r?.note),confirmed:!!r?.confirmed});

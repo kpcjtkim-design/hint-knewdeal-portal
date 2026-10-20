@@ -155,11 +155,16 @@ test('출결 › 중도탈락 tab opens the dropout registration for the own cla
   const slot=page.locator('[data-panel="attendance"] [data-sub="dropout"]');
   await slot.locator('.b2d').waitFor();
   assert.equal(await page.locator('#t2Head h2').innerText(),'중도탈락');
+  // 담임은 신청만(사용자 2026-10-20): 신청 칸 + 신청 현황, 수료 확인(보기만). 관리자 처리(새로 등록·고치기·확인·수료 처리)는 없음
+  await slot.getByRole('button',{name:'신청하기'}).waitFor();
+  assert.deepEqual(await slot.locator('#d2Tabs .b2-tab').allInnerTexts(),['중도탈락 신청','수료 확인']);
+  assert.equal(await slot.locator('#d2New,[data-act="edit"],[data-act="confirm"],[data-done]').count(),0);
   for(let i=0;i<50&&!posts.some(b=>b.action==='b2Dropouts');i++)await page.waitForTimeout(100);
   assert.ok(posts.some(b=>b.action==='b2Dropouts'),'reads the dropout tab');
   // 우리 반: 명부는 보기만(상태 고르기·저장 없음), 등록 단추는 중도탈락 탭으로
   await pick(page,'info');
   const go=page.locator('[data-panel="info"] #goDropout');await go.waitFor();
+  assert.equal(await go.innerText(),'중도탈락·조기취업 신청하러 가기 →');
   assert.equal(await page.locator('[data-panel="info"] select[id^="ks"]').count(),0,'no status select');
   assert.equal(await page.locator('[data-panel="info"] [data-k]').count(),0,'no save button');
   await go.click();await page.waitForFunction(()=>location.hash==='#t/attendance/dropout');
