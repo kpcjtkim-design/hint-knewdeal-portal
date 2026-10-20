@@ -248,8 +248,16 @@ service cloud.firestore {
     // settings: 관리자만 쓰고, 담임은 반이 없는 공용 문서(공지·시간표 강의 목록·설문 설정·동기화 상태)만 읽습니다.
     // 반별 문서(attendanceBeta_{반}_{날짜} 등)·체크히어 중계·기능 스위치는 관리자만 읽습니다.
     match /settings/{settingId}{
-      allow read: if isAdmin() || (isTeacher() && settingId in ['global','timetableBetaCatalog','surveyBetaConfig','surveyAutoSync']);
-      allow create, update, delete: if isAdmin();
+      // reasonCatalog: 관리자 사유 목록 설정(2026-10-20). 담임은 읽기만, 쓰기는 revision을 1씩 올리는 관리자만.
+      allow read: if isAdmin() || (isTeacher() && settingId in ['global','timetableBetaCatalog','surveyBetaConfig','surveyAutoSync','reasonCatalog']);
+      allow create, update: if isAdmin() && (settingId != 'reasonCatalog' || (
+        request.resource.data.keys().hasOnly(['catalog','rev','updatedBy','updatedAt'])
+        && request.resource.data.catalog is map && request.resource.data.catalog.cats is list
+        && request.resource.data.catalog.cats.size() > 0 && request.resource.data.catalog.cats.size() <= 40
+        && request.resource.data.rev is int
+        && request.resource.data.rev == (resource == null ? 1 : resource.data.rev + 1)
+        && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time));
+      allow delete: if isAdmin() && settingId != 'reasonCatalog';
     }
     // 그 밖의 경로는 모두 막습니다.
     match /{document=**}{

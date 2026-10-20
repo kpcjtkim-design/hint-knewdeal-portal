@@ -139,7 +139,7 @@ test('checkhereRequests: own-class teacher requests on any YYYY-MM-DD date, admi
 });
 
 test('settings: teachers read only global and non-class documents; class documents, relay and switches stay admin-only',()=>{
- for(const [id,ok] of [['global',true],['timetableBetaCatalog',true],['surveyBetaConfig',true],['surveyAutoSync',true],['attendanceBeta_3_2026-11-05',false],['attendanceOverviewMemo_3_2026-11-05',false],['checkhereRelay',false],['checkhereFeatures',false],['attendanceReviewLive_3_x',false]])
+ for(const [id,ok] of [['global',true],['timetableBetaCatalog',true],['surveyBetaConfig',true],['surveyAutoSync',true],['reasonCatalog',true],['attendanceBeta_3_2026-11-05',false],['attendanceOverviewMemo_3_2026-11-05',false],['checkhereRelay',false],['checkhereFeatures',false],['attendanceReviewLive_3_x',false]])
   assert.equal(can('get','settings/'+id,{auth:T3,data:{}}),ok,id);
  assert.equal(can('get','settings/checkhereRelay',{auth:ADMIN,data:{}}),true);assert.equal(can('update','settings/global',{auth:ADMIN,data:{},next:{notice:'x'}}),true);
  assert.equal(can('update','settings/global',{auth:T3,data:{},next:{notice:'x'}}),false);assert.equal(can('get','settings/global',{auth:OFF,data:{}}),false);
@@ -209,4 +209,19 @@ test('checkhereProposalDrafts: admin drafts on any YYYY-MM-DD date, class 1..17'
 test('notification kinds in the rules are exactly notify-core KINDS (same order)',()=>{
  const m=/d\.kind in \[([^\]]*)\]/.exec(src);assert.ok(m,'validNotification kind 목록');
  assert.deepEqual(m[1].split(',').map(s=>s.trim().replace(/^'|'$/g,'')),[...KINDS]);
+});
+
+test('settings/reasonCatalog: teachers read, admins write with rev+1 and the fixed shape, nobody deletes',()=>{
+ const doc=(o={})=>({catalog:{cats:[{id:'a',label:'병원·질병'}]},rev:1,updatedBy:ADMIN.email,updatedAt:TIME,...o});
+ assert.equal(can('get','settings/reasonCatalog',{auth:T3,data:doc()}),true);
+ assert.equal(can('create','settings/reasonCatalog',{auth:ADMIN,next:doc()}),true);
+ assert.equal(can('create','settings/reasonCatalog',{auth:ADMIN,next:doc({rev:2})}),false,'first save is rev 1');
+ assert.equal(can('update','settings/reasonCatalog',{auth:ADMIN,data:doc(),next:doc({rev:2})}),true);
+ assert.equal(can('update','settings/reasonCatalog',{auth:ADMIN,data:doc({rev:2}),next:doc({rev:2})}),false,'stale rev');
+ assert.equal(can('update','settings/reasonCatalog',{auth:ADMIN,data:doc(),next:doc({rev:2,updatedBy:ADMIN2.email})}),false,'updatedBy is the saver');
+ assert.equal(can('update','settings/reasonCatalog',{auth:ADMIN,data:doc(),next:doc({rev:2,extra:1})}),false);
+ assert.equal(can('update','settings/reasonCatalog',{auth:ADMIN,data:doc(),next:doc({rev:2,catalog:{cats:[]}})}),false,'empty list');
+ assert.equal(can('update','settings/reasonCatalog',{auth:T3,data:doc(),next:doc({rev:2,updatedBy:T3.email})}),false);
+ assert.equal(can('delete','settings/reasonCatalog',{auth:ADMIN,data:doc()}),false);
+ assert.equal(can('delete','settings/global',{auth:ADMIN,data:{}}),true);
 });
