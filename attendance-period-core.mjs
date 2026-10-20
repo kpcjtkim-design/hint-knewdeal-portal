@@ -5,14 +5,20 @@ import {UNIT_PERIODS as COHORT_UNIT_PERIODS,COHORT_DATE_RE,isIsoDate,isClassId} 
 export const UNIT_PERIODS=COHORT_UNIT_PERIODS.map(p=>({id:String(p.no),from:p.from,to:p.to}));
 export const REVIEW_HEADERS=['반','학생명','학생 ID','날짜','운영총괄 출결','DB 출결','적용 출결','가-3 사유','확인 사유','관련 DB 근거','처리 상태'];
 export function periodClassId(name){const m=String(name).trim().match(/^(?:제\s*)?0*(\d{1,2})(?:\s*반|\s*[._-])/);return m&&isClassId(String(+m[1]))?String(+m[1]):'';}
-export function normalizePeriodReason(value){
- const s=String(value||'').trim();if(!s)return '개인사정';
+// 사유 드롭다운의 표준 글 '분류(세부)'(예: '인적성(HMAT)', '면접(최종)', '병원(치과)')도 분류로 봅니다(attendance-reason-catalog.mjs, 2026-10-20).
+const APTITUDE_RE=/^(?:(?:AI|온라인)\s*)?인적성(?:\s*검사)?(?:\s*[-:：]?\s*(?:HMAT|GSAT|SKCT|LG\s*Way\s*Fit|CJ\s*CAT|L-?TAB|PAT|KT|NCS|AI\s*역량\s*검사))?$/i;
+function periodCategory(s){
  if(/^(?:병원(?:\s*(?:방문|진료|내원|치료|예약))?|진료)$/.test(s))return'병원';
  if(/^(?:(?:기업|취업|회사|1차|최종)\s*)?면접$/.test(s))return'면접';
- if(/^(?:(?:AI|온라인)\s*)?인적성(?:\s*검사)?$/i.test(s))return'인적성';
- if(/^(?:취업박람회|채용박람회|잡페어|job\s*fair)$/i.test(s))return'취업박람회';
+ if(APTITUDE_RE.test(s))return'인적성';
+ if(/^(?:취업\s*박람회|채용\s*박람회|잡\s*페어|job\s*fair)$/i.test(s))return'취업박람회';
  if(/^예비군(?:\s*훈련)?$/.test(s))return'예비군';
- return s;
+ return '';
+}
+export function normalizePeriodReason(value){
+ const s=String(value||'').trim();if(!s)return '개인사정';
+ const m=s.match(/^([^()]+?)\s*\(\s*[^()]*\)$/);
+ return periodCategory(s)||(m&&periodCategory(m[1].trim()))||s;
 }
 // Only actual persisted fields are used. Metadata is the administrator's explicit
 // selection; summary is automatic and is usable only with matching source status.

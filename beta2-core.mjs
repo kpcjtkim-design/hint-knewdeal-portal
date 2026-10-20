@@ -4,6 +4,7 @@ import {seconds} from './checkhere/rules.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
 import {ruleFor,DISEASE,COMPLETION_RATE,COURSE_START,COURSE_END,isIsoDate,mdLabel,isTestClass} from './cohort.mjs';
 import {ruleOn,SOURCE_SHEET} from './beta2-daytimes.mjs';
+import {extraEvidence} from './attendance-reason-catalog.mjs'; // 취업박람회 추가 증빙(2026-10-20)
 
 export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출'];
 export const B2_EVIDENCE=['','미제출','반려','확인','해당없음'];
@@ -57,7 +58,7 @@ export function studentStats(bundle,{cls=null,from='',to=bundle.today}={},index=
    const rec=index.get(ledgerKey(p.cls,p.name,d));
    if(!enrolledOn(p,d)&&!rec)continue;enrolled++;
    const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;
-   if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||''});
+   if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||'',reason:rec.reason||'',extra:!!extraEvidence(rec)});
    if(rec&&recognizedType(t)&&isDiseaseReason(rec.reason))disease.push(d);
   }
   const absent=counts['결석']||0;
@@ -133,6 +134,13 @@ export function neededTimes(type,v){
 // 서류: 증빙 미제출·반려 목록
 export function evidenceRows(stats){
  return stats.flatMap(s=>s.evidence.map(e=>({cls:s.cls,name:s.name,...e}))).sort((a,b)=>Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
+}
+// 추가 증빙(취업박람회 인정 출결, 사용자 요청 2026-10-20 ③): 이행 여부(미제출·반려·확인)와 함께 모두 보입니다(못 한 것 먼저). 재학 아닌 날도 기록이 있으면 넣습니다.
+export function extraEvidenceRows(bundle,{cls=null,from='',to=bundle.today}={}){
+ const days=new Set(courseDays(bundle,{from,to}));
+ return bundle.ledger.filter(r=>days.has(r.date)&&(!cls||String(r.cls)===String(cls))).map(r=>({r,x:extraEvidence(r)})).filter(v=>v.x)
+  .map(({r,x})=>({cls:String(r.cls),name:r.name,date:r.date,type:r.type,reason:r.reason||'',state:x.state,done:x.done,evr:r.evr||''}))
+  .sort((a,b)=>Number(a.done)-Number(b.done)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }
 // 중도탈락·수료 위험(출석률이 수료 기준 cohort COMPLETION_RATE % 미만)
 export function dropoutRows(stats,{threshold=COMPLETION_RATE}={}){

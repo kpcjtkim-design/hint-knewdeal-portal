@@ -10,9 +10,11 @@ export const sameRecord=(a,b)=>JSON.stringify(sourceRecord(a))===JSON.stringify(
 export function reasonCategory(reason){
   const text=String(reason||'').trim();
   if(!text||/확인\s*필요|불명|미정|아님|취소/.test(text))return '';
-  const found=[['병원',/병원|병결|병가|진료|치료|질병|입원|통원|수술|검진/],['면접',/면접/],['인적성',/인적성/],['예비군',/예비군/],['민방위',/민방위/],['시험',/시험|응시/],['외조모상',/외조모상/],['외조부상',/외조부상/],['조모상',/(?<!외)조모상/],['조부상',/(?<!외)조부상/],['모친상',/모친상/],['부친상',/부친상/]].filter(([,re])=>re.test(text));
-  // An aptitude examination is a single category even when described as an exam.
-  const kinds=found.map(([k])=>k).filter(k=>!(k==='시험'&&found.some(([v])=>v==='인적성')));
+  // 2026-10-20 사유 드롭다운(attendance-reason-catalog.mjs): 취업박람회·경조사·공가를 더하고 인적성 종류(HMAT·GSAT…)도 인적성으로 봅니다.
+  const found=[['병원',/병원|병결|병가|진료|치료|질병|입원|통원|수술|검진/],['면접',/면접/],['인적성',/인적성|HMAT|GSAT|SKCT|L-?TAB|AI\s*역량\s*검사/i],['취업박람회',/취업\s*박람회|채용\s*박람회|잡\s*페어|job\s*fair/i],['예비군',/예비군/],['민방위',/민방위/],['시험',/시험|응시/],['외조모상',/외조모상/],['외조부상',/외조부상/],['조모상',/(?<!외)조모상/],['조부상',/(?<!외)조부상/],['모친상',/모친상/],['부친상',/부친상/],['경조사',/경조사/],['공가',/공가|법원|관공서/]].filter(([,re])=>re.test(text));
+  // An aptitude examination is a single category even when described as an exam; a job-fair interview is the job fair; a named funeral beats the generic 경조사.
+  const has=k=>found.some(([v])=>v===k),funeral=found.some(([v])=>/상$/.test(v));
+  const kinds=found.map(([k])=>k).filter(k=>!(k==='시험'&&has('인적성'))&&!(k==='면접'&&has('취업박람회'))&&!(k==='경조사'&&funeral));
   return kinds.length===1?kinds[0]:'';
 }
 export function suggestReason({status,reason,record:r,teacher=r?.teacher||''}){
