@@ -210,3 +210,45 @@ test("'해당없음' is a saved type: that day leaves the enrolled days, absence
  const res=sheetToCheckHere({row:{type:'해당없음',reason:''},record:live,sheetTeacher:'김지아',date:'2026-11-05',me:'a@b.c'});
  assert.equal(res.state,'manual');assert.deepEqual(res.changes,{});assert.match(res.notes[0],/해당없음/);
 });
+
+// '중복'(사용자 2026-10-20 '중복(지+조+외) 이거 시트랑 담임이랑 관리자 넣어줘', 시트 계약 2026-10-20): 지각·조퇴·외출 가운데 둘 이상인 날
+test("'중복' is a saved type: attended (not absent), its own bucket, counted once in 지·조·외; times need two of 입실·퇴실·외출; CheckHere compares the parts",async()=>{
+ const core=await import('../../beta2-core.mjs'),{absenceRows,suggestVerdict}=await import('../../beta2-dropout-core.mjs'),{sheetToCheckHere}=await import('../../beta2-checkhere-core.mjs');
+ const {B2_TYPES,DUP_TYPE,DUP_RULE,dupParts,dupCheck,dupWarning,requiredTimes,dupTimesFromRecord,partialCount,sheetWait}=core;
+ assert.deepEqual(B2_TYPES,['출석','지각','조퇴','외출','중복','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음'],'sheet B2.TYPES order with 출석 first');
+ assert.equal(DUP_TYPE,'중복');assert.deepEqual([DUP_RULE.minParts,DUP_RULE.absent,DUP_RULE.partialWeight],[2,false,1]);
+ assert.deepEqual([partialCount('지각'),partialCount('중복'),partialCount('결석'),partialCount('인정지각')],[1,1,0,0]);
+ // 통계: 중복 날은 재학일·출석, 결석 아님, counts.중복, 지·조·외 합계(partial)에 1회
+ const raw={...RAW,ledger:[...RAW.ledger,L('2026-11-05','다','중복',{inT:'09:40',outT:'16:00'}),L('2026-11-03','다','지각',{inT:'09:30'})]},b=decodeBundle(raw);
+ const da=studentStats(b,{cls:'1'}).find(x=>x.name==='다');
+ assert.deepEqual([da.days,da.absent,da.rate,da.counts,da.partial],[3,0,100,{지각:1,인정조퇴:1,중복:1},2]);
+ assert.equal(studentStats(b,{cls:'1'}).find(x=>x.name==='가').partial,1,'가: one 지각');
+ assert.deepEqual(dayCounts(dayView(b,'1','2026-11-05')),{총원:2,출석:2,결석:0,지각:0,조퇴:0,외출:0,인정:1,중복:1});
+ const ab=absenceRows(b,{cls:'1'}).find(x=>x.name==='다');assert.deepEqual([ab.absent,ab.partial],[0,2]);
+ assert.equal(suggestVerdict({kind:'조기취업',cls:'1',name:'다',lastDate:'2026-11-05',startDate:'2026-11-06'},b).absent,0,'중복 is not an absence');
+ // 시간: 입실(지각)·퇴실(조퇴)·외출(시작+종료) 가운데 둘 이상, 외출은 짝·순서(시트 b2Save와 같은 기준, 관리자는 저장 전에 막음)
+ assert.equal(dupParts({inT:'09:40',oa:'13:00'}).count,1,'half an outing is not an outing');
+ assert.equal(dupCheck({inT:'09:40',outT:'16:00'}),null);assert.equal(dupCheck({outT:'16:00',oa:'13:00',ob:'14:00'}),null);
+ assert.equal(dupCheck({inT:'09:40'}).text,'중복은 입실(지각)·퇴실(조퇴)·외출 시간 가운데 둘 이상을 넣어 주세요.');assert.equal(dupCheck({}).field,'inT');
+ assert.deepEqual(dupCheck({inT:'09:40',oa:'13:00'}),{field:'ob',text:'입력 필요: 외출 종료 시간'});
+ assert.deepEqual(dupCheck({inT:'09:40',oa:'14:00',ob:'13:00'}),{field:'ob',text:'외출 종료가 시작보다 늦어야 합니다'});
+ assert.match(dupWarning('중복',{inT:'09:40'}),/둘 이상을 넣어 주세요 · 지금 지각$/);assert.equal(dupWarning('중복',{inT:'09:40',outT:'16:00'}),'');assert.equal(dupWarning('지각',{}),'');
+ assert.deepEqual(requiredTimes('중복'),{inT:'',outT:'',oa:'',ob:''});assert.deepEqual(requiredTimes('지각'),{inT:'x',outT:'',oa:'',ob:''});
+ assert.deepEqual(neededTimes('중복',{inT:'09:40',outT:'',oa:'13:00',ob:'14:00'}),{inT:'09:40',outT:'',oa:'13:00',ob:'14:00'},'all entered times are saved');
+ // 고를 때 미리 채우기: 체크히어에서 실제 지각·조퇴·외출인 부분만(정시 입실은 비움)
+ const rec=(entry,exit,extra={})=>({rawEntry:entry,entry,exit,outings:[],outingCount:0,...extra});
+ assert.deepEqual(dupTimesFromRecord(rec('08:55:00','16:00:00',{outings:[{start:'13:00:00',end:'14:00:00'}],outingCount:1})),{inT:'',outT:'16:00',oa:'13:00',ob:'14:00'});
+ assert.deepEqual(dupTimesFromRecord(rec('09:40:00','18:01:00')),{inT:'09:40',outT:'',oa:'',ob:''});
+ // 체크히어 대조: 체크히어의 지각·조퇴 자체는 차이가 아님. 원장에 적힌 부분이 체크히어와 맞는지, 체크히어로 둘 이상인지
+ assert.equal(compareCheckHere('중복',{inT:'09:40',outT:'16:00'},rec('09:40:00','16:00:00')).state,'ok');
+ assert.equal(compareCheckHere('중복',null,rec('09:40:00','16:00:00')).state,'ok','teacher rows without times: CheckHere shows two parts');
+ assert.match(compareCheckHere('중복',{inT:'09:40',outT:'16:00'},rec('09:00:00','16:00:00')).text,/지각 아님/);
+ assert.match(compareCheckHere('중복',null,rec('09:40:00','18:01:00')).text,/체크히어로는 지각·조퇴·외출 1가지 · 중복은 2가지 이상/);
+ assert.match(compareCheckHere('중복',{inT:'09:40',oa:'13:00',ob:'14:00'},rec('09:40:00','18:01:00')).text,/외출 기록 없음/);
+ // 체크히어 반영: 그대로 개별 검토(보내지 않음)
+ const live={id:'r',version:'v',readState:'complete',classId:'1',date:'2026-11-05',name:'다',teacher:'김지아',rawEntry:'09:40:00',entry:'09:40:00',exit:'16:00:00',outings:[],schedule:'09:00 ~ 18:00',source:'live',phoneLast4:'1234'};
+ const res=sheetToCheckHere({row:{type:'중복',reason:'',inT:'09:40',outT:'16:00'},record:live,sheetTeacher:'김지아',date:'2026-11-05',me:'a@b.c'});
+ assert.equal(res.state,'manual');assert.deepEqual(res.changes,{});assert.deepEqual(res.notes,['중복 출결 · 개별 검토 필요']);
+ // 시트가 아직 중복을 받지 않으면 기다림 안내(해당없음과 같음)
+ assert.match(sheetWait('유형을 골라 주세요.','중복'),/^시트 업데이트 대기 · 마스터시트가 아직 중복을 받지 않습니다/);assert.equal(sheetWait('유형을 골라 주세요.','지각'),'유형을 골라 주세요.');
+});

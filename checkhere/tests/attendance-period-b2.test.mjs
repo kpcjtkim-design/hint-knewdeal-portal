@@ -68,7 +68,8 @@ test('ledger rows become 1기-shaped period cells: types, implied attendance, le
  const check=b2PeriodCheck(r);assert.equal(check.counts.evidenceMissing,1);assert.equal(check.counts.evidenceRejected,1);assert.equal(check.counts.review,r.reviews.length-2);assert.equal(check.counts.future,30);
  assert.throws(()=>prepareB2Period({bundle:bundle(),classId:'1',from:'2026-11-07',to:'2026-11-08'}),/교육일이 없습니다/);
  assert.throws(()=>prepareB2Period({bundle:bundle(),classId:'99',from:p.from,to:p.to}),/반 번호/);
- const bad=decodeBundle({...RAW,ledger:[L('2026-11-02','1','가상가','중복')]});assert.throws(()=>prepareB2Period({bundle:bad,classId:'1',from:p.from,to:p.to}),/옮길 수 없습니다/);
+ const bad=decodeBundle({...RAW,ledger:[L('2026-11-02','1','가상가','인정결석')]}); // 모르는 유형('중복'은 2026-10-20부터 유형)
+assert.throws(()=>prepareB2Period({bundle:bad,classId:'1',from:p.from,to:p.to}),/옮길 수 없습니다/);
  const blank=prepareB2Period({bundle:decodeBundle({...RAW,ledger:[L('2026-11-02','1','가상가','',{evr:'메모만'})]}),classId:'1',from:p.from,to:p.to});assert.equal(blank.students[0].cells.find(c=>c.date==='2026-11-02').status,'출석');assert.ok(blank.reviews.some(x=>x[6].startsWith('출결원장 출결 칸이 비어 있음')));
  const later=prepareB2Period({bundle:bundle(),classId:'1',from:'2026-10-28',to:'2026-11-04'});assert.equal(later.students[1].trainingStatus,'훈련중','leaving on/after the period end is still 훈련중 for that period');
 });
@@ -141,4 +142,15 @@ test('the 1기 path of the workbook builder is unchanged when no 2기 options ar
  const book=buildPeriodWorkbook(FakeExcel,r,TEMPLATES,'2');
  assert.deepEqual(book.worksheets.map(s=>s.name),['2. 수도권_제조지능화_2 단위기간','확인필요','가-3 원문']);
  assert.equal(book.worksheets[0].text(4,3),TEMPLATES.profiles['2'].cells.find(c=>c[0]===4&&c[1]===3)[2]);assert.match(book.worksheets[0].text(14,1),/^포털 DB 대조/);assert.equal(book.worksheets[1].text(1,5),'운영총괄 출결');
+});
+
+// '중복'(지각·조퇴·외출 가운데 둘 이상, 2026-10-20 시트 계약): 1기 양식의 '중복' 글자색으로 넣고, 출석일수와 지/조/외/중복 칸에 하루(1회)씩, 결석 아님
+test("a ledger '중복' goes into the 1기 sheet as 중복: attended day, counted once in 지/조/외/중복, not an absence, remark M/D(중복-사유)",()=>{
+ const p=UNIT_PERIODS[0],raw={...RAW,ledger:[...RAW.ledger,L('2026-11-05','1','가상가','중복',{inT:'09:40',outT:'16:00',reason:'병원'})]};
+ const r=prepareB2Period({bundle:decodeBundle(raw),classId:'1',from:p.from,to:p.to}),ga=r.students[0],cell=ga.cells.find(c=>c.date==='2026-11-05');
+ assert.deepEqual([cell.status,cell.abnormal],['중복',true]);assert.match(ga.remarks,/11\/5\(중복-/);
+ const book=buildPeriodWorkbook(FakeExcel,r,TEMPLATES,'1',{profile:b2PeriodProfile(TEMPLATES,'1',RAW.classes[0])}),s=book.worksheets[0];
+ assert.deepEqual(s.getCell(18,10+r.dates.indexOf('2026-11-05')).font.color,TEMPLATES.profiles['1'].colors['중복']);
+ // 가상가: 지각(11/2)·인정지각(11/4, 1기 수식은 인정도 셈)·중복(11/5) → 지/조/외/중복 3회(중복 1회), 결석 0, 출석일수 = 훈련일수
+ assert.equal(s.getCell(18,7).value.result,0);assert.equal(s.getCell(18,8).value.result,3);assert.equal(s.getCell(18,6).value.result,s.getCell(18,5).value.result);
 });

@@ -29,10 +29,10 @@ test('before-start days without attendance are absences; days from start count a
  assert.equal(r.periods[0].total,12);assert.equal(r.periods[1].total,3);assert.equal(r.periods[2].total,0);
  assert.equal(r.verdict,'제적');assert.match(r.basis,/1단위기간.*절반/);assert.match(r.basis,/전체 무단결석 15일/);
 });
-test('unexcused late/early/outing: 3 per unit period = 1 absence; 중복 counts twice; 인정출석 is attendance',()=>{
+test('unexcused late/early/outing: 3 per unit period = 1 absence; 중복 counts once in 2기 (1기 counted it twice); 인정출석 is attendance',()=>{
  const a=classAttendance(sheet(DAYS,[['가',row(upTo('8/31'),{'7/27':'지각','7/28':'조퇴','7/29':'외출','7/30':'지각','7/31':'인정출석','8/27':'중복(지각+외출, 지각+조퇴, 외출+조퇴)','8/28':'결석'})]]));
  const r=evaluateDropout(entry(),{dates:a.dates,row:a.students[0].row},'2026-09-29');
- assert.deepEqual(r.periods.map(p=>[p.absent,p.partial,p.converted,p.total]),[[0,4,1,1],[1,2,0,1],[0,0,0,0]]);
+ assert.deepEqual(r.periods.map(p=>[p.absent,p.partial,p.converted,p.total]),[[0,4,1,1],[1,1,0,1],[0,0,0,0]]);
  assert.equal(r.totalAbsence,2);assert.equal(r.verdict,'수료가능');assert.equal(verdictLabel(r),'수료가능');
 });
 test('unit period needs absences under half; total unexcused must not exceed 11',()=>{

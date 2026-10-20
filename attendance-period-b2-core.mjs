@@ -7,12 +7,14 @@
 //  - 비고: 1기와 같은 'M/D(출결-사유)'. 사유는 출결원장 사유를 1기 기간 비고 규칙(normalizePeriodReason, 사유 목록의 '기간 비고 글')으로 줄이고, 비면 개인사정.
 //  - 원장 유형 '해당없음'(시트 v14부터 관리자·담임이 고를 수 있음)은 1기 양식의 해당없음 글자색(회색 #999999)으로 그대로 넣고, 훈련일수에서 빠집니다(COUNTA-COUNTIF 식).
 //    해당없음이 이어져도 중도포기로 보지 않습니다: 중도포기 등은 명부 상태(중도탈락·조기취업)와 상태 변경일로만 정합니다(1기 preparePeriod의 '뒤 칸이 모두 해당없음' 판정은 2기에서 쓰지 않음).
+//  - 원장 유형 '중복'(지각·조퇴·외출 가운데 둘 이상, 2026-10-20)은 1기 양식처럼 '중복'(검은 글자)으로 넣습니다. 1기 수식 그대로 출석일수와 지각·조퇴·외출 칸에 하루씩 들고
+//    결석이 아닙니다(1기 운영총괄 '중복(지각+조퇴+외출)'과 같은 셈). 비고는 'M/D(중복-사유)'.
 //  - 훈련생 상태: 명부 상태가 재학이 아니고 마지막 출석일(상태 변경일)이 기간 끝 전이면 그 상태(중도탈락은 1기 표기 '중도포기'), 아니면 훈련중.
 import {classDays,ledgerIndex,ledgerKey,rosterFor,enrolledOn,recognizedType} from './beta2-core.mjs';
 import {normalizePeriodReason} from './attendance-period-core.mjs';
 import {classInfo,isIsoDate,UNIT_PERIODS,COHORT,mdLabel} from './cohort.mjs';
 
-export const B2_PERIOD_STATUSES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음'];
+export const B2_PERIOD_STATUSES=['출석','지각','조퇴','외출','중복','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음'];
 export const B2_REVIEW_HEADERS=['반','학생명','날짜','출결원장 출결','출석부 출결','사유','확인 사유','증빙','처리 상태'];
 export const B2_SOURCE_HEADERS=['날짜','학생명','출결','입실','퇴실','외출 시작','외출 끝','사유','증빙','반려 사유','시트 입력 확인'];
 // 1기 양식에서 훈련생 상태 칸에 쓰던 말(중도탈락 → 중도포기). 그 밖의 명부 상태(조기취업·수료)는 그대로 씁니다.

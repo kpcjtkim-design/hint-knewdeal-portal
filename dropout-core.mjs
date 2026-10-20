@@ -1,6 +1,7 @@
 import {DROPOUT_SHEET_ID as COHORT_DROPOUT_SHEET_ID,isoFromMonthDay,isClassId} from './cohort.mjs';
 import {isoLabel} from './attendance-beta-core.mjs';
 import {UNIT_PERIODS} from './attendance-period-core.mjs';
+import {DUP_RULE} from './beta2-core.mjs'; // 중복 하루의 횟수(2기 1회, 사용자 결정 2026-10-20 · 1기는 2회)
 // 중도포기자(교육생) 시트 + 운영총괄 반별 출결로 조기취업 수료 가능 여부를 판정한다.
 // 규칙: 근로개시일 직전 수업일까지 출석해야 하고(미출석=결석), 그 이후는 출석 간주.
 // 무단 지각·조퇴·외출은 단위기간별 3회=결석 1일. 단위기간 결석은 수업일 절반 미만,
@@ -51,7 +52,7 @@ export function classAttendance(values){
  const students=a.slice(1).map(r=>({name:clean(r[0]),row:r})).filter(s=>s.name);
  return {dates,students};
 }
-const partialCount=s=>s.startsWith('중복')?2:PARTIAL[s]||0;
+const partialCount=s=>s.startsWith('중복')?DUP_RULE.partialWeight:PARTIAL[s]||0; // 운영총괄 '중복(지각+외출, …)' 표기도 중복
 const periodOf=d=>PERIODS.find(p=>d>=p.from&&d<=p.to);
 export function evaluateDropout(entry,attendance,today){
  const issues=[],out={...entry,issues,verdict:'확인필요',scheduled:false,periods:[],totalAbsence:null,preStartAbsence:0,days:[]};

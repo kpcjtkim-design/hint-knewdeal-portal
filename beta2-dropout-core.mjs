@@ -37,7 +37,7 @@ export function absenceRows(bundle,{cls=null,max=MAX_ABSENCE,withTest=true}={}){
  const left=courseDays(bundle,{from:bundle.today?nextDay(bundle.today):'',to:COURSE_END}).length;
  return studentStats(bundle,{cls,withTest:withTest&&!cls}).map(st=>{
   const lv=absenceLevel(st.absent,max);
-  return {cls:st.cls,name:st.name,status:st.status,changed:st.changed,days:st.days,absent:st.absent,rate:st.rate,remaining:st.status==='재학'?left:0,...lv};
+  return {cls:st.cls,name:st.name,status:st.status,changed:st.changed,days:st.days,absent:st.absent,partial:st.partial,rate:st.rate,remaining:st.status==='재학'?left:0,...lv};
  }).sort((a,b)=>b.absent-a.absent||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
 }
 const nextDay=iso=>{const d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);};

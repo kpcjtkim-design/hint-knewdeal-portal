@@ -8,10 +8,44 @@ import {extraEvidence,isDiseaseText} from './attendance-reason-catalog.mjs'; // 
 
 // '해당없음'(현황 없음, 사용자 2026-10-20 '출결상태에서 현황없음을 시트 담임 관리자에 만들라고'): 저장되는 출결 상태. 시트 기호 '-'(회색).
 // 그날은 재학일 수(분모)·결석·총원 어디에도 넣지 않습니다(재학 전후 '해당없음' 행과 같음). 사유·증빙 없음.
-export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음'];
-export const NONE_TYPE='해당없음';
+// '중복'(사용자 2026-10-20 '출결현황에서 중복도 넣어줘야함. 중복(지+조+외) 이거 시트랑 담임이랑 관리자 넣어줘'): 한 날에 지각·조퇴·외출 가운데 둘 이상.
+// 1기 운영총괄 '중복(지각+조퇴+외출)'과 같은 이름. 유형 순서는 시트 B2.TYPES와 같음(지각·조퇴·외출·중복·결석·인정…·해당없음, 맨 앞 출석). 셈법은 아래 DUP_RULE 하나에서 바꿉니다.
+export const B2_TYPES=['출석','지각','조퇴','외출','중복','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음'];
+export const NONE_TYPE='해당없음',DUP_TYPE='중복';
+// 중복 셈법(시트 계약 2026-10-20, 사용자 결정): 인정이 아닌 유형, 출석일로 셈(결석 아님), 사유 선택, 증빙 없음.
+//  - 지각·조퇴·외출 횟수와 결석 환산(3회 = 결석 1일)에 1회(partialWeight). 1기 dropout-core는 2회였지만 2기는 1회.
+//  - 시간: 입실(inT, 지각)·퇴실(outT, 조퇴)·외출(oa+ob) 가운데 둘 이상(minParts). 관리자 b2Save는 모자라면 거절(message)하므로 출결대조도 저장 전에 같은 검사로 막습니다.
+//    외출은 시작·종료를 함께, 종료가 시작보다 늦게. 담임 portalSave는 시간 없이도 저장하고 warn('겹친 시간 둘 이상…나중에 채워도 됩니다')을 붙입니다.
+//  - 색: 진한 주황, 바탕 #F9CB9C · 글자 #783F04(시트와 같음, beta2.css t-dup·담임 k-dup·출결대조 유형 칸).
+export const DUP_RULE=Object.freeze({label:'중복(지각+조퇴+외출)',minParts:2,absent:false,partialWeight:1,
+ message:'중복은 입실(지각)·퇴실(조퇴)·외출 시간 가운데 둘 이상을 넣어 주세요.',bg:'#F9CB9C',fg:'#783F04'});
+// 결석 환산·지·조·외 합계에서 하루가 몇 회인지(지각·조퇴·외출 1회, 중복 DUP_RULE.partialWeight)
+export const PARTIAL_WEIGHT=Object.freeze({지각:1,조퇴:1,외출:1,[DUP_TYPE]:DUP_RULE.partialWeight});
+export const partialCount=t=>PARTIAL_WEIGHT[String(t||'')]||0;
+// 시트(Apps Script)가 아직 새 유형(해당없음·중복)을 받지 않으면(배포 전) b2Save·portalSave가 '유형을 골라 주세요.'로 거절합니다 → 기다림 안내(관리자·담임 공통)
+export const NEW_TYPES=Object.freeze([NONE_TYPE,DUP_TYPE]);
+export const sheetWait=(msg,type,again='다시 저장해 주세요')=>NEW_TYPES.includes(type)&&/유형을 골라/.test(String(msg||''))?`시트 업데이트 대기 · 마스터시트가 아직 ${type}을 받지 않습니다(Apps Script 배포 뒤 ${again})`:msg;
+// 중복의 부분: 지각 = 입실 시간(inT), 조퇴 = 퇴실 시간(outT), 외출 = 외출 시작·종료(oa·ob 둘 다).
+export const DUP_PARTS=Object.freeze([['late','지각'],['early','조퇴'],['outing','외출']]);
+const hm5=v=>/^\d{1,2}:\d{2}/.test(String(v||'').trim())?String(v).trim():'';
+export function dupParts(v){const o={late:!!hm5(v?.inT),early:!!hm5(v?.outT),outing:!!(hm5(v?.oa)&&hm5(v?.ob))};o.count=DUP_PARTS.filter(([k])=>o[k]).length;return o;}
+// 중복 시간 확인(시트 b2Save와 같은 기준). 통과하면 null, 아니면 {field, text}. 외출 짝·순서를 먼저, 그다음 둘 이상.
+export function dupCheck(v){
+ const oa=hm5(v?.oa),ob=hm5(v?.ob);
+ if(!!oa!==!!ob)return oa?{field:'ob',text:'입력 필요: 외출 종료 시간'}:{field:'oa',text:'입력 필요: 외출 시작 시간'};
+ if(oa&&ob<=oa)return {field:'ob',text:'외출 종료가 시작보다 늦어야 합니다'};
+ if(dupParts(v).count<DUP_RULE.minParts)return {field:hm5(v?.inT)?'outT':'inT',text:DUP_RULE.message};
+ return null;
+}
+// 입력하는 동안 행에 보이는 짧은 안내(저장은 dupCheck가 막음). 중복이 아니거나 충분하면 ''.
+export function dupWarning(type,v){
+ if(type!==DUP_TYPE)return '';
+ const p=dupParts(v);if(p.count>=DUP_RULE.minParts)return '';
+ const got=DUP_PARTS.filter(([k])=>p[k]).map(([,l])=>l);
+ return `${DUP_RULE.message.replace(/\.$/,'')} · 지금 ${got.length?got.join('·'):'시간 없음'}`;
+}
 export const B2_EVIDENCE=['','미제출','반려','확인','해당없음'];
-export const B2_PRESENT=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
+export const B2_PRESENT=new Set(['출석','지각','조퇴','외출','중복','인정지각','인정조퇴','인정외출']);
 export const recognizedType=t=>String(t||'').startsWith('인정');
 // 사유 표기(병결·병원·병가·진료…)를 질병으로 봅니다: 사유 목록 데이터에서 '질병 포함'인 분류·세부의 찾는 말(일반건강검진은 아님, 규정 0917).
 // DISEASE_REASON은 기본 목록과 같은 옛 규칙(참고용)입니다. 판정은 isDiseaseReason(관리자가 바꾼 목록을 따름)을 씁니다.
@@ -53,7 +87,7 @@ export function dayCounts(rows){
  const c={총원:0,출석:0,결석:0,지각:0,조퇴:0,외출:0,인정:0,중복:0};
  for(const r of rows){
   if((!r.enrolled&&!r.rec)||r.type===NONE_TYPE)continue;c.총원++;const t=r.type; // 해당없음(재학 전후·현황 없음)은 총원·출석에서 뺌
-  if(t==='결석')c.결석++;else if(recognizedType(t))c.인정++;else if(['지각','조퇴','외출','중복'].includes(t))c[t]++;
+  if(t==='결석'||(t===DUP_TYPE&&DUP_RULE.absent))c.결석++;else if(recognizedType(t))c.인정++;else if(['지각','조퇴','외출',DUP_TYPE].includes(t))c[t]++; // 중복은 결석이 아니라 출석(DUP_RULE.absent)
  }
  c.출석=c.총원-c.결석;return c;
 }
@@ -75,8 +109,9 @@ export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=f
    if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||'',reason:rec.reason||'',extra:!!extraEvidence(rec)});
    if(rec&&recognizedType(t)&&isDiseaseReason(rec.reason))disease.push(d);
   }
-  const absent=counts['결석']||0;
-  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
+  const absent=(counts['결석']||0)+(DUP_RULE.absent?counts[DUP_TYPE]||0:0); // 중복은 결석이 아님(출석률에서 출석한 날, counts.중복으로 따로 셈)
+  const partial=Object.entries(counts).reduce((n,[t,c])=>n+partialCount(t)*c,0); // 지·조·외 합계(무단 지각·조퇴·외출 횟수, 중복 하루 = DUP_RULE.partialWeight회)
+  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,partial,rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
  });
 }
 
@@ -116,6 +151,19 @@ export function compareCheckHere(type,rec,record,{today='',date='',now=null,corr
  if(absent)return entry!==null||exit!==null?{state:'diff',text:`체크히어 입실 ${hhmm(entry)||'-'} · 퇴실 ${hhmm(exit)||'-'} 기록 있음${real}`}:{state:'ok',text:real?`교시 기록·퇴실 없음${real} 남음`:'입퇴실 없음'};
  if(entry===null&&exit===null)return ongoing?{state:'pending',text:'오늘 입실 기록 아직 없음'}:{state:'diff',text:real?`교시 기록·퇴실 없음${real} · 퇴실 미타각인지 확인`:'체크히어 입퇴실 없음 · 결석 확인'};
  const notes=[];
+ // 중복: 원장에 적힌 부분(입실=지각·퇴실=조퇴·외출 구간)이 체크히어에도 있는지, 체크히어로 셀 수 있는 부분이 둘 이상인지(DUP_RULE.minParts) 봅니다.
+ // 체크히어의 지각·조퇴·외출 자체는 차이가 아닙니다(중복이 바로 그 뜻). 시간이 없는 원장 줄(담임 입력)은 체크히어 부분 수만 봅니다.
+ if(type===DUP_TYPE){
+  const want=dupParts(rec||{}),got={late,early:early&&!ongoing,outing},n=DUP_PARTS.filter(([k])=>got[k]).length;
+  if(want.late&&!late)notes.push(`체크히어 입실 ${hhmm(entry)||'-'} · 지각 아님`);else if(want.late&&rec?.inT&&hhmm(entry)!==String(rec.inT).slice(0,5))notes.push(`입실 시간 다름 (체크히어 ${hhmm(entry)})`);
+  if(want.early&&exit!==null&&!early)notes.push(`체크히어 퇴실 ${hhmm(exit)} · 조퇴 아님`);else if(want.early&&exit!==null&&hhmm(exit)!==String(rec.outT).slice(0,5))notes.push(`퇴실 시간 다름 (체크히어 ${hhmm(exit)})`);
+  if(want.outing&&!outing)notes.push('체크히어 외출 기록 없음');
+  if(!ongoing&&n<DUP_RULE.minParts)notes.push(`체크히어로는 지각·조퇴·외출 ${n}가지 · 중복은 ${DUP_RULE.minParts}가지 이상`);
+  if(exit===null&&!ongoing&&!want.early)notes.push('퇴실 기록 없음');
+  if(entry===null)notes.push('입실 기록 없음');
+  const day=RULES.source===SOURCE_SHEET&&notes.some(x=>/지각|조퇴/.test(x))?` (그날 기준 ${RULES.start}~${RULES.end})`:'';
+  return notes.length?{state:'diff',text:[...new Set(notes)].join(' · ')+day+real}:{state:ongoing?'pending':'ok',text:(ongoing?'진행 중 · 지금까지 일치':'일치')+real};
+ }
  if(base==='지각'){if(!late)notes.push(`체크히어 입실 ${hhmm(entry)} · 지각 아님`);else if(rec?.inT&&hhmm(entry)!==rec.inT)notes.push(`입실 시간 다름 (체크히어 ${hhmm(entry)})`);}
  else if(late)notes.push(`체크히어 지각 ${hhmm(entry)}`);
  if(base==='조퇴'){if(exit!==null&&!early)notes.push(`체크히어 퇴실 ${hhmm(exit)} · 조퇴 아님`);else if(rec?.outT&&exit!==null&&hhmm(exit)!==rec.outT)notes.push(`퇴실 시간 다름 (체크히어 ${hhmm(exit)})`);}
@@ -140,9 +188,24 @@ export function timesFromRecord(record){
  return {inT:t(record?Object.hasOwn(record,'rawEntry')&&record.rawEntry?record.rawEntry:record.entry:''),outT:t(record?.exit),oa:t(trip?.start),ob:t(trip?.end)};
 }
 // 유형에 필요한 시간만 남깁니다(시트 '입력 확인' 규칙과 같음).
+// 중복은 지각·조퇴·외출 시간을 모두 둡니다(적힌 것만 저장, 어느 칸이 꼭 있어야 하는지는 없고 둘 이상인지는 dupCheck).
 export function neededTimes(type,v){
+ if(type===DUP_TYPE)return {inT:v.inT||'',outT:v.outT||'',oa:v.oa||'',ob:v.ob||''};
  const base=String(type||'').replace(/^인정/,'');
  return {inT:base==='지각'?v.inT||'':'',outT:base==='조퇴'?v.outT||'':'',oa:base==='외출'?v.oa||'':'',ob:base==='외출'?v.ob||'':''};
+}
+
+// 꼭 있어야 하는 시간(시트 '입력 확인'과 같음): 중복은 특정 칸이 없음(둘 이상·외출 짝은 dupCheck), 그 밖에는 neededTimes와 같음.
+export const requiredTimes=type=>type===DUP_TYPE?{inT:'',outT:'',oa:'',ob:''}:neededTimes(type,{inT:'x',outT:'x',oa:'x',ob:'x'});
+// 중복을 고를 때 시간 미리 채우기: 체크히어에서 실제로 지각·조퇴·외출인 부분만(정시 입실 시간까지 채우면 지각으로 잘못 셈).
+// 기준은 compareCheckHere와 같은 그날 규칙(rule을 주면 그것, 아니면 ruleOn).
+export function dupTimesFromRecord(record,{date='',cls='',rule=null}={}){
+ const t=timesFromRecord(record),out={inT:'',outT:'',oa:t.oa,ob:t.oa?t.ob:''};if(!record)return out;
+ const R=rule||ruleOn(date||record.date,{classId:record.classId??cls}),start=seconds(R.start),end=seconds(R.end);
+ let entry=null,exit=null;try{entry=seconds(t.inT||null);exit=seconds(t.outT||null);}catch{}
+ if(entry!==null&&entry>=start+(R.entryGrace+1)*60)out.inT=t.inT;
+ if(exit!==null&&exit<end-R.exitGrace*60)out.outT=t.outT;
+ return out;
 }
 
 // 서류: 증빙 미제출·반려 목록

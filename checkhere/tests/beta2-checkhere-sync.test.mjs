@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCheckHereSync,rowCheckHereStatus,requestStatus,resultStatus,timeDeleteBlock,timeDeletePlan,REQUEST_KEYS,STATUS_ACTIONS,TYPE_FIRST} from '../../beta2-checkhere-sync.mjs';
+import {createCheckHereSync,rowCheckHereStatus,requestStatus,resultStatus,timeDeleteBlock,timeDeletePlan,restoreBlock,REQUEST_KEYS,STATUS_ACTIONS,TYPE_FIRST} from '../../beta2-checkhere-sync.mjs';
 import {holdKey,AUTO_TEXT} from '../../beta2-checkhere-core.mjs';
 import {baseTag,isLiveRequest,tagOf} from '../../checkhere-live-core.mjs';
 import {ATTEND_DELETE} from '../rules.mjs';
@@ -106,10 +106,14 @@ test('undo within 3 seconds writes nothing and saves the previous sheet row back
 
 test('undo of a previous value the sheet would reject only cancels the request (S9)',async()=>{
  const h=harness();await h.open();
- // 운영총괄에서 온 '중복' 행: b2Save가 받지 않는 유형이라 출결원장은 되돌리지 않고, 3초 동안 그렇게 알립니다.
- let s=h.save(row('중복',{reason:'가상 사유'}),LATE,'sig-1');
- assert.equal(s.kind,'countdown');assert.match(s.detail,/되돌리기는 체크히어 반영만 취소 \(이전 유형 '중복'은 출결원장에 다시 저장할 수 없음\)/);
- const r=await h.sync.undo(h.key);assert.deepEqual([r.ok,r.kept],[true,"이전 유형 '중복'"]);
+ // 운영총괄에서 온 옛 유형('인정결석') 행: b2Save가 받지 않는 유형이라 출결원장은 되돌리지 않고, 3초 동안 그렇게 알립니다.
+ // ('중복'은 2026-10-20부터 출결 유형: 시트 b2Save처럼 입실·퇴실·외출 가운데 둘 이상이면 되돌릴 수 있고, 외출은 짝·순서를 봅니다.)
+ assert.equal(restoreBlock(row('중복',{inT:'09:30',outT:'16:00'})),'');assert.equal(restoreBlock(row('중복',{outT:'16:00',oa:'13:00',ob:'14:00'})),'');
+ assert.equal(restoreBlock(row('중복')),'이전 값에 필요한 시간이 없음');assert.equal(restoreBlock(row('중복',{inT:'09:30'})),'이전 값에 필요한 시간이 없음');
+ assert.equal(restoreBlock(row('중복',{inT:'09:30',oa:'14:00',ob:'13:00'})),'이전 외출 시간 확인 필요');assert.equal(restoreBlock(row('출석',{oa:'14:00',ob:'13:00'})),'');
+ let s=h.save(row('인정결석',{reason:'가상 사유'}),LATE,'sig-1');
+ assert.equal(s.kind,'countdown');assert.match(s.detail,/되돌리기는 체크히어 반영만 취소 \(이전 유형 '인정결석'은 출결원장에 다시 저장할 수 없음\)/);
+ const r=await h.sync.undo(h.key);assert.deepEqual([r.ok,r.kept],[true,"이전 유형 '인정결석'"]);
  assert.equal(h.st.saves.length,0);assert.equal(h.sync.statusFor(h.key).label,'체크히어 반영 취소 · 출결원장은 그대로');
  // 시간 없는 지각·사유 없는 인정·반려 사유 없는 반려도 같습니다.
  for(const prev of [row('지각'),row('인정출석'),row('인정출석',{reason:'가상 병원',ev:'반려'})]){
@@ -117,7 +121,7 @@ test('undo of a previous value the sheet would reject only cancels the request (
  }
  assert.equal(h.st.saves.length,0);await h.advance(10000);assert.equal(h.writes().length,0);
  // 2기는 운영총괄 동기화가 없어 출처가 '1기 동기화'로 적힌 옛 행도 같은 길입니다(운영총괄 값으로 되살리기·b2Release 없음).
- s=h.save(row('중복',{reason:'가상 사유',prov:'1기 동기화'}),row('조퇴',{outT:'16:00'}),'sig-3');
+ s=h.save(row('인정결석',{reason:'가상 사유',prov:'1기 동기화'}),row('조퇴',{outT:'16:00'}),'sig-3');
  assert.match(s.detail,/되돌리기는 체크히어 반영만 취소/);assert.doesNotMatch(s.detail,/운영총괄/);
  const back=await h.sync.undo(h.key);assert.equal(back.ok,true);assert.ok(!back.released);
  assert.equal(h.st.releases.length,0);assert.equal(h.st.saves.length,0);

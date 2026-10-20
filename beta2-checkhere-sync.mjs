@@ -11,7 +11,7 @@
 import {memoDefaultTimes,resultText} from './checkhere/approval-core.mjs';
 import {ACTIVE,LIVE_STATUS,buildLiveRequest,isAutoLedgerRequest,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
 import {RELAY_STALE_MS,UNMASK_ON_APPLY,canDeleteTime,checkhereChangeKind,deleteLeaves,deletionGate,liveForm,needsUnmaskOnApply,privacyShort,relayPrivacy,removalSides,sheetToCheckHere,unmaskNote} from './beta2-checkhere-core.mjs';
-import {B2_EVIDENCE,B2_TYPES,neededTimes,recognizedType} from './beta2-core.mjs';
+import {B2_EVIDENCE,B2_TYPES,DUP_TYPE,dupCheck,requiredTimes,recognizedType} from './beta2-core.mjs';
 
 // firestore.rules checkhereRequests create 허용 키 중 요청 내용(나머지는 status·createdBy·createdAt·updatedAt).
 // deleteTimes는 시간 삭제 요청에만, 비어 있지 않을 때만 넣습니다(2기 firestore.rules가 허용, 게시 전에는 권한 거절 → S13).
@@ -58,11 +58,12 @@ const deleteQuestion=(name,date,record,sides,privacy=null)=>`${name} · ${date} 
   +(sides.includes('exit')&&!sides.includes('entry')&&record?.entryKind==='PASS'&&hhmm(record?.entry)?`\n퇴실을 지우면 1교시(${hhmm(record.entry)})와 총 참여 시간도 비워집니다.`:'')
   +sides.filter(k=>String(record?.[k+'Memo']??'').trim()).map(k=>`\n${DEL_LABEL[k]} 칸의 관리자 사유(「${record[k+'Memo']}」)도 함께 지워집니다.`).join('')
   +`\n${deleteLeaves(sides,record)}.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다.${needsUnmaskOnApply(privacy)?`\n${UNMASK_ON_APPLY}.`:''}\n보낼까요?`;
-// 되돌리기 저장(b2Save)이 받아 줄 이전 값인지(beta2.gs b2Validate_와 같은 기준). 못 받으면 그 이유 — 시트에 직접 적힌 '중복'·시간 없는 지각 같은 값은
+// 되돌리기 저장(b2Save)이 받아 줄 이전 값인지(beta2.gs b2Validate_와 같은 기준). 못 받으면 그 이유 — 시트에 직접 적힌 모르는 유형·시간 없는 지각 같은 값은('중복'은 2026-10-20부터 유형)
 // 출결원장에 다시 저장할 수 없으므로 되돌리기는 체크히어 반영만 취소합니다.
 export function restoreBlock(p){
   if(!B2_TYPES.includes(p.type))return `이전 유형 '${p.type}'`;
-  const need=neededTimes(p.type,{inT:'x',outT:'x',oa:'x',ob:'x'});
+  const need=requiredTimes(p.type),dup=p.type===DUP_TYPE?dupCheck({inT:hhmm(p.inT),outT:hhmm(p.outT),oa:hhmm(p.oa),ob:hhmm(p.ob)}):null; // 중복: 입실·퇴실·외출 가운데 둘 이상(시트 b2Save와 같음)
+  if(dup)return /늦어야/.test(dup.text)?'이전 외출 시간 확인 필요':'이전 값에 필요한 시간이 없음';
   if(['inT','outT','oa','ob'].some(k=>need[k]&&!hhmm(p[k])))return '이전 값에 필요한 시간이 없음';
   if(need.oa&&hhmm(p.ob)<=hhmm(p.oa))return '이전 외출 시간 확인 필요';
   if(recognizedType(p.type)&&!p.reason.trim())return '이전 인정 사유가 비어 있음';

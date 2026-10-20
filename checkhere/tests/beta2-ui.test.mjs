@@ -373,7 +373,7 @@ test('출결대조 records any past day: 「다른 날짜…」 opens a date box
 const D='2026-11-05',CLOCK='2026-11-05T18:30:00+09:00',ME='hint.kpc@gmail.com',CUR=`classes/1/checkhereCurrent/${D}`;
 const V_NAMES=['가상지각','가상메모','가상변경','가상겹침','가상인정','가상출석','가상보정','가상중복','가상증빙','가상취소'];
 const VB={...BUNDLE,classes:BUNDLE.classes.map(c=>c.id==='1'?{...c,teacher:'가상담임'}:c),roster:V_NAMES.map(n=>['1',n,'재학','']),
- ledger:[row(D,'1','가상지각','지각',{inT:'09:25'}),...['가상메모','가상변경','가상겹침','가상인정'].map(n=>row(D,'1',n,'출석')),row(D,'1','가상중복','중복',{reason:'가상 사유'}),row(D,'1','가상증빙','인정출석',{reason:'병원 진료'}),row(D,'1','가상취소','지각',{inT:'09:25'})]};
+ ledger:[row(D,'1','가상지각','지각',{inT:'09:25'}),...['가상메모','가상변경','가상겹침','가상인정'].map(n=>row(D,'1',n,'출석')),row(D,'1','가상중복','무단결석',{reason:'가상 사유'}),row(D,'1','가상증빙','인정출석',{reason:'병원 진료'}),row(D,'1','가상취소','지각',{inT:'09:25'})]};
 const vrec=(id,name,o={})=>rec({id,version:'v-'+id,phoneLast4:'0000',teacher:'가상담임',name,rawEntry:'09:02:00',entry:'09:02:00',exit:'18:00:00',entryMemo:'',exitMemo:'',...o});
 const LATE_MEMO={rawEntry:'09:25:00',entry:'09:25:00',entryMemo:'지각_담임:가상담임(09:25)'};
 const VDAYS={[CUR]:{records:[vrec('r1','가상지각',LATE_MEMO),vrec('r2','가상메모',LATE_MEMO),vrec('r3','가상변경',{rawEntry:'09:25:31',entry:'09:25:31'}),vrec('r4','가상겹침',{rawEntry:'09:25:31',entry:'09:25:31'}),
@@ -519,7 +519,7 @@ test('a past day is never sent automatically: 체크히어 맞추기 runs the sa
  },{...virtual(),clock:'2026-11-06T10:00:00+09:00'});
 });
 
-test('holds, disabled time deletion, explicit save, keyboard type changes, 중복 rows and attendance rows without a record',async()=>{
+test('holds, disabled time deletion, explicit save, keyboard type changes, unknown-type rows and attendance rows without a record',async()=>{
  await beta(async(page,posts)=>{
   await openLedger(page);
   // (6) ×는 꺼져 있고 이유를 보임. 지각 행의 입실 ×는 유형 안내
@@ -560,7 +560,7 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   await page.keyboard.press('Escape');
   await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='출석');
   assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 0건 저장');assert.equal(await student(page,'가상변경').locator('[data-mark]').innerText(),'');
-  // (13) 중복 행: '유형 선택 필요', 유효한 유형을 고르기 전에는 사유도 저장하지 않음. Enter는 다음 학생 같은 칸으로(저장 없음)
+  // (13) 모르는 유형 행(옛 '무단결석' · '중복'은 2026-10-20부터 유형): '유형 선택 필요', 유효한 유형을 고르기 전에는 사유도 저장하지 않음. Enter는 다음 학생 같은 칸으로(저장 없음)
   assert.equal(await typeOf(page,'가상중복').inputValue(),'');
   assert.match(await typeOf(page,'가상중복').locator('option:checked').innerText(),/유형 선택 필요/);
   await setReason(student(page,'가상중복'),'가상 사유 고침');

@@ -439,7 +439,7 @@ test("담임 출결판 '해당없음' = 저장되는 상태(회색): 빈 칸은 
   await cell('고다원','2026-11-04').waitFor();
   // 기록 없는 칸: '입력 전'(고를 수 없음) + 유형, 해당없음은 맨 끝
   assert.equal(await cell('고다원','2026-11-04').inputValue(),'');
-  assert.deepEqual(await cell('고다원','2026-11-04').locator('option').allTextContents(),['입력 전','출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음']);
+  assert.deepEqual(await cell('고다원','2026-11-04').locator('option').allTextContents(),['입력 전','출석','지각','조퇴','외출','중복','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음']);
   assert.equal(await cell('고다원','2026-11-04').locator('option[value=""]').isDisabled(),true);
   await cell('고다원','2026-11-04').selectOption('해당없음');
   for(let i=0;i<50&&!saves(posts).length;i++)await p.waitForTimeout(100);
@@ -489,5 +489,67 @@ test("출결대조 '해당없음' = 저장되는 상태: 유형 맨 끝, 고르�
   await go.locator('select[data-inline="type"]').selectOption('해당없음');
   await p.locator('#b2SaveAll').click();
   await go.getByText(/시트 업데이트 대기/).waitFor();
+ },{api:b=>b.action==='b2Save'?{ok:false,error:'유형을 골라 주세요.'}:null});
+});
+
+// 출결 상태 '중복'(지각·조퇴·외출 가운데 둘 이상, 사용자 2026-10-20 '중복(지+조+외) 이거 시트랑 담임이랑 관리자 넣어줘', 시트 계약 2026-10-20)
+test("담임 출결판 '중복': 외출 다음 자리, 진한 주황, 시간 없이 저장(시간은 보기만), 사유는 선택, 증빙·메모 추천 없음, 시트 warn 안내, 시트가 아직 안 받으면 '시트 업데이트 대기'",async()=>{
+ const WARN='겹친 시간 둘 이상(입실·퇴실·외출)은 나중에 채워도 됩니다';
+ await page('/teacher.html',async(p,posts)=>{
+  const cell=p.locator('select[data-n="고다원"][data-d="2026-11-04"]');
+  await cell.waitFor();
+  await cell.selectOption('중복');
+  for(let i=0;i<50&&!saves(posts).length;i++)await p.waitForTimeout(100);
+  assert.deepEqual(saves(posts).map(s=>[s.name,s.date,s.type,s.inT,s.outT,s.oa,s.ob,s.r]),[['고다원','2026-11-04','중복','','','','','']]);
+  assert.equal(await cell.evaluate(e=>e.classList.contains('k-dup')),true);
+  assert.equal(await cell.evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(249, 203, 156)');assert.equal(await cell.evaluate(e=>getComputedStyle(e).color),'rgb(120, 63, 4)');
+  assert.equal(await p.locator('#pn [data-dup-note]').count(),1);
+  assert.equal(await p.locator('#rp').count(),1,'reason box (optional)');assert.match(await p.locator('#pn .lab').nth(1).innerText(),/^사유 ·/);
+  assert.equal(await p.locator('#mm').count(),0,'no CheckHere memo shape for 중복');assert.equal(await p.locator('#evb [data-ev]').count(),0,'no evidence');
+  assert.match(await p.locator('#tv').innerText(),/시간은 운영팀이 체크히어 기록으로 맞춥니다/);
+  await p.locator('#st',{hasText:WARN}).waitFor();
+  assert.equal(await p.locator('[data-t="중복"]').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(249, 203, 156)');
+ },{api:b=>b.action==='portalSave'?{ok:true,data:{ok:true,warn:WARN}}:null});
+ await page('/teacher.html',async p=>{
+  await p.locator('select[data-n="김동진"][data-d="2026-11-05"]').selectOption('중복');
+  await p.locator('#st',{hasText:'시트 업데이트 대기 · 마스터시트가 아직 중복을 받지 않습니다'}).waitFor();
+ },{api:b=>b.action==='portalSave'?{ok:true,data:{ok:false,msg:'유형을 골라 주세요.'}}:null});
+});
+
+test("출결대조 '중복': 외출 다음 자리, 입실(지각)·퇴실(조퇴)·외출 시간 칸이 함께, 둘 미만이면 저장 전에 막음(시트와 같은 글), 증빙 칸 없음, 진한 주황, 시트가 아직 안 받으면 '시트 업데이트 대기'",async()=>{
+ await page('/ledger.html',async(p,posts)=>{
+  const row=p.locator('tbody[data-student="박서연"] tr[data-name]'),type=row.locator('select[data-inline="type"]');
+  await type.waitFor();
+  assert.deepEqual(await type.locator('option').allTextContents(),['출석','지각','조퇴','외출','중복','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음']);
+  await type.selectOption('중복');
+  assert.deepEqual(await row.locator('input[type="time"]').evaluateAll(a=>a.map(x=>x.dataset.inline)),['inT','outT','oa','ob']);
+  assert.match(await row.locator('.b2-mini').first().innerText(),/입실\(지각\)/);
+  assert.match(await type.getAttribute('style'),/#f9cb9c/);assert.equal(await row.locator('select[data-inline="ev"]').count(),0);
+  assert.equal(await row.locator('select[data-inline="rmain"]').isDisabled(),false,'reason is optional, not locked');
+  assert.match(await row.locator('[data-dup-note]').innerText(),/둘 이상을 넣어 주세요 · 지금 시간 없음/);
+  // 입실만: 저장 전에 막음(b2Save 안 보냄)
+  await row.locator('input[data-inline="inT"]').fill('09:40');
+  assert.match(await row.locator('[data-dup-note]').innerText(),/지금 지각$/);
+  await p.locator('#b2SaveAll').click();
+  await row.locator('[data-msg]').getByText('중복은 입실(지각)·퇴실(조퇴)·외출 시간 가운데 둘 이상을 넣어 주세요.').waitFor();
+  assert.equal(posts.filter(b=>b.action==='b2Save').length,0);
+  // 외출 시작만 넣으면 종료가 필요
+  await row.locator('input[data-inline="oa"]').fill('13:00');await p.locator('#b2SaveAll').click();
+  await row.locator('[data-msg]').getByText('입력 필요: 외출 종료 시간').waitFor();
+  await row.locator('input[data-inline="oa"]').fill('');
+  // 퇴실까지 넣으면 안내가 사라지고 저장
+  await row.locator('input[data-inline="outT"]').fill('16:00');
+  assert.equal(await row.locator('[data-dup-note]').count(),0);
+  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('1건 저장',{exact:true}).waitFor();
+  const s=posts.filter(b=>b.action==='b2Save').map(b=>b.args[0]);
+  assert.deepEqual(s.map(x=>[x.name,x.type,x.inT,x.outT,x.oa,x.ob,x.reason,x.ev,x.evr]),[['박서연','중복','09:40','16:00','','','','','']]);
+  assert.ok((await p.locator('#b2Stats .b2-stat').allTextContents()).some(t=>/중복$/.test(t)),'중복 count box');
+ });
+ await page('/ledger.html',async p=>{
+  const row=p.locator('tbody[data-student="박서연"] tr[data-name]');
+  await row.locator('select[data-inline="type"]').selectOption('중복');
+  await row.locator('input[data-inline="inT"]').fill('09:40');await row.locator('input[data-inline="outT"]').fill('16:00');
+  await p.locator('#b2SaveAll').click();
+  await row.getByText(/시트 업데이트 대기 · 마스터시트가 아직 중복을 받지 않습니다/).waitFor();
  },{api:b=>b.action==='b2Save'?{ok:false,error:'유형을 골라 주세요.'}:null});
 });

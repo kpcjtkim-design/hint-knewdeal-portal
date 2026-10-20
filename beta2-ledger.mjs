@@ -15,7 +15,7 @@
 // 증빙(사용자 요청 2026-10-20 '맨 오른쪽 증빙이 그냥 사유 옆으로 드롭다운 형태로'): 오른쪽 「증빙」 단추·편집기 대신 사유 드롭다운 바로 옆 작은 드롭다운(data-inline="ev"),
 // 반려면 그 옆에 반려 사유 칸(data-inline="evr"). 유형·사유와 같은 초안이라 「변경 N건 저장」·Esc·모두 되돌리기·떠날 때 확인을 그대로 탑니다.
 import {doc,setDoc,onSnapshot,query,collection,where,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,B2_TYPES} from './beta2-core.mjs';
+import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,requiredTimes,teacherOf,recognizedType,B2_TYPES,DUP_TYPE,dupWarning,dupCheck,dupTimesFromRecord,sheetWait} from './beta2-core.mjs';
 import {esc,md,badge,evBadge,extraBadge,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {loadCheckHereDay,watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {matchSnapshot} from './attendance-beta-core.mjs';
@@ -58,10 +58,12 @@ const hm=v=>/^\d{2}:\d{2}/.test(String(v||''))?String(v).slice(0,5):'';
 // 저장된 값 한 줄 요약('그사이 바뀜'에 시트 최신 값을 보일 때)
 const brief=v=>{const t=neededTimes(v.type,v),ev=evOf(v);return [v.type||'유형 없음',t.inT&&`입실 ${t.inT}`,t.outT&&`퇴실 ${t.outT}`,t.oa&&`외출 ${t.oa}~${t.ob}`,String(v.reason||'').trim(),ev&&`증빙 ${ev}${evrOf(v)?`(${evrOf(v)})`:''}`].filter(Boolean).join(' · ');};
 // 저장될 증빙 값: 출석이면 비움, 반려 사유는 반려일 때만(저장 payload와 같은 기준)
-const evOf=v=>v.type==='출석'||v.type==='해당없음'?'':String(v.ev||''),evrOf=v=>evOf(v)==='반려'?String(v.evr||'').trim():''; // 해당없음(현황 없음)도 증빙 없음
-const evOn=v=>B2_TYPES.includes(v.type)&&v.type!=='출석'&&v.type!=='해당없음'; // 증빙 드롭다운을 보이는 유형
-// 시트가 아직 '해당없음'을 받지 않으면(Apps Script 배포 전) b2Save가 '유형을 골라 주세요.'로 거절합니다 → 기다림 안내
-const sheetWait=(msg,type)=>type==='해당없음'&&/유형을 골라/.test(String(msg||''))?'시트 업데이트 대기 · 마스터시트가 아직 해당없음을 받지 않습니다(Apps Script 배포 뒤 다시 저장해 주세요)':msg;
+const NO_EV=new Set(['출석','해당없음','중복']); // 증빙 없는 유형: 해당없음(현황 없음)·중복(인정 출결이 아님, 2026-10-20)도 증빙 칸을 숨기고 ''로 저장
+const evOf=v=>NO_EV.has(v.type)?'':String(v.ev||''),evrOf=v=>evOf(v)==='반려'?String(v.evr||'').trim():'';
+const evOn=v=>B2_TYPES.includes(v.type)&&!NO_EV.has(v.type); // 증빙 드롭다운을 보이는 유형
+// 시트가 아직 '해당없음'·'중복'을 받지 않으면(Apps Script 배포 전) b2Save가 '유형을 골라 주세요.'로 거절합니다 → 기다림 안내(beta2-core sheetWait)
+// 유형 드롭다운 색: 해당없음 회색, 중복 진한 주황(시트와 같은 #F9CB9C·#783F04, beta2.css t-dup)
+const TYPE_STYLE={해당없음:' style="background:#e8eaed;color:#5f6368" title="해당없음(현황 없음) · 출석률·결석에 넣지 않습니다"',중복:' style="background:#f9cb9c;color:#783f04" title="중복(지각+조퇴+외출) · 입실(지각)·퇴실(조퇴)·외출 가운데 둘 이상 · 결석이 아니라 출석으로 셉니다"'};
 
 export async function mount(host,{db,user,classes,client,selected,context}){
  const life=lifecycle(host);
@@ -161,12 +163,13 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  function pickHtml(row,v,n,noReason){return reasonPickHtml({reason:v.reason,type:v.type,cls,name:row.name,custom:customOpen.has(row.name),locked:noReason});}
  // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님,
  // 교육일이 아닌 날의 인정 출결(막지 않음, 17반 테스트반은 모든 날을 교육일로 보므로 없음)
- function pickNote(row){const v=valuesOf(row);return reasonNotesHtml({type:v.type,reason:v.reason,cls,offDay:offDay(date),rec:row.rec});}
+ // 중복은 입실·퇴실·외출 가운데 둘 이상인지 입력하는 동안 안내(저장은 missing()이 dupCheck로 막음, beta2-core DUP_RULE)
+ function pickNote(row){const v=valuesOf(row),w=dupWarning(v.type,v);return (w?`<span class="b2-xnote" style="display:block" data-dup-note>${esc(w)}</span>`:'')+reasonNotesHtml({type:v.type,reason:v.reason,cls,offDay:offDay(date),rec:row.rec});}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
-  const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
+  const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`,dup=v.type===DUP_TYPE; // 중복: 입실(지각)·퇴실(조퇴)·외출을 함께
   const noReason=(!row.rec&&v.type==='출석')||v.type==='해당없음',record=matchFor(row),hint=memoReason(record?.entryMemo)||memoReason(record?.exitMemo);
-  return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형"${v.type==='해당없음'?' style="background:#e8eaed;color:#5f6368" title="해당없음(현황 없음) · 출석률·결석에 넣지 않습니다"':''}>${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT?time('inT','입실'):''}${need.outT?time('outT','퇴실'):''}${need.oa?time('oa','외출 시작')+time('ob','외출 종료'):''}<span class="b2-rpick">${pickHtml(row,v,n,noReason)}</span>${evOn(v)?evHtml(row,v,n):''}${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
+  return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형"${TYPE_STYLE[v.type]||''}>${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT||dup?time('inT',dup?'입실(지각)':'입실'):''}${need.outT||dup?time('outT',dup?'퇴실(조퇴)':'퇴실'):''}${need.oa||dup?time('oa','외출 시작')+time('ob','외출 종료'):''}<span class="b2-rpick">${pickHtml(row,v,n,noReason)}</span>${evOn(v)?evHtml(row,v,n):''}${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
  }
  // 증빙 드롭다운(사유 바로 옆, 약 110px)과 반려면 반려 사유 칸. 취업박람회 추가 증빙 안내는 title로(예전 증빙 편집기의 안내 글).
  function evHtml(row,v,n){
@@ -399,7 +402,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  function renderRows(){
   if(!life.alive()||!bundle)return;
   const list=visible(),counts=dayCounts(rows),diff=rows.filter(r=>compareRow(r).state==='diff').length;
-  $('#b2Stats').innerHTML=[['총원',counts.총원],['출석',counts.출석],['결석',counts.결석,counts.결석?'bad':''],['지각',counts.지각],['조퇴',counts.조퇴],['외출',counts.외출],['인정',counts.인정],['체크히어 불일치',diff,diff?'alert':'']].map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${l}</span></div>`).join('');
+  $('#b2Stats').innerHTML=[['총원',counts.총원],['출석',counts.출석],['결석',counts.결석,counts.결석?'bad':''],['지각',counts.지각],['조퇴',counts.조퇴],['외출',counts.외출],['중복',counts.중복],['인정',counts.인정],['체크히어 불일치',diff,diff?'alert':'']].map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${l}</span></div>`).join('');
   const extraN=rows.filter(extraOpen).length;
   $('#b2Filters').innerHTML=FILTERS.map(([k,l])=>`<button class="b2-chip" data-filter="${k}" aria-pressed="${filter===k}" ${k==='extra'?`title="취업박람회 인정 출결 중 ${EXTRA_DOC} 확인 전"`:''}>${l}${k==='extra'?`<span class="n">${extraN}</span>`:''}</button>${k==='diff'?dayChipHtml():''}`).join(''); // 공통메모는 「체크히어 불일치」 바로 뒤
   $('#b2Live').innerHTML=live==='live'?`<span class="b2-pill live">체크히어 실시간${records.length?` · ${records.length}명`:''}</span>`:live==='day'?`<span class="b2-pill">체크히어 저장본${records.length?` · ${records.length}명`:''}</span>`:live?`<span class="b2-pill wait">${esc(live)}</span>`:'';
@@ -505,7 +508,9 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 입력 확인(beta2.gs b2Validate_와 같은 기준). 못 지나가면 '입력 필요: …'와 그 칸
  function missing(v){
   if(!B2_TYPES.includes(v.type))return {field:'type',text:'입력 필요: 유형'};
-  const need=neededTimes(v.type,ALL);
+  // 중복: 시트 b2Save와 같은 기준으로 저장 전에 막음(외출 짝·순서, 입실·퇴실·외출 가운데 둘 이상, beta2-core dupCheck)
+  if(v.type===DUP_TYPE){const d=dupCheck(v);if(d)return d;}
+  const need=requiredTimes(v.type);
   if(need.inT&&!v.inT)return {field:'inT',text:'입력 필요: 입실 시간'};
   if(need.outT&&!v.outT)return {field:'outT',text:'입력 필요: 퇴실 시간'};
   if(need.oa&&!v.oa)return {field:'oa',text:'입력 필요: 외출 시작 시간'};
@@ -541,7 +546,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 유형을 바꾸면 필요한 시간만 보이게 다시 그리고, 빈 시간은 체크히어 값으로 미리 채웁니다(저장은 모아서).
  function setType(name,type){
   const row=rowOf(name);if(!row)return;
-  const t=timesFromRecord(matchFor(row)),need=neededTimes(type,ALL),d={...valuesOf(row),type};
+  // 중복은 체크히어에서 실제 지각·조퇴·외출인 시간만 채웁니다(정시 입실까지 채우면 지각으로 셈).
+  const t=type===DUP_TYPE?dupTimesFromRecord(matchFor(row),{date,cls}):timesFromRecord(matchFor(row)),need=neededTimes(type,ALL),d={...valuesOf(row),type};
   for(const k of TIMES)if(need[k]&&!d[k])d[k]=t[k]||'';
   if(type==='해당없음'){Object.assign(d,{reason:'',ev:'',evr:''});customOpen.delete(name);} // 해당없음(현황 없음): 사유·증빙 비움
   setDraft(name,d);paint(name,{force:true});paintBulk();
@@ -686,7 +692,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(t.hasAttribute?.('data-daymemo-input')){dayUi.text=t.value;paintDayTyping();return;} // 공통메모 글(출결 초안과 따로)
   if(k==='rmain'||k==='rsub'||k==='ev')return; // 드롭다운은 change에서
   if(k==='rapt'&&name){if(bulk)return;setDraft(name,{reason:kindInputText(t.dataset.kind,t.value)});syncPick(name);paintMsg(name);paintBulk();return;} // 인적성·자격증 종류 직접 입력
-  if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason'){customOpen.add(name);t.title=t.value;syncPick(name);}if(k==='evr')t.title=t.value||'반려 사유 (필수)';paintMsg(name);paintBulk();return;}
+  if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason'){customOpen.add(name);t.title=t.value;syncPick(name);}if(TIMES.includes(k))syncPick(name);if(k==='evr')t.title=t.value||'반려 사유 (필수)';paintMsg(name);paintBulk();return;}
  });
  host.addEventListener('change',e=>{
   const t=e.target,name=t.closest?.('tbody[data-student]')?.dataset.student;

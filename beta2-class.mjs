@@ -101,8 +101,8 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
   const others=rows.filter(r=>(r.enrolled||r.rec)&&r.type!=='출석');
   const item=r=>`<li data-name="${esc(r.name)}"><b class="b2-name">${esc(r.name)}</b>${badge(r.type)}${recognizedType(r.type)?evBadge(r.rec?.evApplied||r.rec?.ev||'미제출'):''}${timesOf(r.rec)?`<span class="b2-small b2-muted">${esc(timesOf(r.rec))}</span>`:''}${r.rec?.reason?`<span class="b2-sub">${esc(r.rec.reason)}</span>`:''}</li>`;
   card('day',`${esc(md(date))} 출결`,
-   `${nums([['출석',n.출석],['결석',n.결석,n.결석?'bad':''],['지각',n.지각,n.지각?'alert':''],['조퇴',n.조퇴,n.조퇴?'alert':''],['외출',n.외출,n.외출?'alert':''],['인정',n.인정],['해당없음',na]])}
-   <div class="b2-tiny b2-muted">총원 ${n.총원}명(그날 재학) · 출석에는 지각·조퇴·외출·인정이 들어갑니다. 마스터시트 출결원장 기준.</div>
+   `${nums([['출석',n.출석],['결석',n.결석,n.결석?'bad':''],['지각',n.지각,n.지각?'alert':''],['조퇴',n.조퇴,n.조퇴?'alert':''],['외출',n.외출,n.외출?'alert':''],['중복',n.중복,n.중복?'alert':''],['인정',n.인정],['해당없음',na]])}
+   <div class="b2-tiny b2-muted">총원 ${n.총원}명(그날 재학) · 출석에는 지각·조퇴·외출·중복·인정이 들어갑니다. 마스터시트 출결원장 기준.</div>
    <div data-check>${checkHtml(rows)}</div>
    ${list(others.map(item),'출석 외 학생이 없습니다.')}`,
    go('출결대조','b2ledger',{date},'primary'));
@@ -124,13 +124,13 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
  }
  function paintTotal(){
   const s=state('bundle','누적 출결을 계산하는 중…');if(s)return card('total','누적',s);
-  const b=bundle(),max=maxAbs(),stats=studentStats(b,{cls}),sum=stats.reduce((a,x)=>({d:a.d+x.days,ab:a.ab+x.absent}),{d:0,ab:0});
+  const b=bundle(),max=maxAbs(),stats=studentStats(b,{cls}),sum=stats.reduce((a,x)=>({d:a.d+x.days,ab:a.ab+x.absent,p:a.p+x.partial}),{d:0,ab:0,p:0}); // p: 지·조·외 합계(중복 1회)
   const rate=sum.d?(sum.d-sum.ab)/sum.d*100:null,taught=courseDays(b,{cls}).length,total=classDays(b,cls).length;
   const risk=absenceRows(b,{cls,max}).filter(r=>r.status==='재학'&&r.level),lv=l=>risk.filter(r=>r.level===l).length;
   const disease=diseaseReport(stats).rows,evidence=evidenceRows(stats),extra=extraEvidenceRows(b,{cls}).filter(r=>!r.done);
   const item=r=>`<li data-risk="${esc(r.name)}"><b class="b2-name">${esc(r.name)}</b><span class="b2-badge ${r.tone==='bad'?'t-absent':'t-late'}">${esc(r.level)}</span><span class="b2-small">결석 ${r.absent}일 / 한도 ${max}일</span><span class="b2-small b2-muted">${r.level==='주의'?`${r.left}일 더 결석하면 한도`:r.level==='한도 도달'?'1일 더 결석하면 제적 대상':'한도 초과'}${r.remaining?` · 남은 교육일 ${r.remaining}일`:''}</span></li>`;
   card('total','누적',
-   `${nums([['반 출석률',pct(rate)],['교육일',`${taught}/${total}`],['제적 대상',lv('제적 대상'),lv('제적 대상')?'bad':''],['한도 도달',lv('한도 도달'),lv('한도 도달')?'bad':''],['주의',lv('주의'),lv('주의')?'alert':'']])}
+   `${nums([['반 출석률',pct(rate)],['교육일',`${taught}/${total}`],['지·조·외(중복 포함)',sum.p],['제적 대상',lv('제적 대상'),lv('제적 대상')?'bad':''],['한도 도달',lv('한도 도달'),lv('한도 도달')?'bad':''],['주의',lv('주의'),lv('주의')?'alert':'']])}
    <div class="b2-tiny b2-muted">출석률 = (재학 교육일 − 결석) ÷ 재학 교육일, 오늘까지 교육일만 셉니다. 결석 한도 ${max}일(넘으면 제적 대상).</div>
    ${list(risk.slice(0,5).map(item),'결석 한도 주의 이상 재학생이 없습니다.')}${risk.length>5?`<div class="b2-tiny b2-muted">외 ${risk.length-5}명</div>`:''}
    ${nums([[`질병 인정 ${DISEASE.warn}회 이상`,disease.length,disease.length?'alert':''],['증빙 미제출·반려',evidence.length,evidence.length?'alert':''],['추가 증빙 미이행',extra.length,extra.length?'alert':'']])}
