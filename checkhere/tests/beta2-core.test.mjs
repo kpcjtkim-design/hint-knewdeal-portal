@@ -37,6 +37,16 @@ test('student statistics use the master-sheet attendance rate, evidence and dise
  assert.equal(isDiseaseReason('면접결석'),false);assert.equal(isDiseaseReason('병결'),true);
 });
 
+test('records on days that are not training days (weekend, before the course) are shown for that day but never counted in rates, absences, evidence or disease',()=>{
+ // 사용자 결정 2026-10-20: 교육일이 아닌 날도 기록할 수 있지만, 통계는 교육일 목록(bundle.days)에 있는 날만 셉니다(courseDays).
+ const off=['2026-11-01','2026-10-20'],b=decodeBundle({...RAW,ledger:[...RAW.ledger,L(off[0],'가','결석'),L(off[1],'가','인정출석',{reason:'병원 진료'}),L(off[0],'다','결석')]});
+ const before=studentStats(decodeBundle(RAW),{cls:'1'}),after=studentStats(b,{cls:'1'});
+ assert.deepEqual(after.map(x=>[x.name,x.days,x.absent,x.rate,x.counts,x.evidence,x.disease]),before.map(x=>[x.name,x.days,x.absent,x.rate,x.counts,x.evidence,x.disease]));
+ assert.deepEqual(diseaseReport(after).rows,diseaseReport(before).rows);
+ assert.deepEqual(studentStats(b,{cls:'1',from:'2026-10-01'}).find(x=>x.name==='가').absent,0,'a wider period still counts only training days');
+ assert.deepEqual(dayView(b,'1',off[0]).map(r=>[r.name,r.type]),[['가','결석'],['나','출석'],['다','결석']],'the day view of a non-training day still shows its records');
+});
+
 test('disease counts follow the ledger and differences with CheckHere hospital memos are listed for review',()=>{
  const stats=[{cls:'1',name:'가',disease:['2026-11-03','2026-11-04','2026-11-05','2026-11-06']},{cls:'1',name:'나',disease:['2026-11-03']},{cls:'2',name:'라',disease:[]}];
  const r=diseaseReport(stats,{'1':{가:['2026-11-03','2026-11-04','2026-11-07'],나:['2026-11-03']},'2':{라:['2026-11-05']}});

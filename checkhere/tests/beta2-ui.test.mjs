@@ -306,6 +306,53 @@ test('before the course starts (no past training day) 출결대조 picks today i
  },{clock:'2026-10-20T10:00:00+09:00',api:body=>body.action==='b2Bundle'?{ok:true,data:early}:null});
 });
 
+test('출결대조 records any past day: 「다른 날짜…」 opens a date box, a non-training day saves with a muted note and the sheet notice, memos widen their range, and future days stay blocked',async()=>{
+ // 사용자 결정 2026-10-20: 교육일이 아닌 날(주말·개강 전)도 오늘까지는 기록·수정. 목록은 교육일 그대로 + 「다른 날짜…」.
+ const SAVE_NOTE='교육일이 아닌 날의 기록입니다.',MEMO_NOTE='교육일이 아닌 날의 메모입니다. 출결판에는 나오지 않습니다.';
+ await beta(async(page,posts)=>{
+  await page.getByRole('heading',{name:'2기 홈'}).waitFor();
+  await page.locator('.b2-class').first().click();
+  await page.getByRole('heading',{name:'출결대조'}).waitFor();
+  await page.locator('tr[data-name="고다원"]').waitFor();
+  const sel=page.locator('#b2Date'),any=page.locator('#b2DateAny'),note=page.locator('#b2DayNote');
+  assert.equal(await sel.inputValue(),'2026-11-05');assert.equal(await any.isHidden(),true);assert.equal(await note.innerText(),'');
+  assert.equal(await sel.locator('option').last().innerText(),'다른 날짜…');
+  await sel.selectOption('__any');
+  assert.equal(await sel.inputValue(),'2026-11-05','the list stays on the current day');
+  assert.equal(await any.isVisible(),true);assert.equal(await any.getAttribute('max'),'2026-11-05');
+  // 미래는 막음
+  await any.fill('2026-11-06');
+  await page.getByText('아직 오지 않은 날은 기록할 수 없습니다',{exact:false}).waitFor();
+  assert.equal(await sel.inputValue(),'2026-11-05');
+  // 일요일(교육일 아님)
+  await any.fill('2026-11-01');
+  await page.waitForFunction(()=>document.querySelector('#b2Date').value==='2026-11-01');
+  await page.waitForFunction(()=>(window.snapCbs||[]).some(x=>x.path==='classes/1/checkhereCurrent/2026-11-01'));
+  assert.match(await sel.locator('option:checked').innerText(),/11\/1\(일\) · 교육일 아님/);
+  assert.match(await note.innerText(),/교육일이 아닌 날입니다/);
+  assert.equal(await any.isVisible(),true);
+  const go=page.locator('tr[data-name="고다원"]');
+  await go.locator('select[data-inline="type"]').selectOption('결석');
+  await page.locator('#b2SaveAll').click();
+  await page.locator('#b2Msg').getByText(SAVE_NOTE).waitFor();
+  assert.deepEqual(posts.filter(p=>p.action==='b2Save').map(p=>[p.args[0].date,p.args[0].name,p.args[0].type]),[['2026-11-01','고다원','결석']]);
+  // 메모: 교육일이 아닌 날도 저장하고 시트 안내를 보임
+  await page.locator('tbody[data-student="고다원"] [data-memo-toggle]').click();
+  await page.locator('tbody[data-student="고다원"] [data-memo-pick="수기출석 미제출"]').click();
+  await page.locator('#b2Msg').getByText(MEMO_NOTE).waitFor();
+  assert.equal(posts.find(p=>p.action==='b2LedgerMemo').args[0].date,'2026-11-01');
+  // 개강 전 날: 메모 기간이 그날부터로 넓어짐, 교육일로 돌아가면 날짜 칸을 닫음
+  await any.fill('2026-10-20');
+  await page.waitForFunction(()=>document.querySelector('#b2Date').value==='2026-10-20');
+  for(let i=0;i<50&&!posts.some(p=>p.action==='b2LedgerMemos'&&p.args[0].from==='2026-10-20');i++)await page.waitForTimeout(100);
+  assert.ok(posts.some(p=>p.action==='b2LedgerMemos'&&p.args[0].from==='2026-10-20'),'memos are read from the earlier day');
+  await sel.selectOption('2026-11-04');
+  await page.waitForFunction(()=>document.querySelector('#b2Date').value==='2026-11-04');
+  assert.equal(await any.isHidden(),true);assert.equal(await note.innerText(),'');
+  assert.equal(await sel.locator('option[value="2026-10-20"]').count(),0,'the off day leaves the list once you move away');
+ },{clock:'2026-11-05T19:00:00+09:00',api:body=>body.action==='b2Save'?{ok:true,data:{ok:true,rev:6,sig:'new-sig',memo:'',evApplied:'해당없음',check:'',offDay:true,notice:SAVE_NOTE}}:body.action==='b2LedgerMemo'?{ok:true,data:{cls:'1',rev:0,offDay:true,notice:MEMO_NOTE}}:body.action==='b2LedgerMemos'?{ok:true,data:{rows:[]}}:null});
+});
+
 /* ---------- 행 안 편집 → 체크히어 자동 반영 (설계 docs/beta2-instant-edit-plan.md 5장·9장 beta2-ui (1)~(14), 사용자 결정 2026-10-14) ----------
  * 가상 반: 1반 담임 '가상담임', 학생 이름은 모두 '가상…'. 브라우저 시계를 2026-11-05 18:30(한국, 2기 교육일)으로 두어 이 날이 '오늘'입니다(오늘만 자동). */
 const D='2026-11-05',CLOCK='2026-11-05T18:30:00+09:00',ME='hint.kpc@gmail.com',CUR=`classes/1/checkhereCurrent/${D}`;
