@@ -134,7 +134,7 @@ export function mountTeacherBeta(el, OPT) {
   function extraAlert(sel,f){
     const n=extraNotice({cls:S.cls,name:sel.n,date:sel.day,type:f.type});
     if(OPT.notify)return void OPT.notify(n,sel,f);
-    import('./notify.mjs').then(m=>m.notify('추가 증빙',{audience:'admins',toClass:String(S.cls),cls:String(S.cls),title:n.title,body:n.body,link:'#b2status?cls='+S.cls+'&tab=evidence'})).catch(e=>console.warn('추가 증빙 알림을 남기지 못했습니다',e));
+    import('./notify.mjs').then(m=>m.notify('추가 증빙',{audience:'admins',toClass:String(S.cls),cls:String(S.cls),title:n.title,body:n.body,link:'#b2ledger?cls='+S.cls+'&date='+sel.day})).catch(e=>console.warn('추가 증빙 알림을 남기지 못했습니다',e));
   }
   function vReason(){
     const d=S.d,rows=Object.entries(d.recs).filter(([k,r])=>r.type!=='출석').map(([k,r])=>{const i=k.lastIndexOf('|');return Object.assign({n:k.slice(0,i),day:k.slice(i+1)},r);}).sort((a,b)=>b.day.localeCompare(a.day)||a.n.localeCompare(b.n));
