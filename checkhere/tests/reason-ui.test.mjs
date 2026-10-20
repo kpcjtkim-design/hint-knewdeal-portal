@@ -39,7 +39,7 @@ const PAGES={
  '/status.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mount} from '/beta2-status.mjs';import {decodeBundle} from '/beta2-core.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
   window.view=await mount(document.getElementById('root'),{client:{bundle:async()=>decodeBundle(${JSON.stringify(RAW)}),checkhereDisease:async()=>({})},classes:[{id:'1'},{id:'2'}],tab:'evidence'});</script>`};
 
-async function page(path,run,{portal=PORTAL,ledger=LEDGER}={}){
+async function page(path,run,{portal=PORTAL,ledger=LEDGER,api=null}={}){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),p=await browser.newPage(),errors=[],posts=[];
  p.on('pageerror',e=>errors.push(e.message));
  try{
@@ -51,6 +51,7 @@ async function page(path,run,{portal=PORTAL,ledger=LEDGER}={}){
    if(PAGES[url.pathname])return route.fulfill({contentType:'text/html;charset=utf-8',body:PAGES[url.pathname]});
    if(url.pathname==='/api/teacher-beta'){
     const body=route.request().postDataJSON(),a=body.args?.[0];posts.push(body);
+    const own=api&&api(body);if(own)return route.fulfill({contentType:'application/json',body:JSON.stringify(own)});
     const data=body.action==='portalData'?portal:body.action==='b2Bundle'?{...ledger,rev}:body.action==='b2Rev'?{rev,sync:{}}:body.action==='b2Save'?{ok:true,rev:++rev,sig:`sig-${a.name}-${rev}`,memo:'',evApplied:a.ev||(a.type.startsWith('인정')?'미제출':'해당없음'),check:''}:{ok:true};
     return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});
    }
@@ -79,7 +80,7 @@ test('teacher 사유 = 관리자와 같은 드롭다운 하나: 인적성은 바
   assert.equal(await main(p).getAttribute('aria-label'),'고다원 사유');assert.equal(await sub(p).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(p).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
   // 사유 드롭다운은 분류마다 하나(세부가 둘 이상이면 옆 종류 드롭다운, 사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운')
-  assert.deepEqual(await main(p).locator('option').allTextContents(),['사유 (필수)','해당없음','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);
+  assert.deepEqual(await main(p).locator('option').allTextContents(),['사유 (필수)','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);
   const a=await main(p).boundingBox(),b=await sub(p).boundingBox();assert.equal(Math.round(a.y),Math.round(b.y),'the type box sits right beside');assert.ok(b.x>a.x);
   assert.equal(await mm.textContent(),'(인정출석)인적성(HMAT)_담임:김지아');
   // 종류를 바꾸면 메모 추천이 바로 바뀌고 0.7초 뒤 저장
@@ -104,16 +105,12 @@ test('teacher 사유 = 관리자와 같은 드롭다운 하나: 인적성은 바
   await p.locator('[data-q="교통사정"]').click();assert.equal(await main(p).inputValue(),'교통');assert.equal(await sub(p).inputValue(),'교통사정');assert.equal(await free(p).count(),0);
   assert.match(await p.locator('#rn').innerText(),/교통은 보통 인정 사유가 아닙니다/);
   assert.equal((await saved(p,posts,6)).r,'교통사정');
-  // 해당없음(사용자 2026-10-20 부활): 빠른 단추는 예전처럼 사유 글 '해당없음'으로 저장, 드롭다운 맨 위 항목, 인정 출결이면 경고(막지 않음)
-  await p.locator('[data-q="해당없음"]').click();assert.equal(await main(p).inputValue(),'해당없음');assert.equal(await sub(p).count(),0);assert.equal(await free(p).count(),0);
+  // 사유를 비우면(사유 고르기) 인정 출결은 사유가 필요하다는 경고가 바로. '해당없음'은 사유·빠른 사유에 없음(출결 상태, 사용자 2026-10-20)
+  assert.ok(!(await p.locator('[data-q]').allTextContents()).includes('해당없음'));assert.equal(await main(p).locator('option[value="해당없음"]').count(),0);
+  await main(p).selectOption('');assert.equal(await main(p).inputValue(),'');
   assert.equal(await p.locator('#rn [data-reason-check="required"]').textContent(),'인정 출결은 사유가 필요합니다');
-  assert.equal(await mm.textContent(),'(인정출석)해당없음_담임:김지아');
-  assert.equal((await saved(p,posts,7)).r,'해당없음');
-  // 사유를 비우면(사유 고르기) 같은 경고, 해당없음을 드롭다운에서 다시 고르면 저장 글 그대로
-  await main(p).selectOption('');assert.equal(await p.locator('#rn [data-reason-check="required"]').count(),1);assert.equal((await saved(p,posts,8)).r,'');
-  await main(p).selectOption('해당없음');assert.equal((await saved(p,posts,9)).r,'해당없음');
-  // 인정이 아닌 유형이면 경고 없음
-  await p.locator('[data-t="지각"]').click();assert.equal(await p.locator('#rn [data-reason-check]').count(),0);assert.equal(await main(p).inputValue(),'해당없음');
+  assert.equal(await mm.textContent(),'(인정출석)사유_담임:김지아');
+  assert.equal((await saved(p,posts,7)).r,'');
   assert.ok(!(await p.locator('[data-q]').allTextContents()).includes('병결'),'quick reasons no longer offer 병결');
   assert.equal(await p.evaluate(()=>window.notes.length),0,'no extra-evidence notice for other reasons');
  });
@@ -224,8 +221,8 @@ test('출결대조 사유 칸 = 드롭다운 하나(240px): 지금까지 쓴 사
   assert.equal(await sub(go).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(go).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
   // 사유 드롭다운은 분류마다 하나(세부가 둘 이상인 분류는 옆 종류 드롭다운, 사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운')
-  assert.deepEqual(await main(go).locator('option').allTextContents(),['사유 (필수)','해당없음','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);assert.equal(await main(go).locator('optgroup').count(),0);
-  assert.deepEqual(await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value)),['','해당없음','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
+  assert.deepEqual(await main(go).locator('option').allTextContents(),['사유 (필수)','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);assert.equal(await main(go).locator('optgroup').count(),0);
+  assert.deepEqual(await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value)),['','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
   // 240px 안, 종류 드롭다운은 같은 줄 바로 옆
   const box=await go.locator('.b2-rpick').boundingBox(),a=await main(go).boundingBox(),b=await sub(go).boundingBox();
   assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(a.y),Math.round(b.y));assert.ok(b.x>a.x);
@@ -370,19 +367,6 @@ test('출결대조 자격증: 옆 종류 드롭다운, X(어학시험·지게차
  },{ledger});
 });
 
-test("출결대조 '해당없음'(사용자 2026-10-20 부활): 빈칸 바로 아래 고정 항목, 저장 글 그대로, 인정 출결이면 '인정 출결은 사유가 필요합니다' 경고만(저장은 됨)",async()=>{
- await page('/ledger.html',async(p,posts)=>{
-  const row=n=>p.locator(`tbody[data-student="${n}"] tr[data-name]`),go=row('고다원'),dong=row('김동진'),main=r=>r.locator('select[data-inline="rmain"]');
-  await main(go).waitFor();
-  assert.deepEqual((await main(go).locator('option').allTextContents()).slice(0,3),['사유 (필수)','해당없음','병원·질병']);
-  await main(go).selectOption('해당없음');assert.equal(await go.locator('[data-reason-check="required"]').textContent(),'인정 출결은 사유가 필요합니다');
-  await dong.locator('[data-inline="type"]').selectOption('결석');await main(dong).selectOption('해당없음');assert.equal(await dong.locator('[data-reason-check]').count(),0);
-  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('2건 저장',{exact:true}).waitFor();
-  assert.deepEqual(posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].type,b.args[0].reason]),[['고다원','인정출석','해당없음'],['김동진','결석','해당없음']]);
-  assert.equal(await main(go).inputValue(),'해당없음');assert.equal(await go.locator('[data-reason-check="required"]').count(),1,'stays after saving');
- });
-});
-
 test('담임 사유 자격증: 사유 드롭다운 자격증 → 바로 옆 종류(관리자와 같음), X는 인정 출결에서 막힘, △는 주의, 일반건강검진 막힘·빨간 경고',async()=>{
  const portal={...PORTAL,recs:{...PORTAL.recs,'고다원|2026-11-05':{type:'인정출석',inT:'',outT:'',oa:'',ob:'',r:'자격증(전기기사)',ev:'',evr:''}}};
  await page('/teacher.html',async(p,posts)=>{
@@ -446,4 +430,62 @@ test('경조사·공가·예비군·교통·취업활동·개인사정도 분류
   assert.deepEqual(posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].reason]),[['고다원','모친상']]);
   assert.equal(await main.inputValue(),'경조사');assert.equal(await sub.inputValue(),'모친상');
  },{ledger:{...LEDGER,ledger:[L('2026-11-05','1','고다원','인정출석',{reason:'공가(법원 출석)',sig:'sig-고다원'})]}});
+});
+
+// 출결 상태 '해당없음'(현황 없음, 사용자 2026-10-20 '출결상태에서 현황없음을 시트 담임 관리자에 만들라고, 사유는 해당없음을 넣을 이유가 없고')
+test("담임 출결판 '해당없음' = 저장되는 상태(회색): 빈 칸은 '입력 전', 고르면 사유를 비우고 그대로 저장, 사유 칸·빠른 사유에는 해당없음 없음",async()=>{
+ await page('/teacher.html',async(p,posts)=>{
+  const cell=(n,d)=>p.locator(`select[data-n="${n}"][data-d="${d}"]`);
+  await cell('고다원','2026-11-04').waitFor();
+  // 기록 없는 칸: '입력 전'(고를 수 없음) + 유형, 해당없음은 맨 끝
+  assert.equal(await cell('고다원','2026-11-04').inputValue(),'');
+  assert.deepEqual(await cell('고다원','2026-11-04').locator('option').allTextContents(),['입력 전','출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음']);
+  assert.equal(await cell('고다원','2026-11-04').locator('option[value=""]').isDisabled(),true);
+  await cell('고다원','2026-11-04').selectOption('해당없음');
+  for(let i=0;i<50&&!saves(posts).length;i++)await p.waitForTimeout(100);
+  assert.deepEqual(saves(posts).map(s=>[s.name,s.date,s.type,s.r]),[['고다원','2026-11-04','해당없음','']]);
+  assert.equal(await cell('고다원','2026-11-04').evaluate(e=>e.classList.contains('k-none')),true,'grey');
+  assert.equal(await cell('고다원','2026-11-04').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(232, 234, 237)');
+  assert.equal(await p.locator('#pn [data-none-note]').count(),1);assert.equal(await p.locator('#rp').count(),0,'no reason box');assert.equal(await p.locator('#mm').count(),0,'no memo');
+  // 인정출석 + 사유 → 해당없음 단추: 사유를 비우고 저장
+  await cell('고다원','2026-11-05').focus();await p.locator('#rp').waitFor();
+  assert.ok(!(await p.locator('[data-q]').allTextContents()).includes('해당없음'),'not a quick reason any more');
+  assert.equal(await p.locator('#rp select[data-inline="rmain"] option[value="해당없음"]').count(),0,'not a reason any more');
+  await p.locator('[data-t="해당없음"]').click();
+  for(let i=0;i<50&&saves(posts).length<2;i++)await p.waitForTimeout(100);
+  assert.deepEqual(saves(posts).slice(1).map(s=>[s.name,s.date,s.type,s.r]),[['고다원','2026-11-05','해당없음','']]);
+  assert.equal(await p.locator('#rn [data-reason-check]').count(),0);
+  // 해당없음 → 출석은 출석 줄로 저장(시트 v14), 기록 지우기는 빈 유형(type '') → 칸은 '입력 전'
+  await p.locator('[data-t="출석"]').click();for(let i=0;i<50&&saves(posts).length<3;i++)await p.waitForTimeout(100);
+  assert.equal(saves(posts)[2].type,'출석');
+  await p.locator('[data-clear]').click();for(let i=0;i<50&&saves(posts).length<4;i++)await p.waitForTimeout(100);
+  assert.deepEqual([saves(posts)[3].type,saves(posts)[3].r],['','']);
+  assert.equal(await cell('고다원','2026-11-05').inputValue(),'');assert.equal(await p.locator('[data-clear]').count(),0,'nothing to clear');
+  assert.match(await p.locator('#pn').innerText(),/아직 입력 전입니다/);
+ });
+ // 시트(Apps Script)가 아직 해당없음을 받지 않으면 '시트 업데이트 대기'
+ await page('/teacher.html',async p=>{
+  await p.locator('select[data-n="김동진"][data-d="2026-11-05"]').selectOption('해당없음');
+  await p.locator('#st',{hasText:'시트 업데이트 대기'}).waitFor();
+ },{api:b=>b.action==='portalSave'?{ok:true,data:{ok:false,msg:'유형을 골라 주세요.'}}:null});
+});
+
+test("출결대조 '해당없음' = 저장되는 상태: 유형 맨 끝, 고르면 사유·증빙 없음(사유 칸 잠금, 증빙 칸 숨김), 경고 없음, 회색, 시트가 아직 안 받으면 '시트 업데이트 대기'",async()=>{
+ await page('/ledger.html',async(p,posts)=>{
+  const go=p.locator('tbody[data-student="고다원"] tr[data-name]'),type=go.locator('select[data-inline="type"]'),main=go.locator('select[data-inline="rmain"]');
+  await type.waitFor();
+  assert.equal((await type.locator('option').allTextContents()).at(-1),'해당없음');
+  await type.selectOption('해당없음');
+  assert.equal(await main.isDisabled(),true);assert.equal(await main.getAttribute('title'),'해당없음(현황 없음)은 사유가 없습니다');assert.equal(await main.inputValue(),'');
+  assert.equal(await go.locator('select[data-inline="ev"]').count(),0);assert.equal(await go.locator('[data-reason-check]').count(),0);
+  assert.match(await go.locator('select[data-inline="type"]').getAttribute('style'),/#e8eaed/);
+  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('1건 저장',{exact:true}).waitFor();
+  const s=posts.filter(b=>b.action==='b2Save').map(b=>b.args[0]);assert.deepEqual(s.map(x=>[x.name,x.type,x.reason,x.ev,x.evr]),[['고다원','해당없음','','','']]);
+ });
+ await page('/ledger.html',async p=>{
+  const go=p.locator('tbody[data-student="고다원"] tr[data-name]');
+  await go.locator('select[data-inline="type"]').selectOption('해당없음');
+  await p.locator('#b2SaveAll').click();
+  await go.getByText(/시트 업데이트 대기/).waitFor();
+ },{api:b=>b.action==='b2Save'?{ok:false,error:'유형을 골라 주세요.'}:null});
 });
