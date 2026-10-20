@@ -70,7 +70,7 @@ const DATA={
   "storagePrefix": "h2:",
   "filePrefix": "2기_",
   "features": {
-    "timetable": false,
+    "timetable": true,
     "materials": false,
     "surveys": false,
     "uploads": false,
