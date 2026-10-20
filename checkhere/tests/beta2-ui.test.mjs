@@ -231,15 +231,15 @@ test('the teacher preview merges 1기 and 2기 teacher tabs into six tabs with a
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   await page.getByRole('button',{name:'미리보기',exact:true}).click();
   await page.locator('[data-main]').first().waitFor();
-  assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘','출결','서류발급','민원·만족도','시간표·자료','반 정보']);
+  assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘 할 일','출결','서류 발급','민원·설문','시간표·자료','우리 반']);
   await page.locator('.b2-alertbar:not([hidden])').waitFor();
   assert.match(await page.locator('.b2-alertbar').innerText(),/고다원 4\/6회/);
   await page.locator('[data-main="attendance"]').click();
-  assert.deepEqual(await page.locator('[data-subtab]').allInnerTexts(),['출결판','출결사유','통계','증빙서류','질병 인정']);
+  assert.deepEqual(await page.locator('[data-subtab]').allInnerTexts(),['출결판','출결 사유','출석률','증빙서류','질병 인정']);
   await page.locator('[data-subtab="stats"]').click();
   await page.locator('[data-panel="attendance"] .b2-table').first().waitFor();
   await page.locator('[data-main="documents"]').click();
-  await page.getByRole('heading',{name:'서류발급 신청',exact:true}).waitFor();
+  await page.locator('#t2Head h2',{hasText:'서류 발급'}).waitFor();await page.locator('[data-panel="documents"] .b2').waitFor();
   assert.equal(await page.locator('.b2-alertbar').isVisible(),true,'the warning stays above every tab');
   assert.equal(posts.filter(p=>p.action==='portalData').length,1,'one teacher-beta instance serves every 2기 pane');
   await page.locator('[data-main="info"]').click();

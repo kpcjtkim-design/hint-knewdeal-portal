@@ -143,6 +143,6 @@ test('2기 베타 sheet actions carry the verified user, are administrator-only 
 test('the 2기 teacher workspace is the six-tab layout backed by /api/teacher-beta, with later screens behind cohort features',()=>{
  const ws=readFileSync(join(base,'teacher-workspace.mjs'),'utf8'),layout=readFileSync(join(base,'beta2-teacher-layout.mjs'),'utf8');
  assert.ok(ws.includes("import('./beta2-teacher-layout.mjs")&&ws.includes('mountBeta2TeacherLayout'));assert.ok(!ws.includes('2기 베타'));
- assert.ok(layout.includes("TEACHER_TABS=[['today','오늘'],['attendance','출결'],['documents','서류발급'],['feedback','민원·만족도'],['schedule','시간표·자료'],['info','반 정보']]"));
+ assert.ok(layout.includes("TEACHER_TABS=[['today','오늘 할 일'],['attendance','출결'],['documents','서류 발급'],['feedback','민원·설문'],['schedule','시간표·자료'],['info','우리 반']]"));
  assert.ok(layout.includes("endpoint:'/api/teacher-beta'")&&layout.includes('feature(LATER[key])'));
 });

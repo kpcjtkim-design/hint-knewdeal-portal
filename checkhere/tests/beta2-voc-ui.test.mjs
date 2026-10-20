@@ -136,8 +136,8 @@ test('the teacher screen shows an office-reply bar, files new 민원·이슈 as 
   assert.match(await bar.innerText(),/운영팀이 민원·이슈에 답글을 남겼습니다 · 1건/);
   assert.equal(await page.locator('#t2Alert').isVisible(),false,'the empty disease bar stays hidden');
   await bar.getByRole('button',{name:'보기'}).click();
-  assert.deepEqual(await page.locator('[data-subtab]').allInnerTexts(),['민원·이슈','만족도조사'],'학습자 평가 is gone');
-  await page.locator('[data-panel="feedback"] h2',{hasText:'민원·이슈'}).waitFor();
+  assert.deepEqual(await page.locator('[data-subtab]').allInnerTexts(),['민원·이슈','만족도 설문'],'학습자 평가 is gone');
+  await page.locator('#t2Head h2',{hasText:'민원·이슈'}).waitFor();
   assert.deepEqual(sent(posts,'b2Vocs').at(-1),{cls:'1'});
   assert.deepEqual(await page.locator('[data-voc]').evaluateAll(els=>els.map(e=>e.dataset.voc)),['V261016-002','R7','V261015-001'],'only this class');
   assert.match(await page.locator('[data-voc="V261016-002"]').innerText(),/운영팀 답글/);
