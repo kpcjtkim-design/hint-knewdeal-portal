@@ -44,8 +44,10 @@ const hm=v=>/^\d{2}:\d{2}/.test(String(v||''))?String(v).slice(0,5):'';
 // 저장된 값 한 줄 요약('그사이 바뀜'에 시트 최신 값을 보일 때)
 const brief=v=>{const t=neededTimes(v.type,v),ev=evOf(v);return [v.type||'유형 없음',t.inT&&`입실 ${t.inT}`,t.outT&&`퇴실 ${t.outT}`,t.oa&&`외출 ${t.oa}~${t.ob}`,String(v.reason||'').trim(),ev&&`증빙 ${ev}${evrOf(v)?`(${evrOf(v)})`:''}`].filter(Boolean).join(' · ');};
 // 저장될 증빙 값: 출석이면 비움, 반려 사유는 반려일 때만(저장 payload와 같은 기준)
-const evOf=v=>v.type==='출석'?'':String(v.ev||''),evrOf=v=>evOf(v)==='반려'?String(v.evr||'').trim():'';
-const evOn=v=>B2_TYPES.includes(v.type)&&v.type!=='출석'; // 증빙 드롭다운을 보이는 유형
+const evOf=v=>v.type==='출석'||v.type==='해당없음'?'':String(v.ev||''),evrOf=v=>evOf(v)==='반려'?String(v.evr||'').trim():''; // 해당없음(현황 없음)도 증빙 없음
+const evOn=v=>B2_TYPES.includes(v.type)&&v.type!=='출석'&&v.type!=='해당없음'; // 증빙 드롭다운을 보이는 유형
+// 시트가 아직 '해당없음'을 받지 않으면(Apps Script 배포 전) b2Save가 '유형을 골라 주세요.'로 거절합니다 → 기다림 안내
+const sheetWait=(msg,type)=>type==='해당없음'&&/유형을 골라/.test(String(msg||''))?'시트 업데이트 대기 · 마스터시트가 아직 해당없음을 받지 않습니다(Apps Script 배포 뒤 다시 저장해 주세요)':msg;
 
 export async function mount(host,{db,user,classes,client,selected,context}){
  const life=lifecycle(host);
@@ -146,8 +148,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
-  const noReason=!row.rec&&v.type==='출석',record=matchFor(row),hint=memoReason(record?.entryMemo)||memoReason(record?.exitMemo);
-  return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형">${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT?time('inT','입실'):''}${need.outT?time('outT','퇴실'):''}${need.oa?time('oa','외출 시작')+time('ob','외출 종료'):''}<span class="b2-rpick">${pickHtml(row,v,n,noReason)}</span>${evOn(v)?evHtml(row,v,n):''}${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
+  const noReason=(!row.rec&&v.type==='출석')||v.type==='해당없음',record=matchFor(row),hint=memoReason(record?.entryMemo)||memoReason(record?.exitMemo);
+  return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형"${v.type==='해당없음'?' style="background:#e8eaed;color:#5f6368" title="해당없음(현황 없음) · 출석률·결석에 넣지 않습니다"':''}>${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT?time('inT','입실'):''}${need.outT?time('outT','퇴실'):''}${need.oa?time('oa','외출 시작')+time('ob','외출 종료'):''}<span class="b2-rpick">${pickHtml(row,v,n,noReason)}</span>${evOn(v)?evHtml(row,v,n):''}${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
  }
  // 증빙 드롭다운(사유 바로 옆, 약 110px)과 반려면 반려 사유 칸. 취업박람회 추가 증빙 안내는 title로(예전 증빙 편집기의 안내 글).
  function evHtml(row,v,n){
@@ -430,6 +432,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const row=rowOf(name);if(!row)return;
   const t=timesFromRecord(matchFor(row)),need=neededTimes(type,ALL),d={...valuesOf(row),type};
   for(const k of TIMES)if(need[k]&&!d[k])d[k]=t[k]||'';
+  if(type==='해당없음'){Object.assign(d,{reason:'',ev:'',evr:''});customOpen.delete(name);} // 해당없음(현황 없음): 사유·증빙 비움
   setDraft(name,d);paint(name,{force:true});paintBulk();
  }
  // 초안 버리기: 입력칸의 화면 값은 입력하며 그린 HTML과 달라졌으므로 그린 것을 잊어 다음 그리기 때 꼭 다시 그립니다(포커스가 있으면 focusout 때).
@@ -534,7 +537,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
     else if(now&&d){drafts.set(name,{...d,base:now.rec?.sig||''});notes.set(name,`그사이 바뀜 · 저장 안 됨 · 시트 최신 값 ${brief(saved(now))} · 다시 저장하면 이 값으로 덮어씁니다`);}
     else notes.set(name,'그사이 바뀜 · 최신 값 표시');
     paint(name,{force:true});
-   }else{notes.set(name,e.message);paintMsg(name);}
+   }else{notes.set(name,sheetWait(e.message,v.type));paintMsg(name);}
    return false;
   }
   // S5: 다음 before는 res.sig, unchanged면 지금 sig(기록 없으면 ''). 결과는 먼저 동기화 모듈에 알립니다('저장 중'으로 멈춘 보류가 남지 않게).

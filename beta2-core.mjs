@@ -6,7 +6,10 @@ import {ruleFor,DISEASE,COMPLETION_RATE,isIsoDate,isTestClass} from './cohort.mj
 import {ruleOn,SOURCE_SHEET} from './beta2-daytimes.mjs';
 import {extraEvidence,isDiseaseText} from './attendance-reason-catalog.mjs'; // 취업박람회 추가 증빙·질병 판정(2026-10-20)
 
-export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출'];
+// '해당없음'(현황 없음, 사용자 2026-10-20 '출결상태에서 현황없음을 시트 담임 관리자에 만들라고'): 저장되는 출결 상태. 시트 기호 '-'(회색).
+// 그날은 재학일 수(분모)·결석·총원 어디에도 넣지 않습니다(재학 전후 '해당없음' 행과 같음). 사유·증빙 없음.
+export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출','해당없음'];
+export const NONE_TYPE='해당없음';
 export const B2_EVIDENCE=['','미제출','반려','확인','해당없음'];
 export const B2_PRESENT=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
 export const recognizedType=t=>String(t||'').startsWith('인정');
@@ -49,7 +52,7 @@ export function dayView(bundle,cls,date,index=ledgerIndex(bundle)){
 export function dayCounts(rows){
  const c={총원:0,출석:0,결석:0,지각:0,조퇴:0,외출:0,인정:0,중복:0};
  for(const r of rows){
-  if(!r.enrolled&&!r.rec)continue;c.총원++;const t=r.type;
+  if((!r.enrolled&&!r.rec)||r.type===NONE_TYPE)continue;c.총원++;const t=r.type; // 해당없음(재학 전후·현황 없음)은 총원·출석에서 뺌
   if(t==='결석')c.결석++;else if(recognizedType(t))c.인정++;else if(['지각','조퇴','외출','중복'].includes(t))c[t]++;
  }
  c.출석=c.총원-c.결석;return c;
@@ -65,7 +68,9 @@ export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=f
   const counts={},evidence=[],disease=[];let enrolled=0;
   for(const d of daysOf(p.cls)){
    const rec=index.get(ledgerKey(p.cls,p.name,d));
-   if(!enrolledOn(p,d)&&!rec)continue;enrolled++;
+   if(!enrolledOn(p,d)&&!rec)continue;
+   if(rec?.type===NONE_TYPE)continue; // 해당없음(현황 없음): 재학일 수(분모)·결석·증빙·질병 어디에도 넣지 않음
+   enrolled++;
    const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;
    if(rec&&recognizedType(t)&&['미제출','반려'].includes(rec.evApplied||(rec.ev||'미제출')))evidence.push({date:d,type:t,state:rec.evApplied||rec.ev||'미제출',evr:rec.evr||'',reason:rec.reason||'',extra:!!extraEvidence(rec)});
    if(rec&&recognizedType(t)&&isDiseaseReason(rec.reason))disease.push(d);

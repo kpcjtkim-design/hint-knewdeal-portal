@@ -186,3 +186,27 @@ test('2기 has no /beta2 save guard: live relay requests keep the reason exactly
  const live={status:'pending',reason:`${LIVE_MARK} 지각 교통 [기준:0a1b2c3d]`};
  assert.equal(isLiveRequest(live),true);assert.equal(tagOf(live.reason),'0a1b2c3d');assert.equal(editorReason(live.reason),'지각 교통');
 });
+
+// '해당없음'(현황 없음, 사용자 2026-10-20 '출결상태에서 현황없음을 시트 담임 관리자에 만들라고'): 저장되는 출결 상태
+test("'해당없음' is a saved type: that day leaves the enrolled days, absences, totals, evidence and disease; CheckHere entries on it still show as a difference",async()=>{
+ const {B2_TYPES}=await import('../../beta2-core.mjs'),{absenceRows,suggestVerdict}=await import('../../beta2-dropout-core.mjs'),{sheetToCheckHere}=await import('../../beta2-checkhere-core.mjs');
+ assert.equal(B2_TYPES.at(-1),'해당없음');
+ const raw={...RAW,ledger:[...RAW.ledger,L('2026-11-03','다','해당없음'),L('2026-11-05','다','해당없음',{reason:'병원'})]},b=decodeBundle(raw);
+ const da=studentStats(b,{cls:'1'}).find(x=>x.name==='다');
+ assert.deepEqual([da.days,da.absent,da.rate,da.counts],[1,0,100,{인정조퇴:1}],'two 해당없음 days are neither enrolled days nor absences');
+ assert.deepEqual(da.disease,[]);assert.deepEqual(da.evidence.map(e=>e.date),['2026-11-04']);
+ const row=dayView(b,'1','2026-11-05').find(r=>r.name==='다');assert.deepEqual([row.type,row.enrolled,!!row.rec],['해당없음',true,true]);
+ assert.deepEqual(dayCounts(dayView(b,'1','2026-11-05')),{총원:1,출석:1,결석:0,지각:0,조퇴:0,외출:0,인정:1,중복:0},'counted like the rows before or after enrolment');
+ assert.deepEqual(dayCounts(dayView(decodeBundle(RAW),'1','2026-11-05')),{총원:2,출석:2,결석:0,지각:0,조퇴:0,외출:0,인정:1,중복:0});
+ const ab=absenceRows(b,{cls:'1'}).find(x=>x.name==='다');assert.deepEqual([ab.days,ab.absent],[1,0]);
+ // 조기취업 판정: 출결원장 결석만 셉니다(해당없음은 결석이 아님)
+ const v=suggestVerdict({kind:'조기취업',cls:'1',name:'다',lastDate:'2026-11-05',startDate:'2026-11-06'},b);assert.equal(v.absent,0);
+ // 체크히어 대조: 해당없음은 결석처럼 보고 기록이 있으면 차이(유지)
+ const rec=(entry,exit)=>({rawEntry:entry,entry,exit,outings:[],outingCount:0});
+ assert.equal(compareCheckHere('해당없음',null,rec('09:00:00','18:00:00')).state,'diff');assert.match(compareCheckHere('해당없음',null,rec('09:00:00','18:00:00')).text,/기록 있음/);
+ assert.equal(compareCheckHere('해당없음',null,rec(null,null)).state,'ok');
+ // 체크히어 반영: 해당없음은 보내지 않음(개별 검토 · 체크히어 그대로)
+ const live={id:'r',version:'v',readState:'complete',classId:'1',date:'2026-11-05',name:'다',teacher:'김지아',rawEntry:'09:00:00',entry:'09:00:00',exit:'18:00:00',outings:[],schedule:'09:00 ~ 18:00',source:'live',phoneLast4:'1234'};
+ const res=sheetToCheckHere({row:{type:'해당없음',reason:''},record:live,sheetTeacher:'김지아',date:'2026-11-05',me:'a@b.c'});
+ assert.equal(res.state,'manual');assert.deepEqual(res.changes,{});assert.match(res.notes[0],/해당없음/);
+});

@@ -131,6 +131,7 @@ export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabl
     if(!mine)return hold('진행 중 요청이 끝나면 다시 계산해 요청','request');
     out.withdraw=running.map(r=>r.id);
   }
+  if(type==='해당없음')return {...out,state:'manual',notes:['해당없음(현황 없음) · 체크히어는 바꾸지 않음']}; // 2026-10-20 저장되는 출결 상태
   if(!['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출'].includes(type))return {...out,state:'manual',notes:['중복 출결 · 개별 검토 필요']};
   // P3 담임: 체크히어 강의의 담임 이름이 우선(judge()가 메모의 담임을 그것과 비교함)
   const T=validTeacher(record.teacher)?String(record.teacher).trim():validTeacher(sheetTeacher)?String(sheetTeacher).trim():'';

@@ -6,7 +6,7 @@
 // 세부 목록이 곧 그 분류의 옆 드롭다운 목록이라 데이터 모양은 그대로이고, 옛 저장본도 그대로 읽힙니다. 미리보기는 출결대조·담임 화면과 같은 공용 칸(reason-pick.mjs).
 // 미리보기(출결대조 드롭다운 모양), 저장(rev 확인 트랜잭션, 저장한 사람·시각), 기본값으로 되돌리기(저장해야 적용), 저장하지 않은 변경은 떠날 때 확인.
 import {esc,toast,loading,lifecycle} from './beta2-ui.mjs';
-import {DEFAULT_REASON_CATALOG,cloneCatalog,validateReasonCatalog,withReasonCatalog,reasonOptions,subOptions,reasonPick,reasonChecks,RULES,OTHER,NA,NOT_RECOGNIZED} from './attendance-reason-catalog.mjs';
+import {DEFAULT_REASON_CATALOG,cloneCatalog,validateReasonCatalog,withReasonCatalog,reasonOptions,subOptions,reasonPick,reasonChecks,RULES,OTHER,NOT_RECOGNIZED} from './attendance-reason-catalog.mjs';
 import {pickReasonText} from './reason-pick.mjs';
 import {readReasonCatalogDoc,saveReasonCatalog} from './reason-catalog-store.mjs';
 
@@ -51,8 +51,7 @@ export async function mount(host,{db,user}){
   return `<div class="b2-tiny b2-muted" style="margin:0 0 8px" id="rcSaved">${base?.exists?`저장본 ${base.rev}번 · ${esc(base.updatedBy||'?')}${when?` · ${esc(when)}`:''}`:'저장본 없음 · 코드의 기본 목록을 쓰는 중'}${dirty()?' · <b class="b2-dirty">저장 전 변경 있음</b>':''}</div>`;
  }
  function catsHtml(){
-  // '해당없음'(사용자 2026-10-20 부활): 사유 드롭다운 맨 위 고정 항목. 숨기기만(이름 바꾸기·순서·지우기 없음)
-  return `<div class="b2r-cats" role="list" aria-label="분류"><div class="b2r-cat ${draft.naHidden?'off':''}" role="listitem" id="rcNa"><b style="flex:1">${NA}</b><span class="b2-badge t-na" title="사유 드롭다운 맨 위 고정 항목 · 저장 글 '${NA}' · 이름 바꾸기·지우기 없음">고정</span><label class="b2-tiny"><input type="checkbox" id="rcNaHidden" ${draft.naHidden?'checked':''}>숨기기</label></div>${draft.cats.map((c,i)=>`<div class="b2r-cat ${i===pick?'on':''} ${c.hidden?'off':''}" role="listitem" data-cat="${i}">
+  return `<div class="b2r-cats" role="list" aria-label="분류">${draft.cats.map((c,i)=>`<div class="b2r-cat ${i===pick?'on':''} ${c.hidden?'off':''}" role="listitem" data-cat="${i}">
    <button class="b2-btn small ghost mv" data-move="up" data-i="${i}" ${i?'':'disabled'} aria-label="${esc(c.label)} 위로">↑</button><button class="b2-btn small ghost mv" data-move="down" data-i="${i}" ${i<draft.cats.length-1?'':'disabled'} aria-label="${esc(c.label)} 아래로">↓</button>
    <button class="pick" data-pick="${i}">${c.recognized?'':`<span class="b2-muted">${NOT_RECOGNIZED}</span> `}${esc(c.label)}</button>${c.hidden?'<span class="b2-badge t-na">숨김</span>':''}</div>`).join('')}
    <div class="b2r-add"><input type="text" id="rcNewCat" maxlength="20" placeholder="새 분류 이름" aria-label="새 분류 이름"><button class="b2-btn small" id="rcAddCat">분류 추가</button></div></div>`;
@@ -135,7 +134,6 @@ export async function mount(host,{db,user}){
   if(t.id==='rcPvCourse'){pv.course=t.value;return paintSide();}
   if(t.id==='rcPvMain'){pv.main=t.value;pv.sub='';return paintSide();}
   if(t.id==='rcPvSub'){pv.sub=t.value;return paintSide();}
-  if(t.id==='rcNaHidden'){edit(()=>{if(t.checked)draft.naHidden=true;else delete draft.naHidden;},{redraw:true});return;}
   if(!c)return;
   if(t.dataset.cb){const f=t.dataset.cb;edit(()=>{
    if(f==='extraOn'){if(t.checked)c.extra=c.extra||'추가 증빙 서류';else delete c.extra;}
