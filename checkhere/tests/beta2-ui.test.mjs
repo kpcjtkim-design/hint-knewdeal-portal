@@ -148,7 +148,7 @@ test('출결대조 shows the ledger next to CheckHere with a slim direct-request
   await goType.selectOption('지각');
   assert.equal(await go.locator('input[data-inline="inT"]').inputValue(),'09:02');
   assert.equal(posts.filter(p=>p.action==='b2Save').length,0);
-  await go.locator('input[data-inline="reason"]').fill('교통');
+  await setReason(go,'교통');
   assert.equal(await all.innerText(),'변경 1건 저장');
   await all.click();
   await go.getByText('베타 수정').waitFor();
@@ -367,6 +367,10 @@ const REQUEST_KEYS=['changes','classId','createdAt','createdBy','date','name','p
 const AUTO_REASON=/^\[실시간 베타\] 출결대조 자동 · .+ \[기준:[0-9a-f]{8}\]$/;
 const virtual=(extra=()=>null)=>({clock:CLOCK,days:VDAYS,api:async body=>(await extra(body))??(body.action==='b2Bundle'?{ok:true,data:VB}:null)});
 const student=(page,name)=>page.locator(`tbody[data-student="${name}"]`);
+// 출결대조 사유 칸은 드롭다운(사용자 지시 2026-10-20): 목록에 있는 사유는 고르고, 없으면 '기타' → 직접 입력 칸. 지금 사유 글은 직접 입력 칸, 없으면 드롭다운 값.
+const reasonMain=(page,name)=>student(page,name).locator('select[data-inline="rmain"]');
+async function setReason(scope,text){const main=scope.locator('select[data-inline="rmain"]');if((await main.locator('option').evaluateAll(o=>o.map(x=>x.value))).includes(text))return void await main.selectOption(text);await main.selectOption('기타');await scope.locator('input[data-inline="reason"]').fill(text);}
+async function reasonText(scope){const i=scope.locator('input[data-inline="reason"]');return await i.count()?i.inputValue():scope.locator('select[data-inline="rmain"]').inputValue();}
 const typeOf=(page,name)=>student(page,name).locator('select[data-inline="type"]');
 const chip=(page,name)=>student(page,name).locator('[data-status]');
 const savesOf=(posts,name)=>posts.filter(p=>p.action==='b2Save'&&p.args[0].name===name).map(p=>p.args[0]);
@@ -430,7 +434,7 @@ test('today: an inline save that already matches sends nothing, a real change se
   await chip(page,'가상변경').getByText('완료',{exact:true}).waitFor();
   assert.equal((await requestWrites(page)).length,1);
   // 이미 저장된 행의 사유도 칸을 벗어나면 저장하지 않고 모아 저장으로. 인정 아닌 유형의 사유만 바뀐 저장은 체크히어로 자동 전송하지 않음(S5)
-  await student(page,'가상지각').locator('input[data-inline="reason"]').fill('가상 교통');
+  await setReason(student(page,'가상지각'),'가상 교통');
   await page.getByRole('heading',{name:'출결대조'}).click();
   await page.waitForTimeout(300);
   assert.equal(savesOf(posts,'가상지각').length,0,'leaving the field does not save');
@@ -460,7 +464,7 @@ test('undo within 3 seconds writes no request and saves the previous sheet row b
   await typeOf(page,'가상겹침').selectOption('지각');
   await saveChanges(page);
   await chip(page,'가상겹침').getByText('보내기 전').waitFor();
-  await student(page,'가상겹침').locator('input[data-inline="reason"]').fill('교통');
+  await setReason(student(page,'가상겹침'),'교통');
   await page.locator('#b2SaveAll').click();
   await chip(page,'가상겹침').getByText('저장 중 · 체크히어 반영 대기').waitFor();
   await page.waitForTimeout(3500);
@@ -520,9 +524,9 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   await typeOf(page,'가상인정').selectOption('인정출석');
   await saveChanges(page);
   await student(page,'가상인정').getByText('입력 필요: 사유').waitFor();
-  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.inline),'reason');
+  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.inline),'rmain','the reason dropdown gets focus');
   assert.equal(savesOf(posts,'가상인정').length,0);
-  await page.keyboard.type('개인일정');
+  await setReason(student(page,'가상인정'),'개인일정');// 사유 드롭다운에서 고름
   await student(page,'가상인정').getByText('입력 필요: 사유').waitFor({state:'detached'});// 고치면 안내도 바로 다시 확인
   await saveChanges(page);
   await chip(page,'가상인정').getByText(/보류 · 인정 사유를 하나로 확인하지 못했습니다/).waitFor();
@@ -544,7 +548,7 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   // (13) 중복 행: '유형 선택 필요', 유효한 유형을 고르기 전에는 사유도 저장하지 않음. Enter는 다음 학생 같은 칸으로(저장 없음)
   assert.equal(await typeOf(page,'가상중복').inputValue(),'');
   assert.match(await typeOf(page,'가상중복').locator('option:checked').innerText(),/유형 선택 필요/);
-  await student(page,'가상중복').locator('input[data-inline="reason"]').fill('가상 사유 고침');
+  await setReason(student(page,'가상중복'),'가상 사유 고침');
   await student(page,'가상중복').locator('input[data-inline="reason"]').press('Enter');
   assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상증빙/reason');
   await saveChanges(page);
@@ -553,15 +557,16 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   await student(page,'가상중복').getByRole('button',{name:'취소',exact:true}).click();
   assert.equal(await student(page,'가상중복').locator('input[data-inline="reason"]').inputValue(),'가상 사유');
   // (11) 기록 없는 출석 행: 사유 칸 꺼짐, unchanged 응답이면 요청 없음
-  const noReason=student(page,'가상출석').locator('input[data-inline="reason"]');
-  assert.equal(await noReason.isDisabled(),true);assert.match(await noReason.getAttribute('placeholder'),/출석은 사유를 저장하지 않습니다\(유형을 바꾸면 저장\)/);
+  const noReason=reasonMain(page,'가상출석');
+  assert.equal(await noReason.isDisabled(),true);assert.match(await noReason.getAttribute('title'),/출석은 사유를 저장하지 않습니다\(유형을 바꾸면 저장\)/);
   await typeOf(page,'가상출석').selectOption('지각');
-  assert.equal(await student(page,'가상출석').locator('input[data-inline="reason"]').isDisabled(),false);
+  assert.equal(await reasonMain(page,'가상출석').isDisabled(),false);
   await saveChanges(page);
   await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상출석"] select[data-inline="type"]')?.value==='출석');
   assert.equal(savesOf(posts,'가상출석')[0].before,'');
   await chip(page,'가상출석').getByText('체크히어 이미 같음').waitFor();
   // (7) 체크히어 기록이 새로 와도 입력 중인 사유 칸의 값과 포커스는 그대로, Esc 뒤에 새 기록이 보임
+  await reasonMain(page,'가상지각').selectOption('기타');// 목록에 없는 사유는 '기타' → 직접 입력
   const reason=student(page,'가상지각').locator('input[data-inline="reason"]');
   await reason.click();await page.keyboard.type('abc');
   await page.evaluate(([path,days])=>window.pushSnap(path,{records:days[path].records.map(r=>r.name==='가상지각'?{...r,exit:'17:30:00',version:'v-r1b',collectedAt:'2'}:r)}),[CUR,VDAYS]);
@@ -570,7 +575,7 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상지각/reason');
   await page.keyboard.press('Escape');
   await student(page,'가상지각').getByText('17:30',{exact:true}).waitFor();
-  assert.equal(await reason.inputValue(),'');
+  assert.equal(await reasonText(student(page,'가상지각')),'');assert.equal(await reason.count(),0,'Esc also closes the free-text box');
   assert.equal(savesOf(posts,'가상지각').length,0);
   await page.waitForTimeout(3500);
   assert.equal((await requestWrites(page)).length,0,'none of these rows sends a request');
@@ -669,7 +674,7 @@ test('changing the date during the 3 seconds asks first: no sends nothing, yes s
   await page.locator('#b2Live').getByText(/체크히어 (저장본|실시간) · 10명/).waitFor();
   await pushRequests(page,[]);
   await typeOf(page,'가상인정').selectOption('인정출석');
-  await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
+  await setReason(student(page,'가상인정'),'병원');
   await saveChanges(page);
   await chip(page,'가상인정').getByText('보내기 전').waitFor();
   page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
@@ -763,7 +768,7 @@ test('the 3-second undo survives a press across a second boundary and keyboard f
   await page.getByRole('button',{name:'전체'}).click();
   await pushRequests(page,[{id:'other_1',classId:'1',date:D,name:'가상인정',phoneLast4:'0000',status:'pending',createdBy:'other@example.com',changes:{exitMemo:'가상 메모'},reason:'가상 직접 요청'}]);
   await typeOf(page,'가상인정').selectOption('인정출석');
-  await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
+  await setReason(student(page,'가상인정'),'병원');
   await saveChanges(page);
   await chip(page,'가상인정').getByText('보류 · 진행 중 요청이 끝나면 다시 계산해 요청').waitFor();
   const dialogs=[];page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
@@ -816,8 +821,8 @@ test('an evidence save that conflicts keeps the editor and the chosen values whi
 test('a save-all still running when another date is picked finishes first, then the date changes; leaving the screen waits for it',async()=>{
  await beta(async(page,posts)=>{
   await openLedger(page);
-  await student(page,'가상지각').locator('input[data-inline="reason"]').fill('가상 교통');
-  await student(page,'가상메모').locator('input[data-inline="reason"]').fill('가상 메모 사유');
+  await setReason(student(page,'가상지각'),'가상 교통');
+  await setReason(student(page,'가상메모'),'가상 메모 사유');
   await page.locator('#b2SaveAll').click();// 느린 저장 두 건
   await page.locator('#b2SaveAll').getByText('저장 중 1/2').waitFor();
   await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
@@ -837,10 +842,10 @@ test('save-all: leaving a field or Enter never saves; rows save one at a time in
   await openLedger(page);
   const dialogs=[];page.on('dialog',d=>{dialogs.push(d.message());void d.accept();});
   const reason=n=>student(page,n).locator('input[data-inline="reason"]'),all=page.locator('#b2SaveAll');
-  await reason('가상지각').fill('가상 교통');
+  await setReason(student(page,'가상지각'),'가상 교통');
   await page.getByRole('heading',{name:'출결대조'}).click();
   await reason('가상지각').press('Enter');
-  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상메모/reason','Enter moves to the same field of the next student');
+  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상메모/rmain','Enter moves to the reason of the next student (its dropdown when it has no free text)');
   await page.waitForTimeout(300);
   assert.equal(posts.filter(p=>p.action==='b2Save').length,0,'neither blur nor Enter saves');
   assert.equal(await student(page,'가상지각').locator('[data-mark]').innerText(),'저장 전');
@@ -883,7 +888,7 @@ test('save-all: leaving a field or Enter never saves; rows save one at a time in
   assert.equal(await student(page,'가상겹침').getByText(/그사이 바뀜/).count(),0);
   assert.equal(posts.filter(p=>p.action==='b2Save').length,4);
   // 입력하던 칸에서 Ctrl+S: 저장하는 동안 잠갔다가 끝나면 그 칸으로 포커스가 돌아옴(확인 필요 행이 없을 때)
-  await reason('가상메모').fill('가상 메모 사유');await page.keyboard.press('Control+s');
+  await setReason(student(page,'가상메모'),'가상 메모 사유');await page.keyboard.press('Control+s');
   await page.locator('#b2BulkNote').getByText('1건 저장',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상메모/reason');
   assert.deepEqual(savesOf(posts,'가상메모').map(s=>s.reason),['가상 메모 사유']);
@@ -905,8 +910,8 @@ test('drafts and direct-request edits ask before leaving, changing the date, rel
   await openLedger(page);
   const dialogs=[];let answer=false;page.on('dialog',d=>{dialogs.push(d.message());void(answer?d.accept():d.dismiss());});
   const asked=async n=>{for(let i=0;i<100&&dialogs.length<n;i++)await page.waitForTimeout(50);assert.equal(dialogs.length,n);};
+  await setReason(student(page,'가상지각'),'가상 교통');
   const reason=student(page,'가상지각').locator('input[data-inline="reason"]');
-  await reason.fill('가상 교통');
   await page.getByRole('heading',{name:'출결대조'}).click();
   // 다른 화면·날짜·새로고침: 묻고, 아니오면 그대로(2기에는 운영총괄 가져오기가 없음)
   await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();await asked(1);
@@ -1036,11 +1041,11 @@ test('a conflict whose latest ledger cannot be read keeps the draft and its base
  await beta(async(page,posts)=>{
   await openLedger(page);
   const s=student(page,'가상지각');
-  await s.locator('input[data-inline="reason"]').fill('가상 교통');
+  await setReason(s,'가상 교통');
   fail=true;await saveChanges(page);
   await s.getByText('그사이 바뀜 · 저장 안 됨 · 최신 값을 읽지 못했습니다 · 잠시 뒤 다시 저장해 주세요').waitFor();
   assert.equal(await s.getByText(/시트 최신 값|덮어씁니다/).count(),0,'the old value is not shown as the latest');
-  assert.equal(await s.locator('input[data-inline="reason"]').inputValue(),'가상 교통');assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
+  assert.equal(await reasonText(s),'가상 교통');assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
   fail=false;await saveChanges(page);
   await s.getByText('그사이 바뀜 · 저장 안 됨 · 시트 최신 값 지각 · 입실 09:30 · 시트에서 고침 · 다시 저장하면 이 값으로 덮어씁니다').waitFor();
   assert.deepEqual(savesOf(posts,'가상지각').map(x=>x.before),['sig-가상지각-2026-11-05','sig-가상지각-2026-11-05'],'the base only moves after the latest row was read');
@@ -1056,7 +1061,7 @@ test('an evidence save pressed while that row\'s batch save runs says it was not
  await beta(async(page,posts)=>{
   await openLedger(page);
   const s=student(page,'가상증빙');
-  await s.locator('input[data-inline="reason"]').fill('병원 진료 2');
+  await setReason(s,'병원 진료 2');
   await s.getByRole('button',{name:'증빙',exact:true}).click();
   await s.locator('select[data-f="ev"]').selectOption('확인');
   await page.locator('#b2SaveAll').click();

@@ -135,10 +135,10 @@ export function neededTimes(type,v){
 export function evidenceRows(stats){
  return stats.flatMap(s=>s.evidence.map(e=>({cls:s.cls,name:s.name,...e}))).sort((a,b)=>Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }
-// 추가 증빙(취업박람회 인정 출결, 사용자 요청 2026-10-20 ③): 이행 여부(미제출·반려·확인)와 함께 모두 보입니다(못 한 것 먼저). 재학 아닌 날도 기록이 있으면 넣습니다.
+// 추가 증빙(취업박람회 인정 출결, 사용자 요청 2026-10-20 ③): 이행 여부(미제출·반려·확인)와 함께 모두 보입니다(못 한 것 먼저). 재학 아닌 날도 기록이 있으면 넣고, 전체 반이면 테스트반은 뺍니다.
 export function extraEvidenceRows(bundle,{cls=null,from='',to=bundle.today}={}){
  const days=new Set(courseDays(bundle,{from,to}));
- return bundle.ledger.filter(r=>days.has(r.date)&&(!cls||String(r.cls)===String(cls))).map(r=>({r,x:extraEvidence(r)})).filter(v=>v.x)
+ return bundle.ledger.filter(r=>days.has(r.date)&&(cls?String(r.cls)===String(cls):!isTestClass(r.cls))).map(r=>({r,x:extraEvidence(r)})).filter(v=>v.x)
   .map(({r,x})=>({cls:String(r.cls),name:r.name,date:r.date,type:r.type,reason:r.reason||'',state:x.state,done:x.done,evr:r.evr||''}))
   .sort((a,b)=>Number(a.done)-Number(b.done)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {REASON_CATS,APTITUDE,OTHER,RECOGNIZED,EXTRA_DOC,EXTRA_LABEL,composeReason,splitReason,tidyReason,reasonKind,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,catOptions,subOptions,typeWarning,catOf} from '../../attendance-reason-catalog.mjs';
+import {STANDARD,reasonPick,reasonOptions,REASON_CATS,APTITUDE,OTHER,RECOGNIZED,EXTRA_DOC,EXTRA_LABEL,composeReason,splitReason,tidyReason,reasonKind,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,catOptions,subOptions,typeWarning,catOf} from '../../attendance-reason-catalog.mjs';
 import {reasonCategory,suggestReason} from '../../checkhere-proposal-core.mjs';
 import {normalizePeriodReason} from '../../attendance-period-core.mjs';
 import {reasonFor} from '../../attendance-reason-parser.mjs';
@@ -96,6 +96,26 @@ test('3) 취업박람회 + 인정 출결 needs the extra 기업면접 확인서 
  const b=decodeBundle({rev:1,today:'2026-11-06',days:['2026-11-04','2026-11-05','2026-11-06'],classes:[],roster:[['1','가','재학',''],['2','나','재학','']],ledgerCols:COLS,
   ledger:[L('2026-11-04','1','가','인정출석',{reason:'취업박람회',ev:'확인'}),L('2026-11-05','1','가','인정조퇴',{reason:'취업박람회(현장 면접)'}),L('2026-11-05','2','나','결석',{reason:'취업박람회'}),L('2026-11-06','2','나','인정출석',{reason:'병원'})]});
  assert.deepEqual(extraEvidenceRows(b).map(r=>[r.cls,r.name,r.date,r.state,r.done]),[['1','가','2026-11-05','미제출',false],['1','가','2026-11-04','확인',true]],'outstanding first, 결석 is not tracked');
- assert.deepEqual(extraEvidenceRows(b,{cls:'2'}),[]);assert.equal(extraEvidenceRows(b,{from:'2026-11-05'}).length,1);
+ assert.deepEqual(extraEvidenceRows(b,{cls:'2'}),[]);
+ // 17반 테스트반: 그 반을 고르면 보이고, 전체 반에서는 빠짐
+ const t=decodeBundle({rev:1,today:'2026-11-06',days:['2026-11-05'],classes:[],roster:[['17','시험','재학','']],ledgerCols:COLS,ledger:[L('2026-11-05','17','시험','인정출석',{reason:'취업박람회'})]});
+ assert.equal(extraEvidenceRows(t).length,0);assert.equal(extraEvidenceRows(t,{cls:'17'}).length,1);assert.equal(extraEvidenceRows(b,{from:'2026-11-05'}).length,1);
  assert.deepEqual(evidenceRows(studentStats(b)).map(r=>[r.name,r.date,r.reason,r.extra]),[['가','2026-11-05','취업박람회(현장 면접)',true],['나','2026-11-06','병원',false]]);
+});
+
+test('출결대조 사유 드롭다운 하나: 표준 글은 그대로 고르고, 인적성은 옆 종류, 목록에 없으면 기타 + 직접 입력',()=>{
+ assert.ok(STANDARD.has('병원(치과)')&&STANDARD.has('인적성')&&STANDARD.has('개인일정')&&!STANDARD.has('인적성(HMAT)')&&!STANDARD.has('병원 진료'));
+ assert.deepEqual(reasonPick(''),{main:'',apt:'',input:false,custom:''});
+ assert.deepEqual(reasonPick('면접(최종)'),{main:'면접(최종)',apt:'',input:false,custom:''});
+ assert.deepEqual(reasonPick('인적성'),{main:'인적성',apt:'',input:false,custom:''});
+ assert.deepEqual(reasonPick('인적성(HMAT)'),{main:'인적성',apt:'HMAT',input:false,custom:''});
+ assert.deepEqual(reasonPick('인적성()'),{main:'인적성',apt:OTHER,input:true,custom:''});
+ assert.deepEqual(reasonPick('인적성(DCAT)'),{main:'인적성',apt:OTHER,input:true,custom:'DCAT'});
+ assert.deepEqual(reasonPick('병원 진료'),{main:OTHER,apt:'',input:true,custom:''},'old free texts stay editable');
+ assert.deepEqual(reasonPick('',{custom:true}),{main:OTHER,apt:'',input:true,custom:''});
+ assert.deepEqual(reasonPick('교통',{custom:true}).main,OTHER,'a picked 기타 stays open while typing a listed word');
+ const o=reasonOptions('취업박람회',{type:'인정출석',blank:'사유 (필수)'});
+ assert.match(o,/^<option value="" >사유 \(필수\)<\/option>/);assert.match(o,/<option value="취업박람회" selected>/);assert.match(o,/<optgroup label="교통 \(인정 아님\)">/);assert.match(o,/<option value="기타" >기타 \(직접 입력\)<\/option>$/);
+ assert.equal((o.match(/<option /g)||[]).length,STANDARD.size+2);
+ for(const t of STANDARD)assert.ok(reasonCategory(t)||['교통','교통사정','교통(사고)','개인사정','개인일정'].includes(t)||/^(교통|취업활동|개인사정)/.test(t),t);
 });

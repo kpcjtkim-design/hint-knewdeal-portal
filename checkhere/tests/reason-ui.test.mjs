@@ -137,49 +137,51 @@ test('출결 현황 › 증빙서류: 취업박람회 추가 증빙 배지와 �
  });
 });
 
-test('출결대조 사유 칸: 240px 안에 분류·세부(인적성 종류) 드롭다운, 직접 입력, 취업박람회 추가 증빙 배지·거르기·증빙 확인',async()=>{
+test('출결대조 사유 칸 = 드롭다운 하나(240px): 지금까지 쓴 사유, 인적성은 바로 옆 종류, 기타는 직접 입력, 모아 저장, 취업박람회 추가 증빙 배지·거르기·알림',async()=>{
  await page('/ledger.html',async(p,posts)=>{
   const row=n=>p.locator(`tbody[data-student="${n}"] tr[data-name]`),go=row('고다원'),dong=row('김동진'),park=row('박서연');
-  await go.locator('select[data-inline="rcat"]').waitFor();
-  // 저장된 글이 드롭다운 위치로: 인적성 · HMAT
-  assert.equal(await go.locator('[data-inline="rcat"]').inputValue(),'인적성');assert.equal(await go.locator('[data-inline="rsub"]').inputValue(),'HMAT');
-  assert.equal(await go.locator('[data-inline="rsub"]').getAttribute('aria-label'),'고다원 인적성 종류');
-  assert.ok((await go.locator('[data-inline="rsub"] option').allTextContents()).includes('L-TAB(롯데)'));
-  // 240px 안: 드롭다운 두 개가 한 줄, 사유 글이 그 아래 한 줄
-  const box=await go.locator('.b2-rpick').boundingBox(),cat=await go.locator('[data-inline="rcat"]').boundingBox(),sub=await go.locator('[data-inline="rsub"]').boundingBox(),txt=await go.locator('[data-inline="reason"]').boundingBox();
-  assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(cat.y),Math.round(sub.y));assert.ok(txt.y>cat.y);assert.ok(Math.abs(txt.width-box.width)<1);
-  // 출석 기본 행(기록 없음)은 사유를 저장하지 않으므로 드롭다운도 없습니다.
-  assert.equal(await park.locator('[data-inline="rcat"]').count(),0);
-  // 취업박람회 인정조퇴(증빙 미제출): 배지와 '추가 증빙' 거르기
-  assert.equal(await dong.locator('.e-extra').textContent(),'추가 증빙 필요 · 기업면접 확인서 · 미제출');
-  assert.equal(await dong.locator('.b2-xnote').count(),0,'the saved badge already says it, no second notice');
+  const main=r=>r.locator('select[data-inline="rmain"]'),sub=r=>r.locator('select[data-inline="rsub"]'),free=r=>r.locator('input[data-inline="reason"]');
+  await main(go).waitFor();
+  // 저장된 '인적성(HMAT)': 사유 드롭다운 '인적성', 바로 옆 종류 드롭다운 'HMAT', 직접 입력 칸 없음
+  assert.equal(await main(go).inputValue(),'인적성');assert.equal(await sub(go).inputValue(),'HMAT');assert.equal(await free(go).count(),0);
+  assert.equal(await sub(go).getAttribute('aria-label'),'고다원 인적성 종류');
+  assert.deepEqual(await sub(go).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
+  const groups=await main(go).locator('optgroup').evaluateAll(g=>g.map(x=>x.label));
+  assert.deepEqual(groups,['병원·질병','면접','인적성','취업박람회','예비군·민방위','시험(자격증·어학)','경조사','공가(관공서·법원)','교통 (인정 아님)','취업활동(설명회·상담) (인정 아님)','개인사정 (인정 아님)']);
+  const values=await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value));
+  for(const v of ['병원','병원(치과)','병결','면접(최종)','인적성','취업박람회','예비군','민방위','시험(자격증)','조모상','공가(법원 출석)','교통사정','개인일정','기타'])assert.ok(values.includes(v),v);
+  // 240px 안, 종류 드롭다운은 같은 줄 바로 옆
+  const box=await go.locator('.b2-rpick').boundingBox(),a=await main(go).boundingBox(),b=await sub(go).boundingBox();
+  assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(a.y),Math.round(b.y));assert.ok(b.x>a.x);
+  // 출석 기본 행(기록 없음)은 사유 드롭다운이 잠김
+  assert.equal(await main(park).isDisabled(),true);
+  // 취업박람회 인정조퇴(증빙 미제출): 배지와 '추가 증빙' 거르기(저장된 배지가 있으면 같은 안내를 또 보이지 않음)
+  assert.equal(await main(dong).inputValue(),'취업박람회');assert.equal(await sub(dong).count(),0);
+  assert.equal(await dong.locator('.e-extra').textContent(),'추가 증빙 필요 · 기업면접 확인서 · 미제출');assert.equal(await dong.locator('.b2-xnote').count(),0);
   const chip=p.locator('[data-filter="extra"]');assert.equal(await chip.textContent(),'추가 증빙1');
   await chip.click();assert.deepEqual(await p.locator('tbody tr[data-name]').evaluateAll(rs=>rs.map(r=>r.dataset.name)),['김동진']);
   await p.locator('[data-filter="all"]').click();
-  // 종류 바꾸기 → '인적성(GSAT)', 기타 → 괄호 안에 직접
-  await go.locator('[data-inline="rsub"]').selectOption('GSAT');
-  assert.equal(await go.locator('[data-inline="reason"]').inputValue(),'인적성(GSAT)');assert.equal(await p.locator('#b2SaveAll').textContent(),'변경 1건 저장');
-  await go.locator('[data-inline="rsub"]').selectOption('기타');
-  assert.equal(await go.locator('[data-inline="reason"]').inputValue(),'인적성()');
-  await p.keyboard.type('DCAT');assert.equal(await go.locator('[data-inline="reason"]').inputValue(),'인적성(DCAT)');
-  assert.equal(await go.locator('[data-inline="rsub"]').inputValue(),'기타','typing keeps the dropdowns in step');
+  // 종류 바꾸기 → '인적성(GSAT)' 초안, 종류 기타 → 바로 옆 직접 입력 칸
+  await sub(go).selectOption('GSAT');assert.equal(await p.locator('#b2SaveAll').textContent(),'변경 1건 저장');
+  await sub(go).selectOption('기타');
+  const apt=go.locator('input[data-inline="rapt"]');assert.equal(await apt.evaluate(e=>e===document.activeElement),true,'the type box takes focus');
+  await p.keyboard.type('DCAT');assert.equal(await sub(go).inputValue(),'기타');assert.equal(await main(go).inputValue(),'인적성');
   // 인정 출결에 인정 분류가 아닌 것(교통)은 짧은 안내, Esc로 되돌림
-  await dong.locator('[data-inline="rcat"]').selectOption('교통');
-  assert.equal(await dong.locator('[data-inline="reason"]').inputValue(),'교통');assert.match(await dong.innerText(),/교통은 보통 인정 사유가 아닙니다/);
-  assert.equal(await dong.locator('.b2-xnote').count(),0);
-  await dong.locator('[data-inline="reason"]').press('Escape');assert.equal(await dong.locator('[data-inline="reason"]').inputValue(),'취업박람회');
+  await main(dong).selectOption('교통');assert.match(await dong.innerText(),/교통은 보통 인정 사유가 아닙니다/);
+  await main(dong).press('Escape');assert.equal(await main(dong).inputValue(),'취업박람회');
   // 기록 없는 학생: 결석 → 취업박람회(인정 아님 안내) → 인정출석
   await park.locator('[data-inline="type"]').selectOption('결석');
-  await park.locator('[data-inline="rcat"]').selectOption('취업박람회');
-  assert.equal(await park.locator('[data-inline="reason"]').inputValue(),'취업박람회');assert.equal(await park.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서 (인정 출결일 때)');
+  await main(park).selectOption('취업박람회');assert.equal(await park.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서 (인정 출결일 때)');
   await park.locator('[data-inline="type"]').selectOption('인정출석');assert.equal(await park.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서');
-  // 직접 쓰면 '기타 (직접 입력)', 다시 분류를 고르면 표준 글
-  await park.locator('[data-inline="reason"]').fill('가족 돌봄');assert.equal(await park.locator('[data-inline="rcat"]').inputValue(),'기타');
-  await park.locator('[data-inline="rcat"]').selectOption('취업박람회');
-  // 모아 저장: 빈 괄호는 지우고 표준 글 그대로
+  // 목록에 없으면 '기타' → 직접 입력 칸(표준 글이던 칸은 비움), 다시 목록에서 고르면 칸이 사라짐
+  await main(park).selectOption('기타');assert.equal(await free(park).inputValue(),'');assert.equal(await free(park).evaluate(e=>e===document.activeElement),true);
+  await free(park).fill('가족 돌봄');assert.equal(await main(park).inputValue(),'기타');
+  await main(park).selectOption('취업박람회');assert.equal(await free(park).count(),0);
+  // 모아 저장: 빈 괄호 없이 표준 글
   await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('2건 저장',{exact:true}).waitFor();
-  const saved=posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].type,b.args[0].reason]);
-  assert.deepEqual(saved,[['고다원','인정출석','인적성(DCAT)'],['박서연','인정출석','취업박람회']]);
+  assert.deepEqual(posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].type,b.args[0].reason]),[['고다원','인정출석','인적성(DCAT)'],['박서연','인정출석','취업박람회']]);
+  // 저장된 '인적성(DCAT)'은 종류 기타 + 'DCAT'
+  assert.equal(await sub(go).inputValue(),'기타');assert.equal(await go.locator('input[data-inline="rapt"]').inputValue(),'DCAT');
   await park.locator('.e-extra').waitFor();assert.equal(await p.locator('[data-filter="extra"]').textContent(),'추가 증빙2');
   // 증빙 편집기: 취업박람회 안내, 「확인」으로 저장하면 이행
   await dong.locator('[data-edit]').click();

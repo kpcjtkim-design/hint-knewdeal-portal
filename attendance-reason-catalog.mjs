@@ -74,5 +74,19 @@ export function subOptions(key,selected=''){
  const list=c.aptitude?APTITUDE.map(([v,l])=>({text:v,label:l})):c.subs;
  return (c.aptitude?`<option value="" ${selected?'':'selected'}>종류 고르기</option>`:'')+list.map(s=>`<option value="${esc(s.text)}" ${s.text===selected?'selected':''}>${esc(s.label)}</option>`).join('')+`<option value="${OTHER}" ${selected===OTHER?'selected':''}>기타 (직접 입력)</option>`;
 }
+// 출결대조 사유 칸 = 드롭다운 하나(사용자 추가 지시 2026-10-20): 지금까지 쓴 표준 글을 분류별 묶음으로, 인적성은 바로 옆 종류 드롭다운, 목록에 없으면 '기타 (직접 입력)'.
+export const STANDARD=new Set(REASON_CATS.flatMap(c=>c.aptitude?['인적성']:c.subs.map(s=>s.text)));
+// 글 → 드롭다운 상태 {main:''|표준 글|'인적성'|'기타', apt:인적성 종류 값('', 'HMAT'…, '기타'), input:직접 입력 칸을 보일지, custom:인적성 기타 글}. custom=true면 '기타'를 고른 상태를 지킵니다.
+export function reasonPick(text,{custom=false}={}){
+ const t=clean(text),a=t.match(/^인적성(?:\s*\(\s*(.*?)\s*\))?$/);
+ if(a&&!custom){const k=a[1]??'',paren=/\(/.test(t),known=APTITUDE.some(([v])=>v===k);return known?{main:'인적성',apt:k,input:false,custom:''}:paren?{main:'인적성',apt:OTHER,input:true,custom:k}:{main:'인적성',apt:'',input:false,custom:''};}
+ if(STANDARD.has(t)&&!custom)return {main:t,apt:'',input:false,custom:''};
+ return t||custom?{main:OTHER,apt:'',input:true,custom:''}:{main:'',apt:'',input:false,custom:''};
+}
+// 사유 드롭다운 <option>: 분류(<optgroup>)마다 표준 글, 출결에 맞지 않는 분류는 '(인정 아님)', 끝에 '기타 (직접 입력)'
+export function reasonOptions(main='',{type='',blank='사유 고르기'}={}){
+ const off=c=>type&&!c.types.includes(type);
+ return `<option value="" ${main?'':'selected'}>${esc(blank)}</option>`+REASON_CATS.map(c=>`<optgroup label="${esc(c.label)}${off(c)?' (인정 아님)':''}">${(c.aptitude?[{text:'인적성'}]:c.subs).map(s=>`<option value="${esc(s.text)}" ${s.text===main?'selected':''}>${esc(s.text)}</option>`).join('')}</optgroup>`).join('')+`<option value="${OTHER}" ${main===OTHER?'selected':''}>기타 (직접 입력)</option>`;
+}
 // 인정 출결인데 인정 분류가 아니면(교통·개인사정·취업활동) 짧은 안내
 export const typeWarning=(type,key)=>{const c=catOf(key);return c&&recognizedType(type)&&!c.types.includes(type)?`${c.label}은 보통 인정 사유가 아닙니다`:'';};
