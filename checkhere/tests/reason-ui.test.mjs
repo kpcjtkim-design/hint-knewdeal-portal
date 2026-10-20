@@ -460,6 +460,8 @@ test("담임 출결판 '해당없음' = 저장되는 상태(회색): 빈 칸은 
   assert.equal(saves(posts)[2].type,'출석');
   await p.locator('[data-clear]').click();for(let i=0;i<50&&saves(posts).length<4;i++)await p.waitForTimeout(100);
   assert.deepEqual([saves(posts)[3].type,saves(posts)[3].r],['','']);
+  // 요청이 나간 것만 보고 바로 읽으면 응답 처리(기록 삭제 → 출결판 다시 그림) 전이라 아직 '출석'일 수 있어, '입력 전' 칸이 다시 그려질 때까지 기다립니다.
+  await cell('고다원','2026-11-05').locator('option[value=""]').waitFor({state:'attached'});
   assert.equal(await cell('고다원','2026-11-05').inputValue(),'');assert.equal(await p.locator('[data-clear]').count(),0,'nothing to clear');
   assert.match(await p.locator('#pn').innerText(),/아직 입력 전입니다/);
  });
