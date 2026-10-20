@@ -1,7 +1,8 @@
 // 2기 출결 현황: 통계·증빙서류·질병 인정·중도탈락을 한 화면의 보기 전환으로 묶었습니다. 자료는 마스터시트 출결원장. 기준(질병 4/6회·수료 80%)은 cohort.json.
-import {studentStats,evidenceRows,diseaseReport,dropoutRows,recognizedType} from './beta2-core.mjs';
+import {studentStats,evidenceRows,extraEvidenceRows,diseaseReport,dropoutRows,recognizedType} from './beta2-core.mjs';
+import {EXTRA_DOC,EXTRA_LABEL,EXTRA_NOTICE} from './attendance-reason-catalog.mjs';
 import {EVIDENCE_PERIODS} from './attendance-evidence-core.mjs';
-import {esc,md,badge,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
+import {esc,md,badge,extraBadge,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
 import {DISEASE,COMPLETION_RATE as PASS,withoutTestClasses} from './cohort.mjs';
 
 export const STATUS_TABS=[['stats','출결 통계'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락·수료']];
@@ -9,7 +10,7 @@ const pct=v=>v===null?'-':`${v.toFixed(1)}%`;
 
 export async function mount(host,{client,classes,selected,context,teacherClass=null,tab,hideTabs=false}){
  const life=lifecycle(host);
- let view=tab||context?.tab||'stats',cls=teacherClass?String(teacherClass):String(context?.classId&&context?.tab?context.classId:'all'),period='all',search='',bundle=null,checkhere=null,checkhereFor='';
+ let extraAll=false,view=tab||context?.tab||'stats',cls=teacherClass?String(teacherClass):String(context?.classId&&context?.tab?context.classId:'all'),period='all',search='',bundle=null,checkhere=null,checkhereFor='';
  host.innerHTML=`<div class="b2">${hideTabs?'':`<div class="b2-head"><div><h2>출결 현황</h2><p>마스터시트 출결원장 기준 통계·증빙서류·질병 인정·중도탈락을 한곳에서 봅니다.</p></div></div><div class="b2-tabs" role="tablist" id="s2Tabs"></div>`}
  <section class="b2-card"><div class="b2-toolbar">${teacherClass?'':`<label class="b2-field">반<select id="s2Class">${classOptions(classes,cls,{all:true})}</select></label>`}
   <label class="b2-field">기간<select id="s2Period">${EVIDENCE_PERIODS.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select></label>
@@ -35,11 +36,17 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
    current={csv:[['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','인정'],...sorted.map(s=>[s.cls,s.name,s.status,s.days,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0,s.counts['지각']||0,s.counts['조퇴']||0,s.counts['외출']||0,rec(s)])],copy:[`출결 통계 · ${title}`,...sorted.filter(s=>s.rate!==null&&s.rate<PASS).map(s=>`${s.cls}반 · ${s.name} · ${pct(s.rate)} · 결석 ${s.counts['결석']||0}`)].join('\n')};
   }
   if(view==='evidence'){
-   const rows=evidenceRows(list);
-   body.innerHTML=statBoxes([['미제출',rows.filter(r=>r.state==='미제출').length,'bad'],['반려 · 보완',rows.filter(r=>r.state==='반려').length,'alert'],['학생',new Set(rows.map(r=>r.cls+r.name)).size]])+table(['반','이름','교육일','유형','서류 상태','반려 사유'],rows.map(r=>`<tr><td>${r.cls}반</td><td class="b2-name">${esc(r.name)}</td><td>${md(r.date)}</td><td>${badge(r.type)}</td><td><span class="b2-badge e-miss">${esc(r.state)}</span></td><td>${esc(r.evr)}</td></tr>`));
-   let last='';const lines=[`출결 증빙서류 제출·보완 요청 (${title})`];for(const r of rows){if(last!==r.cls){last=r.cls;lines.push('',`[${r.cls}반]`);}lines.push(`${r.name} · ${md(r.date)} · ${r.type} · ${r.state==='반려'?'반려 · 보완 필요'+(r.evr?` (${r.evr})`:''):'미제출'}`);}
+   // 취업박람회 추가 증빙(사용자 요청 2026-10-20 ③): 증빙 목록에 '추가 증빙 필요' 배지, 아래에 이행 여부(미제출·반려·확인) 목록 — 못 한 것만/전체
+   const rows=evidenceRows(list),extra=extraEvidenceRows(bundle,{cls:cls==='all'?null:cls,from,to}).filter(r=>!search||r.name.includes(search)),open=extra.filter(r=>!r.done),shown=extraAll?extra:open;
+   const extraCell=r=>r.extra?' '+extraBadge({state:r.state,done:false,label:EXTRA_LABEL}):'';
+   body.innerHTML=statBoxes([['미제출',rows.filter(r=>r.state==='미제출').length,'bad'],['반려 · 보완',rows.filter(r=>r.state==='반려').length,'alert'],['학생',new Set(rows.map(r=>r.cls+r.name)).size],['추가 증빙 미이행',open.length,open.length?'alert':'']])+table(['반','이름','교육일','유형','사유','서류 상태','반려 사유'],rows.map(r=>`<tr><td>${r.cls}반</td><td class="b2-name">${esc(r.name)}</td><td>${md(r.date)}</td><td>${badge(r.type)}</td><td>${esc(r.reason)}</td><td><span class="b2-badge e-miss">${esc(r.state)}</span>${extraCell(r)}</td><td>${esc(r.evr)}</td></tr>`))
+    +`<h3 style="margin:16px 14px 8px">추가 증빙 · 취업박람회 (${EXTRA_DOC})</h3><div class="b2-note warn" style="margin:0 14px 8px">${esc(EXTRA_NOTICE)} 증빙이 「확인」이 되면 이행으로 봅니다.</div><div class="b2-chips" style="margin:0 14px 8px"><button class="b2-chip" data-extra="open" aria-pressed="${!extraAll}">미이행 <span class="n">${open.length}</span></button><button class="b2-chip" data-extra="all" aria-pressed="${extraAll}">전체 <span class="n">${extra.length}</span></button></div>`
+    +table(['반','이름','교육일','유형','사유','이행 여부'],shown.map(r=>`<tr class="${r.done?'':'diff'}"><td>${r.cls}반</td><td class="b2-name">${esc(r.name)}</td><td>${md(r.date)}</td><td>${badge(r.type)}</td><td>${esc(r.reason)}</td><td>${extraBadge({state:r.state,done:r.done,label:EXTRA_LABEL})}${r.evr?` <span class="b2-sub">반려: ${esc(r.evr)}</span>`:''}</td></tr>`));
+   let last='';const lines=[`출결 증빙서류 제출·보완 요청 (${title})`];for(const r of rows){if(last!==r.cls){last=r.cls;lines.push('',`[${r.cls}반]`);}lines.push(`${r.name} · ${md(r.date)} · ${r.type} · ${r.state==='반려'?'반려 · 보완 필요'+(r.evr?` (${r.evr})`:''):'미제출'}${r.extra?` · 추가 증빙: ${EXTRA_DOC}`:''}`);}
    if(!rows.length)lines.push('제출·보완 대상이 없습니다.');
-   current={csv:[['반','이름','교육일','유형','서류 상태','반려 사유'],...rows.map(r=>[r.cls,r.name,r.date,r.type,r.state,r.evr])],copy:lines.join('\n')};
+   if(open.length)lines.push('',`[추가 증빙 · 취업박람회 ${EXTRA_DOC}]`,...open.map(r=>`${r.cls}반 · ${r.name} · ${md(r.date)} · ${r.type} · ${r.state}`));
+   current={csv:[['반','이름','교육일','유형','사유','서류 상태','반려 사유','추가 증빙'],...rows.map(r=>[r.cls,r.name,r.date,r.type,r.reason,r.state,r.evr,r.extra?EXTRA_DOC:'']),...extra.filter(r=>r.done).map(r=>[r.cls,r.name,r.date,r.type,r.reason,r.state,r.evr,`${EXTRA_DOC} · 이행`])],copy:lines.join('
+')};
   }
   if(view==='disease'){
    const ids=cls==='all'?withoutTestClasses(classes).map(c=>String(c.id)):[cls];// 전체는 테스트반 뺌
@@ -62,7 +69,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  async function load(fresh=false){
   try{bundle=await client.bundle(teacherClass?cls:'all',{fresh});if(fresh)checkhereFor='';await render();}catch(e){if(life.alive())body.innerHTML=errorBox(e);}
  }
- host.addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b){view=b.dataset.view;void render();}});
+ host.addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b){view=b.dataset.view;void render();}const x=e.target.closest('[data-extra]');if(x){extraAll=x.dataset.extra==='all';void render();}});
  if($('#s2Class'))$('#s2Class').onchange=e=>{cls=e.target.value;void render();};
  $('#s2Period').onchange=e=>{period=e.target.value;void render();};
  $('#s2Search').oninput=e=>{search=e.target.value.trim();void render();};

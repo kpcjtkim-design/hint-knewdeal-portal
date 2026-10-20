@@ -27,6 +27,7 @@
 .b2 .b2-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:900;white-space:nowrap;background:#f1f5f9;color:#334155}
 .b2 .t-absent{background:#fee2e2;color:#991b1b}.b2 .t-late{background:#fef3c7;color:#92400e}.b2 .t-rec{background:#dbeafe;color:#1d4ed8}.b2 .t-na{background:#f8fafc;color:#94a3b8}.b2 .t-dup{background:#ede9fe;color:#6d28d9}
 .b2 .e-ok{background:#dcfce7;color:#166534}.b2 .e-miss{background:#fee2e2;color:#b91c1c}.b2 .e-none{background:#f1f5f9;color:#64748b}
+.b2 .e-extra{background:#ffedd5;color:#9a3412;box-shadow:inset 0 0 0 1px #fdba74} /* 취업박람회 추가 증빙(기업면접 확인서) */
 .b2 .b2-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#f1f5f9;font-size:12px;font-weight:700;color:#334155}
 .b2 .b2-pill.live::before{content:"";width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
 .b2 .b2-pill.wait::before{content:"";width:8px;height:8px;border-radius:50%;background:#f59e0b}

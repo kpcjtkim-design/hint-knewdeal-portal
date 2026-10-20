@@ -17,6 +17,8 @@ export function evBadge(state){
  if(!state||state==='해당없음')return '';
  return `<span class="b2-badge ${state==='확인'?'e-ok':['미제출','반려'].includes(state)?'e-miss':'e-none'}">증빙 ${esc(state)}</span>`;
 }
+// 취업박람회 추가 증빙 배지(attendance-reason-catalog extraEvidence 결과 {state,done,label}): 못 했으면 '추가 증빙 필요 · 기업면접 확인서 · 미제출', 했으면 '추가 증빙 확인'
+export function extraBadge(x){if(!x)return '';return x.done?`<span class="b2-badge e-ok" title="${esc(x.label)}">추가 증빙 ${esc(x.state)}</span>`:`<span class="b2-badge e-extra" title="${esc(x.label)}">${esc(x.label)} · ${esc(x.state)}</span>`;}
 export function toast(message){
  const el=document.getElementById('toast');if(!el){console.info(message);return;}
  el.textContent=message;el.classList.add('show');clearTimeout(el._b2);el._b2=setTimeout(()=>el.classList.remove('show'),2200);
