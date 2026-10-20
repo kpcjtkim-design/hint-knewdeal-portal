@@ -95,7 +95,7 @@ test('the 2기 site opens the administrator menu on the 2기 home without being 
   assert.equal(await page.locator('.b2-alert').nth(2).locator('b').innerText(),'1','one new document request');
   assert.ok(posts.some(p=>p.action==='b2Bundle'&&p.args[0]==='all'));
   await page.getByRole('button',{name:'출결',exact:true}).click();
-  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','교육생 상태','중도탈락·수료','내려받기','체크히어 수집']);
+  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','반 현황','출결 현황','교육생 상태','중도탈락·수료','내려받기','체크히어 수집']);
  });
 });
 
@@ -117,13 +117,15 @@ test('2기 writes go straight to the 2기 Firestore: no /beta2 view-only guard a
  });
 });
 
+// 홈 반 카드 → 반 현황(2026-10-20) → 「이 날 출결대조 열기」. 반 카드는 이제 반 현황을 엽니다.
+async function openClassLedger(page){await page.locator('.b2-class').first().click();await page.getByRole('heading',{name:'반 현황'}).waitFor();await page.locator('#c2Ledger').click();}
 // 「변경 N건 저장」을 누르고 모아 저장이 끝날 때까지 기다립니다(저장 중에는 '저장 중 3/7').
 async function saveChanges(page){await page.locator('#b2SaveAll').click();await page.waitForFunction(()=>/^변경 \d+건 저장$/.test(document.querySelector('#b2SaveAll')?.textContent||''),null,{timeout:15000});}
 
 test('출결대조 shows the ledger next to CheckHere with a slim direct-request line under every student, flags mismatches and saves an edit to the master sheet with the row signature',async()=>{
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
-  await page.locator('.b2-class').first().click();
+  await openClassLedger(page);
   await page.getByRole('heading',{name:'출결대조'}).waitFor();
   const dong=page.locator('tr[data-name="김동진"]');await dong.waitFor();
   await dong.getByText(/체크히어 지각 09:25/).waitFor();// implied attendance with a late CheckHere check-in is a mismatch
@@ -170,7 +172,7 @@ test('a conflicting save keeps the draft with its reason, sends nothing to Check
  let saves=0;
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
-  await page.locator('.b2-class').first().click();
+  await openClassLedger(page);
   const go=page.locator('tr[data-name="고다원"]');await go.waitFor();
   await go.locator('select[data-inline="type"]').selectOption('출석');
   await page.locator('#b2SaveAll').click();
@@ -269,7 +271,7 @@ test('today\'s live CheckHere subscription keeps updating after the master sheet
  const live={...BUNDLE,today,days:[...BUNDLE.days.filter(d=>d<today),today],ledger:[]};
  await beta(async page=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
-  await page.locator('.b2-class').first().click();
+  await openClassLedger(page);
   await page.locator('tr[data-name="고다원"]').waitFor();
   await page.waitForFunction(p=>(window.snapCbs||[]).some(x=>x.path===p),`classes/1/checkhereCurrent/${today}`);
   const push=async exit=>page.evaluate(([day,exit])=>{const snap={exists:()=>true,data:()=>({records:[{id:'a',classId:'1',date:day,name:'고다원',rawEntry:'09:02:00',entry:'09:02:00',exit,outings:[],outingCount:0,collectedAt:exit}]}),metadata:{fromCache:false,hasPendingWrites:false}};window.snapCbs.filter(x=>x.path===`classes/1/checkhereCurrent/${day}`).forEach(x=>x.cb(snap));},[today,exit]);
@@ -294,7 +296,7 @@ test('before the course starts (no past training day) 출결대조 picks today i
  const today='2026-10-20',early={...BUNDLE,today,ledger:[]};
  await beta(async page=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
-  await page.locator('.b2-class').first().click();
+  await openClassLedger(page);
   await page.getByRole('heading',{name:'출결대조'}).waitFor();
   await page.locator('tr[data-name="고다원"]').waitFor();
   assert.equal(await page.locator('#b2Date').inputValue(),today);
@@ -313,7 +315,7 @@ test('출결대조 records any past day: 「다른 날짜…」 opens a date box
  const SAVE_NOTE='교육일이 아닌 날의 기록입니다.',MEMO_NOTE='교육일이 아닌 날의 메모입니다. 출결판에는 나오지 않습니다.';
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
-  await page.locator('.b2-class').first().click();
+  await openClassLedger(page);
   await page.getByRole('heading',{name:'출결대조'}).waitFor();
   await page.locator('tr[data-name="고다원"]').waitFor();
   const sel=page.locator('#b2Date'),any=page.locator('#b2DateAny'),note=page.locator('#b2DayNote');
@@ -392,7 +394,7 @@ const requestWrites=page=>page.evaluate(()=>window.sdkWrites.filter(w=>w[0]==='s
 const pushRequests=(page,docs)=>page.evaluate(docs=>{const t={seconds:Math.floor(Date.now()/1000),nanoseconds:0};window.pushSnap('checkhereRequests',docs.map(d=>({createdAt:t,updatedAt:t,...d})));},docs);
 async function openLedger(page){
  await page.getByRole('heading',{name:'2기 홈'}).waitFor();
- await page.locator('.b2-class').first().click();
+ await openClassLedger(page);
  await page.getByRole('heading',{name:'출결대조'}).waitFor();
  await page.locator('#b2Live').getByText(/체크히어 (저장본|실시간) · 10명/).waitFor();
  await page.waitForFunction(()=>(window.snapCbs||[]).some(x=>x.path==='checkhereRequests'));

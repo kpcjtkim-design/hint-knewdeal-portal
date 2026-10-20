@@ -14,9 +14,10 @@ export const vocWaiting=r=>vocOpen(r)&&r.lastBy!=='운영';
 export const vocUnseen=r=>r.lastBy==='운영'&&String(r.lastAt||'')>String(r.seen||'');
 const when=s=>{const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/);return m?`${+m[2]}/${+m[3]}${m[4]?` ${m[4]}:${m[5]}`:''}`:'';};
 
-export async function mount(host,{client,classes,selected,teacherClass=null,onState=null}){
+// context.classFilter(반 현황 beta2-class.mjs의 링크, 2026-10-20): 관리자 목록을 context.classId 반으로 거른 채 엽니다(알림으로 열 때는 전처럼 전체 반).
+export async function mount(host,{client,classes,selected,context,teacherClass=null,onState=null}){
  const life=lifecycle(host),admin=!teacherClass,side=admin?'운영':'담임';
- let data=null,filter=admin?'wait':'all',cls=teacherClass?String(teacherClass):'all',search='',openKey='',busy=false,err='',vocRev=null,creating=!admin;
+ let data=null,filter=admin?(context?.classFilter?'open':'wait'):'all',cls=teacherClass?String(teacherClass):context?.classFilter&&context?.classId?String(context.classId):'all',search='',openKey='',busy=false,err='',vocRev=null,creating=!admin;
  const form={cls:teacherClass?String(teacherClass):String(selected||'1'),type:'',detail:''},drafts={};
  host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>${admin?'민원·이슈 처리함':'민원·이슈'}</h2><p>${admin?'담임이 접수하거나 답글을 달면 여기와 홈, 화면 오른쪽 아래에 알림이 뜹니다. 답글과 처리 상태는 담임 화면과 마스터시트 민원이슈 탭에 그대로 남습니다.':'운영팀과 민원·이슈를 주고받습니다. 접수하거나 답글을 달면 운영팀에 바로 알림이 가고, 운영팀 답글과 처리 상태를 여기서 확인합니다.'}</p></div>${admin?'<button class="b2-btn" id="v2New">새로 접수</button>':''}</div><div id="v2Form"></div><section class="b2-card"><div class="b2-toolbar" id="v2Tools"></div><div id="v2List" style="padding:0 14px 14px">${loading()}</div></section></div>`;
  const $=s=>host.querySelector(s);

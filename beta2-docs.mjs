@@ -14,9 +14,10 @@ const OPEN=['접수','처리중','보완 필요'];
 const dday=(due,today)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(due||''))return '';const n=Math.round((Date.parse(due)-Date.parse(today))/864e5);return n<0?`${-n}일 지남`:n===0?'오늘 마감':`D-${n}`;};
 const koreaToday=()=>new Date().toLocaleString('sv-SE',{timeZone:'Asia/Seoul'}).slice(0,10);
 
-export async function mount(host,{client,classes,selected,teacherClass=null}){
+// context.classFilter(반 현황 beta2-class.mjs의 링크, 2026-10-20): 관리자 목록을 context.classId 반으로 거른 채 엽니다(알림으로 열 때는 전처럼 전체 반).
+export async function mount(host,{client,classes,selected,context,teacherClass=null}){
  const life=lifecycle(host),admin=!teacherClass;
- let data=null,bundle=null,filter=admin?'open':'all',cls=teacherClass?String(teacherClass):'all',search='',openId='',creating=!admin,form=null,busy=false,err='';
+ let data=null,bundle=null,filter=admin?'open':'all',cls=teacherClass?String(teacherClass):context?.classFilter&&context?.classId?String(context.classId):'all',search='',openId='',creating=!admin,form=null,busy=false,err='';
  const today=koreaToday();
  const blank=()=>({cls:teacherClass?String(teacherClass):String(selected||'1'),name:'',docTypes:[],docOther:'',qty:1,from:'',to:'',purpose:'',submitTo:'',due:'',delivery:DELIVERY,memo:''});
  form=blank();
