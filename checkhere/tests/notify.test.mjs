@@ -27,7 +27,7 @@ test('a notification for the office goes to the admin role and the named admins 
  assert.throws(()=>notificationDoc({kind:'민원',title:'x'},{from:A1}),/받을 사람/);
  assert.throws(()=>notificationDoc({kind:'',audience:'admins'},{from:A1,admins:[A2]}),/종류/);
  assert.throws(()=>notificationDoc({kind:'민원',audience:'admins'},{from:'',admins:[A2]}),/보내는 사람/);
- assert.deepEqual(KINDS,['서류발급','민원','출결대조 메모']);
+ assert.deepEqual(KINDS,['서류발급','민원','출결대조 메모','추가 증빙']);
 });
 
 test('the office list comes from settings when set, otherwise from the cohort admins',()=>{
@@ -68,7 +68,7 @@ test('links stay inside the site and map to teacher tabs',()=>{
  assert.equal(linkFor('b2vocs',{cls:'3',id:'V261019-001',date:''}),'#b2vocs?cls=3&id=V261019-001');
  assert.deepEqual(parseLink('#b2ledger?cls=3&date=2026-10-28'),{tab:'b2ledger',params:{cls:'3',date:'2026-10-28'}});
  assert.equal(parseLink('https://evil.test'),null);assert.equal(cleanLink('#a b'),'');
- assert.deepEqual(teacherTarget('b2docs'),['documents']);assert.deepEqual(teacherTarget('b2vocs'),['feedback','voc']);assert.deepEqual(teacherTarget('b2ledger'),['today']);
+ assert.deepEqual(teacherTarget('b2docs'),['documents']);assert.deepEqual(teacherTarget('b2vocs'),['feedback','voc']);assert.deepEqual(teacherTarget('b2ledger'),['attendance','evidence'],'추가 증빙 알림 → 담임 출결 › 증빙서류');assert.deepEqual(teacherTarget('b2status'),['today']);
 });
 
 test('times read as just now, minutes, hours today, then month/day',()=>{

@@ -18,7 +18,7 @@ import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnAp
 import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
 // 사유 드롭다운(사용자 요청 2026-10-20): 분류 → 세부(인적성은 종류)로 표준 글, 직접 입력도 됨. 취업박람회 인정 출결은 추가 증빙(기업면접 확인서) 배지·거르기·알림.
-import {catOptions,subOptions,splitReason,composeReason,tidyReason,typeWarning,OTHER,isJobFair,extraEvidence,EXTRA_DOC} from './attendance-reason-catalog.mjs';
+import {catOptions,subOptions,splitReason,composeReason,tidyReason,typeWarning,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
 import {isIsoDate,BASE_RULE,YEARS} from './cohort.mjs';
@@ -538,6 +538,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   }
   // S5: 다음 before는 res.sig, unchanged면 지금 sig(기록 없으면 ''). 결과는 먼저 동기화 모듈에 알립니다('저장 중'으로 멈춘 보류가 남지 않게).
   const sig=res.unchanged?(rec?.sig||''):String(res.sig||'');
+  // 취업박람회 인정 출결로 새로 저장되면(이미 확인된 것 빼고) 반 담임·관리자에게 '추가 증빙' 알림(기업면접 확인서). 알림을 못 남겨도 저장은 그대로(notify가 작은 안내).
+  if(extraEvidenceStarted(prevRow,payload))void notify('추가 증빙',{audience:'admins',toClass:cls,cls,...extraNotice({cls,name,date,type:payload.type}),link:linkFor('b2ledger',{cls,date})});
   sync.afterSave(key,{prevRow,row:{type:payload.type,inT:payload.inT,outT:payload.outT,oa:payload.oa,ob:payload.ob,reason:payload.reason,ev:payload.ev,evr:payload.evr},sig,existedBefore:!!rec,unchanged:!!res.unchanged});
   if(!life.alive()||!sameDay(day))return false;
   // client.save가 들고 있는 묶음을 고칩니다. 캐시가 바뀌어 이 화면의 묶음이 고쳐지지 않았으면 캐시본으로 바꿉니다(통째로 다시 읽지 않음).
