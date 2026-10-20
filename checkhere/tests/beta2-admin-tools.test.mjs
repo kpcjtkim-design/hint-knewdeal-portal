@@ -199,6 +199,9 @@ function fakeSheet(){
   if(body.action==='b2ModuleTimes')return {rev:s.rev,rows:s.modules.filter(r=>(!p.cls||r.cls===p.cls)&&(!p.from||r.date>=p.from)&&(!p.to||r.date<=p.to)).map(r=>({...r})),defaults:{start:'09:00',end:'18:00',graceMin:10},field:['10:00','17:00']};
   if(body.action==='b2DayTimes')return day(p.date,p.cls);
   if(body.action==='b2ModuleTimeSave'){
+   if(p.row){const cur=s.modules.find(r=>r.row===p.row),w=p.was||p;if(!cur||cur.date!==w.date||cur.cls!==w.cls||cur.module!==w.module)throw new Error('그 줄이 바뀌었습니다. 새로 읽어 주세요.');}
+   if(p.remove&&!(p.date&&p.cls&&p.module)&&!p.was)throw new Error('지울 줄의 날짜·반·모듈이 필요합니다.');
+   if(!p.remove&&(p.start==='')!==(p.end===''))throw new Error('시작·끝을 함께 넣거나 함께 비워 주세요.');
    s.rev++;
    if(p.remove){s.modules=s.modules.filter(r=>r.row!==p.row).map(r=>r.row>p.row?{...r,row:r.row-1}:r);return {ok:true,removed:p.row,rev:s.rev};}
    const at=p.row||Math.max(4,...s.modules.map(r=>r.row))+1,next={row:at,date:p.date,cls:p.cls,module:p.module,start:p.start,end:p.end,part:p.part||'',reason:p.reason||'',by:'hint.kpc@gmail.com',at:'2026-10-19 11:00'};
@@ -229,7 +232,7 @@ async function site(run,{api=()=>null,clock='2026-10-19T10:00:00+09:00',days=nul
    if(url.pathname==='/cohort.mjs')return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,'cohort.mjs'),'utf8').replace('"apiKey": ""','"apiKey": "test-key"').replace('"appId": ""','"appId": "test-app"')});
    if(url.pathname==='/api/teacher-beta'){
     const body=route.request().postDataJSON();posts.push(body);
-    let out=await api(body);if(out===null||out===undefined)out={ok:true,data:sheet.handle(body)};
+    let out=await api(body);if(out===null||out===undefined){try{out={ok:true,data:sheet.handle(body)};}catch(e){out={ok:false,error:e.message};}}
     return route.fulfill({status:out.ok?200:400,contentType:'application/json',body:JSON.stringify(out)});
    }
    const file=join(base,decodeURIComponent(url.pathname));
@@ -279,7 +282,7 @@ test('교육시간 조정 lists the module rows by day with the day rule, explai
   assert.equal(await rowOf(page,'공장견학').getByRole('button',{name:'지우기'}).isDisabled(),true);
   gate.resolve();
   await page.locator('.b2t-day[data-day="2026-11-20|2"]').getByText('그날 기준 13:00~15:00').waitFor();
-  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:7,date:'2026-11-20',cls:'2',module:'분해조립',start:'13:00',end:'15:00',part:'오후 실습',reason:'HRD 확정 전 임시'}]);
+  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:7,was:{date:'2026-11-20',cls:'2',module:'분해조립'},date:'2026-11-20',cls:'2',module:'분해조립',start:'13:00',end:'15:00',part:'오후 실습',reason:'HRD 확정 전 임시'}]);
   await rowOf(page,'분해조립').getByText('hint.kpc@gmail.com · 2026-10-19 11:00').waitFor(); // 시트에서 다시 읽은 값(화면에 먼저 보인 값은 '방금')
   assert.equal(posts.filter(p=>p.action==='b2ModuleTimes').length,2,'read again from the sheet after saving');
   assert.match(await rowOf(page,'분해조립').innerText(),/HRD 확정 전 임시/);
@@ -316,7 +319,7 @@ test('교육시간 조정 adds a 공장견학 day with the default button, rolls
   assert.equal(posts.filter(p=>p.args?.[0]?.remove).length,0);
   await rowOf(page,'견학 업체 일정').getByRole('button',{name:'지우기'}).click();
   await page.locator('.b2t-day[data-day="2026-11-13|1"]').getByText('평소 기준 09:00~18:00').waitFor();
-  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:5,date:'2026-11-13',cls:'1',module:'공장견학',remove:true}]);
+  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:5,was:{date:'2026-11-13',cls:'1',module:'공장견학'},date:'2026-11-13',cls:'1',module:'공장견학',remove:true}]);
   // 줄 번호가 당겨진 뒤에도(시트에서 다시 읽음) 남은 줄을 바른 번호로 고칩니다
   await page.locator('.b2t-row[data-key="r6"]',{hasText:'분해조립'}).waitFor();
   await rowOf(page,'분해조립').getByRole('button',{name:'시간 정하기'}).click();
@@ -324,6 +327,42 @@ test('교육시간 조정 adds a 공장견학 day with the default button, rolls
   await page.locator('.b2t-day[data-day="2026-11-20|2"]').getByText('그날 기준 09:30~16:30').waitFor();
   assert.equal(posts.filter(p=>p.action==='b2ModuleTimeSave').at(-1).args[0].row,6);
  },{api:b=>b.action==='b2ModuleTimeSave'&&!b.args[0].remove&&refuse?{ok:false,error:'관리자만 할 수 있습니다.'}:null});
+});
+
+test('교육시간 조정 clears a row to 시간 미정 with was, deletes a prefilled row without times, and a changed row is refused, explained and read again',async()=>{
+ await site(async(page,posts,dialogs,sheet)=>{
+  await page.getByRole('button',{name:'교육 운영',exact:true}).click();
+  await page.getByRole('heading',{name:'교육시간 조정'}).waitFor();await page.locator('.b2t-row').first().waitFor();
+  assert.equal(await rowOf(page,'분해조립').getByRole('button',{name:'시간 비우기'}).count(),0,'no times, nothing to clear');
+  assert.equal(await rowOf(page,'분해조립').getByRole('button',{name:'지우기'}).count(),1,'a prefilled row without times can be deleted');
+  // 시간 비우기: 확인 뒤 시작·끝을 함께 비움(줄은 남음, 시간 미정) → 그날 기준은 평소로
+  page.dialogAnswer.push(false);
+  await rowOf(page,'견학 업체 일정').getByRole('button',{name:'시간 비우기'}).click();
+  assert.match(dialogs.at(-1),/11\/13\(금\) 1반 「공장견학」 10:00~17:00 시간을 비울까요\?\n줄은 남고 '시간 미정'이 됩니다\./);
+  assert.equal(posts.filter(p=>p.action==='b2ModuleTimeSave').length,0);
+  await rowOf(page,'견학 업체 일정').getByRole('button',{name:'시간 비우기'}).click();
+  await page.locator('.b2t-day[data-day="2026-11-13|1"]').getByText('평소 기준 09:00~18:00').waitFor();
+  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:5,was:{date:'2026-11-13',cls:'1',module:'공장견학'},date:'2026-11-13',cls:'1',module:'공장견학',start:'',end:'',part:'',reason:'시간 미정으로 되돌림'}]);
+  await page.locator('.b2t-row[data-key="r5"]').getByText('시간 미정',{exact:true}).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('.b2t-row.pending')&&!document.querySelector('[data-del][disabled]'));// 시트에서 다시 읽기가 끝남
+  // 그사이 시트에서 6번 줄이 다른 줄이 됨 → 지우기는 거절, 이유를 보이고 시트에서 다시 읽음(화면에 남은 옛 줄은 사라짐)
+  sheet.modules=sheet.modules.map(r=>r.row===6?{...r,module:'다른 모듈'}:r);
+  const reads=posts.filter(p=>p.action==='b2ModuleTimes').length;
+  await rowOf(page,'안전교육').getByRole('button',{name:'지우기'}).click();
+  assert.match(dialogs.at(-1),/11\/13\(금\) 1반 「안전교육」 \(시간 미정\) 줄을 마스터시트 현장교육 일정 탭에서 지울까요\?/);
+  await page.locator('#t2Msg').getByText(/그 줄이 바뀌었습니다\. 새로 읽어 주세요\. 그사이 시트의 줄이 바뀌어 저장하지 않았습니다\. 시트에서 다시 읽었습니다/).waitFor();
+  await rowOf(page,'다른 모듈').waitFor();
+  assert.equal(await rowOf(page,'안전교육').count(),0);
+  assert.equal(posts.filter(p=>p.action==='b2ModuleTimes').length,reads+1,'read again once');
+  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:6,was:{date:'2026-11-13',cls:'1',module:'안전교육'},date:'2026-11-13',cls:'1',module:'안전교육',remove:true}]);
+  // 고치기도 같은 확인: 열어 둔 사이 줄이 바뀌면 거절·다시 읽음, 편집 칸은 닫힘
+  await rowOf(page,'분해조립').getByRole('button',{name:'시간 정하기'}).click();
+  sheet.modules=sheet.modules.map(r=>r.row===7?{...r,date:'2026-11-27'}:r);
+  const ed=page.locator('[data-editor="r7"]');await ed.locator('[data-f="start"]').fill('13:00');await ed.locator('[data-f="end"]').fill('15:00');await ed.locator('[data-f="reason"]').fill('업체 확정');await ed.getByRole('button',{name:'저장'}).click();
+  await page.locator('.b2t-day[data-day="2026-11-27|2"]').waitFor();
+  assert.equal(await page.locator('[data-editor]').count(),0);
+  assert.match(await page.locator('#t2Msg').innerText(),/그 줄이 바뀌었습니다/);
+ });
 });
 
 test('교육생 상태 changes a status with the last attendance day after confirming, refreshes the roster and returns a leaver to 재학',async()=>{

@@ -68,7 +68,7 @@ export async function mount(host,{user,classes,client,context}){
   return `<div class="b2t-row ${r.pending?'pending':''} ${on?'editing':''}" data-key="${esc(key)}"><div class="b2t-mod"><b>${esc(r.module||'(모듈 이름 없음)')}</b>${r.part?`<span class="b2-sub">구간: ${esc(r.part)}</span>`:''}</div>
    <div class="b2t-time">${timed(r)?`<b>${esc(r.start)}~${esc(r.end)}</b>`:'<span class="b2-muted">시간 미정</span>'}</div><div class="b2t-why">${r.reason?esc(r.reason):'<span class="b2-muted">사유 없음</span>'}</div>
    <div class="b2t-by b2-small b2-muted">${r.pending?esc(r.pending):r.by?`${esc(r.by)}${r.at?' · '+esc(r.at):''}`:''}</div>
-   <div class="b2t-act"><button class="b2-btn small ${on?'dark':''}" data-edit ${r.pending||busy?'disabled':''}>${on?'닫기':timed(r)?'시간 고치기':'시간 정하기'}</button>${timed(r)&&!r.pending?`<button class="b2-btn small warn" data-del ${busy?'disabled':''}>지우기</button>`:''}</div></div>
+   <div class="b2t-act"><button class="b2-btn small ${on?'dark':''}" data-edit ${r.pending||busy?'disabled':''}>${on?'닫기':timed(r)?'시간 고치기':'시간 정하기'}</button>${r.pending?'':`${timed(r)?`<button class="b2-btn small" data-clear ${busy?'disabled':''}>시간 비우기</button>`:''}<button class="b2-btn small warn" data-del ${busy?'disabled':''}>지우기</button>`}</div></div>
    ${on&&form?`<div class="b2t-edit" data-editor="${esc(key)}">${fieldsHtml(form,true)}</div>`:''}`;
  }
  function render(){
@@ -97,11 +97,20 @@ export async function mount(host,{user,classes,client,context}){
   }catch(e){if(n!==seq||!life.alive())return;if(!quiet)data=null;loadErr=e;if(quiet)say(`다시 읽지 못했습니다: ${e.message}`,'warn');}
   render();
  }
+ // 시트는 줄 번호(row)와 함께 그 줄의 원래 날짜·반·모듈(was)이 맞는지 보고, 그사이 다른 줄이 됐으면 '그 줄이 바뀌었습니다. 새로 읽어 주세요.'로 거절합니다(2026-10-20).
+ const wasOf=r=>({date:r.date,cls:r.cls,module:r.module});
+ const CHANGED_RE=/그 줄이 바뀌었습니다/;
+ // 거절이 '그 줄이 바뀜'이면 고치던 값을 닫고 이유를 크게 보인 뒤 시트에서 다시 읽습니다. 아니면 false(부른 쪽이 되돌림).
+ async function rowChanged(e,before){
+  if(!CHANGED_RE.test(String(e?.message||'')))return false;
+  if(life.alive()){data.rows=before;editing=null;form=null;formErr='';say(`${e.message} 그사이 시트의 줄이 바뀌어 저장하지 않았습니다. 시트에서 다시 읽었습니다 — 확인한 뒤 다시 해 주세요.`,'err');}
+  busy=true;await reload();return true;
+ }
  const blank=(date='',c='')=>({key:'new',date,cls:c||(cls==='all'?'':cls),module:'',start:'',end:'',part:'',reason:'',dirty:false});
  function open(key,preset){
   if(form?.dirty&&!confirm('저장하지 않은 교육시간이 있습니다. 버리고 열까요?'))return;
   formErr='';if(key==='new'){editing='new';form={...blank(),...preset};}
-  else{const r=rowAt(key);if(!r)return;editing=key;form={key,row:r.row,date:r.date,cls:r.cls,module:r.module,start:r.start,end:r.end,part:r.part||'',reason:'',dirty:false};}
+  else{const r=rowAt(key);if(!r)return;editing=key;form={key,row:r.row,was:wasOf(r),date:r.date,cls:r.cls,module:r.module,start:r.start,end:r.end,part:r.part||'',reason:'',dirty:false};}
   render();host.querySelector(`[data-editor="${CSS.escape(editing)}"] [data-f="${editing==='new'&&!form.date?'date':'start'}"]`)?.focus();
  }
  function close(){editing=null;form=null;formErr='';render();}
@@ -110,7 +119,7 @@ export async function mount(host,{user,classes,client,context}){
   if(busy||!form)return;
   const existing=editing!=='new',f={...form,start:cleanTime(form.start),end:cleanTime(form.end),module:String(form.module||'').trim(),part:String(form.part||'').trim(),reason:String(form.reason||'').trim()};
   formErr=checkModuleTime(f,{existing});if(formErr){paintErr();return;}
-  const before=data.rows,keep={editing,form},payload={...(existing?{row:f.row}:{}),date:f.date,cls:f.cls,module:f.module,start:f.start,end:f.end,part:f.part,reason:f.reason};
+  const before=data.rows,keep={editing,form},payload={...(existing?{row:f.row,was:f.was}:{}),date:f.date,cls:f.cls,module:f.module,start:f.start,end:f.end,part:f.part,reason:f.reason};
   const temp={...payload,key:existing?editing:`new${++tempSeq}`,row:existing?f.row:null,by:'',at:'',pending:'저장 중…'};
   data.rows=existing?data.rows.map(r=>keyOf(r)===editing?temp:r):[...data.rows,temp];
   busy=true;editing=null;form=null;formErr='';say('');render();
@@ -119,6 +128,7 @@ export async function mount(host,{user,classes,client,context}){
    if(res?.day)rememberDayTimes(res.day);else forgetDayTimes(f.cls,f.date);
    if(life.alive()){const r={...payload,row:res?.row??temp.row,by:user?.email||'',at:'방금',pending:'다시 읽는 중…'};data.rows=data.rows.map(x=>x===temp?r:x);toast(`${md(f.date)} ${f.cls}반 ${f.module} ${f.start}~${f.end} 저장 · 그날 기준 ${res?.day?dayText(res.day):'다시 읽는 중'}`);}
   }catch(e){
+   if(await rowChanged(e,before))return;
    if(life.alive()){data.rows=before;({editing,form}=keep);formErr=`저장하지 못했습니다: ${e.message}`;}
    busy=false;render();return;
   }
@@ -129,10 +139,20 @@ export async function mount(host,{user,classes,client,context}){
  // 지우기: 「현장교육 일정」 탭에서 그 줄을 지웁니다(확인 뒤). 화면에서 먼저 빼고, 못 하면 되돌립니다. 그날 기준은 남은 줄로 다시 정해집니다.
  async function remove(key){
   const r=rowAt(key);if(!r||busy)return;
-  if(!confirm(`${md(r.date)} ${r.cls}반 「${r.module}${r.part?' · '+r.part:''}」 ${r.start}~${r.end} 줄을 마스터시트 현장교육 일정 탭에서 지울까요?\n그날 기준은 남은 줄로 다시 정해집니다(없으면 평소 ${defaults().start}~${defaults().end}).`))return;
+  if(!confirm(`${md(r.date)} ${r.cls}반 「${r.module}${r.part?' · '+r.part:''}」 ${timed(r)?`${r.start}~${r.end}`:'(시간 미정)'} 줄을 마스터시트 현장교육 일정 탭에서 지울까요?\n그날 기준은 남은 줄로 다시 정해집니다(없으면 평소 ${defaults().start}~${defaults().end}).`))return;
   const before=data.rows;data.rows=data.rows.filter(x=>x!==r);busy=true;if(editing===key){editing=null;form=null;}say('');render();
-  try{await client.call('b2ModuleTimeSave',{row:r.row,date:r.date,cls:r.cls,module:r.module,remove:true});forgetDayTimes(r.cls,r.date);toast(`${md(r.date)} ${r.cls}반 ${r.module} 줄을 지웠습니다.`);}
-  catch(e){if(life.alive()){data.rows=before;say(`지우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
+  try{await client.call('b2ModuleTimeSave',{row:r.row,was:wasOf(r),date:r.date,cls:r.cls,module:r.module,remove:true});forgetDayTimes(r.cls,r.date);toast(`${md(r.date)} ${r.cls}반 ${r.module} 줄을 지웠습니다.`);}
+  catch(e){if(await rowChanged(e,before))return;if(life.alive()){data.rows=before;say(`지우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
+  await reload();
+ }
+ // 시간 비우기: 줄은 남기고 시작·끝을 비워 '시간 미정'으로 되돌립니다(확인 뒤, 시작·끝을 함께 비움). 그날 기준은 남은 줄로 다시 정해집니다.
+ async function clearTimes(key){
+  const r=rowAt(key);if(!r||busy||!timed(r))return;
+  if(!confirm(`${md(r.date)} ${r.cls}반 「${r.module}${r.part?' · '+r.part:''}」 ${r.start}~${r.end} 시간을 비울까요?\n줄은 남고 '시간 미정'이 됩니다. 그날 기준은 남은 줄로 다시 정해집니다(없으면 평소 ${defaults().start}~${defaults().end}).`))return;
+  const payload={row:r.row,was:wasOf(r),date:r.date,cls:r.cls,module:r.module,start:'',end:'',part:r.part||'',reason:'시간 미정으로 되돌림'};
+  const before=data.rows;data.rows=data.rows.map(x=>x===r?{...r,start:'',end:'',pending:'저장 중…'}:x);busy=true;if(editing===key){editing=null;form=null;}say('');render();
+  try{const res=await client.call('b2ModuleTimeSave',payload);if(res?.day)rememberDayTimes(res.day);else forgetDayTimes(r.cls,r.date);toast(`${md(r.date)} ${r.cls}반 ${r.module} 시간을 비웠습니다(시간 미정).`);}
+  catch(e){if(await rowChanged(e,before))return;if(life.alive()){data.rows=before;say(`시간을 비우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
   await reload();
  }
  const paintErr=()=>{const el=host.querySelector(`[data-editor="${CSS.escape(editing||'')}"] [data-err]`);if(el)el.textContent=formErr;else render();};
@@ -154,7 +174,8 @@ export async function mount(host,{user,classes,client,context}){
   if(t.hasAttribute('data-save')){void save();return;}
   const key=t.closest('[data-key]')?.dataset.key;
   if(t.hasAttribute('data-edit')&&key){if(editing===key){if(form?.dirty&&!confirm('저장하지 않은 교육시간을 버릴까요?'))return;close();}else open(key);return;}
-  if(t.hasAttribute('data-del')&&key){void remove(key);}
+  if(t.hasAttribute('data-del')&&key){void remove(key);return;}
+  if(t.hasAttribute('data-clear')&&key){void clearTimes(key);}
  });
  host.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches?.('[data-editor] input')){e.preventDefault();void save();}});
  $('#t2Class').onchange=e=>{cls=e.target.value;void load();};
