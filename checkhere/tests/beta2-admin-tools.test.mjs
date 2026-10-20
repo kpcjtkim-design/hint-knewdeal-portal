@@ -436,3 +436,53 @@ test('출결대조 falls back to 09:00~18:00 when the day rule cannot be read',a
   assert.equal(posts.filter(p=>p.action==='b2DayTimes').length,1);
  },{clock:'2026-11-13T19:00:00+09:00',days:CH,api:b=>b.action==='b2DayTimes'?{ok:false,error:'마스터시트 응답이 늦습니다. 잠시 후 다시 시도해 주세요.'}:null});
 });
+
+// 명단 반영(사용자 요청 2026-10-20, 시트 v16 b2RebuildBoards, 관리자만): 전체·한 반, 반별 결과 줄, 실행 중 잠금, v16 전이면 대기 안내.
+test('b2RebuildBoards is admin-only: all classes without cls, one class with cls, teachers are refused before the sheet',async t=>{
+ const calls=backend(t,{sheet:()=>Response.json({ok:true,data:{ok:true,boards:[],rev:9}})});
+ await call({action:'b2RebuildBoards',args:[{}]});await call({action:'b2RebuildBoards',args:[{cls:'all'}]});await call({action:'b2RebuildBoards',args:[{cls:'4'}]});
+ assert.deepEqual(calls.map(c=>[c.action,c.args,c.role]),[['b2RebuildBoards',[{}],'ADMIN'],['b2RebuildBoards',[{}],'ADMIN'],['b2RebuildBoards',[{cls:'4'}],'ADMIN']]);
+ assert.equal((await call({action:'b2RebuildBoards',args:[{cls:'18'}]})).body.code,'BAD_CLASS');
+ ACCESS.teacher=true;
+ assert.equal((await call({action:'b2RebuildBoards',args:[{cls:'3'}]},'teacher@test.kr')).body.code,'ADMIN_ONLY');
+ assert.equal(calls.length,3);
+});
+
+test('교육생 상태: 명단 반영(출결판 다시 그리기) asks first, locks while running, lists each class and explains a sheet without v16',async()=>{
+ let release;const gate=new Promise(r=>{release=r;});let outdated=false;
+ await site(async(page,posts,dialogs)=>{
+  await page.getByRole('button',{name:'출결',exact:true}).click();await page.getByRole('button',{name:'교육생 상태',exact:true}).click();
+  await page.locator('.b2r-row').first().waitFor();
+  const btn=page.locator('#r2Rebuild');
+  assert.equal(await btn.innerText(),'명단 반영(출결판 다시 그리기)');
+  // 취소하면 아무것도 보내지 않음
+  page.dialogAnswer.push(false);await btn.click();
+  assert.equal(dialogs.at(-1),'마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 전체는 20초쯤 걸립니다.\n대상: 1반');
+  assert.equal(posts.filter(p=>p.action==='b2RebuildBoards').length,0);
+  // 한 반(지금 1반): 실행 중에는 잠김
+  await btn.click();
+  await page.waitForFunction(()=>document.querySelector('#r2Rebuild').disabled);
+  assert.equal(await btn.innerText(),'다시 그리는 중…');
+  release();
+  await page.locator('[data-rebuilt]').waitFor();
+  assert.match(await page.locator('[data-rebuilt]').innerText(),/1반 출결판을 다시 그렸습니다\.\s*1반 학생 32명, 출결판 40줄\(\+5줄 늘림\)/);
+  assert.equal(await btn.isDisabled(),false);
+  assert.deepEqual(posts.filter(p=>p.action==='b2RebuildBoards').map(p=>p.args),[[{cls:'1'}]]);
+  // 전체 반
+  await page.locator('#r2Class').selectOption('all');await btn.click();
+  await page.locator('[data-rebuilt]',{hasText:'전체 반 출결판을 다시 그렸습니다.'}).waitFor();
+  assert.match(dialogs.at(-1),/대상: 전체 반$/);
+  assert.deepEqual(await page.locator('[data-rebuilt] li').allInnerTexts(),['1반 학생 32명, 출결판 40줄(+5줄 늘림)','2반 학생 30명, 출결판 40줄(+0줄 늘림)']);
+  assert.deepEqual(posts.filter(p=>p.action==='b2RebuildBoards').at(-1).args,[{}]);
+  // 시트가 아직 v15: Vercel이 SHEET_OUTDATED로 돌려줌
+  outdated=true;await btn.click();
+  await page.locator('[data-rebuilt]',{hasText:'시트 업데이트(v16) 대기'}).waitFor();
+  assert.equal(await btn.isDisabled(),false);
+ },{api:async b=>{
+  if(b.action!=='b2RebuildBoards')return null;
+  if(outdated)return {ok:false,code:'SHEET_OUTDATED',error:'마스터시트 데이터 API에 아직 없는 기능입니다. Apps Script를 새 코드로 다시 배포해 주세요.'};
+  await gate;
+  const all=[{cls:'1',students:32,rows:40,grown:5},{cls:'2',students:30,rows:40,grown:0}];
+  return {ok:true,data:{ok:true,boards:b.args[0]?.cls?all.filter(x=>x.cls===b.args[0].cls):all,rev:9}};
+ }});
+});

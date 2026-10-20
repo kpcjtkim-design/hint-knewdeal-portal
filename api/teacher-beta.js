@@ -15,12 +15,13 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 // 새 줄 만들기(자기 반·담임 칸만, b2Args)와 자기가 신청하고 아직 관리자 확인 전인 줄 지우기(신청 취소, 먼저 그 반 목록을 읽어 teacherCancelError로 확인)만. 있는 줄 고치기는 거절합니다.
 const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
  'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany','b2Schedule','b2ScheduleSave',
- 'b2Officers','b2OfficerSave','b2OfficerEnd']);
+ 'b2Officers','b2OfficerSave','b2OfficerEnd','b2RebuildBoards']);
 const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭에서 신청, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
-const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave']);
+const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave','b2RebuildBoards']);
 // 중도탈락 탭에서 담임이 신청할 때 정하는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
 export const TEACHER_DROPOUT_FIELDS=['name','kind','reason','startDate','lastDate','note'];
+// 명단 반영(b2RebuildBoards, 2026-10-20, 시트 v16): 마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 관리자만(ADMIN_ACTIONS). 전체 17반은 20초쯤이라 vercel.json maxDuration 60초 안.
 // 반 임원(반장·부반장·총무·앰버서더, 2026-10-20, 시트 '반 임원' 탭 이력 + 반정보 Q·R·S·V 현재): 담임(자기 반)과 관리자 모두 지정·교체(보궐)·끝내기를 합니다(ADMIN_ACTIONS 아님).
 // 담임은 반 번호를 무엇을 보내든 자기 반으로 바뀌고, 보내는 칸은 아래 것만 지나갑니다.
 export const OFFICER_FIELDS=['role','name','kind','start','reason','note'];
@@ -119,6 +120,8 @@ export function b2Args(user,action,rest){
    if(!q.role)throw new Error('BAD_REQUEST');
    return [q];
   }
+  // 반 탭 출결판 다시 그리기(관리자만, 시트 v16 b2RebuildBoards {cls?}): 반을 비우거나 'all'이면 전체(20초쯤), 아니면 그 반만.
+  if(action==='b2RebuildBoards'){const c=p.cls;return [c===undefined||c===''||c==='all'?{}:{cls:own(c)}];}
   // 여러 명 상태(관리자만): 줄마다 반 번호를 확인합니다.
   if(action==='b2RosterStatusMany')return [{rows:(Array.isArray(p.rows)?p.rows:[]).map(r=>({cls:own(r?.cls),name:String(r?.name??''),status:String(r?.status??''),changed:String(r?.changed??''),reason:String(r?.reason??'')}))}];
   return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];

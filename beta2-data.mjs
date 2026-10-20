@@ -62,6 +62,8 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   }
   const data=await call('b2Officers',q);officerLists.set(key,{at:Date.now(),data});return data;
  }
+ // 명단 반영(관리자만, b2RebuildBoards {cls?} → {boards:[{cls,students,rows,grown}],rev}, 시트 v16): 명부에 맞춰 반 탭 출결판을 다시 그립니다. 성공하면 묶음을 버려 새로 읽게 합니다.
+ async function rebuildBoards(cls){const r=await call('b2RebuildBoards',cls&&cls!=='all'?{cls:String(cls)}:{});bundles.clear();return r;}
  const officerWrite=async(action,p)=>{try{return await call(action,p);}finally{officerLists.clear();}};
  // 저장 결과를 들고 있는 묶음에 반영합니다(다시 읽지 않음).
  function patch(row,res){
@@ -94,7 +96,7 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   return ()=>{stopped=true;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  }
  return {
-  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,officers,
+  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,officers,rebuildBoards,
   officerSave:p=>officerWrite('b2OfficerSave',p),
   officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),

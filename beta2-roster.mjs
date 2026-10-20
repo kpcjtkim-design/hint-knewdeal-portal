@@ -11,6 +11,9 @@ const STYLE=`.b2r .b2r-row{display:grid;grid-template-columns:minmax(120px,1fr) 
 .b2r .b2r-row.dirty{background:#fffbeb}.b2r .b2r-row.saving{opacity:.6}.b2r .b2r-now{align-self:center}.b2r .b2r-act{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 @media(max-width:820px){.b2r .b2r-row{grid-template-columns:1fr 1fr}.b2r .b2r-now,.b2r .b2r-why,.b2r .b2r-act{grid-column:1/-1}.b2r .b2r-act{align-items:flex-start}.b2r .b2-toolbar .b2-field{flex:1 1 140px}}`;
 const now=s=>s||'재학';
+// 명단 반영 결과 한 줄(시트 v16 b2RebuildBoards boards[]): 'n반 학생 m명, 출결판 r줄(+k줄 늘림)'
+export const boardLine=b=>`${b.cls}반 학생 ${Number(b.students)||0}명, 출결판 ${Number(b.rows)||0}줄(+${Number(b.grown)||0}줄 늘림)`;
+export const REBUILD_CONFIRM='마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 전체는 20초쯤 걸립니다.';
 
 export async function mount(host,{client,classes,selected,context}){
  const life=lifecycle(host);
@@ -18,6 +21,7 @@ export async function mount(host,{client,classes,selected,context}){
  const edits=new Map(); // '반|이름' → {status,changed,reason,err,saving}
  host.innerHTML=`<div class="b2 b2r"><style>${STYLE}</style><div class="b2-head"><div><h2>교육생 상태</h2><p>교육생별 상태(재학·중도탈락·조기취업·수료)를 바꿉니다. 저장하면 마스터시트 명부(상태·상태 변경일·상태 사유)에 바로 적히고 그 반 출결판도 다시 그려집니다.</p></div></div>
  <div class="b2-note" style="margin-bottom:12px">재학이 아니면 마지막 출석일을 꼭 넣어 주세요. 그다음 교육일부터 출결대조·출결 현황·출석률 계산에서 빠집니다. 재학으로 되돌리면 마지막 출석일은 지워집니다.</div>
+ <section class="b2-card b2-pad" style="margin-bottom:12px"><div class="b2-toolbar" style="padding:0"><button class="b2-btn warn" id="r2Rebuild">명단 반영(출결판 다시 그리기)</button><span class="b2-small b2-muted">위 반 선택이 '전체 반'이면 전체, 아니면 그 반만 마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다.</span></div><div id="r2RebuildOut"></div></section>
  <section class="b2-card"><div class="b2-toolbar"><label class="b2-field">반<select id="r2Class">${classOptions(classes,cls,{all:true})}</select></label><div class="b2-chips" id="r2Views"></div>
   <label class="b2-field">이름 찾기<input id="r2Search" autocomplete="off" placeholder="이름"></label><span class="b2-grow"></span><button class="b2-btn" id="r2Reload">새로고침</button></div>
   <div id="r2List">${loading('명부를 불러오는 중…')}</div></section></div>`;
@@ -83,6 +87,27 @@ export async function mount(host,{client,classes,selected,context}){
  host.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&ev.target.matches?.('.b2r-row input')){const key=ev.target.closest('[data-key]').dataset.key;ev.preventDefault();void save(key);}});
  const unsaved=()=>[...edits.keys()].filter(k=>{const p=person(k);return p&&dirty(p);}).length;
  $('#r2Class').onchange=ev=>{if(unsaved()&&!confirm(`저장하지 않은 상태 변경 ${unsaved()}건이 있습니다. 반을 바꾸면 사라집니다. 바꿀까요?`)){ev.target.value=cls;return;}edits.clear();cls=ev.target.value;void load();};
+ // 명단 반영(시트 v16 b2RebuildBoards, 관리자만): 실행 중에는 단추를 잠그고, 결과는 반별 한 줄. 시트가 아직 모르는 기능이면 v16 대기 안내.
+ let rebuilding=false;
+ async function rebuild(){
+  if(rebuilding)return;
+  const target=cls==='all'?'전체 반':`${cls}반`;
+  if(!confirm(`${REBUILD_CONFIRM}\n대상: ${target}`))return;
+  const btn=$('#r2Rebuild'),out=$('#r2RebuildOut');
+  rebuilding=true;btn.disabled=true;btn.textContent='다시 그리는 중…';out.innerHTML=`<div class="b2-note" style="margin-top:10px">${esc(target)} 출결판을 다시 그리는 중입니다…</div>`;
+  try{
+   const r=await client.rebuildBoards(cls);if(!life.alive())return;
+   const lines=(r?.boards||[]).map(boardLine);
+   out.innerHTML=`<div class="b2-note" style="margin-top:10px" data-rebuilt><b>${esc(target)} 출결판을 다시 그렸습니다.</b>${lines.length?`<ul style="margin:6px 0 0;padding-left:18px">${lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>`:''}</div>`;
+   toast(`${target} 출결판을 다시 그렸습니다.`);
+   void load({fresh:true,quiet:true});
+  }catch(e){
+   if(!life.alive())return;
+   const outdated=e.code==='SHEET_OUTDATED'||/unknown action|알 수 없는/.test(e.message);
+   out.innerHTML=`<div class="b2-note ${outdated?'warn':'err'}" style="margin-top:10px" data-rebuilt>${outdated?'시트 업데이트(v16) 대기: 마스터시트 Apps Script가 새 버전(v16)으로 배포되면 쓸 수 있습니다.':`다시 그리지 못했습니다: ${esc(e.message)}`}</div>`;
+  }finally{rebuilding=false;if(life.alive()){btn.disabled=false;btn.textContent='명단 반영(출결판 다시 그리기)';}}
+ }
+ $('#r2Rebuild').onclick=()=>void rebuild();
  $('#r2Search').oninput=ev=>{search=ev.target.value.trim();render();};
  $('#r2Reload').onclick=()=>{if(unsaved()&&!confirm(`저장하지 않은 상태 변경 ${unsaved()}건이 있습니다. 새로 읽으면 사라집니다. 계속할까요?`))return;edits.clear();void load({fresh:true});};
  await load();
