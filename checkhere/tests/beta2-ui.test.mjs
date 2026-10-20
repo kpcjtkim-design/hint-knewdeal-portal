@@ -353,7 +353,7 @@ test('출결대조 records any past day: 「다른 날짜…」 opens a date box
   for(let i=0;i<30&&await offNote.count();i++)await page.waitForTimeout(100);assert.equal(await offNote.count(),0);
   // 메모: 교육일이 아닌 날도 저장하고 시트 안내를 보임
   await page.locator('tbody[data-student="고다원"] [data-memo-toggle]').click();
-  await page.locator('tbody[data-student="고다원"] [data-memo-pick="수기출석 미제출"]').click();
+  await page.locator('tbody[data-student="고다원"] [data-memo-pick="증빙 미제출"]').click();
   await page.locator('#b2Msg').getByText(MEMO_NOTE).waitFor();
   assert.equal(posts.find(p=>p.action==='b2LedgerMemo').args[0].date,'2026-11-01');
   // 개강 전 날: 메모 기간이 그날부터로 넓어짐, 교육일로 돌아가면 날짜 칸을 닫음

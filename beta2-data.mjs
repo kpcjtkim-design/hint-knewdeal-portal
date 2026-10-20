@@ -4,8 +4,8 @@
 import {decodeBundle,ledgerKey} from './beta2-core.mjs';
 import {readAttendanceSummary} from './attendance-derived-store.mjs';
 
-const bundles=new Map(),schedules=new Map(),officerLists=new Map();
-export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();}
+const bundles=new Map(),schedules=new Map(),officerLists=new Map(),dayMemoLists=new Map();
+export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();}
 // 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
 // 민원·이슈 알림(beta2-admin.mjs·담임 화면)은 다른 화면이 방금 확인한 값을 그대로 써서 Apps Script 호출을 늘리지 않습니다.
 const revListeners=new Set();let lastRev={at:0,value:null};
@@ -62,6 +62,19 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   }
   const data=await call('b2Officers',q);officerLists.set(key,{at:Date.now(),data});return data;
  }
+ // 반·날짜 공통메모(시트 v17, 2026-10-20): 읽기 b2DayMemos {cls?, from?, to?} → {rev, rows:[{cls,date,memo,by,at,editedBy,editedAt}]}(담임은 Vercel이 자기 반으로 고정),
+ // 변경 번호(rev)가 같으면 다시 읽지 않습니다. 쓰기 b2DayMemo {cls,date,memo,was}(관리자만, memo ''면 지움, was가 지금 값과 다르면 '그사이 바뀌었습니다' 거절)
+ // → {row,memo,by,at,rev} · 같은 값이면 {unchanged:true}. 쓰고 나면(실패해도) 들고 있던 목록을 버립니다.
+ async function dayMemos(p={},{fresh=false,maxAge=20000}={}){
+  const q={};if(p.cls&&p.cls!=='all')q.cls=String(p.cls);if(p.from)q.from=p.from;if(p.to)q.to=p.to;
+  const key=JSON.stringify([q.cls||'all',q.from||'',q.to||'']),hit=dayMemoLists.get(key);
+  if(hit&&!fresh){
+   if(Date.now()-hit.at<maxAge)return hit.data;
+   const r=await rev();if(r.rev===hit.data.rev){hit.at=Date.now();return hit.data;}
+  }
+  const data=await call('b2DayMemos',q);dayMemoLists.set(key,{at:Date.now(),data});return data;
+ }
+ async function dayMemoSave(p){try{return await call('b2DayMemo',p);}finally{dayMemoLists.clear();}}
  // 명단 반영(관리자만, b2RebuildBoards {cls?} → {boards:[{cls,students,rows,grown}],rev}, 시트 v16): 명부에 맞춰 반 탭 출결판을 다시 그립니다. 성공하면 묶음을 버려 새로 읽게 합니다.
  async function rebuildBoards(cls){const r=await call('b2RebuildBoards',cls&&cls!=='all'?{cls:String(cls)}:{});bundles.clear();return r;}
  const officerWrite=async(action,p)=>{try{return await call(action,p);}finally{officerLists.clear();}};
@@ -96,7 +109,7 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   return ()=>{stopped=true;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  }
  return {
-  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,officers,rebuildBoards,
+  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,
   officerSave:p=>officerWrite('b2OfficerSave',p),
   officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),

@@ -173,14 +173,18 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
   const s=state('memos','출결대조 메모를 불러오는 중…');
   const rows=s?[]:(parts.memos.data?.rows||[]).filter(r=>String(r.cls)===cls&&String(r.memo||'').trim()).sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(a.name).localeCompare(String(b.name),'ko'));
   const item=r=>`<li data-memo="${esc(r.name)}"><button class="b2-btn small ghost" data-open="b2ledger" data-ctx="${esc(JSON.stringify({date:r.date}))}">${esc(md(r.date))}</button><b class="b2-name">${esc(r.name)}</b><span>${esc(r.memo)}</span>${r.by?`<span class="b2-small b2-muted">${esc(r.by)}</span>`:''}</li>`;
+  // 반·날짜 공통메모(시트 v17 b2DayMemos, 2026-10-20): 고른 날짜 것과 최근 2주 것(최신 먼저 3개). 시트가 아직 v17 전이면 '시트 업데이트 대기'만.
+  const dm=parts.daymemos,from=addDays(bundle()?.today||koreaNow().date,-13),dayRows=(dm?.data?.rows||[]).filter(r=>String(r.cls)===cls&&String(r.memo||'').trim()&&(r.date===date||r.date>=from)).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const dayItem=r=>`<li data-daymemo="${esc(r.date)}" class="${r.date===date?'on':''}"><button class="b2-btn small ghost" data-open="b2ledger" data-ctx="${esc(JSON.stringify({date:r.date}))}">${esc(md(r.date))}</button><span class="b2-badge t-late">공통</span><span>${esc(r.memo)}</span>${r.editedBy||r.by?`<span class="b2-small b2-muted">${esc(r.editedBy||r.by)}</span>`:''}</li>`;
+  const dayList=dm?.error?.code==='SHEET_OUTDATED'?'<div class="b2-tiny b2-muted" data-daymemo-wait>공통메모 · 시트 업데이트 대기</div>':dm?.data?list([...dayRows.filter(r=>r.date===date),...dayRows.filter(r=>r.date!==date).slice(0,3)].map(dayItem),''):'';
   const box=inbox(),notes=(box?.list||[]).filter(n=>String(n.cls||'')===cls).slice(0,5);
   const note=n=>`<li data-note="${esc(n.id)}">${box.isUnread?.(n)?'<span class="b2-badge t-absent">안 읽음</span>':''}<span class="b2-badge">${esc(n.kind)}</span><span>${esc(n.title||'')}</span><span class="b2-small b2-muted">${esc(whenText(createdMs(n)))}</span></li>`;
   card('memos','출결대조 메모·알림',
-   `${s||`<div class="b2-tiny b2-muted">최근 2주 · 날짜를 누르면 그날 출결대조로 갑니다.</div>${list(rows.slice(0,8).map(item),'최근 2주 출결대조 메모가 없습니다.')}${rows.length>8?`<div class="b2-tiny b2-muted">외 ${rows.length-8}건</div>`:''}`}
+   `${dayList}${s||`<div class="b2-tiny b2-muted">최근 2주 · 날짜를 누르면 그날 출결대조로 갑니다.</div>${list(rows.slice(0,8).map(item),'최근 2주 출결대조 메모가 없습니다.')}${rows.length>8?`<div class="b2-tiny b2-muted">외 ${rows.length-8}건</div>`:''}`}
    ${box?`<div class="b2-small"><b>이 반 알림</b></div>${list(notes.map(note),box.ready?'이 반 알림이 없습니다.':'알림을 불러오는 중…')}`:''}`,
    go('알림함','b2notify'));
  }
- const PAINT={bundle:()=>{paintDates();paintInfo();paintDay();paintTotal();paintWeek();},drop:()=>{paintDrop();paintTotal();},docs:paintDocs,vocs:paintVocs,sched:paintWeek,memos:paintMemos,check:paintDay,daytimes:()=>{paintDay();paintWeek();},officers:paintInfo};
+ const PAINT={bundle:()=>{paintDates();paintInfo();paintDay();paintTotal();paintWeek();},drop:()=>{paintDrop();paintTotal();},docs:paintDocs,vocs:paintVocs,sched:paintWeek,memos:paintMemos,daymemos:paintMemos,check:paintDay,daytimes:()=>{paintDay();paintWeek();},officers:paintInfo};
  function paint(k){if(life.alive())PAINT[k]?.();}
 
  /* ---------- 읽기 ---------- */
@@ -204,7 +208,7 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
   if(!quiet||date!==before){loadDay();void loadSchedule(fresh&&!quiet);}
  }
  function loadSchedule(fresh=false){const mon=mondayOf(date||koreaNow().date);return fetchPart('sched',()=>client.schedule({cls,from:mon,to:addDays(mon,4)},{fresh}));}
- function loadMemos(quiet=false){const to=bundle()?.today||koreaNow().date;return fetchPart('memos',()=>client.call('b2LedgerMemos',{cls,from:addDays(to,-13),to}),{quiet});}
+ function loadMemos(quiet=false){const to=bundle()?.today||koreaNow().date;if(client.dayMemos)void fetchPart('daymemos',()=>client.dayMemos({cls}),{quiet:true});return fetchPart('memos',()=>client.call('b2LedgerMemos',{cls,from:addDays(to,-13),to}),{quiet});} // 공통메모는 반 전체(변경 번호가 같으면 다시 읽지 않음)
  function loadAll(fresh=false){
   for(const k of ['check','sched'])delete parts[k];
   void loadBundle({fresh});
@@ -218,7 +222,7 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
  /* ---------- 이벤트 ---------- */
  $('#c2Class').onchange=e=>{cls=e.target.value;date='';vocRev=null;for(const k of Object.keys(parts))delete parts[k];for(const k of Object.keys(seqs))seqs[k]++; // 앞 반의 늦은 응답은 버림
  paintDates();loadAll();};
- $('#c2Date').onchange=e=>{const before=mondayOf(date||e.target.value);date=e.target.value;delete parts.check;PAINT.bundle();loadDay();if(mondayOf(date)!==before)void loadSchedule();};
+ $('#c2Date').onchange=e=>{const before=mondayOf(date||e.target.value);date=e.target.value;delete parts.check;PAINT.bundle();paint('memos');loadDay();if(mondayOf(date)!==before)void loadSchedule();};
  $('#c2Ledger').onclick=()=>open?.('b2ledger',{classId:cls,date:date||undefined});
  $('#c2Reload').onclick=()=>loadAll(true);
  grid.addEventListener('click',e=>{

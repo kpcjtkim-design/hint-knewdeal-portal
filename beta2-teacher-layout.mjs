@@ -52,7 +52,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  const links=document.createElement('div');for(const e of following)if(![tasks,taskHead,notice,noticeHead].includes(e))links.append(e);
  panel('documents').innerHTML='<div data-slot="documents" id="t2Docs"></div>';
  for(const [k,subs] of Object.entries(TEACHER_SUBS))panel(k).innerHTML=subs.map(([s])=>`<div data-sub="${s}" hidden></div>`).join('');
- panel('info').innerHTML='<div data-slot="officers"></div><div data-slot="info"></div>'; // 반 임원(beta2-officers.mjs, 2026-10-20) 위, teacher-beta.js 명부 아래panel('notify').innerHTML='<div data-slot="notify"></div>';
+ panel('info').innerHTML='<div data-slot="officers"></div><div data-slot="info"></div>'; // 반 임원(beta2-officers.mjs, 2026-10-20) 위, teacher-beta.js 명부 아래
+ panel('notify').innerHTML='<div data-slot="notify"></div>'; // 알림함 칸(60f364a에서 위 줄 주석 뒤로 붙어 빠졌던 것을 되살림, 2026-10-20)
  wrap.querySelector('[data-sub="links"]').append(links);
 
  const works=[],loaded=new Set(),tries={};let main='',sub='',beta=null,betaWait=null,status=null,statusWait=null,disposed=false;
@@ -73,7 +74,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261020-of1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261020-dm1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -96,7 +97,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   dropout:['./beta2-dropouts.mjs?v=20261020-dr1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
   voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
   officers:['./beta2-officers.mjs?v=20261020-of1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
-  notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab);void go(tm,ts||'',{push:true});}})]
+  // 공통메모 알림은 출결판으로 가서 그 날짜 공통메모를 판 위에 보입니다(teacher-beta.js showDay).
+  notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab,l.params);void go(tm,ts||'',{push:true}).then(()=>{if(ts==='board'&&l.params?.date)beta?.showDay?.(l.params.date);});}})]
  };
  async function load(key,slot){
   const job=MOUNTS[key];if(!job||loaded.has(key))return;loaded.add(key);

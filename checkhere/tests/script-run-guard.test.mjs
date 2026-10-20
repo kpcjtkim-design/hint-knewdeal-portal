@@ -129,9 +129,9 @@ test('doPost needs the API key; with it every action Vercel sends still resolves
  gas.scriptProps.setProperty('API_KEY',KEY);
  const src=readFileSync(VERCEL,'utf8'),set=name=>[...src.match(new RegExp(`const ${name}=new Set\\(\\[([^\\]]*)\\]`))[1].matchAll(/'([A-Za-z0-9]+)'/g)].map(x=>x[1]);
  const actions=[...new Set([...set('ALLOWED'),...set('B2_ACTIONS')])];
- // portal 8 + 2기 11(민원·이슈 4 포함, 2기는 b2SyncNow·b2Release를 받지 않음) + 모듈 시간 3·교육생 상태 1·출결대조 메모 2(2026-10-19) + 중도탈락·수료 4(b2Dropouts·b2DropoutSave·b2Completions·b2RosterStatusMany, 2026-10-20) + 시간표 2(b2Schedule·b2ScheduleSave, 2026-10-20) + 반 임원 3(b2Officers·b2OfficerSave·b2OfficerEnd, 2026-10-20, 2기 배포 ① v15) + 명단 반영 1(b2RebuildBoards, 관리자만, v16). portalCheck는 빠짐(2026-10-16).
+ // portal 8 + 2기 11(민원·이슈 4 포함, 2기는 b2SyncNow·b2Release를 받지 않음) + 모듈 시간 3·교육생 상태 1·출결대조 메모 2(2026-10-19) + 중도탈락·수료 4(b2Dropouts·b2DropoutSave·b2Completions·b2RosterStatusMany, 2026-10-20) + 시간표 2(b2Schedule·b2ScheduleSave, 2026-10-20) + 반 임원 3(b2Officers·b2OfficerSave·b2OfficerEnd, 2026-10-20, 2기 배포 ① v15) + 명단 반영 1(b2RebuildBoards, 관리자만, v16) + 반·날짜 공통메모 2(b2DayMemos·b2DayMemo, 쓰기는 관리자만, v17). portalCheck는 빠짐(2026-10-16).
  // (운영총괄 동기화가 남은 main·claude/sheet-restructure의 api는 13 + 6이라 27입니다.)
- assert.equal(actions.length,35);
+ assert.equal(actions.length,37);
  for(const action of actions)assert.notEqual(post(gas,{key:KEY,action,args:[]}).error,'unknown action',action);
  for(const action of ['portalRoster_','b2Save_','saveRecord','setApiKey','rebuildAll','b2SyncTick','b2Setup'])assert.deepEqual(post(gas,{key:KEY,action}),{ok:false,error:'unknown action'},action);
  assert.deepEqual(post(gas,{key:KEY,action:'portalRoster',args:[1]}),{ok:true,data:[{name:'가상1가',status:'재학',birth:'2000-01-01',gender:'남성'},{name:'가상1나',status:'재학',birth:'2001-02-03',gender:'여성'}]});

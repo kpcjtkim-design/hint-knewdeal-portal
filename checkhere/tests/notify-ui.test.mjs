@@ -134,22 +134,21 @@ test('출결대조 memo chips save at once apart from the batch drafts, show nex
   assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
   // 빠른 칩: 누르면 바로 저장 + 알림
   await go.locator('.b2-memo-tag').click();
-  // 맨 위는 '수기출석 공통메모 사항'(사용자 요청 2026-10-20), 그 아래 증빙 칩
-  assert.deepEqual(await go.locator('.b2-memo-edit .b2-req-head').allInnerTexts(),['수기출석 공통메모 사항','출결대조 메모'],'the 수기출석 group comes first');
-  const HAND=['수기출석 사인 미비','수기출석 미제출','수기출석 확인 완료','수기출석 시간 미기재','수기출석 서명 상이'];
-  assert.deepEqual(await go.locator('[data-memo-group="수기출석"] [data-memo-pick]').allInnerTexts(),HAND);
-  assert.deepEqual(await go.locator('[data-memo-pick]').allInnerTexts(),[...HAND,'증빙 미제출','증빙 보완 필요','증빙 확인 완료']);
-  await go.locator('[data-memo-pick="수기출석 사인 미비"]').click();
-  await go.locator('.b2-memo-tag.has',{hasText:'메모 · 수기출석 사인 미비'}).waitFor();
+  // '수기출석 공통메모 사항'은 반·날짜 공통메모(도구줄 「공통메모」)로 옮겨 학생 메모에는 증빙 칩만 남습니다(2026-10-20, day-memo-ui.test.mjs).
+  assert.deepEqual(await go.locator('.b2-memo-edit .b2-req-head').allInnerTexts(),['출결대조 메모'],'no 수기출석 group under a student');
+  assert.equal(await go.locator('[data-memo-group]').count(),0);
+  assert.deepEqual(await go.locator('[data-memo-pick]').allInnerTexts(),['증빙 미제출','증빙 보완 필요','증빙 확인 완료']);
+  await go.locator('[data-memo-pick="증빙 보완 필요"]').click();
+  await go.locator('.b2-memo-tag.has',{hasText:'메모 · 증빙 보완 필요'}).waitFor();
   await toastHas(page,'고다원 · 10/28(수) 출결대조 메모를 저장했습니다.');
-  assert.deepEqual(sent(posts,'b2LedgerMemo'),[{cls:'1',name:'고다원',date:'2026-10-28',memo:'수기출석 사인 미비'}]);
+  assert.deepEqual(sent(posts,'b2LedgerMemo'),[{cls:'1',name:'고다원',date:'2026-10-28',memo:'증빙 보완 필요'}]);
   await page.waitForFunction(()=>window.sdkWrites.some(w=>w[1].startsWith('notifications/')));
   const [n1]=await notes(page);
-  assert.deepEqual(n1,{kind:'출결대조 메모',title:'출결대조 메모 · 1반 고다원',body:'10/28(수) 수기출석 사인 미비',cls:'1',link:'#b2ledger?cls=1&date=2026-10-28',to:[A2],from:A1,readBy:[A1],toRole:'admin',createdAt:'ts'});
+  assert.deepEqual(n1,{kind:'출결대조 메모',title:'출결대조 메모 · 1반 고다원',body:'10/28(수) 증빙 보완 필요',cls:'1',link:'#b2ledger?cls=1&date=2026-10-28',to:[A2],from:A1,readBy:[A1],toRole:'admin',createdAt:'ts'});
   await page.waitForFunction(()=>true);
   await page.waitForTimeout(200);
   assert.equal(sent(posts,'b2LedgerMemos').length,2,'read again after the save');
-  assert.equal(await go.locator('[data-memo-pick="수기출석 사인 미비"]').getAttribute('aria-pressed'),'true');
+  assert.equal(await go.locator('[data-memo-pick="증빙 보완 필요"]').getAttribute('aria-pressed'),'true');
   assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장','the memo is not a draft and the draft stays');
   assert.equal(await dong.locator('select[data-inline="type"]').inputValue(),'결석');
   assert.equal(sent(posts,'b2Save').length,0);
@@ -159,13 +158,13 @@ test('출결대조 memo chips save at once apart from the batch drafts, show nex
   await dong.locator('[data-memo-custom]').click();
   const input=dong.locator('[data-memo-input]');
   assert.equal(await input.inputValue(),'증빙 미제출');assert.equal(await input.getAttribute('maxlength'),'100');
-  // 직접 입력 중에는 칩(맨 위 수기출석 공통메모 사항 포함) 글이 칸에 덧붙고 저장되지 않습니다. 같은 글은 두 번 붙지 않습니다.
+  // 직접 입력 중에는 칩 글이 칸에 덧붙고 저장되지 않습니다. 같은 글은 두 번 붙지 않습니다.
   const memoSaves=sent(posts,'b2LedgerMemo').length;
-  await dong.locator('[data-memo-group="수기출석"] [data-memo-pick="수기출석 시간 미기재"]').click();
-  assert.equal(await input.inputValue(),'증빙 미제출 · 수기출석 시간 미기재');
+  await dong.locator('[data-memo-pick="증빙 보완 필요"]').click();
+  assert.equal(await input.inputValue(),'증빙 미제출 · 증빙 보완 필요');
   assert.equal(await input.evaluate(e=>e===document.activeElement),true,'the input keeps the focus');
-  await dong.locator('[data-memo-pick="수기출석 시간 미기재"]').click();
-  assert.equal(await input.inputValue(),'증빙 미제출 · 수기출석 시간 미기재','the same text is not added twice');
+  await dong.locator('[data-memo-pick="증빙 보완 필요"]').click();
+  assert.equal(await input.inputValue(),'증빙 미제출 · 증빙 보완 필요','the same text is not added twice');
   assert.equal(sent(posts,'b2LedgerMemo').length,memoSaves,'appending does not save');
   await input.fill('수기출석 사인 늦게 받음');await input.press('Enter');
   await dong.locator('.b2-memo-tag.has',{hasText:'메모 · 수기출석 사인 늦게 받음'}).waitFor();

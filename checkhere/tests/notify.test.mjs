@@ -69,6 +69,9 @@ test('links stay inside the site and map to teacher tabs',()=>{
  assert.deepEqual(parseLink('#b2ledger?cls=3&date=2026-10-28'),{tab:'b2ledger',params:{cls:'3',date:'2026-10-28'}});
  assert.equal(parseLink('https://evil.test'),null);assert.equal(cleanLink('#a b'),'');
  assert.deepEqual(teacherTarget('b2docs'),['documents']);assert.deepEqual(teacherTarget('b2vocs'),['feedback','voc']);assert.deepEqual(teacherTarget('b2ledger'),['attendance','evidence'],'추가 증빙 알림 → 담임 출결 › 증빙서류');assert.deepEqual(teacherTarget('b2status'),['today']);
+ // 공통메모 알림(#b2ledger?…&memo=day, 2026-10-20)은 담임에게 출결 › 출결판(그날 공통메모가 판 위)
+ assert.deepEqual(teacherTarget('b2ledger',{cls:'1',date:'2026-10-28',memo:'day'}),['attendance','board']);assert.deepEqual(teacherTarget('b2ledger',{cls:'1'}),['attendance','evidence']);
+ assert.deepEqual(parseLink(linkFor('b2ledger',{cls:'1',date:'2026-10-28',memo:'day'})),{tab:'b2ledger',params:{cls:'1',date:'2026-10-28',memo:'day'}});
 });
 
 test('times read as just now, minutes, hours today, then month/day',()=>{
