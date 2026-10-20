@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCheckHereSync,rowCheckHereStatus,requestStatus,resultStatus,REQUEST_KEYS,STATUS_ACTIONS} from '../../beta2-checkhere-sync.mjs';
+import {createCheckHereSync,rowCheckHereStatus,requestStatus,resultStatus,timeDeleteBlock,timeDeletePlan,REQUEST_KEYS,STATUS_ACTIONS,TYPE_FIRST} from '../../beta2-checkhere-sync.mjs';
 import {holdKey,AUTO_TEXT} from '../../beta2-checkhere-core.mjs';
 import {baseTag,isLiveRequest,tagOf} from '../../checkhere-live-core.mjs';
 import {ATTEND_DELETE} from '../rules.mjs';
@@ -312,6 +312,8 @@ const CHECKED_IN={entryKind:'PASS',entryEventId:false,exitEventId:true,enterEven
 // 옛 연결 프로그램(v1)이면 관리자 1교시는 지우지 않음. 퇴실이 남아 있으면 1교시만은 못 지움(체크히어가 퇴실 시간으로 다시 채움, rules.mjs)
 const V2_NEEDED='1교시 삭제는 수집 PC 프로그램 업데이트 후 가능 (time-delete-v2)',EXIT_FIRST='퇴실이 남아 있으면 1교시만 지울 수 없습니다(체크히어가 퇴실 시간으로 1교시를 다시 채웁니다). 퇴실과 함께 지워 주세요.';
 const BOTH_LEFT='1교시·퇴실 칸은 비워지고 체크히어 입실 기록은 남을 수 있습니다',UNMASK=/반영할 때 체크히어 마스킹 해제 필요/;
+// 두 칸(1교시·퇴실)을 한 요청으로 지울 때의 확인창 문구(사용자 결정 2026-10-19 "둘 다 삭제돼야 함")
+const BOTH_CELLS='퇴실과 1교시(09:00~18:00 칸)를 함께 지웁니다. 입실 기록은 남을 수 있습니다',BOTH_CELLS_RE=/\n퇴실과 1교시\(09:00~18:00 칸\)를 함께 지웁니다\. 입실 기록은 남을 수 있습니다\.\n/;
 test('결석 holds while time deletion is off; with the gate on it asks first (S8), 아니오 writes nothing, 예 writes one deleteTimes request',async()=>{
  const h=harness();await h.open();
  let s=h.save(PRESENT,row('결석'),'sig-1');
@@ -634,25 +636,27 @@ test('× is refused outside enrolment and where the sheet type keeps its memo on
  assert.deepEqual(await h.sync.send(h.key,{deleteTimes:['exit']}),{ok:false,cancelled:true});
  assert.match(h.st.confirms[0],/퇴실 칸의 관리자 사유\(「조퇴_담임:가상담임\(17:00\)」\)도 함께 지워집니다/);assert.doesNotMatch(h.st.confirms[0],/입실\(교시\)/);
  assert.match(h.st.confirms[0],/관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다/);
- // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 기록: 퇴실이 남아 있으면 1교시 ×는 잠기고 퇴실 ×만(두 칸은 결석으로)
+ // 체크인한 학생이 1교시에 사유를 저장해 ATTEND가 된 기록: v2면 1교시 ×도 퇴실과 함께 두 칸(사용자 결정 2026-10-19, 실제 입실은 남음)
  const r=harness({rec:record({...ADMIN_ENTRY,enterEventId:true})});await r.open();gateOnV2(r);
- assert.deepEqual((await r.sync.send(r.key,{deleteTimes:['entry']})).reasons,[EXIT_FIRST]);
+ assert.equal((await r.sync.send(r.key,{deleteTimes:['entry']})).ok,true);assert.match(r.st.confirms[0],BOTH_CELLS_RE);
+ await r.advance(3000);assert.deepEqual([r.writes().length,r.writes()[0][2].deleteTimes],[1,['entry','exit']]);
 });
 
 // 두 칸 삭제(time-delete-v2, 2026-10-16 실제 체크히어 확인 뒤 켬): 결석은 관리자 1교시·퇴실을 한 요청으로(연결 프로그램이 퇴실 먼저),
-// 1교시 ×는 퇴실이 비어 있을 때만. 옛 연결 프로그램(v1)이면 1교시는 잠김. 가린 화면이어도 요청은 만들고 확인창에 해제 필요를 붙임.
-test('with time-delete-v2: 결석 deletes the admin 1st period with the exit, × on it only once the exit is empty, asks again when the entry changes and names its memo',async()=>{
+// ×도 퇴실이 있으면 두 칸(2026-10-19, 아래 시험), 퇴실이 빈 1교시 ×는 1교시만. 옛 연결 프로그램(v1)이면 1교시는 잠김. 가린 화면이어도 요청은 만들고 확인창에 해제 필요를 붙임.
+test('with time-delete-v2: 결석 deletes the admin 1st period with the exit, × on a 1st period without exit deletes it alone, asks again when the entry changes and names its memo',async()=>{
  assert.equal(ATTEND_DELETE,true);
- // 결석: 관리자가 넣은 1교시(ATTEND 번호)와 퇴실을 함께 지움(두 칸이 비고 입실 기록은 남을 수 있다고 알림)
+ // 결석: 관리자가 넣은 1교시(ATTEND 번호)와 퇴실을 함께 지움(두 칸을 함께 지우고 입실 기록은 남을 수 있다고 알림)
  const a=harness({rec:record(ADMIN_ENTRY)});await a.open();gateOnV2(a);
  assert.equal(a.sync.gate().v2,true);
  a.save(PRESENT,row('결석'),'sig-1');await a.advance(3000);
- assert.match(a.st.confirms[0],/입실\(교시\) 09:02 · 퇴실 18:00/);assert.doesNotMatch(a.st.confirms[0],/총 참여 시간/);assert.match(a.st.confirms[0],new RegExp(BOTH_LEFT));
+ assert.match(a.st.confirms[0],/입실\(교시\) 09:02 · 퇴실 18:00/);assert.doesNotMatch(a.st.confirms[0],/총 참여 시간/);assert.match(a.st.confirms[0],BOTH_CELLS_RE);
  assert.match(a.st.confirms[0],UNMASK,'privacy를 모르면(옛 중계) 반영할 때 해제 필요를 붙임');
  assert.deepEqual([a.writes()[0][2].changes,a.writes()[0][2].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
- // 퇴실이 남아 있으면 1교시 ×는 v2여도 잠김(결석으로 두 칸을 함께 지움)
+ // 퇴실이 남아 있으면 1교시 ×도 두 칸 요청(잠기지 않음, 2026-10-19)
  const x=harness({rec:record(ADMIN_ENTRY)});await x.open();gateOnV2(x);x.st.rows[NAME]=row('출석');
- assert.deepEqual((await x.sync.send(x.key,{deleteTimes:['entry']})).reasons,[EXIT_FIRST]);
+ assert.equal((await x.sync.send(x.key,{deleteTimes:['entry']})).ok,true);await x.advance(3000);
+ assert.deepEqual([x.writes()[0][2].changes,x.writes()[0][2].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
  // ×: 퇴실이 빈 관리자 1교시. 지각은 입실 시간을 출결원장이 쓰므로 유형부터. 출석이면 묻고, 3초 안에 1교시가 바뀌면 새 기록으로 다시 물음(S3·S8)
  const NO_EXIT={...ADMIN_ENTRY,exit:null,exitEventId:false};
  const h=harness({rec:record(NO_EXIT)});await h.open();gateOnV2(h);
@@ -691,7 +695,7 @@ test('without a running relay deletions are still requested: no signal means v2,
  assert.deepEqual(a.sync.gate(),{enabled:true,reasons:[],v2:true});
  assert.deepEqual([a.sync.relay().on,a.sync.relay().privacy,a.sync.relay().text],[false,null,'중계 꺼짐 · 자동 수집·해제 표시 없음 (삭제 요청은 가능, 반영은 승인 때)']);
  a.save(PRESENT,row('결석'),'sig-1');await a.advance(3000);
- assert.match(a.st.confirms[0],new RegExp(BOTH_LEFT));assert.match(a.st.confirms[0],/승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
+ assert.match(a.st.confirms[0],BOTH_CELLS_RE);assert.match(a.st.confirms[0],/승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
  assert.deepEqual([a.writes().length,a.writes()[0][2].changes,a.writes()[0][2].deleteTimes,a.writes()[0][2].status],[1,{entry:'',exit:''},['entry','exit'],'pending']);
  // 오래된(3분 넘음) v2 신호: 중계는 꺼짐이지만 능력은 v2 그대로. 신호의 해제 상태는 모름 → 퇴실 × 확인창에 해제 필요
  const s=harness({rec:record(CHECKED_IN)});await s.open();gateOnV2(s,{state:'unmasked',leftSec:900,writable:true});
@@ -708,6 +712,110 @@ test('without a running relay deletions are still requested: no signal means v2,
  o.pushSetting('checkhereRelay',{state:'stopped',at:{seconds:(o.now-86400000)/1000,nanoseconds:0},capabilities:['incremental-sync-v1']});
  assert.deepEqual(o.sync.gate(),{enabled:false,reasons:['수집 PC 프로그램 업데이트 필요 (time-delete-v2)'],v2:false});
  assert.equal(o.sync.relay().text,'중계 꺼짐 · 자동 수집·해제 표시 없음 (요청은 가능, 반영은 승인 때)');
+});
+
+// 사용자 결정(2026-10-19, 실제 체크히어 시험): 관리자 1교시(ATTEND) 학생의 퇴실 ×가 퇴실만 지우고 09:00~18:00 칸(1교시)을 남김 → "둘 다 삭제돼야 함".
+// v2(또는 중계 신호 없음)면 퇴실 ×·1교시 × 모두 1교시·퇴실 두 칸 요청 1건(연결 프로그램이 퇴실 먼저 지우고 두 칸이 빈 것을 확인).
+// 체크인 학생(PASS)의 퇴실 ×는 퇴실만(체크히어가 계산된 1교시를 함께 비움), 퇴실이 빈 1교시 ×는 1교시만, 옛 연결 프로그램(v1)이면 예전 동작.
+test('2026-10-19: with time-delete-v2 one × clears both cells (the exit and the admin 1st period); PASS stays exit only; v1 is unchanged',async()=>{
+ const ASK_BOTH=/체크히어 시간 삭제를 요청합니다: 입실\(교시\) 09:02 · 퇴실 18:00\n퇴실과 1교시\(09:00~18:00 칸\)를 함께 지웁니다\. 입실 기록은 남을 수 있습니다\.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다\.\n/;
+ const V1={enabled:true,reasons:[],v2:false},V2={enabled:true,reasons:[],v2:true};
+ // 순수 계획(화면 ×의 켜짐·title도 같은 함수): 관리자 1교시 학생은 어느 ×든 두 칸, 이유 없음
+ for(const side of ['exit','entry']){
+  assert.deepEqual(timeDeletePlan({gate:V2,record:record(ADMIN_ENTRY),side}),{sides:['entry','exit'],reasons:[]},side);
+  assert.deepEqual(timeDeleteBlock({gate:V2,record:record(ADMIN_ENTRY),side}),[],side+' × is on');
+ }
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record(CHECKED_IN),side:'exit'}),{sides:['exit'],reasons:[]},'PASS: exit only');
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record(CHECKED_IN),side:'entry'}),{sides:['entry'],reasons:['입실에서 계산된 1교시는 지울 수 없습니다. 퇴실을 지우면 함께 비워집니다.']},'PASS 1교시 × stays locked');
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record({...ADMIN_ENTRY,exit:null,exitEventId:false}),side:'entry'}),{sides:['entry'],reasons:[]},'exit already empty: 1교시 only');
+ assert.deepEqual(timeDeletePlan({gate:V1,record:record(ADMIN_ENTRY),side:'exit'}),{sides:['exit'],reasons:[]},'v1: exit only');
+ assert.deepEqual(timeDeletePlan({gate:V1,record:record(ADMIN_ENTRY),side:'entry'}),{sides:['entry'],reasons:[V2_NEEDED]},'v1: 1교시 × locked with the existing reason');
+ // 두 칸이면 두 칸 모두 출결원장 유형을 봅니다: 지각(입실을 씀)은 퇴실 ×도, 조퇴(퇴실을 씀)는 1교시 ×도 유형부터
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record(ADMIN_ENTRY),side:'exit',type:'지각'}).reasons,[TYPE_FIRST]);
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record(ADMIN_ENTRY),side:'entry',type:'조퇴'}).reasons,[TYPE_FIRST]);
+ assert.deepEqual(timeDeletePlan({gate:V1,record:record(ADMIN_ENTRY),side:'exit',type:'지각'}).reasons,[],'v1: the exit × of a 지각 student stays as before');
+ // 함께 지울 퇴실의 번호가 없으면 1교시 ×도 그 이유로 잠김. 1교시 번호가 없으면 퇴실 ×는 퇴실만(1교시가 남는다고 알림)
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record({...ADMIN_ENTRY,exitEventId:false}),side:'entry'}).reasons,['퇴실 기록 번호를 확인하지 못했습니다(다시 수집 필요).']);
+ assert.deepEqual(timeDeletePlan({gate:V2,record:record({...ADMIN_ENTRY,entryEventId:false}),side:'exit'}),{sides:['exit'],reasons:[]});
+ // 퇴실 ×: 확인창은 두 칸을 함께 지운다고 말하고, 요청 1건이 두 칸을 지움(출결원장 저장 없음)
+ const e=harness({rec:record(ADMIN_ENTRY)});await e.open();gateOnV2(e);e.st.rows[NAME]=row('출석');
+ const captured=structuredClone(e.st.rec);
+ assert.equal((await e.sync.send(e.key,{deleteTimes:['exit']})).ok,true);
+ assert.equal(e.st.confirms.length,1);assert.match(e.st.confirms[0],ASK_BOTH);assert.doesNotMatch(e.st.confirms[0],/관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다/);
+ assert.match(e.st.confirms[0],/\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/,'해제 상태를 모르면(옛 중계) 반영할 때 해제 필요 — 규칙 그대로');
+ const s=e.sync.statusFor(e.key);assert.equal(s.kind,'countdown');assert.equal(s.detail,`입실 (삭제) · 퇴실 (삭제) · ${BOTH_CELLS}`);
+ await e.advance(3000);assert.equal(e.writes().length,1);assert.equal(e.st.confirms.length,1,'이미 확인받음');
+ const data=e.writes()[0][2];
+ assert.deepEqual([data.changes,data.deleteTimes,data.status],[{entry:'',exit:''},['entry','exit'],'pending']);
+ assert.equal(data.reason,`[실시간 베타] 출결대조 시간 삭제 · 입실(교시)·퇴실 [기준:${baseTag(captured,['entry','exit'])}]`);
+ assert.equal(data.deleteTimes.length,2,'규칙이 받는 모양');assert.equal(e.st.saves.length,0);
+ // 1교시 ×(퇴실이 남음): 잠기지 않고 같은 두 칸 요청
+ const n=harness({rec:record(ADMIN_ENTRY)});await n.open();gateOnV2(n,{state:'unmasked',leftSec:900,writable:true});n.st.rows[NAME]=row('출석');
+ assert.equal((await n.sync.send(n.key,{deleteTimes:['entry']})).ok,true);assert.match(n.st.confirms[0],ASK_BOTH);assert.doesNotMatch(n.st.confirms[0],UNMASK,'해제됐고 시간이 넉넉하면 덧붙이지 않음');
+ await n.advance(3000);assert.deepEqual([n.writes().length,n.writes()[0][2].changes,n.writes()[0][2].deleteTimes],[1,{entry:'',exit:''},['entry','exit']]);
+ // 중계 신호가 없음(능력 목록 없음 → v2): 퇴실 ×도 두 칸
+ const f=harness({rec:record(ADMIN_ENTRY)});await f.open();f.pushSetting('checkhereFeatures',{timeDeleteRules:true});f.st.rows[NAME]=row('출석');
+ assert.equal((await f.sync.send(f.key,{deleteTimes:['exit']})).ok,true);await f.advance(3000);assert.deepEqual(f.writes()[0][2].deleteTimes,['entry','exit']);
+ // 3초 안에 다시 수집해 기록이 바뀌면 지울 칸을 새 기록으로 다시 정하고 다시 물음(두 칸 그대로, 새 퇴실 시간)
+ const c=harness({rec:record(ADMIN_ENTRY)});await c.open();gateOnV2(c);c.st.rows[NAME]=row('출석');
+ assert.equal((await c.sync.send(c.key,{deleteTimes:['exit']})).ok,true);
+ c.st.rec=record({...ADMIN_ENTRY,version:'v2',exit:'17:55:00'});await c.advance(3000);await c.advance(3000);
+ assert.equal(c.st.confirms.length,2);assert.match(c.st.confirms[1],/요청합니다: 입실\(교시\) 09:02 · 퇴실 17:55\n퇴실과 1교시/);assert.deepEqual(c.writes()[0][2].deleteTimes,['entry','exit']);
+ // 그사이 퇴실이 이미 지워졌으면(누른 퇴실 ×가 지울 것이 없음) 보내지 않고 멈춤 — 남은 1교시는 그 ×로 따로(1교시만)
+ const g=harness({rec:record(ADMIN_ENTRY)});await g.open();gateOnV2(g);g.st.rows[NAME]=row('출석');
+ assert.equal((await g.sync.send(g.key,{deleteTimes:['exit']})).ok,true);
+ g.st.rec=record({...ADMIN_ENTRY,version:'v2',exit:null,exitEventId:false});await g.advance(3000);await g.advance(3000);
+ assert.deepEqual([g.st.confirms.length,g.writes().length,g.sync.statusFor(g.key).label],[1,0,'보류 · 지울 시간이 없습니다.']);
+ assert.deepEqual(timeDeletePlan({gate:V2,record:g.st.rec,side:'entry'}),{sides:['entry'],reasons:[]});
+ // 지각 학생: 퇴실 ×도 1교시를 함께 지우므로 유형부터(묻지 않음, 쓰기 없음)
+ const t=harness({rec:record(ADMIN_ENTRY)});await t.open();gateOnV2(t);t.st.rows[NAME]=row('지각',{inT:'09:25'});
+ assert.deepEqual(await t.sync.send(t.key,{deleteTimes:['exit']}),{ok:false,reasons:[TYPE_FIRST]});assert.deepEqual(t.st.confirms,[]);
+ // 체크인 학생(PASS): 퇴실 ×는 퇴실만(계산된 1교시가 함께 빈다고 알림)
+ const p=harness({rec:record(CHECKED_IN)});await p.open();gateOnV2(p);
+ assert.equal((await p.sync.send(p.key,{deleteTimes:['exit']})).ok,true);
+ assert.match(p.st.confirms[0],/요청합니다: 퇴실 18:00\n퇴실을 지우면 1교시\(09:02\)와 총 참여 시간도 비워집니다\.\n체크히어 실제 입실 기록은 남습니다\./);assert.doesNotMatch(p.st.confirms[0],/함께 지웁니다/);
+ await p.advance(3000);assert.deepEqual([p.writes()[0][2].changes,p.writes()[0][2].deleteTimes],[{exit:''},['exit']]);
+ // 옛 연결 프로그램(v1): 퇴실 ×는 퇴실만(관리자 1교시는 남는다고 알림), 1교시 ×는 업데이트 안내로 잠김
+ const o=harness({rec:record(ADMIN_ENTRY)});await o.open();gateOn(o);o.st.rows[NAME]=row('출석');
+ assert.deepEqual(await o.sync.send(o.key,{deleteTimes:['entry']}),{ok:false,reasons:[V2_NEEDED]});assert.deepEqual(o.st.confirms,[]);
+ assert.equal((await o.sync.send(o.key,{deleteTimes:['exit']})).ok,true);
+ assert.match(o.st.confirms[0],/요청합니다: 퇴실 18:00\n관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다\./);assert.doesNotMatch(o.st.confirms[0],/함께 지웁니다/);
+ await o.advance(3000);assert.deepEqual([o.writes()[0][2].changes,o.writes()[0][2].deleteTimes],[{exit:''},['exit']]);
+});
+
+// 확인창(S8)이 말한 칸과 보내는 칸은 같아야 합니다: 3초 동안 중계 신호의 능력이 바뀌어(v1 → v2: 연결 프로그램 업데이트, v2 → v1) 지울 칸이 달라지면
+// 받은 확인을 버리고 새 칸으로 다시 묻습니다(아니오면 쓰기 없음). 지금 보내기(반·날짜 이동·떠남)면 묻지 않고 멈춥니다.
+test('a confirmed × asks again when the capability changes during the 3 seconds and the cells to delete change (v1 → v2 widens, v2 → v1 narrows)',async()=>{
+ const ASK_EXIT=/요청합니다: 퇴실 18:00\n관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다\./,ASK_BOTH=/요청합니다: 입실\(교시\) 09:02 · 퇴실 18:00\n퇴실과 1교시\(09:00~18:00 칸\)를 함께 지웁니다\. 입실 기록은 남을 수 있습니다\./;
+ // v1에서 퇴실만 확인 → 3초 안에 v2 신호 → 두 칸으로 다시 물음, 아니오면 보내지 않음
+ const a=harness({rec:record(ADMIN_ENTRY)});await a.open();gateOn(a);a.st.rows[NAME]=row('출석');
+ assert.equal((await a.sync.send(a.key,{deleteTimes:['exit']})).ok,true);assert.match(a.st.confirms[0],ASK_EXIT);
+ gateOnV2(a);a.st.confirm=()=>false;await a.advance(3000);
+ assert.equal(a.st.confirms.length,2);assert.match(a.st.confirms[1],ASK_BOTH);
+ assert.deepEqual([a.writes().length,a.sync.statusFor(a.key).label],[0,'체크히어 시간 삭제 취소']);
+ // 예면 다시 확인한 두 칸을 보냄
+ const b=harness({rec:record(ADMIN_ENTRY)});await b.open();gateOn(b);b.st.rows[NAME]=row('출석');
+ assert.equal((await b.sync.send(b.key,{deleteTimes:['exit']})).ok,true);
+ gateOnV2(b);await b.advance(3000);
+ assert.equal(b.st.confirms.length,2);assert.match(b.st.confirms[1],ASK_BOTH);
+ assert.deepEqual([b.writes().length,b.writes()[0][2].changes,b.writes()[0][2].deleteTimes],[1,{entry:'',exit:''},['entry','exit']]);
+ // v2에서 두 칸 확인 → 3초 안에 v1 신호 → 퇴실만으로 다시 물음(1교시가 남는다고 알림), 예면 퇴실만
+ const c=harness({rec:record(ADMIN_ENTRY)});await c.open();gateOnV2(c);c.st.rows[NAME]=row('출석');
+ assert.equal((await c.sync.send(c.key,{deleteTimes:['exit']})).ok,true);assert.match(c.st.confirms[0],ASK_BOTH);
+ gateOn(c);await c.advance(3000);
+ assert.equal(c.st.confirms.length,2);assert.match(c.st.confirms[1],ASK_EXIT);
+ assert.deepEqual([c.writes().length,c.writes()[0][2].changes,c.writes()[0][2].deleteTimes],[1,{exit:''},['exit']]);
+ // 지금 보내기: 칸이 바뀐 삭제는 묻지 않고 멈추고 그 학생 이름을 알림
+ const d=harness({rec:record(ADMIN_ENTRY)});await d.open();gateOn(d);d.st.rows[NAME]=row('출석');
+ assert.equal((await d.sync.send(d.key,{deleteTimes:['exit']})).ok,true);
+ gateOnV2(d);
+ assert.deepEqual(await d.sync.flushAll(),{sent:0,skipped:1,stopped:[],unconfirmed:[NAME]});
+ assert.deepEqual([d.st.confirms.length,d.writes().length,d.sync.statusFor(d.key).label],[1,0,'시간 삭제는 확인 없이 보내지 않습니다']);
+ // 능력이 바뀌어도 지울 칸이 같으면(체크인 학생의 퇴실 ×) 다시 묻지 않음
+ const p=harness({rec:record(CHECKED_IN)});await p.open();gateOn(p);
+ assert.equal((await p.sync.send(p.key,{deleteTimes:['exit']})).ok,true);
+ gateOnV2(p);await p.advance(3000);
+ assert.deepEqual([p.st.confirms.length,p.writes().length,p.writes()[0][2].deleteTimes],[1,1,['exit']]);
 });
 
 test('timesDeleted: the newest live request of the student is a verified deletion',async()=>{

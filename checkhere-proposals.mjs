@@ -13,6 +13,8 @@ const key=s=>`${s.rowIndex}_${s.name}`;
 const fingerprint=c=>JSON.stringify({status:c.status,reason:c.reason,teacher:c.teacher,excursion:!!c.excursion,record:sourceRecord(c.record)});
 const draftId=(cid,date)=>`checkhereProposalDrafts_${cid}_${date}`;
 const contextId=id=>`checkhereProposalRequest_${id}`;
+// compact(/beta2 출결대조 전용 얇은 한 줄)에서만 줄여 보이는 상태 글. 원래 글은 상자 title에 남습니다.
+const SHORT={'현재 기록과 일치':'일치','저장본 미수집 · 미리보기':'미수집','동일 요청 번호로 재시도 가능':'재시도 가능','취소 · 다시 요청 가능':'취소됨'};
 export async function validateSheetSource(db,user,c,cache=new Map(),{signal,timeout=55000}={}){
   // 2기: 반별 출결 시트 리더(1기 운영총괄 기준)는 cohort features.attendanceReader가 켜질 때까지 부르지 않습니다(출결대조는 마스터시트 기준).
   if(!feature('attendanceReader'))throw Error(FEATURE_LATER_TEXT);
@@ -39,8 +41,12 @@ export async function validateLinkedRequest(db,user,request,record,cache,identit
   // The approval transaction separately checks that the request itself is unchanged.
   matchRequest(request,[record],identities);
 }
-export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason,timeouts={}}){
+// compact: /beta2 출결대조만 켜는 얇은 한 줄 모양(compactHtml). 1기 출결대조·운영 포털은 넘기지 않아 기본 모양 그대로입니다.
+export function createProposalReview({db,user,root,getContext,render,showErr,hasUnsavedReason,timeouts={},compact=false}){
  let saved={},requests=[],loadError='',sequence=0,working=false,loadedClass='',loadedDate='';
+ const tidy=t=>compact?SHORT[t]||t:t;
+ // live: /beta2만 넘기는 그날 요청 목록 구독(liveRequests). 있으면 다시 읽기(read)보다 이것을 씁니다. 1기·운영 포털은 부르지 않아 늘 null(지금처럼 읽은 목록).
+ let live=null;const liveList=()=>live&&live.day===`${loadedClass}|${loadedDate}`?live.list:null;
  const limits={source:55000,read:15000,write:20000,...timeouts};
  const journalKey=`hintProposalReceipts_v1_${user.uid||user.email}`;
  let journal={};try{journal=JSON.parse(localStorage.getItem(journalKey)||'{}');}catch{}
@@ -75,14 +81,30 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
   let changed=false;try{requestChanges(v.c.record||{},column,v.value);changed=true;}catch{}
   const label=v.receipt?(v.receipt.state==='retry'?'동일 요청 번호로 재시도 가능':'접수 확인 필요'):active?PROPOSAL_STATUS[v.request.status]:disabled.startsWith('반영 확인 완료')?'반영 확인 완료':v.stale?'재검토 필요':v.request?.status==='withdrawn'?'취소 · 다시 요청 가능':!v.c.record?'저장본 미수집 · 미리보기':changed?'변경 필요':'현재 기록과 일치';
   const shownValue=active&&column==='times'?{...(v.draft?.value||current(v.c,column)),...v.request.changes}:v.value;
+  if(compact)return compactHtml(s,column,v,{active,locked,disabled,ident,changed,label,shownValue});
   const controls=column==='times'?`<div class="proposal-times">${['entry','exit'].map(k=>`<label>${k==='entry'?'입실':'퇴실'}<input type="time" step="1" data-proposal-edit="${ident}" data-time="${k}" aria-label="${esc(s.name)} 추천 ${k==='entry'?'입실':'퇴실'}시간" value="${esc(shownValue[k]||'')}" ${locked?'disabled':''}></label>`).join('')}</div>`:`<textarea class="proposal-input" data-proposal-edit="${ident}" maxlength="500" aria-label="${esc(s.name+' '+REQUEST_COLUMNS[column])} 추천사유" placeholder="사유 확인 후 직접 입력" ${locked?'disabled':''}>${esc(active?v.request.changes[column]??v.value:v.value)}</textarea>`;
   return `<div class="proposal-box ${changed||v.stale?'changed':''}" data-proposal-box="${ident}"><strong>${column==='times'?'추천시간':'추천사유'} · 편집 가능</strong><small class="proposal-label">${esc(label)}</small>${controls}${v.stale||active?`<small class="proposal-warning">시트 변경 후 추천: ${esc(column==='times'?`${v.recommended.entry||'공란'} → ${v.recommended.exit||'공란'}`:v.recommended|| (v.auto.clear?'공란(사유 없음)':'자동 생성 불가 · 원문 확인'))}</small>`:''}<small>${esc(disabled||(!v.recommended||column==='times'?v.auto.notes?.[0]||'':'시트 출결·사유와 수집 시간을 기준으로 생성'))}</small><div class="proposal-cell-actions">${column!=='times'?`<button class="btn soft" data-proposal-clear="${ident}" ${locked?'disabled':''}>공란으로 변경</button>`:''}<button class="btn soft" data-proposal-reset="${ident}" ${locked?'disabled':''}>추천 다시 생성</button><button class="btn dark" data-proposal-send="${ident}" ${disabled||!changed?'disabled':''}>변경요청</button></div>${v.receipt?`<button class="btn soft" data-proposal-receipt="${ident}">접수 확인</button>`:''}${v.stale&&!v.receipt?`<button class="btn soft" data-proposal-accept="${ident}">직접 수정값 유지 · 근거 확인</button>`:''}${active&&canWithdraw(v.request,user)?`<button class="btn soft" data-proposal-withdraw="${ident}">요청취소</button>`:''}${active?'<small>요청 접수 · 체크히어 승인 후 반영</small>':'<small>추천값 편집만으로 체크히어가 변경되지 않습니다.</small>'}</div>`;
  }
+ // /beta2 출결대조 전용 얇은 한 줄(compact, 사용자 결정 2026-10-16). data-proposal-* 속성·capture·요청 흐름은 기본 모양과 같고, 긴 안내·근거는 상자 title로만 보입니다.
+ // 사유는 한 줄 textarea(줄바꿈이 있는 메모도 그대로 담음), 「공란으로 변경」은 칸을 비우면 같아서 두지 않습니다.
+ function compactHtml(s,column,v,{active,locked,disabled,ident,changed,label,shownValue}){
+  const who=esc(s.name),off=locked?'disabled':'',name=column==='times'?'추천시간':column==='entryMemo'?'추천사유 입실':'추천사유 퇴실';
+  const tip=[label,v.stale||active?`시트 변경 후 추천: ${column==='times'?`${v.recommended.entry||'공란'} → ${v.recommended.exit||'공란'}`:v.recommended||(v.auto.clear?'공란(사유 없음)':'자동 생성 불가 · 원문 확인')}`:'',disabled||(!v.recommended||column==='times'?v.auto.notes?.[0]||'':'시트 출결·사유와 수집 시간을 기준으로 생성'),active?'요청 접수 · 체크히어 승인 후 반영':'추천값 편집만으로 체크히어가 변경되지 않습니다.'].filter(Boolean).join('\n');
+  const text=column==='times'?'':active?v.request.changes[column]??v.value:v.value;
+  const controls=column==='times'?['entry','exit'].map(k=>`<label>${k==='entry'?'입실':'퇴실'}<input type="time" step="1" data-proposal-edit="${ident}" data-time="${k}" aria-label="${who} 추천 ${k==='entry'?'입실':'퇴실'}시간" value="${esc(shownValue[k]||'')}" ${off}></label>`).join(''):`<textarea class="proposal-input" rows="1" wrap="off" data-proposal-edit="${ident}" maxlength="500" aria-label="${esc(s.name+' '+REQUEST_COLUMNS[column])} 추천사유" placeholder="사유 직접 입력" title="${esc(text)}" ${off}>${esc(text)}</textarea>`;
+  return `<span class="proposal-box compact ${changed||v.stale?'changed':''}" data-proposal-box="${ident}" title="${esc(tip)}"><b>${name}</b>${controls}<small class="proposal-label">${esc(tidy(label))}</small><button class="btn dark" data-proposal-send="${ident}" title="${esc(disabled||'체크히어 변경요청 (관리자 승인 뒤 반영)')}" aria-label="${who} ${name} 변경요청" ${disabled||!changed?'disabled':''}>요청</button><button class="btn ghost" data-proposal-reset="${ident}" title="추천 다시 생성" aria-label="${who} ${name} 추천 다시 생성" ${off}>↺</button>${v.receipt?`<button class="btn soft" data-proposal-receipt="${ident}" aria-label="${who} ${name} 접수 확인">접수 확인</button>`:''}${v.stale&&!v.receipt?`<button class="btn soft" data-proposal-accept="${ident}" title="직접 수정값 유지 · 근거 확인" aria-label="${who} ${name} 수정값 유지">수정값 유지</button>`:''}${active&&canWithdraw(v.request,user)?`<button class="btn soft" data-proposal-withdraw="${ident}" aria-label="${who} ${name} 요청취소">요청취소</button>`:''}</span>`;
+ }
  async function read(classId,iso){const [d,list]=await Promise.all([getDoc(doc(db,'checkhereProposalDrafts',draftId(String(classId),iso))),getDocs(query(collection(db,'checkhereRequests'),where('classId','==',String(classId)),where('date','==',iso)))].map(p=>within(p,limits.read)));return {saved:d.data()?.students||{},requests:list.docs.map(d=>({id:d.id,...d.data()})).filter(r=>r.date===iso)};}
- function applyRead(data){saved=data.saved;requests=data.requests;loadError='';for(const [name,item]of Object.entries(journal)){if(requests.some(r=>r.id===item.id))remember(name,null);}}
+ function applyRead(data){saved=data.saved;requests=liveList()??data.requests;loadError='';for(const [name,item]of Object.entries(journal)){if(requests.some(r=>r.id===item.id))remember(name,null);}}
  async function load(classId,iso,preserve=false){
-  const n=++sequence,same=loadedClass===String(classId)&&loadedDate===iso;loadedClass=String(classId);loadedDate=iso;if(!preserve&&!same)edits.clear();saved={};requests=[];loadError='';
+  const n=++sequence,same=loadedClass===String(classId)&&loadedDate===iso;loadedClass=String(classId);loadedDate=iso;if(!preserve&&!same)edits.clear();saved={};requests=liveList()??[];loadError='';
   try{const data=await read(classId,iso);if(n!==sequence)return;applyRead(data);}catch(e){if(n===sequence){loadError=e.message;showErr(new Error('체크히어 추천사유 조회 실패: '+e.message));}}
+ }
+ // /beta2 출결대조: 그날 요청 목록 구독(저장 3초 뒤 자동 요청 포함)을 바로 씁니다. 승인 대기 칸은 잠기고 같은 칸 중복 요청을 막습니다(submit의 겹침 확인도 이 목록).
+ // 아직 그날을 읽기 전이면 보관만 했다가 load·applyRead가 씁니다. 지금 보이는 날의 목록을 바꿨으면 true(다시 그리기). list가 null이면(구독 끊김) 다음 읽기부터 읽은 목록.
+ function liveRequests(classId,iso,list){
+  live=list?{day:`${classId}|${iso}`,list:list.filter(r=>r.date===iso)}:null;if(!live||live.day!==`${loadedClass}|${loadedDate}`)return false;
+  requests=live.list;for(const [name,item]of Object.entries(journal)){if(requests.some(r=>r.id===item.id))remember(name,null);}return true;
  }
  async function checkReceipt(s,column){
   const v=view(s,column),name=receiptKey(v),item=journal[name];if(!item)return;
@@ -184,9 +206,11 @@ export function createProposalReview({db,user,root,getContext,render,showErr,has
  function bind(students){
   boundStudents=students;const lookup=new Map(students.flatMap(s=>columns.map(column=>[slot(s,column),{s,column}])));
   const resolve=name=>lookup.get(name);
-  root.querySelectorAll('[data-proposal-edit]').forEach(el=>el.oninput=()=>{const {s,column}=resolve(el.dataset.proposalEdit);capture([s]);const v=view(s,column),box=el.closest('[data-proposal-box]');let different=false;try{requestChanges(v.c.record||{},column,v.value);different=true;}catch{}box.querySelector('[data-proposal-send]').disabled=!!disabledReason(v)||!different;box.classList.toggle('changed',different);box.querySelector('.proposal-label').textContent=v.stale?'재검토 필요':different?'변경 필요':'현재 기록과 일치';});
+  root.querySelectorAll('[data-proposal-edit]').forEach(el=>el.oninput=()=>{const {s,column}=resolve(el.dataset.proposalEdit);capture([s]);const v=view(s,column),box=el.closest('[data-proposal-box]');let different=false;try{requestChanges(v.c.record||{},column,v.value);different=true;}catch{}box.querySelector('[data-proposal-send]').disabled=!!disabledReason(v)||!different;box.classList.toggle('changed',different);box.querySelector('.proposal-label').textContent=tidy(v.stale?'재검토 필요':different?'변경 필요':'현재 기록과 일치');if(compact&&el.tagName==='TEXTAREA')el.title=el.value;});
+  // compact: 한 줄 사유 칸은 Enter로 줄을 바꾸지 않습니다(안 보이는 줄바꿈이 요청값에 섞이지 않게, 다음 학생으로 옮기기는 화면 몫). 붙여 넣은 줄바꿈은 띄어쓰기로 바꿉니다.
+  if(compact)root.querySelectorAll('.proposal-box.compact textarea[data-proposal-edit]').forEach(el=>{el.onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing&&e.keyCode!==229)e.preventDefault();};el.onpaste=e=>{const t=e.clipboardData?.getData('text')||'';if(!/[\r\n]/.test(t))return;e.preventDefault();const room=el.maxLength-el.value.length+el.selectionEnd-el.selectionStart;el.setRangeText(t.replace(/\s*[\r\n]+\s*/g,' ').trim().slice(0,Math.max(0,room)),el.selectionStart,el.selectionEnd,'end');el.dispatchEvent(new Event('input',{bubbles:true}));};});
   for(const action of ['send','reset','accept','clear','withdraw','receipt'])root.querySelectorAll(`[data-proposal-${action}]`).forEach(el=>el.onclick=async()=>{capture(students);const{s,column}=resolve(el.getAttribute(`data-proposal-${action}`));if(action==='send'){sendMany([s],column);return;}const v=view(s,column);if(action==='receipt'){el.disabled=true;try{await checkReceipt(s,column);}catch(e){showErr(e);}finally{render();}return;}if(action==='withdraw'){if(!confirm(`${s.name}의 승인 대기 요청을 취소할까요?`))return;working=true;el.disabled=true;try{const cancelled=await withdrawRequest(db,user,v.request.id);remember(receiptKey(v),null);await load(v.c.classId,v.c.date,true);recordRequest(cancelled);edits.set(slot(s,column),{value:v.request.changes[column]??v.value,origin:v.origin,fingerprint:fingerprint(v.c)});}catch(e){showErr(e);}finally{working=false;render();}return;}if(action==='clear'){edits.set(slot(s,column),{value:'',origin:'manual',fingerprint:fingerprint(v.c)});render();return;}if(action==='reset'){if(!confirm('현재 시트·체크히어 데이터로 추천값을 다시 만들까요?'))return;edits.set(slot(s,column),{value:column==='times'?v.auto.value:v.auto.clear?'':v.recommended||current(v.c,column),origin:'auto',fingerprint:fingerprint(v.c)});}else edits.set(slot(s,column),{value:v.value,origin:'manual',fingerprint:fingerprint(v.c)});render();});
   root.querySelectorAll('[data-proposal-bulk]').forEach(b=>b.onclick=()=>sendMany(students,b.dataset.proposalBulk));
  }
- return {html,load,read,applyRead,capture,refresh,bind,hasEdits:()=>edits.size>0,isWorking:()=>working,exportFor(s){return columns.flatMap(column=>{const v=view(s,column);return[column==='times'?`${v.value.entry||''} → ${v.value.exit||''}`:v.value,v.request?PROPOSAL_STATUS[v.request.status]:'미요청'];});}};
+ return {html,load,read,applyRead,liveRequests,capture,refresh,bind,hasEdits:()=>edits.size>0,isWorking:()=>working,exportFor(s){return columns.flatMap(column=>{const v=view(s,column);return[column==='times'?`${v.value.entry||''} → ${v.value.exit||''}`:v.value,v.request?PROPOSAL_STATUS[v.request.status]:'미요청'];});}};
 }

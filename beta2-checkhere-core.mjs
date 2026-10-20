@@ -20,6 +20,7 @@ export {AUTO_TEXT,isAutoLedgerRequest}; // '실패 건 다시 처리' 제외도 
 export const TIME_DELETE_CAPABILITY='time-delete-v1';
 export {TIME_DELETE_V2_CAPABILITY};
 // 관리자 1교시(ATTEND) 삭제는 두 칸 삭제(퇴실 먼저, 다시 읽은 1교시 번호로)를 아는 연결 프로그램에서만 엽니다. 옛 연결 프로그램(v1만)이면 지금처럼 퇴실만 지웁니다.
+// 사용자 결정(2026-10-19, 실제 체크히어에서 퇴실 ×가 퇴실만 지우고 09:00~18:00 칸(관리자 1교시)을 남김): "둘 다 삭제돼야 함" → v2면 ×도 두 칸(removalSides).
 export const V2_NEEDED=`1교시 삭제는 수집 PC 프로그램 업데이트 후 가능 (${TIME_DELETE_V2_CAPABILITY})`;
 // 가린 화면(또는 중계가 꺼져 해제 상태를 모를 때) 만든 요청의 확인창에 덧붙이는 말(요청은 만들고 승인 대기, 반영할 때 사람이 해제).
 export const UNMASK_ON_APPLY='반영할 때 체크히어 마스킹 해제 필요';
@@ -53,6 +54,7 @@ export function checkhereChangeKind(prev,row){
 // 체크히어에서 지울 수 있는 칸인지(기록 번호가 있는 칸만, 사용자 결정 2026-10-14). 규칙은 연결 프로그램·운영 포털과 같은 rules.mjs timeDeleteRefusal:
 // record.exitEventId 퇴실(COMPLETE) 번호 / record.entryKind 'ATTEND'(관리자가 넣은 1교시)·'PASS'(입실에서 계산된 값) / record.entryEventId / record.enterEventId 입실 번호(체크인한 학생)
 // v2 = deletionGate().v2(마지막 중계 신호에 time-delete-v2이거나 신호·능력 목록이 없음, 아니면 1교시는 잠금), withExit = 같은 요청이 퇴실도 지움(퇴실이 남아 있으면 체크히어가 퇴실 시간으로 1교시를 다시 채워 1교시만은 못 지움).
+// × 한 번이 지울 칸은 removalSides가 정하고(v2 관리자 1교시 학생은 두 칸), 이 함수는 그 칸 하나씩을 봅니다.
 export function canDeleteTime(record,side,{v2=false,withExit=false}={}){
   if(!has(record,side))return {ok:false,reason:'지울 시간이 없습니다.'};
   // 체크인했지만 아직 퇴실이 없는 학생: 지울 수 있는 칸이 없습니다(퇴실을 지우면 비워진다는 안내는 맞지 않음).
@@ -61,9 +63,22 @@ export function canDeleteTime(record,side,{v2=false,withExit=false}={}){
   const why=timeDeleteRefusal(record,side,{withExit:true})||(side==='entry'&&!v2?V2_NEEDED:'')||timeDeleteRefusal(record,side,{withExit});
   return why?{ok:false,reason:why}:{ok:true};
 }
-// 지울 때 남는 것(확인창·경고, 2026-10-16 실제 체크히어에서 확인): 1교시를 지우면(퇴실과 함께, 퇴실 먼저) 1교시·퇴실 칸은 비고 입실 기록은 남을 수 있습니다.
+// × 한 번에 지울 칸(사용자 결정 2026-10-19 "둘 다 삭제돼야 함"). side = 누른 ×('entry' 1교시 | 'exit' 퇴실), v2 = deletionGate().v2.
+// v2이고 1교시가 번호 있는 관리자 기록(ATTEND)이며 퇴실도 있으면 어느 ×든 1교시·퇴실 두 칸(['entry','exit'], 연결 프로그램이 퇴실 먼저 지우고 두 칸이 빈 것을 확인).
+// 체크인한 학생(PASS)의 퇴실 ×는 퇴실만(['exit']): 체크히어가 계산된 1교시를 함께 비우고, 연결 프로그램이 1교시도 빈 것을 확인합니다(writeback.mjs passWithExit).
+// 퇴실이 이미 빈 1교시 ×는 1교시만. 옛 연결 프로그램(v1)이면 누른 칸만(예전 동작: 퇴실 ×는 퇴실만, 1교시 ×는 V2_NEEDED로 잠김).
+// 1교시 번호가 없는 관리자 기록(다시 수집 필요)이면 퇴실 ×는 퇴실만입니다(확인창이 '관리자가 넣은 1교시…는 남습니다'라고 알림, 결석 보류의 '퇴실만 지우려면 ×').
+export function removalSides(record,side,{v2=false}={}){
+  if(!v2||(side!=='entry'&&side!=='exit'))return [side];
+  return has(record,'entry')&&has(record,'exit')&&record?.entryKind==='ATTEND'&&!!record.entryEventId?['entry','exit']:[side];
+}
+// 1교시 칸 이름(체크히어 표의 강의시간 열, 예: '09:00~18:00'). 강의시간을 읽지 못하면 2기 기본 강의시간.
+const periodCell=record=>{const m=/^(\d{2}:\d{2})\s*~\s*(\d{2}:\d{2})$/.exec(String(record?.schedule||'').trim());return m?`${m[1]}~${m[2]}`:'09:00~18:00';};
+// 지울 때 남는 것(확인창·경고, 2026-10-16 실제 체크히어에서 확인): 두 칸이면 '퇴실과 1교시(09:00~18:00 칸)를 함께 지웁니다. 입실 기록은 남을 수 있습니다'(2026-10-19 문구),
+// 퇴실이 빈 1교시만이면 1교시·퇴실 칸은 비고 입실 기록은 남을 수 있습니다.
 // 퇴실만 지우면 입실은 남고, 관리자가 넣은 1교시도 남습니다(체크인한 학생의 계산된 1교시는 함께 비워짐 → 확인창이 따로 알림).
-export const deleteLeaves=(sides,record=null)=>sides.includes('entry')?'1교시·퇴실 칸은 비워지고 체크히어 입실 기록은 남을 수 있습니다':record?.entryKind==='ATTEND'?'관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다':'체크히어 실제 입실 기록은 남습니다';
+export const deleteLeaves=(sides,record=null)=>sides.includes('entry')&&sides.includes('exit')?`퇴실과 1교시(${periodCell(record)} 칸)를 함께 지웁니다. 입실 기록은 남을 수 있습니다`
+  :sides.includes('entry')?'1교시·퇴실 칸은 비워지고 체크히어 입실 기록은 남을 수 있습니다':record?.entryKind==='ATTEND'?'관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다':'체크히어 실제 입실 기록은 남습니다';
 
 // 시간 삭제 요청을 만들 수 있는지. features = settings/checkhereFeatures, relay = settings/checkhereRelay(마지막 신호), denied = 이 세션에서 permission-denied를 봄
 // 켜져도 삭제 요청은 승인 대기로 남고, 사람이 운영 포털 「반영 요청·승인」에서 한 건씩 승인해야 지워집니다(일괄 승인에서 빠짐).

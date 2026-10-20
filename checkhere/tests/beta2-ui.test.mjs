@@ -115,7 +115,10 @@ test('2기 writes go straight to the 2기 Firestore: no /beta2 view-only guard a
  });
 });
 
-test('출결대조 shows the ledger next to CheckHere, flags mismatches and saves an inline edit to the master sheet with the row signature',async()=>{
+// 「변경 N건 저장」을 누르고 모아 저장이 끝날 때까지 기다립니다(저장 중에는 '저장 중 3/7').
+async function saveChanges(page){await page.locator('#b2SaveAll').click();await page.waitForFunction(()=>/^변경 \d+건 저장$/.test(document.querySelector('#b2SaveAll')?.textContent||''),null,{timeout:15000});}
+
+test('출결대조 shows the ledger next to CheckHere with a slim direct-request line under every student, flags mismatches and saves an edit to the master sheet with the row signature',async()=>{
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   await page.locator('.b2-class').first().click();
@@ -130,24 +133,29 @@ test('출결대조 shows the ledger next to CheckHere, flags mismatches and save
   await page.getByRole('button',{name:'체크히어 불일치'}).click();
   assert.deepEqual(await page.locator('tbody tr[data-name]').evaluateAll(rs=>rs.map(r=>r.dataset.name)),['고다원','김동진']);
   await page.getByRole('button',{name:'전체'}).click();
-  await dong.getByRole('button',{name:'직접 요청'}).click();
-  await page.locator('.proposal-box').first().waitFor();
-  assert.equal(await page.locator('.proposal-box').count(),3,'times, entry memo and exit memo request boxes');
-  await page.getByText(/자동 요청: 오늘 출결원장을 저장하면 3초 뒤/).waitFor();
+  // 직접 요청: 토글 없이 학생마다(재학 기간 아닌 행은 빼고) 얇은 한 줄. 길게 설명하는 글은 표 위 안내 하나
+  assert.equal(await page.getByRole('button',{name:'직접 요청'}).count(),0,'no toggle');
+  await page.locator('tbody[data-student="김동진"] .proposal-box').first().waitFor();
+  assert.equal(await page.locator('.proposal-box.compact').count(),6,'times, entry memo and exit memo under 고다원 and 김동진');
+  assert.equal(await page.locator('tbody[data-student="한수빈"] .proposal-box').count(),0,'none for the row outside enrollment');
+  assert.equal(await page.getByText(/자동 요청: 오늘 출결원장을 저장하면 3초 뒤/).count(),1,'one note above the table');
   assert.match(await page.getByText(/자동 요청: 오늘 출결원장을 저장하면 3초 뒤/).innerText(),/관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만/);
-  await dong.getByRole('button',{name:'직접 요청'}).click();
-  assert.equal(await page.locator('.proposal-box').count(),0);
-  // 유형을 바꾸면 아직 저장하지 않고, 필요한 시간을 체크히어 값으로 채운 뒤 「저장」을 기다립니다.
+  // 유형을 바꾸면 아직 저장하지 않고, 필요한 시간을 체크히어 값으로 채운 뒤 「변경 N건 저장」을 기다립니다.
+  const all=page.locator('#b2SaveAll');
+  assert.equal(await all.innerText(),'변경 0건 저장');assert.equal(await all.isDisabled(),true);
   await goType.selectOption('지각');
   assert.equal(await go.locator('input[data-inline="inT"]').inputValue(),'09:02');
   assert.equal(posts.filter(p=>p.action==='b2Save').length,0);
   await go.locator('input[data-inline="reason"]').fill('교통');
-  await go.getByRole('button',{name:'저장',exact:true}).click();
+  assert.equal(await all.innerText(),'변경 1건 저장');
+  await all.click();
   await go.getByText('베타 수정').waitFor();
   const save=posts.find(p=>p.action==='b2Save');
   assert.deepEqual(save.args,[{cls:'1',name:'고다원',date:'2026-11-05',type:'지각',inT:'09:02',outT:'',oa:'',ob:'',reason:'교통',ev:'',evr:'',before:'sig-고다원-2026-11-05'}]);
   assert.equal(await goType.inputValue(),'지각');
-  assert.equal(await go.getByRole('button',{name:'저장',exact:true}).count(),0);
+  await page.locator('#b2BulkNote').getByText('1건 저장',{exact:true}).waitFor();
+  assert.equal(await all.innerText(),'변경 0건 저장');
+  assert.equal(await go.getByRole('button',{name:'저장',exact:true}).count(),0,'no per-row save button');
   assert.equal(await page.evaluate(()=>window.sdkWrites.length),0,'a past day is never sent to CheckHere automatically');
   await page.locator('#b2Date').selectOption('2026-11-04');
   await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
@@ -156,17 +164,22 @@ test('출결대조 shows the ledger next to CheckHere, flags mismatches and save
  });
 });
 
-test('a conflicting inline save shows the latest row and sends nothing to CheckHere',async()=>{
+test('a conflicting save keeps the draft with its reason, sends nothing to CheckHere, and Esc shows the latest row',async()=>{
  let saves=0;
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   await page.locator('.b2-class').first().click();
   const go=page.locator('tr[data-name="고다원"]');await go.waitFor();
   await go.locator('select[data-inline="type"]').selectOption('출석');
-  await go.getByRole('button',{name:'저장',exact:true}).click();
-  await go.getByText('그사이 바뀜 · 최신 값 표시').waitFor();
-  assert.equal(await go.locator('select[data-inline="type"]').inputValue(),'결석','the latest value, not the draft');
-  assert.ok(posts.filter(p=>p.action==='b2Bundle').length>=2);
+  await page.locator('#b2SaveAll').click();
+  await go.getByText('그사이 바뀜 · 저장 안 됨 · 시트 최신 값 결석 · 개인일정 · 다시 저장하면 이 값으로 덮어씁니다').waitFor();
+  assert.equal(await go.locator('select[data-inline="type"]').inputValue(),'출석','the draft stays');
+  await page.locator('#b2BulkNote').getByText('1건 확인 필요',{exact:true}).waitFor();
+  assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
+  assert.ok(posts.filter(p=>p.action==='b2Bundle').length>=2,'the latest ledger was read');
+  await go.locator('select[data-inline="type"]').press('Escape');
+  await page.waitForFunction(()=>document.querySelector('tr[data-name="고다원"] select[data-inline="type"]')?.value==='결석');
+  assert.equal(await go.getByText(/그사이 바뀜/).count(),0);
   assert.equal(await page.evaluate(()=>window.sdkWrites.length),0);
  },{api:body=>body.action==='b2Save'&&++saves?{ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'}:null});
 });
@@ -320,12 +333,12 @@ test('today: an inline save that already matches sends nothing, a real change se
   // (1) 메모가 이미 맞는 기록을 지각으로 저장 → 체크히어 이미 같음, 요청 없음
   await typeOf(page,'가상메모').selectOption('지각');
   assert.equal(await student(page,'가상메모').locator('input[data-inline="inT"]').inputValue(),'09:25','the needed time is filled from CheckHere');
-  await student(page,'가상메모').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상메모').getByText('체크히어 이미 같음').waitFor();
   assert.deepEqual(savesOf(posts,'가상메모'),[{cls:'1',name:'가상메모',date:D,type:'지각',inT:'09:25',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',before:'sig-가상메모-2026-11-05'}]);
   // (2) 유형 변경 → 저장 → 3초 뒤 정확히 1건, 메모만 바뀌고(초·기본 시간 변경 없음) 근거는 가드를 거친 실시간 요청 모양
   await typeOf(page,'가상변경').selectOption('지각');
-  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상변경').getByText('보내기 전').waitFor();
   assert.equal((await requestWrites(page)).length,0,'nothing is written during the 3 seconds');
   await chip(page,'가상변경').getByText('승인 대기').waitFor({timeout:6000});
@@ -348,10 +361,12 @@ test('today: an inline save that already matches sends nothing, a real change se
   await pushRequests(page,[{...doc,status:'verified',result:{message:'가상 반영 완료'}}]);
   await chip(page,'가상변경').getByText('완료',{exact:true}).waitFor();
   assert.equal((await requestWrites(page)).length,1);
-  // 이미 저장된 행의 사유는 칸을 벗어나면 저장. 인정 아닌 유형의 사유만 바뀐 저장은 체크히어로 자동 전송하지 않음(S5)
+  // 이미 저장된 행의 사유도 칸을 벗어나면 저장하지 않고 모아 저장으로. 인정 아닌 유형의 사유만 바뀐 저장은 체크히어로 자동 전송하지 않음(S5)
   await student(page,'가상지각').locator('input[data-inline="reason"]').fill('가상 교통');
   await page.getByRole('heading',{name:'출결대조'}).click();
-  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상지각"] .b2-saving'));
+  await page.waitForTimeout(300);
+  assert.equal(savesOf(posts,'가상지각').length,0,'leaving the field does not save');
+  await saveChanges(page);
   await student(page,'가상지각').getByText('베타 수정').waitFor();
   assert.deepEqual(savesOf(posts,'가상지각'),[{cls:'1',name:'가상지각',date:D,type:'지각',inT:'09:25',outT:'',oa:'',ob:'',reason:'가상 교통',ev:'',evr:'',before:'sig-가상지각-2026-11-05'}]);
   await chip(page,'가상지각').getByText('체크히어 이미 같음').waitFor();
@@ -366,19 +381,19 @@ test('undo within 3 seconds writes no request and saves the previous sheet row b
   await openLedger(page);
   // (3) 되돌리기 → 요청 없음, 시트도 저장 전 값으로(before는 방금 받은 sig)
   await typeOf(page,'가상변경').selectOption('지각');
-  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상변경').getByText('보내기 전').waitFor();
   await chip(page,'가상변경').getByRole('button',{name:'되돌리기'}).click();
   await chip(page,'가상변경').getByText('체크히어 반영 취소 · 출결원장도 되돌림').waitFor();
   assert.deepEqual(savesOf(posts,'가상변경').map(s=>[s.type,s.before]),[['지각','sig-가상변경-2026-11-05'],['출석','new-sig']]);
   assert.deepEqual(savesOf(posts,'가상변경')[1],{cls:'1',name:'가상변경',date:D,type:'출석',inT:'',outT:'',oa:'',ob:'',reason:'',ev:'',evr:'',before:'new-sig'});
   await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='출석');
-  // (9) 저장 → 3초 안에 사유를 고쳐 Enter(느린 저장) → 앞 보류는 멈추고 예전 값으로 요청이 나가지 않음 → 새 값으로 1건
+  // (9) 저장 → 3초 안에 사유를 고쳐 다시 모아 저장(느린 저장) → 앞 보류는 멈추고 예전 값으로 요청이 나가지 않음 → 새 값으로 1건
   await typeOf(page,'가상겹침').selectOption('지각');
-  await student(page,'가상겹침').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상겹침').getByText('보내기 전').waitFor();
   await student(page,'가상겹침').locator('input[data-inline="reason"]').fill('교통');
-  await student(page,'가상겹침').locator('input[data-inline="reason"]').press('Enter');
+  await page.locator('#b2SaveAll').click();
   await chip(page,'가상겹침').getByText('저장 중 · 체크히어 반영 대기').waitFor();
   await page.waitForTimeout(3500);
   assert.equal((await requestWrites(page)).length,0,'the paused countdown does not send while b2Save is slow');
@@ -397,7 +412,7 @@ test('a past day is never sent automatically: 체크히어 맞추기 runs the sa
   await openLedger(page);
   // 브라우저 시계는 9/4라 9/3은 지난 날입니다(사용자 결정: 오늘만 자동).
   await typeOf(page,'가상변경').selectOption('지각');
-  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상변경').getByRole('button',{name:'체크히어 맞추기'}).waitFor();
   await page.waitForTimeout(3500);
   assert.equal((await requestWrites(page)).length,0,'saving a past day sends nothing');
@@ -430,16 +445,18 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   assert.equal(await page.locator('[data-ch-del]:not([disabled])').count(),0,'time deletion is off until the rules flag is on');
   // 결석 저장 → 시간 삭제가 꺼져 있어 보류
   await typeOf(page,'가상보정').selectOption('결석');
-  await student(page,'가상보정').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상보정').getByText('보류 · 체크히어 시간 삭제는 Firestore 규칙 게시·수집 PC 업데이트 후 가능').waitFor();
   assert.equal(savesOf(posts,'가상보정')[0].before,'','a row without a ledger record sends before:\'\'');
   // (5) 인정 유형: 사유 없이 저장 → 입력 필요·포커스, 하나로 분류되지 않는 사유 → 보류
   await typeOf(page,'가상인정').selectOption('인정출석');
-  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await student(page,'가상인정').getByText('입력 필요: 사유').waitFor();
   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.inline),'reason');
   assert.equal(savesOf(posts,'가상인정').length,0);
-  await page.keyboard.type('개인일정');await page.keyboard.press('Enter');
+  await page.keyboard.type('개인일정');
+  await student(page,'가상인정').getByText('입력 필요: 사유').waitFor({state:'detached'});// 고치면 안내도 바로 다시 확인
+  await saveChanges(page);
   await chip(page,'가상인정').getByText(/보류 · 인정 사유를 하나로 확인하지 못했습니다/).waitFor();
   assert.deepEqual(savesOf(posts,'가상인정').map(s=>[s.type,s.reason]),[['인정출석','개인일정']]);
   // (12) 닫힌 select에서 키보드로 유형을 바꿔도 저장 전에는 b2Save 없음, Esc는 되돌림
@@ -449,26 +466,30 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
   assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상변경/type','focus stays on the select after the row redraws');
   await page.keyboard.press('ArrowDown');
   await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='조퇴');
-  assert.equal(await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).count(),1);
+  assert.equal(await student(page,'가상변경').locator('[data-mark]').innerText(),'저장 전');
+  assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
   assert.equal(await student(page,'가상변경').locator('input[data-inline="outT"]').count(),1,'only the time the type needs');
   assert.equal(savesOf(posts,'가상변경').length,0);
   await page.keyboard.press('Escape');
   await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상변경"] select[data-inline="type"]')?.value==='출석');
-  assert.equal(await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).count(),0);
-  // (13) 중복 행: '유형 선택 필요', 유효한 유형을 고르기 전에는 사유도 저장하지 않음
+  assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 0건 저장');assert.equal(await student(page,'가상변경').locator('[data-mark]').innerText(),'');
+  // (13) 중복 행: '유형 선택 필요', 유효한 유형을 고르기 전에는 사유도 저장하지 않음. Enter는 다음 학생 같은 칸으로(저장 없음)
   assert.equal(await typeOf(page,'가상중복').inputValue(),'');
   assert.match(await typeOf(page,'가상중복').locator('option:checked').innerText(),/유형 선택 필요/);
   await student(page,'가상중복').locator('input[data-inline="reason"]').fill('가상 사유 고침');
   await student(page,'가상중복').locator('input[data-inline="reason"]').press('Enter');
+  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상증빙/reason');
+  await saveChanges(page);
   await student(page,'가상중복').getByText('입력 필요: 유형').waitFor();
   assert.equal(savesOf(posts,'가상중복').length,0);
   await student(page,'가상중복').getByRole('button',{name:'취소',exact:true}).click();
+  assert.equal(await student(page,'가상중복').locator('input[data-inline="reason"]').inputValue(),'가상 사유');
   // (11) 기록 없는 출석 행: 사유 칸 꺼짐, unchanged 응답이면 요청 없음
   const noReason=student(page,'가상출석').locator('input[data-inline="reason"]');
   assert.equal(await noReason.isDisabled(),true);assert.match(await noReason.getAttribute('placeholder'),/출석은 사유를 저장하지 않습니다\(유형을 바꾸면 저장\)/);
   await typeOf(page,'가상출석').selectOption('지각');
   assert.equal(await student(page,'가상출석').locator('input[data-inline="reason"]').isDisabled(),false);
-  await student(page,'가상출석').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상출석"] select[data-inline="type"]')?.value==='출석');
   assert.equal(savesOf(posts,'가상출석')[0].before,'');
   await chip(page,'가상출석').getByText('체크히어 이미 같음').waitFor();
@@ -489,8 +510,8 @@ test('holds, disabled time deletion, explicit save, keyboard type changes, 중�
 });
 
 // 시간 삭제 ×: 기록 번호 표시(entryKind·entryEventId·exitEventId)는 연결 프로그램이 그날 화면 데이터에서 붙입니다. 가상출석은 체크인한 학생(1교시 PASS),
-// 가상지각은 관리자가 1교시를 넣은 학생(ATTEND). 켜지는 조건은 가짜 settings 문서(규칙 게시 깃발)로 켜고, 능력은 마지막 중계 신호(없으면 v2로 봄, 2026-10-16)입니다.
-const DEL_DAYS={[CUR]:{records:VDAYS[CUR].records.map(r=>r.name==='가상출석'?{...r,entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true}:r.name==='가상지각'?{...r,entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false}:r)}};
+// 가상지각(지각)·가상인정(출석)은 관리자가 1교시를 넣은 학생(ATTEND). 켜지는 조건은 가짜 settings 문서(규칙 게시 깃발)로 켜고, 능력은 마지막 중계 신호(없으면 v2로 봄, 2026-10-16)입니다.
+const DEL_DAYS={[CUR]:{records:VDAYS[CUR].records.map(r=>r.name==='가상출석'?{...r,entryKind:'PASS',entryEventId:false,exitEventId:true,enterEventId:true}:r.name==='가상지각'||r.name==='가상인정'?{...r,entryKind:'ATTEND',entryEventId:true,exitEventId:true,enterEventId:false}:r)}};
 test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, and with the gate on × asks, counts down and writes one deletion request',async()=>{
  await beta(async(page,posts)=>{
   const asked=[];let answer=false;page.on('dialog',d=>{asked.push(d.message());void(answer?d.accept():d.dismiss());});
@@ -509,8 +530,11 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상출석"] [data-ch-del="exit"]')?.disabled);
   await page.locator('#b2Relay').getByText('중계 꺼짐 · 자동 수집·해제 표시 없음 (삭제 요청은 가능, 반영은 승인 때)').waitFor();
   assert.match(await page.locator('#b2Relay .b2-pill').getAttribute('title'),/\(읽기 전용\)\. 요청\(시간 삭제 포함\)은 중계 없이도 만들 수 있습니다/);
-  assert.equal(await x('가상지각','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다 · 반영할 때 체크히어 마스킹 해제 필요)');
-  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${EXIT_FIRST} · ${TYPE_FIRST}`,'신호가 없으면 v2: 퇴실이 남은 1교시 ×만은 잠김(결석으로 두 칸)');
+  // 신호가 없으면 v2: 관리자 1교시 학생은 퇴실 ×·1교시 × 모두 1교시·퇴실 두 칸(사용자 결정 2026-10-19 "둘 다 삭제돼야 함"). 지각은 1교시를 쓰므로 퇴실 ×도 유형부터
+  const BOTH='퇴실과 1교시(09:00~18:00 칸)를 함께 지웁니다. 입실 기록은 남을 수 있습니다';
+  for(const side of ['exit','entry'])assert.equal(await x('가상인정',side).getAttribute('title'),`체크히어 ${side==='exit'?'퇴실':'입실(교시)'} 시간 삭제 요청 (관리자 승인 뒤 지움 · ${BOTH} · 반영할 때 체크히어 마스킹 해제 필요)`,side);
+  assert.equal(await x('가상지각','exit').getAttribute('title'),`퇴실 시간 삭제 불가 · ${TYPE_FIRST}`);
+  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${TYPE_FIRST}`);
   // 옛 연결 프로그램(v1)의 중계 신호가 오면 기록 번호가 있고 유형이 쓰지 않는 칸만 켜지고, 관리자 1교시 ×는 업데이트 안내가 먼저
   await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1','time-delete-v1'],build:'20261014.2',at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
   await page.waitForFunction(()=>/\(time-delete-v2\)/.test(document.querySelector('tbody[data-student="가상지각"] [data-ch-del="entry"]')?.title||''));
@@ -522,7 +546,9 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${V2_NEEDED} · ${TYPE_FIRST}`);
   // 이 중계는 해제 상태를 알리지 않는 옛 중계라(privacy 없음) 모름 → '반영할 때 해제 필요'
   assert.equal(await x('가상지각','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다 · 반영할 때 체크히어 마스킹 해제 필요)');
-  assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음');
+  assert.equal(await x('가상지각','exit').isDisabled(),false,'지각은 퇴실을 쓰지 않음(v1은 퇴실만 지움)');
+  assert.equal(await x('가상인정','exit').getAttribute('title'),'체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · 관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다 · 반영할 때 체크히어 마스킹 해제 필요)','v1: 퇴실만');
+  assert.equal(await x('가상인정','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${V2_NEEDED}`);
   assert.equal(await x('가상메모','exit').isDisabled(),true,'기록 번호가 없는 칸');
   // 확인창 아니오: 아무것도 시작하지 않음
   await x('가상출석','exit').click();
@@ -543,11 +569,18 @@ test('time deletion ×: off with reasons by default, PASS 1교시 stays locked, 
   await page.evaluate(()=>window.pushSnap('settings/checkhereRelay',{state:'running',busy:false,queue:0,capabilities:['incremental-sync-v1','time-delete-v1','time-delete-v2'],build:'20261016.2',privacy:{state:'masked',leftSec:null,writable:false},at:{seconds:Math.floor(Date.now()/1000),nanoseconds:0}}));
   await page.locator('#b2Relay').getByText('수집 PC 중계 작동 중 · 신호 방금 · 체크히어 가림 · 읽기만').waitFor();
   assert.match(await page.locator('#b2Relay .b2-pill').getAttribute('title'),/^체크히어 가림 — 읽기만 가능 · 수정·삭제하려면 마스킹 해제 필요\n/);
-  await page.waitForFunction(()=>/반영할 때 체크히어 마스킹 해제 필요/.test(document.querySelector('tbody[data-student="가상지각"] [data-ch-del="exit"]')?.title||''));
-  assert.equal(await x('가상지각','exit').isDisabled(),false,'가려져도 요청은 만듦(승인 대기)');
-  assert.equal(await x('가상지각','entry').getAttribute('title'),`입실(교시) 시간 삭제 불가 · ${EXIT_FIRST} · ${TYPE_FIRST}`,'v2여도 퇴실이 남은 1교시 ×는 잠김');
-  answer=false;await x('가상지각','exit').click();await askedAt(3);
-  assert.match(asked[2],/가상지각 · 2026-11-05 체크히어 시간 삭제를 요청합니다: 퇴실 /);assert.match(asked[2],/관리자가 넣은 1교시와 체크히어 입실 기록은 남습니다\.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
+  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상인정"] [data-ch-del="entry"]')?.disabled);
+  assert.equal(await x('가상인정','exit').getAttribute('title'),`체크히어 퇴실 시간 삭제 요청 (관리자 승인 뒤 지움 · ${BOTH} · 반영할 때 체크히어 마스킹 해제 필요)`,'가려져도 요청은 만듦(승인 대기)');
+  assert.equal(await x('가상지각','exit').getAttribute('title'),`퇴실 시간 삭제 불가 · ${TYPE_FIRST}`,'v2: 지각은 퇴실 ×도 1교시를 함께 지우므로 유형부터');
+  answer=false;await x('가상인정','exit').click();await askedAt(3);
+  assert.match(asked[2],/^가상인정 · 2026-11-05 체크히어 시간 삭제를 요청합니다: 입실\(교시\) 09:02 · 퇴실 18:00\n퇴실과 1교시\(09:00~18:00 칸\)를 함께 지웁니다\. 입실 기록은 남을 수 있습니다\.\n관리자가 운영 포털 「반영 요청·승인」에서 승인해야 체크히어에서 지워집니다\.\n반영할 때 체크히어 마스킹 해제 필요\.\n보낼까요\?$/);
+  // 예: 두 칸 요청 1건(출결원장 저장 없음)
+  answer=true;await x('가상인정','exit').click();await askedAt(4);
+  await chip(page,'가상인정').getByText('승인 대기').waitFor({timeout:6000});
+  const both=(await requestWrites(page)).filter(w=>w.name==='가상인정');assert.equal(both.length,1);
+  assert.deepEqual([both[0].changes,both[0].deleteTimes],[{entry:'',exit:''},['entry','exit']]);
+  assert.match(both[0].reason,/^\[실시간 베타\] 출결대조 시간 삭제 · 입실\(교시\)·퇴실 \[기준:[0-9a-f]{8}\]$/);
+  assert.equal(savesOf(posts,'가상인정').length,0);
  },{...virtual(),days:DEL_DAYS});
 });
 
@@ -556,7 +589,7 @@ test('changing the date during the 3 seconds asks first: no sends nothing, yes s
   await openLedger(page);
   const dialogs=[];
   await typeOf(page,'가상변경').selectOption('지각');
-  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상변경').getByText('보내기 전').waitFor();
   page.once('dialog',d=>{dialogs.push(d.message());void d.dismiss();});
   await page.locator('#b2Date').selectOption('2026-11-04');
@@ -569,7 +602,7 @@ test('changing the date during the 3 seconds asks first: no sends nothing, yes s
   await pushRequests(page,[]);
   await typeOf(page,'가상인정').selectOption('인정출석');
   await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
-  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상인정').getByText('보내기 전').waitFor();
   page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
   await page.locator('#b2Date').selectOption('2026-11-04');
@@ -583,7 +616,7 @@ test('changing the date during the 3 seconds asks first: no sends nothing, yes s
   await page.locator('#b2Live').getByText(/체크히어 (저장본|실시간) · 10명/).waitFor();
   await pushRequests(page,[]);
   await typeOf(page,'가상겹침').selectOption('지각');
-  await student(page,'가상겹침').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상겹침').getByText('보내기 전').waitFor();
   page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
   await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
@@ -604,7 +637,7 @@ test('an evidence-only save never sends automatically but offers 체크히어 �
   await chip(page,'가상취소').getByText('승인 대기').waitFor();
   assert.equal(await chip(page,'가상취소').getByRole('button',{name:'요청 취소'}).count(),1);
   await typeOf(page,'가상취소').selectOption('출석');
-  await student(page,'가상취소').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상취소').getByText('보내기 전').waitFor();
   assert.match(await chip(page,'가상취소').innerText(),/대기 중인 자동 요청 취소/);
   await page.waitForFunction(()=>window.sdkWrites.some(w=>w[0]==='set'&&w[1].startsWith('checkhereRequests/b2_')),null,{timeout:6000});
@@ -636,9 +669,9 @@ test('the 3-second undo survives a press across a second boundary and keyboard f
   await student(page,'가상변경').waitFor();
   // 불일치 필터에서 고친 행은 저장 뒤 일치가 되어도 남아 3초·되돌리기를 보입니다.
   await typeOf(page,'가상변경').selectOption('지각');
-  await student(page,'가상변경').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   const undo=chip(page,'가상변경').getByRole('button',{name:'되돌리기'});
-  await undo.waitFor();
+  await undo.waitFor();await undo.scrollIntoViewIfNeeded();// 학생마다 직접 요청 줄이 있어 표가 길어짐(마우스로 직접 누르기 전에 화면 안으로)
   assert.equal(await student(page,'가상변경').count(),1);
   assert.equal(await student(page,'가상지각').count(),0,'the filter still hides untouched matching rows');
   // 누르고 있는 사이 1초가 넘어가도(칩의 초가 바뀌어도) 되돌리기가 사라지지 않음
@@ -648,7 +681,7 @@ test('the 3-second undo survives a press across a second boundary and keyboard f
   assert.deepEqual(savesOf(posts,'가상변경').map(s=>s.type),['지각','출석']);
   // 키보드: 되돌리기에 둔 포커스가 초가 바뀌어도 그대로라 Enter가 먹힘
   await typeOf(page,'가상겹침').selectOption('지각');
-  await student(page,'가상겹침').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   const undo2=chip(page,'가상겹침').getByRole('button',{name:'되돌리기'});
   await undo2.focus();
   const sec=await chip(page,'가상겹침').locator('.b2-sec').innerText();
@@ -663,7 +696,7 @@ test('the 3-second undo survives a press across a second boundary and keyboard f
   await pushRequests(page,[{id:'other_1',classId:'1',date:D,name:'가상인정',phoneLast4:'0000',status:'pending',createdBy:'other@example.com',changes:{exitMemo:'가상 메모'},reason:'가상 직접 요청'}]);
   await typeOf(page,'가상인정').selectOption('인정출석');
   await student(page,'가상인정').locator('input[data-inline="reason"]').fill('병원');
-  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await chip(page,'가상인정').getByText('보류 · 진행 중 요청이 끝나면 다시 계산해 요청').waitFor();
   const dialogs=[];page.once('dialog',d=>{dialogs.push(d.message());void d.accept();});
   await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
@@ -686,7 +719,7 @@ test('changing the class keeps the current class until the new ledger arrives; i
   assert.equal(await page.locator('tbody[data-student]').count(),10);
   fail=false;
   await typeOf(page,'가상인정').selectOption('결석');
-  await student(page,'가상인정').getByRole('button',{name:'저장',exact:true}).click();
+  await saveChanges(page);
   await student(page,'가상인정').getByText('베타 수정').waitFor();
   assert.equal(savesOf(posts,'가상인정')[0].cls,'1','saved to the class on screen');
  },virtual(body=>fail&&['b2Rev','b2Bundle'].includes(body.action)?{ok:false,error:'가상 연결 실패'}:null));
@@ -712,18 +745,173 @@ test('an evidence save that conflicts keeps the editor and the chosen values whi
  },virtual(body=>body.action==='b2Save'&&body.args[0].name==='가상증빙'&&++n===1?{ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'}:null));
 });
 
-test('a blur save started by picking another date finishes first, then the date changes',async()=>{
+test('a save-all still running when another date is picked finishes first, then the date changes; leaving the screen waits for it',async()=>{
  await beta(async(page,posts)=>{
   await openLedger(page);
   await student(page,'가상지각').locator('input[data-inline="reason"]').fill('가상 교통');
-  await page.locator('#b2Date').focus();// 칸을 벗어나며 blur 저장 시작(느린 저장)
-  await student(page,'가상지각').locator('.b2-saving').waitFor();
+  await student(page,'가상메모').locator('input[data-inline="reason"]').fill('가상 메모 사유');
+  await page.locator('#b2SaveAll').click();// 느린 저장 두 건
+  await page.locator('#b2SaveAll').getByText('저장 중 1/2').waitFor();
+  await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
+  await page.locator('#b2Msg').getByText('출결원장 저장 중입니다. 저장이 끝난 뒤 이동해 주세요.').waitFor();
   await page.locator('#b2Date').selectOption('2026-11-04');
   await page.getByText('이 날 체크히어 저장본 없음').first().waitFor();
   assert.equal(await page.locator('#b2Date').inputValue(),'2026-11-04');
-  assert.deepEqual(savesOf(posts,'가상지각').map(s=>s.reason),['가상 교통']);
-  assert.equal(await page.getByText('출결원장 저장 중입니다').count(),0,'not refused');
+  assert.deepEqual(posts.filter(p=>p.action==='b2Save').map(p=>[p.args[0].name,p.args[0].reason,p.args[0].date]),[['가상지각','가상 교통',D],['가상메모','가상 메모 사유',D]],'both rows saved to the day on screen before the date changed');
+  assert.equal(await page.getByRole('heading',{name:'출결대조'}).count(),1);
  },virtual(async body=>{if(body.action==='b2Save')await new Promise(r=>setTimeout(r,1500));return null;}));
+});
+
+/* ---------- 모아서 한 번에 저장·얇은 직접 요청 줄(사용자 결정 2026-10-16) ---------- */
+test('save-all: leaving a field or Enter never saves; rows save one at a time in screen order with progress and the CheckHere hook runs once per saved row; invalid and conflicting rows keep their drafts; Esc and 모두 되돌리기 revert',async()=>{
+ let inflight=0,most=0,vb=VB;const order=[];
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  const dialogs=[];page.on('dialog',d=>{dialogs.push(d.message());void d.accept();});
+  const reason=n=>student(page,n).locator('input[data-inline="reason"]'),all=page.locator('#b2SaveAll');
+  await reason('가상지각').fill('가상 교통');
+  await page.getByRole('heading',{name:'출결대조'}).click();
+  await reason('가상지각').press('Enter');
+  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상메모/reason','Enter moves to the same field of the next student');
+  await page.waitForTimeout(300);
+  assert.equal(posts.filter(p=>p.action==='b2Save').length,0,'neither blur nor Enter saves');
+  assert.equal(await student(page,'가상지각').locator('[data-mark]').innerText(),'저장 전');
+  assert.equal(await student(page,'가상지각').locator('tr[data-name]').evaluate(r=>r.classList.contains('dirty')),true);
+  await typeOf(page,'가상변경').selectOption('지각');// 체크히어에 닿는 변경 → 요청
+  await typeOf(page,'가상겹침').selectOption('지각');// 서버가 CONFLICT
+  await typeOf(page,'가상인정').selectOption('인정출석');// 사유 없음 → 입력 필요
+  await typeOf(page,'가상취소').selectOption('출석');// 체크히어에 닿는 변경 → 요청
+  assert.equal(await all.innerText(),'변경 5건 저장');assert.equal(await page.locator('#b2RevertAll').isDisabled(),false);
+  await page.keyboard.press('Control+s');
+  await all.getByText('저장 중 2/4').waitFor();
+  assert.equal(await typeOf(page,'가상출석').evaluate(e=>e.matches(':disabled')),true,'editing is locked while saving');
+  assert.equal(await all.isDisabled(),true);
+  await page.waitForFunction(()=>/^변경 \d+건 저장$/.test(document.querySelector('#b2SaveAll')?.textContent||''),null,{timeout:15000});
+  assert.equal(await page.locator('#b2BulkNote').innerText(),'3건 저장 · 2건 확인 필요');
+  assert.deepEqual(order,['가상지각','가상변경','가상겹침','가상취소'],'screen order, the invalid row is not sent');
+  assert.equal(most,1,'one row at a time');
+  assert.equal(await typeOf(page,'가상출석').evaluate(e=>e.matches(':disabled')),false,'unlocked after saving');
+  // 못 저장한 행은 초안과 이유가 남고, 저장한 행은 초안이 지워짐
+  await student(page,'가상인정').getByText('입력 필요: 사유').waitFor();assert.equal(await typeOf(page,'가상인정').inputValue(),'인정출석');
+  await student(page,'가상겹침').getByText(/^그사이 바뀜 · 저장 안 됨 · 시트 최신 값 출석 · 다시 저장하면 이 값으로 덮어씁니다$/).waitFor();assert.equal(await typeOf(page,'가상겹침').inputValue(),'지각');
+  assert.equal(await all.innerText(),'변경 2건 저장');
+  assert.equal(await student(page,'가상지각').locator('[data-mark]').innerText(),'');assert.equal(await reason('가상지각').inputValue(),'가상 교통');
+  // 체크히어 저장 후 흐름은 저장한 행마다 한 번: 사유만 바꾼 지각은 '이미 같음', 나머지 두 행은 3초 뒤 요청 한 건씩
+  await chip(page,'가상변경').getByText('승인 대기').waitFor({timeout:8000});
+  await chip(page,'가상취소').getByText('승인 대기').waitFor({timeout:8000});
+  await chip(page,'가상지각').getByText('체크히어 이미 같음').waitFor();
+  await page.waitForTimeout(1500);
+  assert.deepEqual((await requestWrites(page)).map(w=>[w.name,JSON.stringify(w.changes)]).sort(),[['가상변경','{"entryMemo":"지각_담임:가상담임(09:25)"}'],['가상취소','{"entryMemo":""}']]);
+  // Esc는 그 행 초안만 되돌림
+  await typeOf(page,'가상인정').press('Escape');
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상인정"] select[data-inline="type"]')?.value==='출석');
+  assert.equal(await student(page,'가상인정').getByText('입력 필요: 사유').count(),0);
+  assert.equal(await typeOf(page,'가상겹침').inputValue(),'지각');assert.equal(await all.innerText(),'변경 1건 저장');
+  // 모두 되돌리기(확인 뒤)
+  await page.locator('#b2RevertAll').click();
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상겹침"] select[data-inline="type"]')?.value==='출석');
+  assert.deepEqual(dialogs,['저장하지 않은 출결 수정 1건을 모두 되돌릴까요?']);
+  assert.equal(await all.innerText(),'변경 0건 저장');assert.equal(await all.isDisabled(),true);assert.equal(await page.locator('#b2RevertAll').isDisabled(),true);
+  assert.equal(await student(page,'가상겹침').getByText(/그사이 바뀜/).count(),0);
+  assert.equal(posts.filter(p=>p.action==='b2Save').length,4);
+  // 입력하던 칸에서 Ctrl+S: 저장하는 동안 잠갔다가 끝나면 그 칸으로 포커스가 돌아옴(확인 필요 행이 없을 때)
+  await reason('가상메모').fill('가상 메모 사유');await page.keyboard.press('Control+s');
+  await page.locator('#b2BulkNote').getByText('1건 저장',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>document.activeElement?.closest('tbody')?.dataset.student+'/'+document.activeElement?.dataset.inline),'가상메모/reason');
+  assert.deepEqual(savesOf(posts,'가상메모').map(s=>s.reason),['가상 메모 사유']);
+ },virtual(async body=>{
+  if(body.action==='b2Bundle')return {ok:true,data:vb};// 저장한 행은 시트에 남습니다(충돌 뒤 다시 읽어도 앞서 저장한 값 그대로)
+  if(body.action!=='b2Save')return null;
+  const a=body.args[0],n=a.name;order.push(n);inflight++;most=Math.max(most,inflight);
+  await new Promise(r=>setTimeout(r,400));inflight--;
+  if(n==='가상겹침')return {ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'};
+  vb={...vb,ledger:[...vb.ledger.filter(r=>!(r[0]===a.date&&r[2]===n)),row(a.date,a.cls,n,a.type,{inT:a.inT,outT:a.outT,oa:a.oa,ob:a.ob,reason:a.reason,ev:a.ev,evr:a.evr,prov:'베타 수정',sig:'new-sig'})]};
+  return null;
+ }));
+});
+
+test('drafts and direct-request edits ask before leaving, changing the date, reloading or pulling; a background refresh keeps drafts and marks rows that changed underneath',async()=>{
+ let vb=VB;
+ const sigOf=(name)=>{const r=vb.ledger.find(x=>x[0]===D&&x[2]===name);return r?r[16]:'';};
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  const dialogs=[];let answer=false;page.on('dialog',d=>{dialogs.push(d.message());void(answer?d.accept():d.dismiss());});
+  const asked=async n=>{for(let i=0;i<100&&dialogs.length<n;i++)await page.waitForTimeout(50);assert.equal(dialogs.length,n);};
+  const reason=student(page,'가상지각').locator('input[data-inline="reason"]');
+  await reason.fill('가상 교통');
+  await page.getByRole('heading',{name:'출결대조'}).click();
+  // 다른 화면·날짜·새로고침: 묻고, 아니오면 그대로(2기에는 운영총괄 가져오기가 없음)
+  await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();await asked(1);
+  assert.equal(dialogs[0],'저장하지 않은 출결 수정 1건이 있습니다. 화면을 떠날까요?');
+  assert.equal(await page.getByRole('heading',{name:'출결대조'}).count(),1);
+  await page.locator('#b2Date').selectOption('2026-11-04');await asked(2);
+  assert.equal(dialogs[1],'저장하지 않은 출결 수정 1건이 있습니다. 날짜를 바꾸면 사라집니다. 바꿀까요?');
+  await page.waitForFunction(d=>document.querySelector('#b2Date').value===d,D);
+  const bundles=posts.filter(p=>p.action==='b2Bundle').length;
+  await page.locator('#b2Reload').click();await asked(3);
+  assert.equal(dialogs[2],'저장하지 않은 출결 수정 1건이 있습니다. 새로 읽으면 사라집니다. 계속할까요?');
+  assert.equal(posts.filter(p=>p.action==='b2Bundle').length,bundles);assert.equal(await page.getByRole('button',{name:'이 반 운영총괄 가져오기'}).count(),0);
+  assert.equal(await reason.inputValue(),'가상 교통');
+  assert.equal(await page.evaluate(()=>{const e=new Event('beforeunload',{cancelable:true});dispatchEvent(e);return e.defaultPrevented;}),true,'closing the tab warns');
+  // 시트 변경 번호가 바뀌어 다시 읽어도 초안은 그대로, 초안 밑의 행이 바뀐 학생은 '그사이 바뀜'(다른 학생은 새 값)
+  vb={...VB,rev:9,ledger:[...VB.ledger.filter(r=>r[2]!=='가상지각'),row(D,'1','가상지각','지각',{inT:'09:25',reason:'시트에서 고침',sig:'sig-changed'}),row(D,'1','가상출석','결석',{sig:'sig-가상출석-new'})]};
+  await page.clock.fastForward(31000);
+  await page.waitForFunction(()=>document.querySelector('tbody[data-student="가상출석"] select[data-inline="type"]')?.value==='결석');
+  assert.equal(await reason.inputValue(),'가상 교통','the draft is kept');
+  await student(page,'가상지각').getByText('그사이 바뀜 · 시트 값 지각 · 입실 09:25 · 시트에서 고침').waitFor();
+  // 저장은 초안을 시작할 때의 지문으로 → 서버가 거절, 초안은 남고 기준을 최신으로 옮겨 다시 저장하면 덮어씀
+  await saveChanges(page);
+  await student(page,'가상지각').getByText('그사이 바뀜 · 저장 안 됨 · 시트 최신 값 지각 · 입실 09:25 · 시트에서 고침 · 다시 저장하면 이 값으로 덮어씁니다').waitFor();
+  assert.equal(await reason.inputValue(),'가상 교통');
+  await saveChanges(page);
+  await student(page,'가상지각').getByText('베타 수정').waitFor();
+  assert.deepEqual(savesOf(posts,'가상지각').map(s=>[s.reason,s.before]),[['가상 교통','sig-가상지각-2026-11-05'],['가상 교통','sig-changed']]);
+  // 직접 요청 추천값만 고쳐도 떠날 때 묻습니다(1기 canNavigate처럼). 예면 떠남
+  await page.getByLabel('가상메모 입실·교시 사유 추천사유',{exact:true}).fill('가상 직접 사유');
+  await page.getByRole('heading',{name:'출결대조'}).click();
+  await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();await asked(4);
+  assert.equal(dialogs[3],'저장하지 않은 체크히어 직접 요청 편집값이 있습니다. 화면을 떠날까요?');
+  assert.equal(await page.getByRole('heading',{name:'출결대조'}).count(),1);
+  answer=true;await page.locator('.admin-tabs .tab',{hasText:'출결 현황'}).click();
+  await page.getByRole('heading',{name:'출결 현황'}).waitFor();
+  assert.equal(await page.evaluate(()=>window.sdkWrites.filter(w=>w[1].startsWith('checkhereRequests/')).length),0,'editing a suggestion never writes a request');
+ },virtual(body=>{
+  if(body.action==='b2Bundle')return {ok:true,data:vb};
+  if(body.action==='b2Rev')return {ok:true,data:{rev:vb.rev,sync:vb.sync}};
+  if(body.action==='b2Save'&&body.args[0].before!==sigOf(body.args[0].name))return {ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'};
+  return null;
+ }));
+});
+
+test('the reason input stays moderately narrow with its full text in the tooltip, and every enrolled student shows one slim direct-request line without a toggle',async()=>{
+ await beta(async page=>{
+  await openLedger(page);
+  const r=student(page,'가상증빙').locator('input[data-inline="reason"]'),width=()=>r.evaluate(e=>e.getBoundingClientRect().width);
+  assert.ok(await width()>=120&&await width()<=260,`reason width ${await width()}`);
+  assert.equal(await r.getAttribute('title'),'병원 진료');
+  const long='가상 사유가 아주 길게 이어지는 경우 '.repeat(6).trim();
+  await r.fill(long);
+  assert.equal(await r.getAttribute('title'),long);assert.ok(await width()<=260,'typing does not widen it');
+  await r.press('Escape');
+  // 직접 요청: 토글 없이 학생 10명 모두 얇은 한 줄(추천시간 입실·퇴실, 추천사유 입실·퇴실, 상태, 요청 버튼)
+  assert.equal(await page.locator('[data-req]').count(),0);assert.equal(await page.getByRole('button',{name:'직접 요청'}).count(),0);
+  assert.equal(await page.locator('tr.b2-req-row').count(),10);
+  assert.equal(await page.locator('.proposal-box.compact').count(),30);assert.equal(await page.locator('.proposal-box:not(.compact)').count(),0);
+  const line=student(page,'가상지각').locator('tr.b2-req-row');
+  for(const label of ['가상지각 추천 입실시간','가상지각 추천 퇴실시간','가상지각 입실·교시 사유 추천사유','가상지각 퇴실 사유 추천사유'])assert.equal(await line.getByLabel(label,{exact:true}).count(),1,label);
+  assert.equal(await line.locator('.proposal-label').count(),3);assert.equal(await line.locator('[data-proposal-send]').count(),3);
+  assert.deepEqual(await line.locator('textarea').evaluateAll(ts=>ts.map(t=>t.rows)),[1,1]);
+  const heights=await page.locator('tr.b2-req-row').evaluateAll(rs=>rs.map(x=>Math.round(x.getBoundingClientRect().height)));
+  assert.ok(Math.max(...heights)<=34,`one slim line per student: ${heights}`);
+  assert.equal(await page.getByText(/자동 요청: 오늘 출결원장을 저장하면 3초 뒤/).count(),1,'the long explanation is one note above the table');
+  // 추천값을 고치면 그 줄만 바뀌고(변경 필요·요청 켜짐), 출결원장 초안은 생기지 않음
+  const memo=line.getByLabel('가상지각 퇴실 사유 추천사유',{exact:true});
+  await memo.fill('가상 퇴실 사유');
+  assert.equal(await memo.getAttribute('title'),'가상 퇴실 사유','the slim memo shows its full text in the tooltip');
+  await line.locator('[data-proposal-box$="__exitMemo"] .proposal-label').getByText('변경 필요').waitFor();
+  assert.equal(await line.locator('[data-proposal-send$="__exitMemo"]').isEnabled(),true);
+  assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 0건 저장');
+ },virtual());
 });
 
 // 같은 날 결석: 수업 중에는 교시가 늦게 찍힐 수 있어 실제 입실만 남은 기록을 '기록 있음'으로 보지만, 그 학생의 시간 삭제가 확인되면 맞는 것으로 봅니다(⚠가 남지 않게).
@@ -737,4 +925,80 @@ test('same-day 결석 compares as matching once the time deletion is verified (t
   await student(page,'가상출석').getByText('교시 기록·퇴실 없음 · 실제 입실 09:02 남음').waitFor();
   assert.equal(await student(page,'가상출석').locator('.b2-match.diff').count(),0);
  },{...virtual(body=>body.action==='b2Bundle'?{ok:true,data:VB2}:null),clock:'2026-11-05T15:00:00+09:00',days:DAYS2});
+});
+
+/* ---------- 모아 저장·얇은 직접 요청 줄 다듬기(검토 2026-10-19) ---------- */
+test('the slim line follows the live request list so an auto request locks its box at once; Enter or a pasted line break never adds a hidden line; its buttons name the student and box; the header stays short',async()=>{
+ await beta(async page=>{
+  await openLedger(page);
+  assert.doesNotMatch(await page.locator('.b2-head',{has:page.getByRole('heading',{name:'출결대조'})}).locator('p').innerText(),/3초|승인/,'approval is explained once, in the note above the table');
+  // Enter: 한 줄 사유 칸에 줄바꿈 없이(일치·요청 꺼짐 그대로) 다음 학생 같은 칸으로
+  const late=page.getByLabel('가상지각 입실·교시 사유 추천사유',{exact:true}),lateBox=student(page,'가상지각').locator('[data-proposal-box$="__entryMemo"]');
+  assert.equal(await late.inputValue(),'지각_담임:가상담임(09:25)');assert.equal(await lateBox.locator('.proposal-label').innerText(),'일치');
+  await late.press('Enter');
+  assert.equal(await late.inputValue(),'지각_담임:가상담임(09:25)','no hidden line break');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'가상메모 입실·교시 사유 추천사유','Enter moves to the same box of the next student');
+  assert.equal(await lateBox.locator('.proposal-label').innerText(),'일치');assert.equal(await page.getByRole('button',{name:'가상지각 추천사유 입실 변경요청'}).isDisabled(),true);
+  await page.getByLabel('가상지각 추천 퇴실시간',{exact:true}).press('Enter');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'가상메모 추천 퇴실시간','the time boxes move the same way');
+  // 붙여 넣은 줄바꿈은 띄어쓰기로
+  const exit=page.getByLabel('가상지각 퇴실 사유 추천사유',{exact:true});
+  await exit.evaluate(el=>{el.focus();el.setSelectionRange(el.value.length,el.value.length);const dt=new DataTransfer();dt.setData('text/plain','가상 첫 줄\r\n가상 둘째 줄');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));});
+  assert.equal(await exit.inputValue(),'가상 첫 줄 가상 둘째 줄');assert.equal(await exit.getAttribute('title'),'가상 첫 줄 가상 둘째 줄');
+  await page.getByRole('button',{name:'가상지각 추천사유 퇴실 변경요청'}).waitFor();assert.equal(await page.getByRole('button',{name:'가상지각 추천사유 퇴실 변경요청'}).isEnabled(),true);
+  // 저장 3초 뒤 자동 요청이 구독에 보이면 그 학생의 직접 요청 칸은 바로 '승인 대기'로 잠깁니다(같은 칸에 두 번째 요청을 만들지 않음).
+  await typeOf(page,'가상변경').selectOption('지각');
+  await saveChanges(page);
+  const box=student(page,'가상변경').locator('[data-proposal-box$="__entryMemo"]'),send=page.getByRole('button',{name:'가상변경 추천사유 입실 변경요청'});
+  await box.locator('.proposal-label').getByText('변경 필요').waitFor();assert.equal(await send.isEnabled(),true);
+  await chip(page,'가상변경').getByText('승인 대기').waitFor({timeout:8000});
+  const sent=await requestWrites(page);assert.equal(sent.length,1);
+  const {path,createdAt,updatedAt,...rest}=sent[0];
+  await pushRequests(page,[{...rest,id:path.split('/')[1]}]);
+  await box.locator('.proposal-label').getByText('승인 대기').waitFor();
+  assert.equal(await send.isDisabled(),true);assert.equal(await box.locator('textarea').isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'가상변경 추천사유 입실 요청취소'}).count(),1,'my pending request can be withdrawn from the slim line');
+  assert.equal(await page.evaluate(()=>window.sdkWrites.filter(w=>w[1].startsWith('checkhereRequests/')).length),1);
+ },virtual());
+});
+
+test('a conflict whose latest ledger cannot be read keeps the draft and its base and does not claim a latest value; the next save reads it and shows it',async()=>{
+ let fail=false,changed=false;// changed: 첫 저장 시도 뒤 다른 사람이 시트를 고친 것으로 둡니다
+ const VB3={...VB,ledger:[...VB.ledger.filter(r=>r[2]!=='가상지각'),row(D,'1','가상지각','지각',{inT:'09:30',reason:'시트에서 고침',sig:'sig-changed'})]};
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  const s=student(page,'가상지각');
+  await s.locator('input[data-inline="reason"]').fill('가상 교통');
+  fail=true;await saveChanges(page);
+  await s.getByText('그사이 바뀜 · 저장 안 됨 · 최신 값을 읽지 못했습니다 · 잠시 뒤 다시 저장해 주세요').waitFor();
+  assert.equal(await s.getByText(/시트 최신 값|덮어씁니다/).count(),0,'the old value is not shown as the latest');
+  assert.equal(await s.locator('input[data-inline="reason"]').inputValue(),'가상 교통');assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
+  fail=false;await saveChanges(page);
+  await s.getByText('그사이 바뀜 · 저장 안 됨 · 시트 최신 값 지각 · 입실 09:30 · 시트에서 고침 · 다시 저장하면 이 값으로 덮어씁니다').waitFor();
+  assert.deepEqual(savesOf(posts,'가상지각').map(x=>x.before),['sig-가상지각-2026-11-05','sig-가상지각-2026-11-05'],'the base only moves after the latest row was read');
+ },virtual(body=>{
+  if(body.action==='b2Save'){changed=true;return {ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'};}
+  if(body.action==='b2Bundle'&&fail)return {ok:false,error:'가상 묶음 읽기 실패'};
+  if(body.action==='b2Bundle'&&changed)return {ok:true,data:VB3};
+  return null;
+ }));
+});
+
+test('an evidence save pressed while that row\'s batch save runs says it was not saved when the batch save fails',async()=>{
+ await beta(async(page,posts)=>{
+  await openLedger(page);
+  const s=student(page,'가상증빙');
+  await s.locator('input[data-inline="reason"]').fill('병원 진료 2');
+  await s.getByRole('button',{name:'증빙',exact:true}).click();
+  await s.locator('select[data-f="ev"]').selectOption('확인');
+  await page.locator('#b2SaveAll').click();
+  await page.locator('#b2SaveAll').getByText('저장 중 1/1').waitFor();
+  await s.getByRole('button',{name:'증빙 저장'}).click();
+  await s.getByText(/이어서 저장 대기/).waitFor();
+  await page.waitForFunction(()=>/^변경 \d+건 저장$/.test(document.querySelector('#b2SaveAll')?.textContent||''),null,{timeout:15000});
+  await s.getByText('앞선 출결 저장이 끝나지 않아 증빙은 저장하지 않았습니다. 확인 후 다시 눌러 주세요.').waitFor();
+  assert.equal(await s.locator('select[data-f="ev"]').inputValue(),'확인','the chosen evidence stays');
+  assert.equal(await s.getByRole('button',{name:'증빙 저장'}).isEnabled(),true);
+  assert.deepEqual(savesOf(posts,'가상증빙').map(x=>x.reason),['병원 진료 2'],'only the failed row save was sent');
+ },virtual(async body=>{if(body.action==='b2Save'){await new Promise(r=>setTimeout(r,1500));return {ok:false,error:'가상 저장 실패'};}return null;}));
 });
