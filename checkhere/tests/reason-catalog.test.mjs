@@ -127,9 +127,50 @@ test('출결대조 사유 드롭다운 하나: 표준 글은 그대로 고르고
  assert.deepEqual(reasonPick('',{custom:true}),{main:OTHER,kind:'',apt:'',input:true,custom:''});
  assert.deepEqual(reasonPick('교통',{custom:true}).main,OTHER,'a picked 기타 stays open while typing a listed word');
  const o=reasonOptions('취업박람회',{type:'인정출석',blank:'사유 (필수)'});
- assert.match(o,/^<option value="" >사유 \(필수\)<\/option>/);assert.match(o,/<option value="취업박람회" selected>/);assert.match(o,/<optgroup label="\(인정 안 됨\) 교통">/);assert.match(o,/<option value="취업활동\(채용설명회\)" >\(인정 안 됨\) 취업활동\(채용설명회\)<\/option>/);assert.match(o,/<option value="기타" >기타 \(직접 입력\)<\/option>$/);
- assert.equal((o.match(/<option /g)||[]).length,STANDARD.size+2);
+ assert.match(o,/^<option value="" >사유 \(필수\)<\/option>/);assert.match(o,/<option value="취업박람회" selected>/);assert.match(o,/<option value="교통" >\(인정 안 됨\) 교통<\/option>/);assert.match(o,/<option value="취업활동" >\(인정 안 됨\) 취업활동<\/option>/);assert.match(o,/<option value="기타" >기타 \(직접 입력\)<\/option>$/);
+ // 옆 종류 드롭다운 일반화(사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운'): 분류마다 하나(세부가 둘 이상이면 값 = 분류 키), optgroup 없음
+ assert.doesNotMatch(o,/optgroup/);assert.equal((o.match(/<option /g)||[]).length,REASON_CATS.filter(c=>!c.hidden).length+2);
+ assert.deepEqual([...o.matchAll(/<option value="([^"]*)"/g)].map(m=>m[1]),['','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
  for(const t of STANDARD)assert.ok(reasonCategory(t)||t==='일반건강검진'||['교통','교통사정','교통(사고)','개인사정','개인일정'].includes(t)||/^(교통|취업활동|개인사정)/.test(t),t);
+});
+
+// 옆 종류 드롭다운 일반화(사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운 시키는게 낫네? 이런거 가능한건 다 그렇게'): 저장 글 형식은 그대로
+test('세부가 둘 이상인 분류는 모두 분류 하나 + 옆 종류 드롭다운: 병원·경조사·공가·예비군·교통·취업활동·개인사정, 저장 글은 그대로(병원(치과)·부친상), 해석기도 그대로',()=>{
+ const side=REASON_CATS.filter(c=>c.side).map(c=>c.key);
+ assert.deepEqual(side,['병원','인적성','예비군','자격증','경조사','공가','교통','취업활동','개인사정']);assert.ok(!catOf('면접').side&&!catOf('취업박람회').side,'one entry stays in the main list');
+ const pick=t=>{const s=reasonPick(t);return [s.main,s.kind,s.apt,s.input,s.custom];};
+ assert.deepEqual(pick('병원(치과)'),['병원','병원','병원(치과)',false,'']);
+ assert.deepEqual(pick('병원'),['병원','병원','병원',false,''],'the key that is also a sub selects that sub');
+ assert.deepEqual(pick('일반건강검진'),['병원','병원','일반건강검진',false,'']);
+ assert.deepEqual(pick('부친상'),['경조사','경조사','부친상',false,''],'경조사 subs keep their bare text');
+ assert.deepEqual(pick('경조사'),['경조사','경조사','',false,''],'category only');
+ assert.deepEqual(pick('경조사(조카 결혼)'),['경조사','경조사',OTHER,true,'조카 결혼']);
+ assert.deepEqual(pick('경조사()'),['경조사','경조사',OTHER,true,'']);
+ assert.deepEqual(pick('병원(감기)'),['병원','병원',OTHER,true,'감기']);
+ assert.deepEqual(pick('병원(검진)'),['병원','병원',OTHER,true,'검진']);
+ assert.deepEqual(pick('민방위'),['예비군','예비군','민방위',false,'']);
+ assert.deepEqual(pick('교통사정'),['교통','교통','교통사정',false,'']);
+ assert.deepEqual(pick('취업활동(채용설명회)'),['취업활동','취업활동','취업활동(채용설명회)',false,'']);
+ assert.deepEqual(pick('공가(투표)'),['공가','공가','공가(투표)',false,'']);
+ assert.deepEqual(pick('개인일정'),['개인사정','개인사정','개인일정',false,'']);
+ assert.deepEqual(pick('면접'),['면접','','',false,'']);assert.deepEqual(pick('병결'),[OTHER,'','',true,''],'old free texts stay free text');
+ // 고르기 → 저장 글
+ assert.equal(composeReason('경조사',''),'경조사');assert.equal(composeReason('경조사','부친상'),'부친상');assert.equal(composeReason('공가',OTHER,'예비소집'),'공가(예비소집)');assert.equal(composeReason('면접',''),'면접');
+ assert.deepEqual(splitReason('경조사'),{cat:'경조사',sub:'',custom:''});assert.deepEqual(splitReason('취업활동'),{cat:'취업활동',sub:'',custom:''});
+ assert.equal(typeWarning('인정출석',splitReason('취업활동').cat),'취업활동은 보통 인정 사유가 아닙니다');
+ // 옆 칸 목록: 맨 앞 '종류 고르기', 세부 이름, 기타
+ assert.deepEqual([...subOptions('경조사','부친상').matchAll(/>([^<]+)<\/option>/g)].map(m=>m[1]),['종류 고르기','부친상','모친상','조부상','조모상','외조부상','외조모상','본인 결혼','형제자매 결혼','배우자 출산','기타 (직접 입력)']);
+ assert.deepEqual([...subOptions('예비군','').matchAll(/>([^<]+)<\/option>/g)].map(m=>m[1]),['종류 고르기','예비군 훈련','민방위 교육','기타 (직접 입력)']);
+ assert.match(subOptions('교통','교통사정'),/<option value="교통사정" selected>\(인정 안 됨\) 교통사정<\/option>/);
+ // 새로 생기는 글(분류 키만·분류(직접 입력))도 해석기가 그 분류로 봅니다.
+ for(const [t,cat] of [['경조사','경조사'],['경조사(조카 결혼)','경조사'],['공가','공가'],['공가(예비소집)','공가'],['병원(감기)','병원']])assert.equal(reasonCategory(t),cat,t);
+ assert.equal(reasonCategory('취업활동'),'');assert.equal(reasonKind('취업활동'),'취업활동');assert.equal(isDiseaseReason('병원(감기)'),true);assert.equal(isDiseaseReason('경조사'),false);
+ for(const t of STANDARD){const s=reasonPick(t);assert.ok(s.main&&s.main!==OTHER&&!s.input,t);}
+ // 세부를 하나만 남기면(나머지 숨기기) 옆 칸 없이 그 글 하나
+ const d=cloneCatalog(DEFAULT_REASON_CATALOG);d.cats.find(c=>c.key==='공가').subs.forEach((s,i)=>{if(i)s.hidden=true;});
+ try{assert.equal(setReasonCatalog(d).ok,true);assert.equal(catOf('공가').side,false);assert.match(reasonOptions(''),/<option value="공가\(법원 출석\)" >공가\(관공서·법원\)<\/option>/);assert.deepEqual(reasonPick('공가(법원 출석)').main,'공가(법원 출석)');}
+ finally{resetReasonCatalog();}
+ assert.equal(catOf('공가').side,true);
 });
 
 test('목록 개정(사용자 2026-10-20): 병결 없음, 면접·취업박람회 하나, 예비군·민방위 둘, 자격증 시험 + 종류, 인정 안 됨 표시는 화면 글에만',()=>{
@@ -179,9 +220,12 @@ test('검진 구분(규정 0917 「일반건강검진은 불인정」): 진료 �
  assert.equal(isDiseaseReason('일반건강검진'),false);assert.equal(isDiseaseReason('일반 건강 검진'),false);assert.equal(isDiseaseReason('병원(진료 위한 검사)'),true);assert.equal(isDiseaseReason('검진'),true);
  assert.equal(reasonCategory('일반건강검진'),'');assert.equal(reasonCategory('병원(진료 위한 검사)'),'병원');
  const o=reasonOptions('',{type:'인정출석'});
- assert.match(o,/<option value="일반건강검진"  disabled>\(인정 안 됨\) 일반건강검진<\/option>/);
- assert.match(o,/<option value="병원\(진료 위한 검사\)" >병원\(진료 위한 검사\)<\/option>/);
- assert.doesNotMatch(reasonOptions('',{type:'결석'}),/disabled/);
+ // 병원·질병은 사유 드롭다운에 하나, 막기는 옆 종류(세부) 칸에서
+ assert.match(o,/<option value="병원" >병원·질병<\/option>/);assert.doesNotMatch(o,/일반건강검진|disabled/);
+ assert.match(subOptions('병원','',{type:'인정출석'}),/^<option value="" selected>종류 고르기<\/option><option value="병원" >병원 진료<\/option>/);
+ assert.match(subOptions('병원','',{type:'인정출석'}),/<option value="병원\(진료 위한 검사\)" >진료 위한 검사<\/option>/);
+ assert.doesNotMatch(subOptions('병원','',{type:'결석'}),/disabled/);
+ assert.match(subOptions('병원','일반건강검진',{type:'인정출석'}),/<option value="일반건강검진" selected>\(인정 안 됨\) 일반건강검진<\/option>/,'a saved blocked value stays selectable');
  assert.match(subOptions('병원','',{type:'인정출석'}),/<option value="일반건강검진"  disabled>\(인정 안 됨\) 일반건강검진<\/option>/);
  assert.deepEqual(reasonChecks('인정출석','일반건강검진'),[{level:'error',text:'(인정 안 됨) 일반건강검진 · 진료 위한 검사만 인정됩니다'}]);
  assert.deepEqual(reasonChecks('인정출석','병원(검진)'),[{level:'warn',text:'검진 종류 확인 필요 · 진료 위한 검사만 인정(일반건강검진은 인정 안 됨)'}]);
