@@ -119,7 +119,7 @@ service cloud.firestore {
       allow create, update: if isAdmin() && validClass(classId)
         && request.resource.data.keys().hasOnly(['classId','students','updatedBy','updatedAt'])
         && request.resource.data.classId == classId
-        && request.resource.data.students is list && request.resource.data.students.size() <= 40
+        && request.resource.data.students is list && request.resource.data.students.size() <= 80
         && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
