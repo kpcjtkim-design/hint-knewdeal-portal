@@ -13,10 +13,10 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 // 중도탈락·수료(2026-10-20, 2기 배포 ① 버전 10, 마스터시트 '중도탈락' 탭 A~R): 목록·수료 명단은 담임도 자기 반만, 등록·고치기(b2DropoutSave)는 담임도 자기 반·담임 칸만(b2Args·keepAdminDropoutFields),
 // 여러 명 상태 바꾸기(b2RosterStatusMany, 수료 처리)는 관리자만.
 const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
- 'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany']);
+ 'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany','b2Schedule','b2ScheduleSave']);
 const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭으로 등록, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
-const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany']);
+const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave']);
 // 중도탈락 탭에서 담임이 정할 수 있는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
 export const TEACHER_DROPOUT_FIELDS=['name','kind','reason','startDate','lastDate','note'];
 const ADMIN_DROPOUT_FIELDS=['verdict','basis','docs','contact'];
@@ -84,7 +84,9 @@ export function b2Args(user,action,rest){
   if(action==='b2VocReply'||action==='b2VocSeen')return [admin&&p.cls===undefined?p:{...p,cls:own(p.cls)}];
   if(action==='b2Rev'||action==='b2Status')return [];
   // 모듈 시간·대조 메모 목록: 담임은 늘 자기 반(cls를 붙임), 관리자는 고른 반이나 반 없이(또는 'all') 전체. 그날 기준(b2DayTimes)은 반이 꼭 있어야 합니다.
-  if(action==='b2ModuleTimes'||action==='b2LedgerMemos'){const {cls,...q}=p;return [admin&&(cls===undefined||cls===''||cls==='all')?q:{...q,cls:own(cls)}];}
+  // 시간표(b2Schedule, 2026-10-20)도 같음: 담임은 자기 반만. 고치기(b2ScheduleSave, 관리자만)는 한 줄·여러 줄(rows) 모두 줄마다 반 번호를 확인합니다.
+  if(action==='b2ModuleTimes'||action==='b2LedgerMemos'||action==='b2Schedule'){const {cls,...q}=p;return [admin&&(cls===undefined||cls===''||cls==='all')?q:{...q,cls:own(cls)}];}
+  if(action==='b2ScheduleSave')return [Array.isArray(p.rows)?{rows:p.rows.map(r=>({...(r&&typeof r==='object'?r:{}),cls:own(r?.cls)}))}:{...p,cls:own(p.cls)}];
   // 그날 기준 읽기·관리자 쓰기(모듈 시간·교육생 상태·대조 메모): 반 번호를 서버에서 확인해 붙입니다.
   if(['b2DayTimes','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo'].includes(action))return [{...p,cls:own(p.cls)}];
   // 중도탈락 목록·수료 명단: 담임은 늘 자기 반, 관리자는 고른 반이나 전체(반 없이).

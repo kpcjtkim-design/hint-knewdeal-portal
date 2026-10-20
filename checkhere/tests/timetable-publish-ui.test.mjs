@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {loadPlaywright} from '../collector.mjs';
 // 사용자 2026-10-20 '담임 화면에서 시간표가 안뜸 … 담임 공개도 같이 되게 해줘':
-// 공개본이 없으면 담임은 엑셀 원본(관리자가 편집 전에 보는 일정)을 보고, 관리자가 저장하면 담임 공개본도 함께 씁니다.
-test('teacher falls back to the Excel base schedule; admin publish-now banner and save auto-publish',async()=>{
+// 마스터시트를 못 읽을 때(여기서는 시트 연결 없음): 공개본이 없으면 담임은 엑셀 원본을 보고, 관리자가 저장하면 담임 공개본도 함께 씁니다.
+test('sheet unreadable: teacher falls back to published then the Excel base schedule; admin saves also publish',async()=>{
  const base=join(import.meta.dirname,'../..'),{chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
  const lecture={id:'L1',course:'모빌리티 AI',module:'디지털스킬',title:'디지털스킬',days:2};
  const row=(cid,n,date,day)=>({id:`x2-${cid}-${date}`,date,course:lecture.course,module:lecture.module,lectureId:lecture.id,title:lecture.title,day,hours:8,start:'',end:'',instructorId:'',instructorName:'조해정',venue:'',online:false,note:'',kind:'class',origin:{subject:'both'},sourceRow:n,sourceText:lecture.title});
@@ -31,12 +31,12 @@ test('teacher falls back to the Excel base schedule; admin publish-now banner an
   await showTeacher('17');assert.match(await teacher.locator('.source-note').innerText(),/시험용 반이라 1반 일정 예시/);assert.equal(await teacher.locator('.teacher-calendar .schedule-scroll .lesson').count(),2);
   // Compact (홈 '오늘 수업') keeps the note too.
   await page.evaluate(()=>window.mountTeacher('1',true));await teacher.locator('.source-note').waitFor();assert.equal(await teacher.locator('.teacher-calendar').count(),0);
-  // 2. Admin: drafts without a published copy → prominent one-click publish (with the usual review dialog).
-  await page.evaluate(()=>window.mountAdmin());const now=admin.getByRole('button',{name:'2개 반 담임에게 지금 공개'});await now.waitFor();
+  // 2. Admin: drafts without a published copy → '전체 반 다시 공개' (with the usual review dialog). Opening the screen alone writes nothing.
+  await page.evaluate(()=>window.mountAdmin());const now=admin.getByRole('button',{name:'2개 반 담임에게 다시 공개'});await now.waitFor();await admin.getByText(/기준 일정: 엑셀 일정표/).waitFor();
   assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaPublished/')).length),0,'opening the screen publishes nothing by itself');
   await now.click();await admin.locator('#publishConfirm:not([disabled])').waitFor();await admin.locator('#publishConfirm').click();await admin.getByRole('status').getByText('2/2개 반 공개 완료',{exact:true}).waitFor();
   const p1=await docOf('timetableBetaPublished/1');assert.equal(p1.sourceRevision,1);assert.deepEqual(p1.entries.map(e=>e.id),seed.classes['1'].entries.map(e=>e.id));assert.equal(p1.entries.some(e=>'sourceText' in e||'origin' in e||'sourceRow' in e),false,'publishEntries strips Excel source fields');assert.equal(p1.entries[0].instructorName,'조해정');
-  assert(await docOf('timetableBetaPublished/2'));assert.equal(await admin.getByRole('button',{name:/담임에게 지금 공개/}).count(),0);
+  assert(await docOf('timetableBetaPublished/2'));
   // 3. Editor save writes the draft and the teacher copy in the same flow.
   await admin.locator('#classFilter').selectOption('1');await admin.locator('#date').fill('2026-10-28');await admin.locator('#date').dispatchEvent('change');
   await admin.locator('[data-edit="x2-1-2026-10-28"]').click();await admin.getByLabel('전달사항',{exact:true}).fill('노트북 지참');await admin.getByRole('button',{name:'편집본 저장',exact:true}).click();
@@ -53,7 +53,6 @@ test('teacher falls back to the Excel base schedule; admin publish-now banner an
   await page.evaluate(()=>window.docs['timetableBetaPublished/1'].revision++);
   await admin.locator('[data-edit="x2-1-2026-10-29"]').click();await admin.getByLabel('전달사항',{exact:true}).fill('실습');await admin.getByRole('button',{name:'편집본 저장',exact:true}).click();
   await admin.getByRole('status').getByText(/1반 공개 실패.*다시 공개/).waitFor();assert.equal((await docOf('timetableBetaDrafts/1')).revision,3);
-  assert.equal(await admin.getByRole('button',{name:'1개 반 담임에게 지금 공개'}).count(),1,'banner offers to publish the unpublished draft');
   assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });
