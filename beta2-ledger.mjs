@@ -128,8 +128,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 행 안 입력칸: 유형, 그 유형에 필요한 시간만, 사유(적당히 좁게, 전체 글은 title). 초안이 있으면 초안 값을 보입니다.
  // 분류·세부(인적성 종류) 드롭다운. 세부가 없는 분류(기타)는 하나만.
  function pickSelects(n,v){const {cat,sub}=pickOf(v.reason),o=subOptions(cat,sub);return `<select data-inline="rcat" aria-label="${n} 사유 분류" title="사유 분류">${catOptions(cat,{type:v.type,blank:'분류'})}</select>${o?`<select data-inline="rsub" aria-label="${n} ${cat==='인적성'?'인적성 종류':'세부 사유'}" title="${cat==='인적성'?'인적성 종류':'세부 사유'}">${o}</select>`:''}`;}
- // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙, 인정 출결인데 인정 분류가 아님
- function pickNote(v){const w=typeWarning(v.type,pickOf(v.reason).cat);return `${isJobFair(v.reason)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}`;}
+ // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님
+ function pickNote(row){const v=valuesOf(row),w=typeWarning(v.type,pickOf(v.reason).cat);return `${isJobFair(v.reason)&&!extraEvidence(row.rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}`;}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
@@ -140,7 +140,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const rec=row.rec,note=rec?.flag||'';
   if(!row.enrolled&&!rec)return `<fieldset class="b2-inline"><select data-inline="type" disabled aria-label="${esc(row.name)} 출결 유형"><option>해당없음</option></select></fieldset><span class="b2-sub">재학 기간 아님</span>`;
   // 모아 저장 중에는 fieldset으로 행 입력칸을 잠급니다(lock, 다시 그려도 잠긴 채).
-  return `<fieldset class="b2-inline" ${bulk?'disabled':''}>${inlineHtml(row)}</fieldset><div class="b2-inline-msg" data-msg></div><div data-xnote>${pickNote(valuesOf(row))}</div>${evBadge(rec?.evApplied)}${extraBadge(extraEvidence(rec))}${rec?.evr?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
+  return `<fieldset class="b2-inline" ${bulk?'disabled':''}>${inlineHtml(row)}</fieldset><div class="b2-inline-msg" data-msg></div><div data-xnote>${pickNote(row)}</div>${evBadge(rec?.evApplied)}${extraBadge(extraEvidence(rec))}${rec?.evr?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
  }
  // 증빙 편집기: 증빙(ev)·반려 사유(evr)만 고칩니다. 유형·시간·사유는 행에서 바로 고칩니다.
  function editorHtml(row){
@@ -404,7 +404,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   else if(value===OTHER){focusField(name,'reason');const n=bodies.get(name)?.querySelector('[data-inline="reason"]');if(n&&/\(\)$/.test(n.value))try{n.setSelectionRange(n.value.length-1,n.value.length-1);}catch{}}
  }
  // 사유를 직접 쓰는 동안 드롭다운·안내만 고칩니다(입력칸은 그대로).
- function syncPick(name){const row=rowOf(name),el=bodies.get(name);if(!row||!el)return;const v=valuesOf(row),s=el.querySelector('[data-rsel]'),x=el.querySelector('[data-xnote]');if(s)s.innerHTML=pickSelects(esc(name),v);if(x)x.innerHTML=pickNote(v);}
+ function syncPick(name){const row=rowOf(name),el=bodies.get(name);if(!row||!el)return;const v=valuesOf(row),s=el.querySelector('[data-rsel]'),x=el.querySelector('[data-xnote]');if(s)s.innerHTML=pickSelects(esc(name),v);if(x)x.innerHTML=pickNote(row);}
  // 유형을 바꾸면 필요한 시간만 보이게 다시 그리고, 빈 시간은 체크히어 값으로 미리 채웁니다(저장은 모아서).
  function setType(name,type){
   const row=rowOf(name);if(!row)return;

@@ -151,7 +151,7 @@ test('출결대조 사유 칸: 240px 안에 분류·세부(인적성 종류) 드
   assert.equal(await park.locator('[data-inline="rcat"]').count(),0);
   // 취업박람회 인정조퇴(증빙 미제출): 배지와 '추가 증빙' 거르기
   assert.equal(await dong.locator('.e-extra').textContent(),'추가 증빙 필요 · 기업면접 확인서 · 미제출');
-  assert.equal(await dong.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서');
+  assert.equal(await dong.locator('.b2-xnote').count(),0,'the saved badge already says it, no second notice');
   const chip=p.locator('[data-filter="extra"]');assert.equal(await chip.textContent(),'추가 증빙1');
   await chip.click();assert.deepEqual(await p.locator('tbody tr[data-name]').evaluateAll(rs=>rs.map(r=>r.dataset.name)),['김동진']);
   await p.locator('[data-filter="all"]').click();
