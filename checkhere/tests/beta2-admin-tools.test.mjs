@@ -81,7 +81,7 @@ test('module-time input is checked before it is sent: HH:mm inside 08:00~20:00, 
  assert.equal(checkModuleTime(ok),'');
  assert.equal(checkModuleTime(ok,{existing:true}),'시간을 고칠 때는 사유를 적어 주세요. (예: HRD 확정 전 임시)');
  assert.equal(checkModuleTime({...ok,reason:'HRD 확정 전 임시'},{existing:true}),'');
- const cases=[[{date:''},'날짜를 골라 주세요.'],[{date:'2026-10-20'},'2기 교육 기간(10/28~1/22) 안의 날짜를 골라 주세요.'],[{cls:'18'},'반을 골라 주세요.'],[{module:' '},'모듈 이름을 적어 주세요.'],
+ const cases=[[{date:''},'날짜를 골라 주세요.'],[{date:'2026-10-20x'},'날짜를 골라 주세요.'],[{cls:'18'},'반을 골라 주세요.'],[{module:' '},'모듈 이름을 적어 주세요.'],
   [{module:'가'.repeat(61)},'모듈 이름은 60자 이하로 적어 주세요.'],[{start:'열시'},'시작·끝 시간은 10:00처럼 넣어 주세요.'],[{end:''},'시작·끝 시간은 10:00처럼 넣어 주세요.'],[{start:'07:30'},'교육시간은 08:00~20:00 안에서 정해 주세요.'],
   [{end:'20:30'},'교육시간은 08:00~20:00 안에서 정해 주세요.'],[{start:'17:00',end:'10:00'},'끝 시간이 시작보다 늦어야 합니다.'],[{start:'10:00',end:'10:00'},'끝 시간이 시작보다 늦어야 합니다.'],[{part:'가'.repeat(61)},'구간은 60자 이하로 적어 주세요.'],[{reason:'가'.repeat(201)},'사유는 200자 이하로 적어 주세요.']];
  for(const [change,text] of cases)assert.equal(checkModuleTime({...ok,...change}),text,JSON.stringify(change));
@@ -96,7 +96,7 @@ test('student status input: one of 재학·중도탈락·조기취업·수료, a
  assert.equal(checkRosterStatus({status:'중도포기',changed:'2026-11-10'}),'상태는 재학·중도탈락·조기취업·수료 가운데 하나를 골라 주세요.');
  assert.equal(checkRosterStatus({status:'조기취업'}),'마지막 출석일을 넣어 주세요.');
  assert.equal(checkRosterStatus({status:'수료',changed:'11/10'}),'마지막 출석일을 날짜로 넣어 주세요.');
- assert.equal(checkRosterStatus({status:'수료',changed:'2027-02-01'}),'마지막 출석일은 2기 교육 기간(10/28~1/22) 안이어야 합니다.');
+ assert.equal(checkRosterStatus({status:'수료',changed:'2027-02-01'}),'','교육 기간 밖 날짜도 받음(사용자 결정 2026-10-20)');
  assert.equal(checkRosterStatus({status:'중도탈락',changed:'2026-11-10',reason:'가'.repeat(201)}),'사유는 200자 이하로 적어 주세요.');
  const b=decodeBundle({roster:[['1','가','중도탈락','2026-11-10','취업'],['1','나','재학','']]});
  assert.deepEqual(b.roster.map(p=>[p.status,p.changed,p.reason]),[['중도탈락','2026-11-10','취업'],['재학','','']]);

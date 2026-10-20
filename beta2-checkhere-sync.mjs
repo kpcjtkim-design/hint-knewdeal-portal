@@ -246,7 +246,7 @@ export function createCheckHereSync({db,user,client,fs,withdraw:withdrawById,get
         const m=String(e?.message||e);
         if(/바뀐 값이 없습니다/.test(m))return void finish(h,{...resultStatus({...res,state:'same',notes:['체크히어 이미 같음'],withdraw:[]}),sig:h.sig});
         if(/상세 기록이 아직 없습니다/.test(m))return void wait(h,'record','체크히어 상세 수집 대기');
-        if(/교육 기간 안의 날짜/.test(m))return void finish(h,HOLD('규칙 날짜 범위 밖 · 넓히려면 사용자 확인 필요',{sig:h.sig}));
+        if(/날짜를 확인해 주세요|날짜 모양/.test(m))return void finish(h,HOLD('날짜 모양 확인 필요',{sig:h.sig}));
         return void finish(h,HOLD(m,{sig:h.sig}));
       }
       if(Object.keys(memoDefaultTimes(request.changes,h.record)).length)return void finish(h,HOLD('시간이 없는 쪽에는 사유를 넣을 수 없습니다',{sig:h.sig}));

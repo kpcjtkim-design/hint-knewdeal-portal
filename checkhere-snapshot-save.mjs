@@ -1,5 +1,5 @@
-// 2기 반(1~16)·교육 기간 안의 날짜만 저장합니다(cohort.mjs).
-import {isClassId,inPeriod} from './cohort.mjs';
+// 2기 반(1~17)·날짜 모양(YYYY-MM-DD, 실제 있는 날)만 봅니다. 교육 기간 밖도 저장합니다(사용자 결정 2026-10-20, cohort.mjs).
+import {isClassId,isIsoDate} from './cohort.mjs';
 const canonical=value=>JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
 const digest=async text=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');
 const same=(data,batch)=>data?.classId===batch.classId&&data?.date===batch.date&&canonical(data.records)===canonical(batch.records);
@@ -12,7 +12,7 @@ export function createSnapshotSaver({read,write,hash=digest}){
     const groups=new Map();
     for(const original of records){
       const {audit,...rest}=original,r=JSON.parse(JSON.stringify(rest));
-      if(!isClassId(r.classId)||!inPeriod(r.date)||!r.id||!r.version||!Number.isFinite(Date.parse(r.collectedAt))||r.source!=='live')throw Error('반·날짜·수집 시각이 확인된 PC 수집 기록만 저장할 수 있습니다.');
+      if(!isClassId(r.classId)||!isIsoDate(r.date)||!r.id||!r.version||!Number.isFinite(Date.parse(r.collectedAt))||r.source!=='live')throw Error('반·날짜·수집 시각이 확인된 PC 수집 기록만 저장할 수 있습니다.');
       r.classId=String(r.classId);const key=r.classId+'/'+r.date;
       if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);
     }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as C from '../../cohort.mjs';
+import {KINDS} from '../../notify-core.mjs';
 
 // 2기 firestore.rules를 에뮬레이터 없이 시험합니다: 규칙 글을 작은 해석기로 JS로 옮겨 허용·거부만 봅니다(문법 검사는 콘솔 게시 때).
 // 가상 계정·가상 학생만 씁니다. 지원 범위: match 중첩·{x=**}, function·let, allow, get/exists, is, in, matches, size, keys, hasOnly, diff.
@@ -100,20 +101,24 @@ test('teachers see only their own classes (primary and temporary), admins write 
  assert.equal(can('create','attendanceBetaSummaries/16',{auth:ADMIN,next:att('16')}),true);assert.equal(can('create','attendanceBetaSummaries/18',{auth:ADMIN,next:att('18')}),false);
 });
 
-test('checkhereCurrent: administrators, classes 1..16 and 2026-10-28..2027-01-22 only (January 2027 included)',()=>{
+// 날짜는 모양(YYYY-MM-DD)만: 교육 기간 밖·주말·미래도 됨(사용자 결정 2026-10-20 '둘다 넓혀'), 반은 1~17만.
+const ANY_DATES=['2026-10-28','2027-01-22','2027-01-04','2026-10-27','2027-01-23','2026-10-20','2027-03-01','2026-09-03','2028-01-04','2026-10-24'],BAD_DATES=['2026-13-01','abc','2026-10-32','2026-00-10','2026-1-05','20261020','2026-10-20T00:00',''];
+test('checkhereCurrent: administrators, classes 1..17, any YYYY-MM-DD date (outside the course period, weekends and future too)',()=>{
  const cur=(cid,date)=>({classId:cid,date,records:[],jobId:'j',updatedBy:ADMIN.email,updatedAt:TIME});
- for(const [cid,date,ok] of [['3','2026-10-28',true],['16','2027-01-22',true],['1','2027-01-04',true],['3','2026-10-27',false],['3','2027-01-23',false],['18','2026-11-05',false],['3','2026-09-03',false],['3','2028-01-04',false]])
+ for(const [cid,date,ok] of [['16','2026-11-05',true],['17','2026-11-05',true],['18','2026-11-05',false],...ANY_DATES.map(d=>['3',d,true]),...BAD_DATES.filter(Boolean).map(d=>['3',d,false])])
   assert.equal(can('create',`classes/${cid}/checkhereCurrent/${date}`,{auth:ADMIN,next:cur(cid,date)}),ok,cid+' '+date);
  assert.equal(can('create','classes/3/checkhereCurrent/2026-11-05',{auth:T3,next:{...cur('3','2026-11-05'),updatedBy:T3.email}}),false);
  assert.equal(can('create','classes/3/checkhereCurrent/2026-11-05',{auth:ADMIN,next:{...cur('3','2026-11-05'),extra:1}}),false);
 });
 
-test('checkhereRequests: own-class teacher requests inside the 2기 period, admin-only time deletion, single approver',()=>{
+test('checkhereRequests: own-class teacher requests on any YYYY-MM-DD date, admin-only time deletion, single approver',()=>{
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ()}),true);
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({classId:'5'})}),true,'임시담당반');
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({classId:'4'})}),false,'다른 반');
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({date:'2027-01-22'})}),true);
- for(const date of ['2026-09-03','2026-10-27','2027-01-23','2026-13-01'])assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({date})}),false,date);
+ for(const date of ANY_DATES)assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({date})}),true,date);
+ for(const date of BAD_DATES)assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({date})}),false,date);
+ assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({date:20261020})}),false,'날짜는 글자');
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({createdBy:T4.email})}),false,'작성자 위장');
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({status:'approved'})}),false);
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({changes:{exit:''},deleteTimes:['exit']})}),false,'담임은 시간 삭제 못 함');
@@ -159,6 +164,11 @@ test('notifications (notify.mjs shape): teachers notify admins or their own clas
  assert.equal(can('create','notifications/n1',{auth:STRANGER,next:note({from:STRANGER.email,readBy:[STRANGER.email]})}),false,'등록 안 된 계정');
  assert.equal(can('create','notifications/n1',{auth:ADMIN,next:note({to:[],toRole:undefined,toClass:'4',cls:'4',from:ADMIN.email,readBy:[ADMIN.email],kind:'서류발급'})}),true,'운영자 → 4반 담임');
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'기타'})}),false,'정해진 종류만');
+ // 추가 증빙(취업박람회 기업면접 확인서, notify-core KINDS): 담임이 운영자(toRole admin) + 자기 반(toClass)으로 보냄
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'추가 증빙',toClass:'3',link:'#b2ledger?cls=3&date=2026-11-05'})}),true,'담임 추가 증빙 → 운영자 + 자기 반');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'추가 증빙',toClass:'5',cls:'5'})}),true,'임시담당반도');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'추가 증빙',toClass:'4'})}),false,'다른 반 담임에게는 안 됨');
+ assert.equal(can('create','notifications/n1',{auth:ADMIN,next:note({kind:'추가 증빙',toClass:'4',cls:'4',from:ADMIN.email,readBy:[ADMIN.email]})}),true,'운영자 추가 증빙');
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({body:'x'.repeat(161)})}),false);
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({to:Array.from({length:11},(_,i)=>`a${i}@example.com`)})}),false,'받는 사람 10명까지');
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({text:'옛 칸'})}),false,'정해진 칸만');
@@ -176,11 +186,24 @@ test('notifications (notify.mjs shape): teachers notify admins or their own clas
 
 test('rules ranges, admins and approver are the same values as cohort.json; time-delete helpers match the design text',()=>{
  assert.ok(src.includes(`c.matches('${C.classIdPattern().replace('(?:','(')}')`),'반 정규식 = cohort');assert.equal(C.classIdPattern(),'(?:[1-9]|1[0-7])','16개 반 + 17반 시험용 테스트반');
- assert.ok(src.includes(`d.matches('202[67]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') && d>='${C.COURSE_START}' && d<='${C.COURSE_END}'`),'기간 = cohort');
+ assert.ok(src.includes("function validDate(d){return d is string && d.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])');}"),'날짜는 모양만');
+ assert.ok(!/courseDate|d *[<>]=? *'20\d\d-/.test(src),'날짜 기간 비교 없음(2026-10-20부터)');assert.equal((src.match(/validDate\(/g)||[]).length,4,'validDate 정의 + 쓰는 곳 3(요청·현재 기록·추천 초안)');
  assert.ok(src.includes(`function bootstrapEmail(e){return ${C.ADMINS.map(a=>`e=='${a}'`).join('||')};}`),'관리자 = cohort');
  assert.ok(src.includes(`email()=='${C.APPROVER}'`),'승인자 = cohort');
  assert.ok(!/2026-07-27|2026-10-22|'2026-\[0-9\]/.test(src),'1기 기간 없음');assert.equal(src.match(/(?<!\d)\[1-9\]\|1\[0-\d\]/g).join(),'[1-9]|1[0-7]','반 정규식은 validClass 한 곳(17 = 시험용 테스트반)');
  const plan=readFileSync(new URL('../../docs/beta2-instant-edit-plan.md',import.meta.url),'utf8').replace(/\r\n/g,'\n'),from=plan.indexOf('function hhmmss(');
  const spec=plan.slice(from,plan.indexOf('```',from)).trim().split('\n').map(s=>s.trim());
  for(const line of spec)assert.ok(src.split('\n').some(l=>l.trim()===line),line.slice(0,40));
+});
+
+test('checkhereProposalDrafts: admin drafts on any YYYY-MM-DD date, class 1..17',()=>{
+ const draft=(o={})=>({classId:'3',date:'2026-11-05',students:{},updatedBy:ADMIN.email,updatedAt:TIME,...o});
+ for(const date of ANY_DATES)assert.equal(can('create','checkhereProposalDrafts/d1',{auth:ADMIN,next:draft({date})}),true,date);
+ for(const date of BAD_DATES)assert.equal(can('create','checkhereProposalDrafts/d1',{auth:ADMIN,next:draft({date})}),false,date);
+ assert.equal(can('create','checkhereProposalDrafts/d1',{auth:ADMIN,next:draft({classId:'18'})}),false);assert.equal(can('create','checkhereProposalDrafts/d1',{auth:T3,next:draft({updatedBy:T3.email})}),false);
+});
+
+test('notification kinds in the rules are exactly notify-core KINDS (same order)',()=>{
+ const m=/d\.kind in \[([^\]]*)\]/.exec(src);assert.ok(m,'validNotification kind 목록');
+ assert.deepEqual(m[1].split(',').map(s=>s.trim().replace(/^'|'$/g,'')),[...KINDS]);
 });

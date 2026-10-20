@@ -10,12 +10,14 @@ import {TIME_DELETE_V2_CAPABILITY,normalizeTime,privacyState,timeDeleteRefusal} 
 import {ACTIVE,AUTO_TEXT,isAutoLedgerRequest,isLiveRequest,stamp} from './checkhere-live-core.mjs';
 import {reasonCategory} from './checkhere-proposal-core.mjs';
 // 출결 시간 기준(그날·그 반, cohort ruleFor): 지각은 lateAfter 넘긴 입실(기본 09:10, 견학 10:10), 조퇴는 earlyBefore 전 퇴실(기본 17:50, 견학 16:50).
-import {COURSE_START,COURSE_END,ruleFor,scheduleText,acceptedSchedules,lateAfter,earlyBefore} from './cohort.mjs';
+import {isIsoDate,ruleFor,scheduleText,acceptedSchedules,lateAfter,earlyBefore} from './cohort.mjs';
 
 export const STATUS_MEMO=/^\s*(?:\(\s*인정(?:출석|지각|조퇴|외출)\s*\)|(?:지각|조퇴|외출)_담임:)/;
 const PLAIN_STATUS_MEMO=/^\s*(?:지각|조퇴|외출)_담임:/;
 export const RELAY_STALE_MS=3*60*1000;          // 중계 신호가 이보다 오래되면 '중계 꺼짐'(해제 상태 모름, 시간 삭제 요청과는 상관없음)
-export const REQUEST_DATE_RANGE={from:COURSE_START,to:COURSE_END}; // 2기 교육 기간(cohort.json). checkhere/approval-core.mjs cleanRequest, firestore.rules와 같아야 함
+// 요청 날짜는 날짜 모양(YYYY-MM-DD, 실제 있는 날)만 봅니다. 교육 기간 밖·교육일이 아닌 날·미래도 받습니다(사용자 결정 2026-10-20 '수정 자체는 언제든 유연하게').
+// checkhere/approval-core.mjs cleanRequest, firestore.rules(validDate)와 같은 기준입니다.
+export const requestDateOk=d=>isIsoDate(d);
 export {AUTO_TEXT,isAutoLedgerRequest}; // '실패 건 다시 처리' 제외도 쓰므로 checkhere-live-core.mjs에 둡니다.
 export const TIME_DELETE_CAPABILITY='time-delete-v1';
 export {TIME_DELETE_V2_CAPABILITY};
@@ -116,8 +118,8 @@ export function sheetToCheckHere({row,record,sheetTeacher='',date='',deleteEnabl
   const out={state:'hold',changes:{},deleteTimes:[],text:'',notes:[],warnings:[],withdraw:[]};
   const hold=(note,retryWhen)=>({...out,state:'hold',changes:{},deleteTimes:[],notes:[note],...(retryWhen?{retryWhen}:{})});
   const type=String(row?.type||'출석'),reason=String(row?.reason||'').trim();
-  // P0 날짜 범위(규칙·cleanRequest와 같음). 시트 저장은 그대로입니다.
-  if(!date||date<REQUEST_DATE_RANGE.from||date>REQUEST_DATE_RANGE.to)return hold('규칙 날짜 범위 밖 · 넓히려면 사용자 확인 필요');
+  // P0 날짜 모양(규칙·cleanRequest와 같음, 기간 제한 없음). 시트 저장은 그대로입니다.
+  if(!requestDateOk(date))return hold('날짜 모양 확인 필요');
   // P1·P2
   if(!record)return {...out,state:'none',notes:['체크히어 기록 없음 · 이름 연결 확인']};
   if(record.source!=='live'||record.readState!=='complete'||!record.id||!record.version)return hold('체크히어 상세 수집 대기','record');

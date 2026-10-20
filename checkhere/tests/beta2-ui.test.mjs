@@ -308,8 +308,8 @@ test('before the course starts (no past training day) 출결대조 picks today i
  },{clock:'2026-10-20T10:00:00+09:00',api:body=>body.action==='b2Bundle'?{ok:true,data:early}:null});
 });
 
-test('출결대조 records any past day: 「다른 날짜…」 opens a date box, a non-training day saves with a muted note and the sheet notice, memos widen their range, and future days stay blocked',async()=>{
- // 사용자 결정 2026-10-20: 교육일이 아닌 날(주말·개강 전)도 오늘까지는 기록·수정. 목록은 교육일 그대로 + 「다른 날짜…」.
+test('출결대조 records any past day: 「다른 날짜…」 opens a date box, a non-training day saves with a muted note and the sheet notice, memos widen their range, and future days open too with a muted note',async()=>{
+ // 사용자 결정 2026-10-20: 교육일이 아닌 날(주말·개강 전)도, 아직 오지 않은 날도 기록·수정('둘다 넓혀'). 목록은 교육일 그대로 + 「다른 날짜…」.
  const SAVE_NOTE='교육일이 아닌 날의 기록입니다.',MEMO_NOTE='교육일이 아닌 날의 메모입니다. 출결판에는 나오지 않습니다.';
  await beta(async(page,posts)=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
@@ -321,11 +321,16 @@ test('출결대조 records any past day: 「다른 날짜…」 opens a date box
   assert.equal(await sel.locator('option').last().innerText(),'다른 날짜…');
   await sel.selectOption('__any');
   assert.equal(await sel.inputValue(),'2026-11-05','the list stays on the current day');
-  assert.equal(await any.isVisible(),true);assert.equal(await any.getAttribute('max'),'2026-11-05');
-  // 미래는 막음
+  assert.equal(await any.isVisible(),true);assert.equal(await any.getAttribute('max'),null,'no upper limit');assert.equal(await any.getAttribute('min'),null,'no lower limit');
+  // 미래도 열림(작은 안내만, 막지 않음). 메모는 그날까지 읽음
   await any.fill('2026-11-06');
-  await page.getByText('아직 오지 않은 날은 기록할 수 없습니다',{exact:false}).waitFor();
-  assert.equal(await sel.inputValue(),'2026-11-05');
+  await page.waitForFunction(()=>document.querySelector('#b2Date').value==='2026-11-06');
+  assert.match(await sel.locator('option:checked').innerText(),/11\/6\(금\).* · 예정/);
+  assert.match(await note.innerText(),/아직 오지 않은 날입니다 · 기록할 수 있습니다/);
+  assert.equal(await any.isVisible(),true);
+  for(let i=0;i<50&&!posts.some(p=>p.action==='b2LedgerMemos'&&p.args[0].to==='2026-11-06');i++)await page.waitForTimeout(100);
+  assert.ok(posts.some(p=>p.action==='b2LedgerMemos'&&p.args[0].to==='2026-11-06'),'memos are read up to the future day');
+  assert.equal(await page.getByText('아직 오지 않은 날은 기록할 수 없습니다',{exact:false}).count(),0);
   // 일요일(교육일 아님)
   await any.fill('2026-11-01');
   await page.waitForFunction(()=>document.querySelector('#b2Date').value==='2026-11-01');
@@ -338,6 +343,12 @@ test('출결대조 records any past day: 「다른 날짜…」 opens a date box
   await page.locator('#b2SaveAll').click();
   await page.locator('#b2Msg').getByText(SAVE_NOTE).waitFor();
   assert.deepEqual(posts.filter(p=>p.action==='b2Save').map(p=>[p.args[0].date,p.args[0].name,p.args[0].type]),[['2026-11-01','고다원','결석']]);
+  // 교육일이 아닌 날의 인정 출결: 막지 않고 행에 경고(사용자 2026-10-20). 같은 값으로 되돌리면 경고도 사라짐
+  const offNote=page.locator('tbody[data-student="고다원"] [data-offday-note]');
+  await go.locator('select[data-inline="type"]').selectOption('인정출석');
+  await offNote.waitFor();assert.equal(await offNote.innerText(),'교육일이 아닌 날의 인정 출결은 통계·증빙에 들지 않습니다');
+  await go.locator('select[data-inline="type"]').selectOption('결석');
+  for(let i=0;i<30&&await offNote.count();i++)await page.waitForTimeout(100);assert.equal(await offNote.count(),0);
   // 메모: 교육일이 아닌 날도 저장하고 시트 안내를 보임
   await page.locator('tbody[data-student="고다원"] [data-memo-toggle]').click();
   await page.locator('tbody[data-student="고다원"] [data-memo-pick="수기출석 미제출"]').click();

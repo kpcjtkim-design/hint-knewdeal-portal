@@ -1,5 +1,5 @@
-// 2기 반(1~16)·교육 기간(2026-10-28~2027-01-22) 안의 날짜만 저장합니다(cohort.mjs, firestore.rules checkhereCurrent와 같음).
-import {isClassId,inPeriod} from './cohort.mjs';
+// 2기 반(1~17, 17반은 시험용 테스트반)·날짜 모양(YYYY-MM-DD, 실제 있는 날)만 봅니다. 교육 기간 밖·교육일이 아닌 날도 저장합니다(사용자 결정 2026-10-20, cohort.mjs, firestore.rules checkhereCurrent와 같음).
+import {isClassId,isIsoDate} from './cohort.mjs';
 const canonical=value=>JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
 export function mergeCurrentRecords(previous,incoming,classId,date){
  const rows=new Map();
@@ -24,7 +24,7 @@ export function createCurrentSaver({read,readLegacy,commit,onSaved=()=>{}}){
   const groups=new Map();
   for(const original of records){
    const {audit,...rest}=original,r=JSON.parse(JSON.stringify(rest));r.classId=String(r.classId);
-   if(!isClassId(r.classId)||!inPeriod(r.date)||!r.id||!r.version||!Number.isFinite(Date.parse(r.collectedAt))||r.source!=='live')throw Error('PC에서 수집한 반·날짜·시간이 확인된 기록만 저장할 수 있습니다.');
+   if(!isClassId(r.classId)||!isIsoDate(r.date)||!r.id||!r.version||!Number.isFinite(Date.parse(r.collectedAt))||r.source!=='live')throw Error('PC에서 수집한 반·날짜·시간이 확인된 기록만 저장할 수 있습니다.');
    // 체크히어 가린 글자(*)가 든 이름·담임·학생 키·끝 4자리는 플랫폼 DB에 올리지 않습니다.
    if(['name','teacher','studentKey','phoneLast4'].some(k=>String(r[k]??'').includes('*')))throw Error('가린 글자(*)가 든 학생 기록은 저장하지 않습니다. 수집 PC에서 다시 수집해 주세요.');
    const key=r.classId+'/'+r.date;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);

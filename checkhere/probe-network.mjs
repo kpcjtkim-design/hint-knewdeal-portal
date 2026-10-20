@@ -96,7 +96,7 @@ async function main(){
   if(modal===undefined)modal=!/^n/i.test((await rl.question('기존 방식(학생별 수정창)도 같이 재서 비교할까요? 몇 분 걸립니다 [Y/n]: ')).trim());
   rl.close();
   if(!classOk(classId))throw Error(`반 번호는 1~${CLASS_IDS.length} 사이로 입력해 주세요.`);
-  if(!validIso(date))throw Error('날짜는 2026-10-28 형식(2026·2027년)으로 입력해 주세요.');
+  if(!validIso(date))throw Error('날짜는 2026-10-28 형식으로 입력해 주세요.');
   const dataDir=join(here,'data'),collector=new CheckHereCollector(dataDir);
   log('전용 크롬을 엽니다. (검수 프로그램과 같은 로그인 세션을 씁니다)');
   try{await collector.connect();}

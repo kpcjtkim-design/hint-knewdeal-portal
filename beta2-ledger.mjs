@@ -3,8 +3,9 @@
 // 모아서 저장·학생 아래 얇은 직접 요청 줄(checkhere-proposals.mjs compact)은 사용자 결정 2026-10-16입니다.
 // 요청은 승인 대기로 남고, 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만입니다(사용자 결정 2026-10-16, 중계는 읽기 전용).
 // Firestore 함수는 아래 SDK 주소에서 바로 불러옵니다(2기 전용 Firebase 프로젝트라 1기 자료 저장 가드가 없습니다). 2기에는 운영총괄 동기화가 없어 '운영총괄 가져오기·되돌리기·동기화 확인'도 없습니다.
-// 아무 날짜 기록(사용자 결정 2026-10-20): 교육일이 아닌 날(주말·휴일·개강 전)도 오늘까지는 고르고 기록·메모할 수 있습니다(지난 기록 고치기). 날짜 목록은 교육일 그대로이고
-// 「다른 날짜…」를 고르면 옆에 날짜 칸이 열립니다. 교육일이 아닌 날은 평소 기준(09:00~18:00)으로 대조하고 작은 안내만 보입니다(막지 않음). 미래 날짜는 막습니다.
+// 아무 날짜 기록(사용자 결정 2026-10-20 '둘다 넓혀', '수정 자체는 언제든 유연하게'): 교육일이 아닌 날(주말·휴일·개강 전·종강 뒤)도, 아직 오지 않은 날도 고르고 기록·메모할 수 있습니다.
+// 날짜 목록은 오늘까지의 교육일 그대로이고 「다른 날짜…」를 고르면 옆에 날짜 칸이 열립니다. 교육일이 아닌 날은 평소 기준(09:00~18:00)으로 대조하고, 교육일이 아니거나 미래인 날은 작은 안내만 보입니다(막지 않음).
+// 통계(출석률 등, beta2-core studentStats)는 지금처럼 교육일만 셉니다.
 // 출결대조 메모(사용자 요청 2026-10-19): 이름 아래 「+ 메모」→ 수기출석·증빙 빠른 칩·직접 입력(100자)을 누르면 바로 b2LedgerMemo로 저장하고 관리자 알림(notify.mjs)을 남깁니다. 출결 초안과 따로라 「변경 N건 저장」에 세지 않습니다.
 import {doc,setDoc,onSnapshot,query,collection,where,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,B2_TYPES} from './beta2-core.mjs';
@@ -21,7 +22,7 @@ import {RULES,seconds} from './checkhere/rules.mjs';
 import {subOptions,splitReason,composeReason,tidyReason,typeWarning,reasonPick,reasonOptions,STANDARD,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
-import {isIsoDate,BASE_RULE,YEARS} from './cohort.mjs';
+import {isIsoDate,BASE_RULE,isTestClass} from './cohort.mjs';
 
 const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치'],['extra','추가 증빙']]; // 추가 증빙: 취업박람회 인정 출결 중 증빙 「확인」 전
 const extraOpen=r=>{const x=extraEvidence(r?.rec);return !!x&&!x.done;};
@@ -31,7 +32,10 @@ const EVIDENCE=[['','자동 (인정이면 미제출)'],['미제출','미제출']
 const TIMES=['inT','outT','oa','ob'],ALL={inT:'x',outT:'x',oa:'x',ob:'x'};
 const COLUMNS=['times','entryMemo','exitMemo'],PARTS=['msg','mark','status','prop','memo','memoedit']; // 직접 요청 줄의 세 칸, 따로 채우는 행 부분
 const MEMO_PICKS=['수기출석 사인 미비','수기출석 미제출','수기출석 확인 완료','증빙 미제출','증빙 보완 필요','증빙 확인 완료'],MEMO_MAX=100; // 출결대조 메모 빠른 칩
-const ANY_DAY='__any',MIN_DAY=`${YEARS[0]}-01-01`; // 「다른 날짜…」 칸 값, 날짜 칸 아래 끝(입력 중 0002-… 같은 값은 넘김)
+const ANY_DAY='__any'; // 「다른 날짜…」 칸 값
+export const OFFDAY_RECOGNIZED_NOTE='교육일이 아닌 날의 인정 출결은 통계·증빙에 들지 않습니다'; // 사용자 2026-10-20 '애초에 교육일 날만 인정출결이 되는거 아닌지?': 막지 않고 행에 경고
+// 날짜 모양 확인: 실제 있는 날(YYYY-MM-DD)이고 연도가 1900~2999(키보드로 연도를 치는 중간 값 0002-…·0202-…는 넘김). 기간 제한이 아닙니다.
+const typedDay=d=>isIsoDate(d)&&d>='1900-01-01'&&d<='2999-12-31';
 const koreaNow=()=>{const s=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Seoul'});return {date:s.slice(0,10),seconds:+s.slice(11,13)*3600+ +s.slice(14,16)*60};};
 const hm=v=>/^\d{2}:\d{2}/.test(String(v||''))?String(v).slice(0,5):'';
 // 저장된 값 한 줄 요약('그사이 바뀜'에 시트 최신 값을 보일 때)
@@ -52,7 +56,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 행에서 유형·시간·사유를 고쳐 두고 「변경 N건 저장」(Ctrl+S)으로 모아서 저장합니다(Enter는 다음 학생 같은 칸, Esc는 그 행 되돌림).</p></div><div id="b2Sync"></div></div>
  <section class="b2-card"><div class="b2-toolbar">
   <label class="b2-field">반<select id="b2Class">${classOptions(classes,cls)}</select></label>
-  <label class="b2-field">날짜<span style="display:flex;gap:6px"><select id="b2Date"></select><input type="date" id="b2DateAny" hidden aria-label="다른 날짜 (오늘까지)"></span></label><span class="b2-tiny b2-muted" id="b2DayNote"></span>
+  <label class="b2-field">날짜<span style="display:flex;gap:6px"><select id="b2Date"></select><input type="date" id="b2DateAny" hidden aria-label="다른 날짜"></span></label><span class="b2-tiny b2-muted" id="b2DayNote"></span>
   <label class="b2-field">이름 찾기<input id="b2Search" placeholder="이름" autocomplete="off"></label>
   <div class="b2-chips" id="b2Filters"></div><span class="b2-grow"></span><span id="b2Live"></span><span id="b2Relay"></span>
   <button class="b2-btn" id="b2Reload">새로고침</button>
@@ -136,8 +140,9 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    +(s.main==='인적성'&&s.input?`<input class="b2-reason" data-inline="rapt" maxlength="40" value="${esc(s.custom)}" aria-label="${n} 인적성 종류 직접 입력" placeholder="종류 직접 입력">`:'')
    +(s.main===OTHER?`<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(v.reason)}" aria-label="${n} 사유 직접 입력" placeholder="${need} 직접 입력" title="${esc(v.reason)}">`:'');
  }
- // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님
- function pickNote(row){const v=valuesOf(row),w=typeWarning(v.type,pickOf(v.reason).cat);return `${isJobFair(v.reason)&&!extraEvidence(row.rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}`;}
+ // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님,
+ // 교육일이 아닌 날의 인정 출결(막지 않음, 17반 테스트반은 모든 날을 교육일로 보므로 없음)
+ function pickNote(row){const v=valuesOf(row),w=typeWarning(v.type,pickOf(v.reason).cat),off=String(v.type||'').startsWith('인정')&&offDay(date)&&!isTestClass(cls);return `${off?`<span class="b2-xnote" data-offday-note>${OFFDAY_RECOGNIZED_NOTE}</span>`:''}${isJobFair(v.reason)&&!extraEvidence(row.rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}`;}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
@@ -217,7 +222,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 반·기간(첫 교육일 또는 보고 있는 더 이른 날~오늘) 메모를 한 번 읽습니다(force: 새로고침·시트 변경·저장 뒤). 못 읽으면 다음 읽기 때 다시 합니다.
  async function loadMemos({force=false}={}){
   // 교육일이 아닌 날(개강 전 등)을 보고 있으면 그날부터 읽습니다(2026-10-20).
-  if(!bundle)return;const c=cls,first=bundle.days[0]||'',from=date&&(!first||date<first)?date:first,to=bundle.today||'',k=`${c}|${from}|${to}`;
+  // 아직 오지 않은 날을 보고 있으면 그날까지 읽습니다.
+  if(!bundle)return;const c=cls,first=bundle.days[0]||'',from=date&&(!first||date<first)?date:first,today=bundle.today||'',to=date&&date>today?date:today,k=`${c}|${from}|${to}`;
   if(!force&&memoRange===k)return;memoRange=k;const n=++memoSeq;
   try{
    const res=await client.call('b2LedgerMemos',{cls:c,from,to});if(n!==memoSeq||!life.alive())return;
@@ -237,7 +243,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    if(bundle&&String(res?.cls??c)===cls&&+res?.rev===+bundle.rev+1)bundle.rev=+res.rev; // 메모만 바뀐 변경 번호로 출결원장을 다시 읽지 않게(그사이 다른 변경이 있었으면 그대로 다시 읽음)
    memoUi.custom=false;memoUi.text='';
    toast(`${name} · ${md(d)} 출결대조 메모를 ${memo?'저장했':'지웠'}습니다.`);
-   if(res?.offDay&&res.notice&&sameDay(`${c}|${d}`))say(res.notice); // 교육일이 아닌 날의 메모 안내(시트 v8, 막지 않음)
+   if((res?.offDay||res?.future)&&res.notice&&sameDay(`${c}|${d}`))say(res.notice); // 교육일이 아닌 날·아직 오지 않은 날의 메모 안내(시트가 붙임, 막지 않음)
    void notify('출결대조 메모',{audience:'admins',cls:c,title:`출결대조 메모 · ${c}반 ${name}`,body:memo?`${md(d)} ${memo}`:`${md(d)} 메모를 지웠습니다 (전: ${before})`,link:linkFor('b2ledger',{cls:c,date:d})});
    void loadMemos({force:true});
   }catch(e){memoUi.err=`메모를 저장하지 못했습니다: ${e.message}`;}
@@ -318,17 +324,23 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(full)return renderRows();
   names.forEach(paintStatus);
  }
- // 고를 수 있는 날: 오늘(묶음 today)까지의 아무 날(교육일이 아니어도, 2026-10-20). 지금 날짜를 고를 수 없으면 가장 가까운 지난 교육일, 그것도 없으면(개강 전) 오늘.
+ // 고를 수 있는 날: 아무 날(교육일이 아니어도, 미래여도, 2026-10-20). 지금 날짜가 날짜 모양이 아니면 가장 가까운 지난 교육일, 그것도 없으면(개강 전) 오늘.
  // 빈 날짜면 체크히어 문서 주소가 깨져 반을 못 불러왔습니다(2026-10-20).
- const canPick=(b,d)=>isIsoDate(d)&&d>=MIN_DAY&&!!b?.today&&d<=b.today;
+ const canPick=(b,d)=>typedDay(d)&&!!b;
  const offDay=d=>!!bundle&&!!d&&!bundle.days.includes(d);
+ const futureDay=d=>!!bundle?.today&&!!d&&d>bundle.today;
  function pickDate(b){const days=b.days.filter(d=>d<=b.today).reverse();return canPick(b,date)?date:days[0]||b.today||'';}
- // 날짜 목록: 오늘까지의 교육일(최근 먼저) + 지금 보고 있는 교육일 아닌 날(제자리에, '교육일 아님') + 「다른 날짜…」. 교육일이 아니면 날짜 칸을 열어 두고 안내를 보입니다.
+ // 날짜 목록: 오늘까지의 교육일(최근 먼저) + 지금 보고 있는 그 밖의 날(제자리에, '교육일 아님'·'예정') + 「다른 날짜…」. 교육일이 아니거나 미래면 날짜 칸을 열어 두고 안내를 보입니다.
  function dateOptions(){
   const days=[...new Set([...bundle.days.filter(d=>d<=bundle.today),...(date?[date]:[])])].sort().reverse();
-  $('#b2Date').innerHTML=days.map(d=>`<option value="${d}" ${d===date?'selected':''}>${md(d)}${d===bundle.today?' · 오늘':''}${offDay(d)?' · 교육일 아님':''}</option>`).join('')+`<option value="${ANY_DAY}">다른 날짜…</option>`;
-  const any=$('#b2DateAny');any.min=MIN_DAY;any.max=bundle.today||'';if(document.activeElement!==any)any.value=date;if(offDay(date))any.hidden=false; // 치는 중이면 값을 덮지 않음
-  $('#b2DayNote').textContent=offDay(date)?`교육일이 아닌 날입니다 · 기록할 수 있고 평소 기준 ${BASE_RULE.start}~${BASE_RULE.end}로 대조합니다`:'';
+  $('#b2Date').innerHTML=days.map(d=>`<option value="${d}" ${d===date?'selected':''}>${md(d)}${d===bundle.today?' · 오늘':''}${offDay(d)?' · 교육일 아님':''}${futureDay(d)?' · 예정':''}</option>`).join('')+`<option value="${ANY_DAY}">다른 날짜…</option>`;
+  const any=$('#b2DateAny');if(document.activeElement!==any)any.value=date;if(offDay(date)||futureDay(date))any.hidden=false; // 치는 중이면 값을 덮지 않음
+  $('#b2DayNote').textContent=dayNote(date);
+ }
+ // 교육일이 아니거나 아직 오지 않은 날의 작은 안내(막지 않음)
+ function dayNote(d){
+  const off=offDay(d),future=futureDay(d);if(!off&&!future)return '';
+  return [off?'교육일이 아닌 날입니다':'',future?'아직 오지 않은 날입니다':'','기록할 수 있습니다',off?`평소 기준 ${BASE_RULE.start}~${BASE_RULE.end}로 대조합니다`:''].filter(Boolean).join(' · ');
  }
  // 모든 날짜에서 저장본을 먼저 읽고(옛 저장본 대체 포함) 그날 문서를 구독해 갱신합니다. 구독은 반·날짜가 바뀔 때만 새로 겁니다.
  // 같은 반·날짜를 다시 읽을 때(새로고침)는 새 기록이 올 때까지 지금 기록을 지우지 않습니다(그사이 '기록 없음'으로 계산하지 않게).
@@ -563,7 +575,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   else if(d&&d.base===(rec?.sig||''))drafts.set(name,{...d,base:sig});
   if(kind==='evidence'){editing=null;form=null;formErr='';}
   if(kind==='evidence'||!bulk)toast(`${name} · ${md(date)} ${payload.type} 저장했습니다.`); // 모아 저장은 끝난 뒤 요약 하나
-  if(res.offDay&&res.notice)say(res.notice); // 교육일이 아닌 날 저장 안내(시트가 붙임, 막지 않음 · 2026-10-20)
+  if((res.offDay||res.future)&&res.notice)say(res.notice); // 교육일이 아닌 날·아직 오지 않은 날 저장 안내(시트가 붙임, 막지 않음 · 2026-10-20)
   renderRows();if(kind==='evidence')paint(name,{force:true});
   return true;
  }
@@ -668,7 +680,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  const goDate=(sel,next)=>switchTo(sel,async()=>{
   if(!await leaving('날짜를'))return;
   const r=await sync.setDay(cls,next);if(!life.alive())return;
-  date=next;clearEdits();dateOptions();$('#b2DateAny').hidden=!offDay(date);rows=dayView(bundle,cls,date);void loadCheckHere();void loadProposals();void loadMemos();stopped(r);
+  date=next;clearEdits();dateOptions();$('#b2DateAny').hidden=!offDay(date)&&!futureDay(date);rows=dayView(bundle,cls,date);void loadCheckHere();void loadProposals();void loadMemos();stopped(r);
  });
  // 「다른 날짜…」: 목록은 지금 날짜로 되돌리고 옆 날짜 칸을 엽니다(달력이 되면 바로 띄움).
  $('#b2Date').onchange=e=>{
@@ -676,13 +688,12 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(v===ANY_DAY){e.target.value=date;const a=$('#b2DateAny');a.hidden=false;a.value=date;a.focus();try{a.showPicker?.();}catch{}return;}
   void goDate(e.target,v);
  };
- // 날짜 칸: 오늘까지만(미래는 안내 후 되돌림). 키보드로 연·일을 치는 동안 중간 값마다 바꾸지 않게 잠깐 기다렸다가 바꿉니다.
+ // 날짜 칸: 아무 날(미래·교육일 아닌 날도, 작은 안내만). 키보드로 연·일을 치는 동안 중간 값마다 바꾸지 않게 잠깐(0.5초) 기다렸다가 바꿉니다.
  let anyTimer=0;
  $('#b2DateAny').onchange=e=>{
   clearTimeout(anyTimer);const el=e.target;
   anyTimer=setTimeout(function commit(){
-   const v=el.value;if(!life.alive()||!v||v===date||!isIsoDate(v)||v<MIN_DAY)return;
-   if(!canPick(bundle,v)){say('아직 오지 않은 날은 기록할 수 없습니다. 오늘까지의 날짜를 골라 주세요.','warn');el.value=date;return;}
+   const v=el.value;if(!life.alive()||!v||v===date||!canPick(bundle,v))return;
    if(switching){anyTimer=setTimeout(commit,300);return;}
    say('');void goDate(el,v);
   },500);

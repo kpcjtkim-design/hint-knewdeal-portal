@@ -2,7 +2,7 @@
 // 2기는 운영총괄 동기화가 없어 '운영총괄과 다름' 충돌 표시·동기화 상태 글이 없습니다. 출결 시간 기준은 그날 기준(beta2-daytimes.mjs, 마스터시트 현장교육 일정) → 없으면 cohort.mjs ruleFor(공장견학 날 10:00~17:00).
 import {seconds} from './checkhere/rules.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
-import {ruleFor,DISEASE,COMPLETION_RATE,COURSE_START,COURSE_END,isIsoDate,mdLabel,isTestClass} from './cohort.mjs';
+import {ruleFor,DISEASE,COMPLETION_RATE,isIsoDate,isTestClass} from './cohort.mjs';
 import {ruleOn,SOURCE_SHEET} from './beta2-daytimes.mjs';
 import {extraEvidence} from './attendance-reason-catalog.mjs'; // 취업박람회 추가 증빙(2026-10-20)
 
@@ -192,7 +192,7 @@ export function checkRosterStatus(f){
  if(!ROSTER_STATUS.includes(status))return `상태는 ${ROSTER_STATUS.join('·')} 가운데 하나를 골라 주세요.`;
  if(status!=='재학'&&!changed)return '마지막 출석일을 넣어 주세요.';
  if(changed&&!isIsoDate(changed))return '마지막 출석일을 날짜로 넣어 주세요.';
- if(status!=='재학'&&changed>COURSE_END)return `마지막 출석일은 2기 교육 기간(${mdLabel(COURSE_START)}~${mdLabel(COURSE_END)}) 안이어야 합니다.`;
+ // 마지막 출석일은 날짜 모양만 봅니다(교육 기간 밖도 받음, 사용자 결정 2026-10-20). 통계는 교육일만 셉니다.
  if(reason.length>200)return '사유는 200자 이하로 적어 주세요.';
  return '';
 }

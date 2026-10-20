@@ -13,9 +13,12 @@ test('2기 dates: sheet labels resolve across the year and collection days stay 
   assert.equal(isoLabel('10/28'),'2026-10-28');assert.equal(isoLabel('1/4(월)'),'2027-01-04');assert.equal(isoLabel('2027-01-22'),'2027-01-22');assert.equal(isoLabel('12.31'),'2026-12-31');
   assert.equal(isoLabel('2025-12-01'),'','2기 연도가 아닌 ISO 날짜');assert.equal(isoLabel('이름'),'');
   assert.deepEqual(collectionDates('2026-12-24','2027-01-04','2027-01-10'),['2026-12-24','2026-12-28','2026-12-29','2026-12-30','2027-01-04'],'주말·12/25·12/31·1/1 제외');
-  assert.throws(()=>collectionDates('2026-10-27','2026-10-28','2026-11-01'),/수집 기간은 10\/28부터/);
-  assert.throws(()=>collectionDates('2027-01-20','2027-01-25','2027-02-01'));
-  assert.throws(()=>collectionDates('2026-11-02','2026-11-05','2026-11-03'),'오늘보다 뒤는 안 됨');
+  // 기간 제한 없음(사용자 결정 2026-10-20): 교육 기간 밖도, 기간으로 고르면 오늘까지의 평일만, 하루만 고르면 주말·미래여도 그날
+  assert.deepEqual(collectionDates('2026-10-27','2026-10-28','2026-11-01'),['2026-10-27','2026-10-28']);
+  assert.deepEqual(collectionDates('2027-01-20','2027-01-25','2027-02-01'),['2027-01-20','2027-01-21','2027-01-22','2027-01-25']);
+  assert.deepEqual(collectionDates('2026-11-02','2026-11-05','2026-11-03'),['2026-11-02','2026-11-03'],'기간의 미래 날은 건너뜀');
+  assert.deepEqual(collectionDates('2026-10-24','2026-10-24','2026-10-20'),['2026-10-24'],'하루만 고르면 주말·미래도');
+  assert.throws(()=>collectionDates('2026-11-05','2026-11-02'),/시작 날짜가/);assert.throws(()=>collectionDates('abc','2026-11-02'),/날짜 형식/);assert.throws(()=>collectionDates('2026-02-30','2026-03-02'),/날짜 형식/);
 });
 test('reason edits preserve other students, split explicit shared reasons and reject ambiguity',()=>{
   assert.equal(hasExistingReason('가상가: 파서가 놓친 사유','가상가',''),true);

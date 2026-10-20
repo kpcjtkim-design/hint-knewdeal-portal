@@ -20,7 +20,7 @@ import {writeFileSync} from 'node:fs';
 import {createLinkStore} from './links.mjs';
 import {MASKED,MIN_CLAIM_SECONDS,hasMask,waitsForUnmask,unmaskReason} from './masking.mjs';
 import {startUnmask,enterCode,cancelUnmask} from './unmask.mjs';
-import {COHORT,CLASSES,CLASS_IDS,activeClassIds,HOLIDAYS,LECTURE_NAME_RULE,BRIDGE_PORT,PERIOD_TEXT,classOk,validIso,inPeriod,lectureTag,trainingDays,firebaseReady} from './cohort-bridge.mjs';
+import {COHORT,CLASSES,CLASS_IDS,activeClassIds,HOLIDAYS,LECTURE_NAME_RULE,BRIDGE_PORT,classOk,validIso,lectureTag,trainingDays,firebaseReady} from './cohort-bridge.mjs';
 import {createRosterStore,parseRoster,rosterKeys,manualFits} from './roster.mjs';
 import {createSetupStore,buildReport,reportView,reportCounts,confirmList,pairRow,unpairRow,exportText,SETUP_TEXT,ATTENDEE_ID} from './setup.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
@@ -45,16 +45,17 @@ const countView=(j,v)=>{if(v?.view==='masked')j.masked=(j.masked||0)+1;for(const
 const maskNote=j=>{const n=(j.unlinked||0)+(j.mismatch||0);return `${j.masked?` · 가린 화면 ${j.masked}일`:''}${n?` · 연결 안 됨 ${n}명`:''}${j.unread?` · 가린 화면에서 못 읽음 ${j.unread}명(저장본 유지)`:''}${j.conflicts?` · 연결 충돌 ${j.conflicts}명`:''}`;};
 const NO_LECTURE=/강의가 없습니다/;
 // 2기 연결 프로그램은 새 data 폴더에서 시작합니다: 2기 시작 전 날짜의 기록(1기 자료)이 있으면 학생 연결·담임이 섞이므로 켜지 않습니다(fail closed).
+// 2기로 처음 켠 data에는 표시(cohort_mark)를 남기고, 표시가 있으면 이 검사를 건너뜁니다(2기가 개강 전 날짜도 수집할 수 있게 된 뒤, 2026-10-20).
 export const OLD_DATA=n=>`OLD_DATA: 이 data 폴더에 2기 시작(${COHORT.period.start}) 전 기록 ${n}건이 있습니다(1기 자료로 보임). 2기 연결 프로그램은 새 폴더의 새 data에서 시작해 주세요(1기 연결 프로그램은 8765 그대로 둠).`;
-const DATE_HINT=`반(1~${CLASS_IDS.length})과 날짜(2기 교육 기간 ${PERIOD_TEXT})를 확인해 주세요.`;
+const DATE_HINT=`반(1~${CLASS_IDS.length})과 날짜(YYYY-MM-DD)를 확인해 주세요.`;
 // 시간 삭제 요청(deleteTimes가 비어 있지 않음). 모양이 이상해도 삭제로 봅니다(능력 없으면 거절하는 쪽이 안전).
 const deletionRequest=r=>r?.deleteTimes!==undefined&&r?.deleteTimes!==null&&!(Array.isArray(r.deleteTimes)&&!r.deleteTimes.length);
 // 플랫폼 저장(finish)이 돌려준 완료 문구에는 시간 삭제 확인이 없어, 이 PC 작업 글에 반영 결과로 다시 붙입니다(중계 기록에 남게).
 const withDeleted=(message,j)=>resultText(message,j.results);
 // learnTickMs·writeGapMs: 연결 확인 수집을 보는 간격과, 쓰기 시도 뒤(해제 직후 포함) 그 수집을 미루는 시간. 시험만 줄여 씁니다.
 // itemGapMs: 묶음 반영에서 건과 건 사이(0.5~1초). recordTimeoutMs: 형식 기록을 기다리는 최대 시간(10분). privacyPollMs: 쉬는 동안 머리말(가림 상태)을 보는 간격(15초).
-// collectable(date): 수집할 수 있는 날(기본 2기 교육 기간 안). allowOldData: 시험 전용(2기 전 날짜 기록이 든 data로도 켬).
-export function createBridge({dataDir=join(here,'data'),collector=null,port=BRIDGE_PORT,approvalCloud=createApprovalCloud(),capabilities=CAPABILITIES,learnTickMs=3000,writeGapMs=60000,itemGapMs=[500,1000],recordTimeoutMs=10*60000,privacyPollMs=15000,collectable=inPeriod,allowOldData=false}={}){
+// collectable(date): 수집할 수 있는 날(기본 달력에 있는 아무 날, 2026-10-20부터 기간 제한 없음). allowOldData: 시험 전용(2기 전 날짜 기록이 든 data로도 켬).
+export function createBridge({dataDir=join(here,'data'),collector=null,port=BRIDGE_PORT,approvalCloud=createApprovalCloud(),capabilities=CAPABILITIES,learnTickMs=3000,writeGapMs=60000,itemGapMs=[500,1000],recordTimeoutMs=10*60000,privacyPollMs=15000,collectable=validIso,allowOldData=false}={}){
   mkdirSync(dataDir,{recursive:true});const db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS snapshot_id ON snapshots(id,seq); CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS journal(seq INTEGER PRIMARY KEY, job TEXT, payload TEXT);');
   const key=randomBytes(32).toString('hex'),adapter=collector||new CheckHereCollector(dataDir),jobs=new Map();let busy=null,connecting=false;
@@ -77,8 +78,10 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=BRID
   const saveJob=j=>{db.prepare('INSERT INTO jobs(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(j.id,JSON.stringify(j));jobs.set(j.id,j);};
   for(const row of db.prepare('SELECT payload FROM jobs').all()){const j=JSON.parse(row.payload);if(j.status==='running'){j.status=j.kind==='apply'?'unknown':'interrupted';j.message='프로그램이 중단되었습니다. 다시 수집해 결과를 확인해 주세요.';saveJob(j);}jobs.set(j.id,j);}
   // 2기는 seed.json(1기 저장본)을 불러오지 않습니다. 2기 시작 전 날짜 기록이 있으면 켜지 않습니다.
-  const oldCount=latest().filter(r=>typeof r?.date==='string'&&r.date<COHORT.period.start).length;
+  const marked=!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cohort_mark'").get()&&db.prepare("SELECT value FROM cohort_mark WHERE key='cohort'").get()?.value===COHORT.label;
+  const oldCount=marked?0:latest().filter(r=>typeof r?.date==='string'&&r.date<COHORT.period.start).length;
   if(oldCount&&!allowOldData){db.close();throw new Error(OLD_DATA(oldCount));}
+  if(!marked){db.exec('CREATE TABLE IF NOT EXISTS cohort_mark(key TEXT PRIMARY KEY, value TEXT NOT NULL)');db.prepare("INSERT INTO cohort_mark(key,value) VALUES('cohort',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(COHORT.label);}
   // 체크히어 학생 번호 연결(이 PC SQLite만). 수집기는 가린 화면에서 이것과 저장된 원문 기록(2기 명단 포함)으로 학생을 찾습니다.
   const roster=createRosterStore(db),links=createLinkStore(db,{records:latest,roster});
   if(adapter&&typeof adapter==='object'&&!adapter.links)adapter.links=links;
@@ -565,7 +568,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=BRID
           if(url.pathname==='/api/setup/check'){
             if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다. 끝난 뒤 다시 눌러 주세요.'});
             const date=String(input.date||''),wanted=Array.isArray(input.classIds)&&input.classIds.length?[...new Set(input.classIds.map(String))]:ACTIVE().filter(c=>!setup.confirmed(c));
-            if(!validIso(date)||!collectable(date))throw Error(`날짜(2기 교육 기간 ${PERIOD_TEXT})를 확인해 주세요.`);
+            if(!validIso(date)||!collectable(date))throw Error('날짜(YYYY-MM-DD)를 확인해 주세요.');
             if(!wanted.length||wanted.some(c=>!classOk(c)))throw Error('확인할 반을 골라 주세요.');
             const claim='start:'+randomUUID();busy=claim;
             try{await adapter.requireLogin();const gate=await setupGate();if(gate)throw Error(gate);}catch(e){if(busy===claim)busy=null;throw e;}

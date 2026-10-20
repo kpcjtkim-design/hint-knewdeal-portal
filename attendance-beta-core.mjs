@@ -1,5 +1,5 @@
 // 2기 기간·날짜 해석(해를 넘김)은 cohort.mjs 한 곳에서 읽습니다.
-import {COURSE_START,COURSE_END,COHORT_DATE_RE,isIsoDate,isoFromMonthDay,isHoliday,mdLabel,weekdaysBetween} from './cohort.mjs';
+import {COHORT_DATE_RE,isIsoDate,isoFromMonthDay,isHoliday,weekdaysBetween} from './cohort.mjs';
 import {matchingCheckHereRecords} from './checkhere-name-core.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
 export const ATTENDANCE_OPTIONS=['해당없음','출석','결석','지각','조퇴','외출','중복','인정출석','인정지각','인정조퇴','인정외출'];
@@ -75,9 +75,11 @@ export function matchSnapshot(student,students,records,identities=[]){
   if(students.filter(x=>x.name===student.name).length!==1)return {error:'동명이인 · 연결 확인 필요'};
   const found=matchingCheckHereRecords(student,records,identities);return found.length===1?{record:found[0]}:{error:found.length?'동명이인 · 연결 확인 필요':records.some(x=>surveyBaseName(x.name)===surveyBaseName(student.name))?'동명이인 · 구분 정보 확인 필요':'저장본 없음'};
 }
-// 체크히어 저장본을 읽을 날짜: 2기 교육 기간(cohort) 안, 오늘까지의 평일에서 휴일(12/25·12/31·1/1)을 뺀 날.
+// 체크히어 저장본을 읽을 날짜: 고른 기간(교육 기간 밖도, 사용자 결정 2026-10-20)의 오늘까지 평일에서 휴일(12/25·12/31·1/1)을 뺀 날.
+// 하루만 고르면(시작 = 끝) 주말·휴일·미래여도 그날을 읽습니다(교육일이 아닌 날의 기록 대조). 아직 오지 않은 날은 기간으로 고르면 건너뜁니다(읽을 기록이 없음).
 export function collectionDates(from,to,today=koreaToday()){
-  if(![from,to].every(x=>COHORT_DATE_RE.test(String(x))&&isIsoDate(x)))throw Error('날짜 형식을 확인해 주세요.');
-  if(from<COURSE_START||to>today||to>COURSE_END||from>to)throw Error(`수집 기간은 ${mdLabel(COURSE_START)}부터 오늘 또는 교육 종료일(${mdLabel(COURSE_END)})까지입니다.`);
-  return weekdaysBetween(from,to).filter(d=>!isHoliday(d));
+  if(![from,to].every(x=>isIsoDate(x)))throw Error('날짜 형식을 확인해 주세요.');
+  if(from>to)throw Error('시작 날짜가 끝 날짜보다 늦습니다.');
+  if(from===to)return [from];
+  return weekdaysBetween(from,to).filter(d=>!isHoliday(d)&&d<=today);
 }

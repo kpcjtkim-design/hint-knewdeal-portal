@@ -38,7 +38,7 @@ const PAGES={
  '/status.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mount} from '/beta2-status.mjs';import {decodeBundle} from '/beta2-core.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
   window.view=await mount(document.getElementById('root'),{client:{bundle:async()=>decodeBundle(${JSON.stringify(RAW)}),checkhereDisease:async()=>({})},classes:[{id:'1'},{id:'2'}],tab:'evidence'});</script>`};
 
-async function page(path,run){
+async function page(path,run,{portal=PORTAL}={}){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),p=await browser.newPage(),errors=[],posts=[];
  p.on('pageerror',e=>errors.push(e.message));
  try{
@@ -50,7 +50,7 @@ async function page(path,run){
    if(PAGES[url.pathname])return route.fulfill({contentType:'text/html;charset=utf-8',body:PAGES[url.pathname]});
    if(url.pathname==='/api/teacher-beta'){
     const body=route.request().postDataJSON(),a=body.args?.[0];posts.push(body);
-    const data=body.action==='portalData'?PORTAL:body.action==='b2Bundle'?{...LEDGER,rev}:body.action==='b2Rev'?{rev,sync:{}}:body.action==='b2Save'?{ok:true,rev:++rev,sig:`sig-${a.name}-${rev}`,memo:'',evApplied:a.ev||(a.type.startsWith('인정')?'미제출':'해당없음'),check:''}:{ok:true};
+    const data=body.action==='portalData'?portal:body.action==='b2Bundle'?{...LEDGER,rev}:body.action==='b2Rev'?{rev,sync:{}}:body.action==='b2Save'?{ok:true,rev:++rev,sig:`sig-${a.name}-${rev}`,memo:'',evApplied:a.ev||(a.type.startsWith('인정')?'미제출':'해당없음'),check:''}:{ok:true};
     return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});
    }
    const file=join(base,decodeURIComponent(url.pathname));
@@ -237,4 +237,24 @@ test('teacher 취업박람회 저장은 실제 알림 모듈(notify.mjs)로 반 
   assert.equal(n.kind,'추가 증빙');assert.equal(n.title,'추가 증빙 필요 · 1반 고다원');assert.equal(n.toRole,'admin');assert.equal(n.toClass,'1');assert.equal(n.link,'#b2ledger?cls=1&date=2026-11-05');assert.equal(n.from,'teacher@test.kr');
   assert.ok(n.to.length>0&&!n.to.includes('teacher@test.kr'),'administrators are named, the sender is not');
  });
+});
+
+test('담임 출결판 아무 날짜(사용자 결정 2026-10-20): 교육일이 아닌 날·아직 오지 않은 날의 원장 기록은 칸을 더해 보이고, 「다른 날짜」로 아무 날이나 열어 바로 저장',async()=>{
+ const R=(type,o={})=>({type,inT:'',outT:'',oa:'',ob:'',r:'',ev:'',evr:'',...o});
+ const portal={...PORTAL,recs:{...PORTAL.recs,'고다원|2026-11-01':R('결석'),'김동진|2026-11-09':R('출석')}};
+ await page('/teacher.html',async(p,posts)=>{
+  const root=p.locator('#root');await root.locator('table.g').waitFor();
+  assert.deepEqual(await root.locator('table.g thead th[data-day]').evaluateAll(t=>t.map(x=>x.dataset.day)),['2026-11-09','2026-11-05','2026-11-04','2026-11-01'],'최근 먼저, 원장 기록이 있는 일요일·미래 교육일 칸을 더함');
+  assert.match(await root.locator('th[data-day="2026-11-01"]').innerText(),/교육일 아님/);assert.match(await root.locator('th[data-day="2026-11-09"]').innerText(),/예정/);
+  assert.match(await root.locator('th[data-day="2026-11-05"]').innerText(),/기준일|오늘/,'기준일 표시는 그대로 기준일 칸에');
+  assert.equal(await root.locator('select[data-n="고다원"][data-d="2026-11-01"]').inputValue(),'결석');
+  const any=root.locator('#anyDay');assert.equal(await any.getAttribute('min'),null);assert.equal(await any.getAttribute('max'),null);
+  await any.fill('2026-11-07');
+  await root.locator('th[data-day="2026-11-07"]').waitFor();
+  assert.match(await root.locator('#anyNote').innerText(),/교육일이 아닌 날입니다/);
+  await root.locator('select[data-n="김동진"][data-d="2026-11-07"]').selectOption('결석');
+  for(let i=0;i<50&&!saves(posts).length;i++)await p.waitForTimeout(100);
+  assert.deepEqual(saves(posts).map(s=>[s.name,s.date,s.type]),[['김동진','2026-11-07','결석']]);
+  assert.match(await root.locator('#pn').innerText(),/교육일 아님/,'오른쪽 칸에도 작은 안내');
+ },{portal});
 });

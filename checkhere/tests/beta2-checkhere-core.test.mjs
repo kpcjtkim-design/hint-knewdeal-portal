@@ -148,8 +148,10 @@ test('× with time-delete-v2 clears both cells of an admin 1st-period student; P
  assert.equal(run({type:'결석'},admin,{deleteEnabled:true}).state,'hold');
 });
 
-test('front conditions: date range, missing or partial record, teacher, schedule, other types',()=>{
- assert.match(sheetToCheckHere({row:{type:'출석'},record:record(),date:'2027-01-23'}).notes[0],/날짜 범위/);
+test('front conditions: date shape (any real date, no period limit), missing or partial record, teacher, schedule, other types',()=>{
+ // 날짜는 모양만(사용자 결정 2026-10-20): 교육 기간 밖·주말·미래도 날짜 때문에 멈추지 않음
+ for(const date of ['2027-01-23','2026-10-20','2027-03-01','2026-10-24'])assert.doesNotMatch(sheetToCheckHere({row:{type:'출석'},record:record(),date}).notes.join(),/날짜/,date);
+ for(const date of ['','2026-13-01','2026-02-30','abc'])assert.match(sheetToCheckHere({row:{type:'출석'},record:record(),date}).notes[0],/날짜 모양 확인 필요/,date);
  assert.equal(run({type:'지각',inT:'09:30'},null).state,'none');
  assert.equal(run({type:'지각',inT:'09:30'},record({readState:'partial'})).retryWhen,'record');
  assert.deepEqual(run({type:'지각',inT:'09:30'},record({teacher:'강의(1)'})).changes.entryMemo,'지각_담임:가상담임(09:30)','sheet teacher when the lecture teacher cannot be used');

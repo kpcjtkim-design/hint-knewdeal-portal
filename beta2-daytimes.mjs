@@ -2,7 +2,7 @@
 // 원본은 2기 마스터시트 「현장교육 일정」 탭 O~T(시작·끝·구간·사유·수정자·시각), Apps Script b2ModuleTimes·b2DayTimes·b2ModuleTimeSave(apps-script/beta2/beta2.gs).
 // 규칙(Apps Script b2DayTimeOf_와 같음): 그날 그 반 줄 가운데 시작·끝이 다 있는 줄의 가장 이른 시작 ~ 가장 늦은 끝, 없으면 평소 09:00~18:00. 지각은 시작+10분을 넘으면, 조퇴는 끝-10분 전.
 // 판정(beta2-core compareCheckHere)은 여기 기억해 둔 그날 기준(b2DayTimes, 반·날짜마다 한 번 읽기)을 먼저 보고, 없거나 못 읽었으면 cohort.mjs ruleFor(평소·견학 기본)로 돌아갑니다.
-import {ruleFor,BASE_RULE,EXCURSION_RULE,COURSE_START,COURSE_END,isIsoDate,isClassId,mdLabel} from './cohort.mjs';
+import {ruleFor,BASE_RULE,EXCURSION_RULE,isIsoDate,isClassId} from './cohort.mjs';
 
 export const SOURCE_DEFAULT='기본',SOURCE_SHEET='현장교육 일정';
 // 평소 09:00~18:00, 지각·조퇴 여유 10분, 공장견학 기본 10:00~17:00(사용자 결정 2026-10-19). 응답의 defaults·field가 오면 그 값을 씁니다.
@@ -18,7 +18,6 @@ export function cleanTime(v){
  const s=String(v??'').trim(),m=/^(\d{1,2}):?(\d{2})(?::\d{2})?$/.exec(s);
  return m&&+m[1]<24&&+m[2]<60?`${m[1].padStart(2,'0')}:${m[2]}`:s;
 }
-const periodText=`${mdLabel(COURSE_START)}~${mdLabel(COURSE_END)}`;
 
 // 그날 기준 계산(시트와 같은 규칙). rows: b2ModuleTimes rows. 화면 미리보기·저장 전 확인에 씁니다(저장 뒤에는 응답의 day가 원본).
 export function dayTimesOf(rows,date,cls,{defaults=DAY_DEFAULTS}={}){
@@ -75,7 +74,7 @@ export async function loadDayTimes(client,cls,date,{fresh=false,now=Date.now}={}
 export function checkModuleTime(f,{existing=false}={}){
  const start=cleanTime(f?.start),end=cleanTime(f?.end),module=String(f?.module??'').trim(),part=String(f?.part??'').trim(),reason=String(f?.reason??'').trim();
  if(!isIsoDate(f?.date))return '날짜를 골라 주세요.';
- if(f.date<COURSE_START||f.date>COURSE_END)return `2기 교육 기간(${periodText}) 안의 날짜를 골라 주세요.`;
+ // 교육 기간 밖·교육일이 아닌 날도 정할 수 있습니다(사용자 결정 2026-10-20 '수정 자체는 언제든 유연하게'). 날짜 모양만 봅니다.
  if(!isClassId(f?.cls))return '반을 골라 주세요.';
  if(!module)return '모듈 이름을 적어 주세요.';
  if(module.length>60)return '모듈 이름은 60자 이하로 적어 주세요.';

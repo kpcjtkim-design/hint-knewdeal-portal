@@ -4,8 +4,8 @@ import {CLASS_IDS} from './cohort.mjs';
 import {collection,doc,getDoc,getDocFromServer,getDocs,setDoc,query,orderBy,limit,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {createCurrentSaver,mergeCurrentRecords} from './checkhere-current-core.mjs';
 import {within} from './attendance-io.mjs';
-import {mountCheckHere} from './checkhere-ui.mjs?v=20261016-privacy1';
-import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs?v=20261016-privacy1';
+import {mountCheckHere} from './checkhere-ui.mjs?v=20261020-f1';
+import {createRequest,mountCheckHereRequests} from './checkhere-requests.mjs?v=20261020-f1';
 import {canEditCheckHere,createDirectEditor} from './checkhere/direct-edit.mjs';
 export async function mountCheckHerePortal(host,{db,user,classes,showRequests=false,initialView='collect'}){
   if(!user)throw new Error('관리자 로그인이 필요합니다.');

@@ -22,7 +22,7 @@ test('2기 값: 16개 반 + 17반 시험용 테스트반, 포트 8766, 2026·202
   assert.deepEqual(CLASS_IDS,Array.from({length:17},(_,i)=>String(i+1)));assert.deepEqual(REAL_CLASS_IDS,CLASS_IDS.slice(0,16));assert.equal(classOk('16'),true);assert.equal(classOk('17'),true);assert.equal(classOk('18'),false);
   assert.deepEqual(activeClassIds(),REAL_CLASS_IDS,'테스트반은 강의를 직접 연결하기 전에는 처음 설치·전체 수집에서 빠짐');assert.deepEqual(activeClassIds(c=>c==='17'),CLASS_IDS);
   assert.equal(BRIDGE_PORT,8766);assert.match(BUILD,/^2기-\d{8}\.\d+$/);
-  assert.equal(validIso('2027-01-22'),true);assert.equal(validIso('2028-01-03'),false);assert.equal(validIso('2026-02-30'),false);
+  assert.equal(validIso('2027-01-22'),true);assert.equal(validIso('2028-01-03'),true,'기간 밖도(2026-10-20)');assert.equal(validIso('2026-10-20'),true);assert.equal(validIso('2026-02-30'),false);assert.equal(validIso('2026-13-01'),false);assert.equal(validIso('abc'),false);
   assert.match(OLD_DATA(3),/2026-10-28.*새 폴더/);
 });
 test('명단: 칸·머리말·반 이름·생년월일(선택), 오류는 줄 번호만',()=>{
@@ -110,7 +110,7 @@ test('처음 설치 모드: 첫 화면은 /setup, 해제된 동안 반별 확인
     // 가린 화면·남은 시간 부족이면 시작하지 않음(해제·연장은 사람이)
     assert.match((await call('setup/check',{date:D})).body.error,/SETUP_UNMASK/);
     adapter.header={state:'unmasked',remaining:30};assert.match((await call('setup/check',{date:D})).body.error,/SETUP_TIME/);
-    assert.match((await call('setup/check',{date:'2026-10-27'})).body.error,/교육 기간/);
+    assert.match((await call('setup/check',{date:'2026-13-01'})).body.error,/날짜/);assert.match((await call('setup/check',{date:'2026-10-27'})).body.error,/SETUP_TIME/,'개강 전 날짜도 날짜 때문에 막지 않음');
     adapter.header={state:'unmasked',remaining:600};
     const started=await call('setup/check',{date:D,classIds:['3','4','5']});assert.equal(started.code,202,started.text);
     const job=await done(started.body.id);assert.equal(job.status,'partial',job.message);
@@ -162,6 +162,10 @@ test('1기 data 폴더(2기 시작 전 기록)로는 켜지지 않음, 2기 Fire
   const dataDir=dir('old-data-'),db=new DatabaseSync(join(dataDir,'attendance.sqlite'));
   db.exec('CREATE TABLE snapshots(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, payload TEXT NOT NULL)');db.prepare('INSERT INTO snapshots(id,payload) VALUES(?,?)').run('2_2026-10-15_k',JSON.stringify({id:'2_2026-10-15_k',classId:'2',date:'2026-10-15',name:'가상'}));db.close();
   assert.throws(()=>createBridge({dataDir,collector:stubAdapter({}),port:18603}),/OLD_DATA/);
+  // 2기로 처음 켠 data(표시 cohort_mark)는 그 뒤 개강 전 날짜를 수집해도(2026-10-20부터 됨) 다시 켜짐
+  const fresh=dir('mark-data-');createBridge({dataDir:fresh,collector:stubAdapter({}),port:18604}).close();
+  const db2=new DatabaseSync(join(fresh,'attendance.sqlite'));db2.prepare('INSERT INTO snapshots(id,payload) VALUES(?,?)').run('2_2026-10-20_k',JSON.stringify({id:'2_2026-10-20_k',classId:'2',date:'2026-10-20',name:'가상'}));db2.close();
+  createBridge({dataDir:fresh,collector:stubAdapter({}),port:18604}).close();
   // 실제 fetch 자리를 가짜로 바꿔 둡니다(밖으로 나가지 않음). 2기 설정이 비면 보내기 전에 멈추고, 채워져 있으면 그 설정으로만 보냅니다.
   const original=globalThis.fetch,sent=[];globalThis.fetch=async u=>{sent.push(String(u));return {ok:false,status:400,json:async()=>({})};};
   try{

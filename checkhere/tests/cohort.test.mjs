@@ -124,7 +124,7 @@ test('admin time overrides per date/class: all-class then class entries, invalid
  assert.equal(C.ruleFor('2027-01-14','16',[{date:'2027-01-14',classIds:['16'],start:'09:20'}]).start,'09:20');
  // 항목 검사(나중 관리자 화면이 저장 전에 씀)
  assert.deepEqual(C.ruleOverrideProblems({date:'2026-11-05',start:'09:30'}),[]);
- assert.ok(C.ruleOverrideProblems({date:'2026-10-27'}).length,'교육 기간 밖');assert.ok(C.ruleOverrideProblems({date:'2027-01-04',classIds:['18']}).length,'반 번호');
+ assert.deepEqual(C.ruleOverrideProblems({date:'2026-10-27'}),[],'교육 기간 밖도 받음(2026-10-20)');assert.ok(C.ruleOverrideProblems({date:'2026-13-01'}).length,'날짜 모양');assert.ok(C.ruleOverrideProblems({date:'2027-01-04',classIds:['18']}).length,'반 번호');
  assert.ok(C.ruleOverrideProblems({date:'2027-01-04',entryGrace:-1}).length);assert.ok(C.ruleOverrideProblems([]).length);
  assert.deepEqual(C.ruleOverrideProblems({date:'2027-01-04',classIds:['16'],excursion:true}),[],'1월 날짜·16반');
  assert.deepEqual(C.ruleProblems(C.BASE_RULE),[]);assert.deepEqual(C.ruleProblems(C.EXCURSION_RULE),[]);

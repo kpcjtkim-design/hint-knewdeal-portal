@@ -417,9 +417,12 @@ test('× follows the sheet type and asks again when the record changes during th
  const s=h.sync.statusFor(h.key);assert.deepEqual([s.label,s.actions],['체크히어 시간 삭제 취소',[]],'× 결정은 ×를 다시 눌러야 함');assert.equal(h.writes().length,0);
 });
 
-test('front conditions keep the sheet save and only show why (date range, missing record, partial record)',async()=>{
+test('front conditions keep the sheet save and only show why (date shape, missing record, partial record)',async()=>{
+ // 교육 기간 밖 날짜도 날짜 때문에 멈추지 않음(사용자 결정 2026-10-20). 날짜 모양이 틀리면 보류
  const far=harness({date:'2027-01-23',today:'2027-01-23'});await far.open();
- assert.equal(far.save(PRESENT,LATE,'sig-1').label,'보류 · 규칙 날짜 범위 밖 · 넓히려면 사용자 확인 필요');
+ assert.doesNotMatch(far.save(PRESENT,LATE,'sig-1').label,/날짜/);
+ const bad=harness({date:'2026-13-01',today:'2026-13-01'});await bad.open();
+ assert.equal(bad.save(PRESENT,LATE,'sig-1').label,'보류 · 날짜 모양 확인 필요');
  // 기록이 아직 없음(아침 첫 수집 전·다시 읽는 중): '기록 없음'으로 끝내지 않고 기록이 오면 다시 계산해 새 3초
  const none=harness({rec:null});await none.open();
  let s=none.save(PRESENT,LATE,'sig-1');assert.deepEqual([s.kind,s.label,none.sync.holds()[0]?.retryWhen],['hold','보류 · 체크히어 기록 없음 · 기록이 오면 다시 계산해 요청','record']);

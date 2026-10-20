@@ -24,7 +24,7 @@ export async function mount(host,{user,classes,client,context}){
  host.innerHTML=`<div class="b2 b2t"><style>${STYLE}</style><div class="b2-head"><div><h2>교육시간 조정</h2><p>공장견학·분해조립처럼 HRD 확정 시간이 아직 없는 날의 교육시간을 정합니다. 어떤 모듈이든 정할 수 있고, 모듈 안 일부 시간(구간)만 따로 정할 수도 있습니다.</p></div><button class="b2-btn primary" id="t2New">새 시간 넣기</button></div>
  <div class="b2-note b2t-rules" id="t2Rules"></div><div id="t2Form"></div>
  <section class="b2-card"><div class="b2-toolbar"><label class="b2-field">반<select id="t2Class">${classOptions(classes,cls,{all:true})}</select></label>
-  <label class="b2-field">시작일<input type="date" id="t2From" value="${from}" min="${COURSE_START}" max="${COURSE_END}"></label><label class="b2-field">끝일<input type="date" id="t2To" value="${to}" min="${COURSE_START}" max="${COURSE_END}"></label>
+  <label class="b2-field">시작일<input type="date" id="t2From" value="${from}"></label><label class="b2-field">끝일<input type="date" id="t2To" value="${to}"></label>
   <div class="b2-chips" id="t2Views"></div><span class="b2-grow"></span><button class="b2-btn" id="t2Reload">새로고침</button></div>
   <div id="t2Msg" style="padding:0 14px"></div><div id="t2List">${loading('현장교육 일정을 불러오는 중…')}</div></section></div>`;
  const $=s=>host.querySelector(s);
@@ -49,7 +49,7 @@ export async function mount(host,{user,classes,client,context}){
  const modulesFor=(date,c)=>[...new Set([...(data?.rows||[]).filter(r=>(!date||r.date===date)&&(!c||String(r.cls)===String(c))).map(r=>r.module).filter(Boolean),...MODULES])];
  function fieldsHtml(f,existing){
   const d=defaults(),fd=d.field||[];
-  return `<div class="b2t-form">${existing?'':`<label class="b2-field">날짜<input type="date" data-f="date" value="${esc(f.date)}" min="${COURSE_START}" max="${COURSE_END}"></label>
+  return `<div class="b2t-form">${existing?'':`<label class="b2-field">날짜<input type="date" data-f="date" value="${esc(f.date)}"></label>
    <label class="b2-field">반<select data-f="cls"><option value="">반 선택</option>${classOptions(classes,f.cls)}</select></label>
    <label class="b2-field">모듈<input data-f="module" list="t2Modules" maxlength="60" placeholder="예: 공장견학" value="${esc(f.module)}"></label><datalist id="t2Modules">${modulesFor(f.date,f.cls).map(m=>`<option value="${esc(m)}">`).join('')}</datalist>`}
    <label class="b2-field">시작<input type="time" data-f="start" min="${TIME_RANGE.min}" max="${TIME_RANGE.max}" value="${esc(f.start)}"></label>

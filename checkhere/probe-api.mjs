@@ -9,7 +9,7 @@ export const API_PROBE_VERSION='20261015.2';
 export const API_PROBE_CAPABILITY='api-probe-v1';
 const PAGE_ORIGIN='https://check.ihereapp.com',API_ORIGIN='https://checkhere-admin-api.ihereapp.com',API_PREFIX='/api/v3/';
 const ID=/^[A-Za-z0-9][\w-]{0,79}$/;
-// 날짜: 2026·2027년의 달력에 있는 날(2기 교육 기간이 해를 넘음, cohort-bridge.validIso).
+// 날짜: 달력에 있는 날(YYYY-MM-DD, cohort-bridge.validIso).
 export const validDate=validIso;
 // 출결상세 주소 → 반·날짜 번호(검사만 하고 보고서에는 적지 않음).
 export function dayIds(raw){

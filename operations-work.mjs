@@ -1,5 +1,3 @@
-// 2기 교육 시작일(cohort.mjs).
-import {COURSE_START} from './cohort.mjs';
 import {createWorkStore} from './operations-work-store.mjs';
 import {summarizeClassWork,teacherHandoff} from './operations-work-core.mjs';
 import {loadSurveyLinks} from './survey-links.mjs';
@@ -11,7 +9,7 @@ export async function mountOperationsWork(host,{db,user,classes,mode='work',canA
  const root=host.shadowRoot||host.attachShadow({mode:'open'}),store=createWorkStore(db,user),bundles=new Map(),selected=new Set(classes.map(c=>String(c.id)));
  let disposed=false,busy=false,epoch=0,catalog=null,config={},requests=[],requestError='',configError='',today=koreaToday(),date=today,period='all',reports=[];
  const alive=()=>!disposed&&host.isConnected;
- root.innerHTML=`<link rel="stylesheet" href="/operations-work.css"><section><header><div><small>HINT / OPERATIONS</small><h2>${mode==='handoff'?'담임 전달사항':'오늘 업무 현황'}</h2><p>저장된 출결·설문 결과와 체크히어 요청을 모아 봅니다. 시트 재수집이나 자동 저장은 하지 않습니다.</p></div><button id="refresh">현황 새로 읽기</button></header><div class="filters"><label>기준 날짜 <input id="date" type="date" min="${COURSE_START}" max="${today}" value="${date}"></label><label>서류·설문·요청 기간 <select id="period">${EVIDENCE_PERIODS.map(p=>`<option value="${p.id}">${p.label}</option>`).join('')}</select></label><button id="all">전체 반</button><button id="none">선택 해제</button><div class="classes">${classes.map(c=>`<label><input type="checkbox" data-class="${esc(c.id)}" checked>${esc(c.id)}반</label>`).join('')}</div></div><p id="progress" role="status"></p><div id="summary"></div><div id="details"></div><section id="handoff"><div class="copy-head"><h3>선택 반 전달문</h3><button id="copy" disabled>전달사항 복사</button></div><p>반별·학생별로 묶습니다. 복사 전에 편집할 수 있습니다. 관리자 내부 메모와 체크히어 승인 업무는 포함하지 않습니다.</p><textarea id="message" aria-label="담임 전달사항 편집" rows="14"></textarea><p id="copied" role="status"></p></section></section>`;
+ root.innerHTML=`<link rel="stylesheet" href="/operations-work.css"><section><header><div><small>HINT / OPERATIONS</small><h2>${mode==='handoff'?'담임 전달사항':'오늘 업무 현황'}</h2><p>저장된 출결·설문 결과와 체크히어 요청을 모아 봅니다. 시트 재수집이나 자동 저장은 하지 않습니다.</p></div><button id="refresh">현황 새로 읽기</button></header><div class="filters"><label>기준 날짜 <input id="date" type="date" value="${date}"></label><label>서류·설문·요청 기간 <select id="period">${EVIDENCE_PERIODS.map(p=>`<option value="${p.id}">${p.label}</option>`).join('')}</select></label><button id="all">전체 반</button><button id="none">선택 해제</button><div class="classes">${classes.map(c=>`<label><input type="checkbox" data-class="${esc(c.id)}" checked>${esc(c.id)}반</label>`).join('')}</div></div><p id="progress" role="status"></p><div id="summary"></div><div id="details"></div><section id="handoff"><div class="copy-head"><h3>선택 반 전달문</h3><button id="copy" disabled>전달사항 복사</button></div><p>반별·학생별로 묶습니다. 복사 전에 편집할 수 있습니다. 관리자 내부 메모와 체크히어 승인 업무는 포함하지 않습니다.</p><textarea id="message" aria-label="담임 전달사항 편집" rows="14"></textarea><p id="copied" role="status"></p></section></section>`;
  const $=s=>root.querySelector(s),progress=$('#progress');
  $('#handoff').hidden=mode!=='handoff';
  function render(){
@@ -42,7 +40,7 @@ export async function mountOperationsWork(host,{db,user,classes,mode='work',canA
   }finally{busy=false;if(alive()&&run===epoch){$('#refresh').disabled=false;$('#message').disabled=false;render();}}
  }
  $('#refresh').onclick=()=>void load(true);
- $('#date').onchange=()=>{if(!$('#date').value||$('#date').value>today||$('#date').value<COURSE_START){$('#date').value=date;return;}date=$('#date').value;render();};
+ $('#date').onchange=()=>{if(!$('#date').value){$('#date').value=date;return;}date=$('#date').value;render();};
  $('#period').onchange=()=>{period=$('#period').value;render();};
  root.querySelectorAll('[data-class]').forEach(x=>x.onchange=()=>{x.checked?selected.add(x.dataset.class):selected.delete(x.dataset.class);render();});
  function selectAll(checked){selected.clear();root.querySelectorAll('[data-class]').forEach(x=>{x.checked=checked;if(checked)selected.add(x.dataset.class);});render();}

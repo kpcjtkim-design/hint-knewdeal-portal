@@ -1,8 +1,8 @@
 import {matchingCheckHereRecords,hasBirthYearName} from '../checkhere-name-core.mjs';
 import {RULES,normalizeTime} from './rules.mjs';
-import {APPROVER as COHORT_APPROVER,CLASS_ID_RE,COHORT_DATE_RE,COURSE_START,COURSE_END,isIsoDate} from '../cohort.mjs';
-// 체크히어 승인·반영 계정과 요청 범위(반 1~16, 2기 교육 기간 2026-10-28~2027-01-22)는 cohort.json에서 옵니다.
-// firestore.rules checkhereRequests·beta2-checkhere-core.mjs REQUEST_DATE_RANGE와 같은 값이어야 합니다.
+import {APPROVER as COHORT_APPROVER,CLASS_ID_RE,isIsoDate} from '../cohort.mjs';
+// 체크히어 승인·반영 계정과 반 범위(1~17, 17반은 시험용 테스트반)는 cohort.json에서 옵니다. 날짜는 모양(YYYY-MM-DD, 실제 있는 날)만 봅니다:
+// 교육 기간 밖·교육일이 아닌 날·미래도 받습니다(사용자 결정 2026-10-20). firestore.rules checkhereRequests(validDate)·beta2-checkhere-core.mjs requestDateOk와 같은 기준입니다.
 export const APPROVER = COHORT_APPROVER;
 export const FIELDS = {entry:'입실·교시 시간',exit:'퇴실 시간',entryMemo:'입실·교시 관리자 사유',exitMemo:'퇴실 관리자 사유'};
 export const STATUS = {pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'검증 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
@@ -14,7 +14,7 @@ const blankTime=v=>{try{return !normalizeTime(v);}catch{return false;}};
 export function cleanRequest(input){
   const classId=String(input.classId||''),date=String(input.date||''),name=String(input.name||'').trim(),phoneLast4=String(input.phoneLast4||'').trim(),reason=String(input.reason||'').trim();
   if(!CLASS_ID_RE.test(classId))throw Error('반을 확인해 주세요.');
-  if(!COHORT_DATE_RE.test(date)||!isIsoDate(date)||date<COURSE_START||date>COURSE_END)throw Error('교육 기간 안의 날짜를 선택해 주세요.');
+  if(!isIsoDate(date))throw Error('날짜를 확인해 주세요. (YYYY-MM-DD)');
   if(!name||name.length>60||!reason||reason.length>1000)throw Error('학생 이름과 수정 근거(1,000자 이내)를 입력해 주세요.');
   // 체크히어 가린 이름(가**)으로는 요청하지 않습니다(가린 값이 학생 이름이 되지 않게).
   if(name.includes('*'))throw Error('학생 이름에 가린 글자(*)가 있습니다. 체크히어 원문 이름으로 요청해 주세요.');

@@ -28,7 +28,7 @@ export async function mount(host,{db,user,classes,client,open}){
   tabs();work?.dispose?.();work=null;
   if(section==='summary'){summary();return;}
   body.innerHTML=`<div id="h2Work">${loading()}</div>`;
-  try{const m=await import('./operations-work.mjs?v=20260922-work1');if(!life.alive()||!$('#h2Work'))return;work=await m.mountOperationsWork($('#h2Work'),{db,user,classes,mode:section,canApprove:false,onOpen:(tab,ctx)=>open(MAP_OLD_TABS[tab]||tab,ctx)});life.on(()=>work?.dispose?.());}
+  try{const m=await import('./operations-work.mjs?v=20261020-f1');if(!life.alive()||!$('#h2Work'))return;work=await m.mountOperationsWork($('#h2Work'),{db,user,classes,mode:section,canApprove:false,onOpen:(tab,ctx)=>open(MAP_OLD_TABS[tab]||tab,ctx)});life.on(()=>work?.dispose?.());}
   catch(e){if(life.alive())$('#h2Work').innerHTML=errorBox(e);}
  }
  async function load(fresh=false){

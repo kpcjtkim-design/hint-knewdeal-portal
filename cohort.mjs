@@ -180,7 +180,7 @@ export function ruleProblems(rule){
 }
 export function ruleOverrideProblems(o){
   if(!o||typeof o!=='object'||Array.isArray(o))return ['항목 모양'];
-  const out=[];if(!isIsoDate(o.date)||!inPeriod(o.date))out.push('교육 기간 안의 날짜');
+  const out=[];if(!isIsoDate(o.date))out.push('날짜 모양(YYYY-MM-DD)'); // 교육 기간 밖 날짜도 받음(사용자 결정 2026-10-20)
   if(o.classIds!==undefined&&(!Array.isArray(o.classIds)||o.classIds.some(id=>!isClassId(id))))out.push('반 번호');
   for(const k of RULE_TIMES)if(o[k]!==undefined&&!HM.test(String(o[k])))out.push(k+' 시간 형식(HH:MM)');
   for(const k of RULE_GRACES)if(o[k]!==undefined&&!(Number.isInteger(o[k])&&o[k]>=0&&o[k]<=120))out.push(k+' 0~120분');

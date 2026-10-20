@@ -4,7 +4,6 @@
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {forgetBeta2Cache} from './beta2-data.mjs';
 import {ROSTER_STATUS,checkRosterStatus} from './beta2-core.mjs';
-import {COURSE_START,COURSE_END} from './cohort.mjs';
 
 const VIEWS=[['all','전체'],['in','재학'],['out','재학 아님']];
 const TONE={'재학':'','중도탈락':'t-absent','조기취업':'t-rec','수료':'e-ok'};
@@ -34,7 +33,7 @@ export async function mount(host,{client,classes,selected,context}){
   return `<div class="b2r-row ${dirty(p)?'dirty':''} ${e.saving?'saving':''}" data-key="${esc(key)}"><div class="b2r-now"><span class="b2-name">${n}</span><span class="b2-sub">${esc(p.cls)}반</span></div>
    <div class="b2r-now"><span class="b2-small b2-muted">현재</span> <span class="b2-badge ${TONE[st]??'t-late'}">${esc(st)}</span>${p.changed&&st!=='재학'?`<span class="b2-sub">마지막 출석 ${esc(md(p.changed))}</span>`:''}${p.reason?`<span class="b2-sub">사유: ${esc(p.reason)}</span>`:''}</div>
    <label class="b2-field">바꿀 상태<select data-e="status" aria-label="${n} 바꿀 상태" ${e.saving?'disabled':''}>${ROSTER_STATUS.includes(st)?'':`<option value="" selected disabled>상태 선택 (지금: ${esc(st)})</option>`}${ROSTER_STATUS.map(s=>`<option value="${s}" ${s===v.status?'selected':''}>${s}</option>`).join('')}</select></label>
-   <label class="b2-field">마지막 출석일${out?' (필수)':''}<input type="date" data-e="changed" aria-label="${n} 마지막 출석일" min="${COURSE_START}" max="${COURSE_END}" value="${esc(out?v.changed:'')}" ${out&&!e.saving?'':'disabled'}></label>
+   <label class="b2-field">마지막 출석일${out?' (필수)':''}<input type="date" data-e="changed" aria-label="${n} 마지막 출석일" value="${esc(out?v.changed:'')}" ${out&&!e.saving?'':'disabled'}></label>
    <label class="b2-field b2r-why">사유<input data-e="reason" aria-label="${n} 상태 사유" maxlength="200" placeholder="예: 11/20 취업으로 조기취업" value="${esc(v.reason)}" ${e.saving?'disabled':''}></label>
    <div class="b2r-act"><span class="b2-err" data-err>${esc(e.err||'')}</span><button class="b2-btn small primary" data-save ${dirty(p)&&!e.saving?'':'disabled'}>${e.saving?'저장 중…':'저장'}</button></div></div>`;
  }

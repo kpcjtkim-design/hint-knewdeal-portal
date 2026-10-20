@@ -1,6 +1,7 @@
 rules_version = '2';
 // HINT 2기 운영포털 Firestore 규칙(2기 전용 Firebase 프로젝트 hint-knewdeal-2). 사용자가 2기 콘솔에 게시합니다.
-// 기본은 막힘(아래에 적힌 경로만 열림). 반 1~17(17반은 시험용 테스트반), 날짜 2026-10-28~2027-01-22(cohort.json과 같음, checkhere/tests/firestore-rules-2.test.mjs가 확인).
+// 기본은 막힘(아래에 적힌 경로만 열림). 반 1~17(17반은 시험용 테스트반, cohort.json과 같음), 날짜는 모양(YYYY-MM-DD)만 봅니다(checkhere/tests/firestore-rules-2.test.mjs가 확인).
+// 날짜 기간 제한 없음(사용자 결정 2026-10-20 '둘다 넓혀'·'수정 자체는 언제든 유연하게'): 교육 기간(2026-10-28~2027-01-22) 밖·교육일이 아닌 날·미래도 저장·요청할 수 있습니다.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn(){return request.auth != null && request.auth.token.email != null && request.auth.token.email_verified == true;}
@@ -12,9 +13,9 @@ service cloud.firestore {
     function isAdmin(){return bootstrapAdmin()||(profileExists()&&profile().get('active',true)==true&&profile().get('role','')=='ADMIN');}
     function isTeacher(){return profileExists()&&profile().get('active',false)==true&&profile().get('role','')=='TEACHER';}
     function checkhereApprover(){return signedIn() && email()=='hint.kpc@gmail.com' && request.auth.token.firebase.sign_in_provider=='google.com';}
-    // 2기 반 번호·교육 기간
+    // 2기 반 번호·날짜 모양(YYYY-MM-DD, 월 01~12·일 01~31. 2월 30일 같은 날은 화면·연결 프로그램이 거름)
     function validClass(c){return c is string && c.matches('([1-9]|1[0-7])');}
-    function courseDate(d){return d is string && d.matches('202[67]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') && d>='2026-10-28' && d<='2027-01-22';}
+    function validDate(d){return d is string && d.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])');}
     // 담임은 자기 반만: users/{email}의 기본담당(primaryClassId·classId)과 임시담당(tempClassIds·classIds)
     function ownsClass(classId){
       let p = profile();
@@ -42,7 +43,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && (isAdmin() || ownsClass(request.resource.data.classId))
         && request.resource.data.keys().hasOnly(['classId','date','name','phoneLast4','reason','changes','deleteTimes','createdBy','createdAt','updatedAt','status'])
-        && validClass(request.resource.data.classId) && courseDate(request.resource.data.date)
+        && validClass(request.resource.data.classId) && validDate(request.resource.data.date)
         && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=60
         && request.resource.data.phoneLast4 is string && request.resource.data.phoneLast4.matches('([0-9]{4})?')
         && request.resource.data.reason is string && request.resource.data.reason.size()>0 && request.resource.data.reason.size()<=1000
@@ -100,7 +101,7 @@ service cloud.firestore {
       // Same administrator-only source access; one bounded latest document per day.
       match /checkhereCurrent/{date}{
         allow read: if isAdmin();
-        allow create, update: if isAdmin() && validClass(classId) && courseDate(date)
+        allow create, update: if isAdmin() && validClass(classId) && validDate(date)
           && request.resource.data.classId == classId && request.resource.data.date == date
           && request.resource.data.keys().hasOnly(['classId','date','records','jobId','updatedBy','updatedAt'])
           && request.resource.data.records is list && request.resource.data.records.size() <= 1000
@@ -128,7 +129,7 @@ service cloud.firestore {
     function notifyRecipient(d){return email() in d.get('to',[]) || (d.get('toRole','')=='admin' && isAdmin()) || ('toClass' in d && ownsClass(d.toClass));}
     function validNotification(d){
       return d.keys().hasOnly(['kind','title','body','cls','link','to','toRole','toClass','from','createdAt','readBy'])
-        && d.kind in ['서류발급','민원','출결대조 메모']
+        && d.kind in ['서류발급','민원','출결대조 메모','추가 증빙']
         && d.title is string && d.title.size() > 0 && d.title.size() <= 80
         && d.body is string && d.body.size() <= 160
         && d.cls is string && (d.cls == '' || validClass(d.cls))
@@ -183,7 +184,7 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create, update: if isAdmin()
         && validClass(request.resource.data.classId)
-        && courseDate(request.resource.data.date)
+        && validDate(request.resource.data.date)
         && request.resource.data.students is map
         && request.resource.data.updatedBy == email()
         && request.resource.data.updatedAt == request.time;
