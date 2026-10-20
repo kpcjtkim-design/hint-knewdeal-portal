@@ -14,7 +14,7 @@ const BUNDLE={rev:5,today:'2026-11-05',days:['2026-10-29','2026-10-30','2026-11-
  roster:[['1','고다원','재학',''],['1','김동진','재학',''],['1','한수빈','중도포기','2026-11-04'],['2','이경수','재학','']],ledgerCols:COLS,
  ledger:[row('2026-11-05','1','고다원','결석',{reason:'개인일정'}),row('2026-11-04','1','김동진','인정출석',{reason:'병원 진료',flag:'확인 필요: 가상 메모'}),row('2026-11-03','1','고다원','인정출석',{reason:'병결'}),row('2026-11-04','1','고다원','인정출석',{reason:'병원'}),row('2026-11-02','1','고다원','인정출석',{reason:'병원'}),row('2026-10-30','1','고다원','인정출석',{reason:'병원 통원'})],
  sync:{checkedAt:Date.now()-120000,changedAt:Date.now()-3600000,last:{errors:[]}}};
-const DOCS={rev:5,statuses:['접수','처리중','보완 필요','처리완료','취소'],types:['출석부','교육참여확인서','훈련생 확인서','기타'],delivery:['이메일(PDF)','담임 전달','우편'],
+const DOCS={rev:5,statuses:['접수','처리중','보완 필요','처리완료','취소'],types:['교육참여확인서','체크히어 출석부','수기 출석부','기타 양식'],delivery:['이메일(PDF)','담임 전달','우편'],
  rows:[{id:'D261013-001',requested:'2026-12-15',cls:'1반(김지아)',name:'고다원',birth:'1999-01-01',detail:'기간: 2026-10-28 ~ 2026-11-13',submitTo:'국취제 운영기관',due:'2026-12-16',status:'접수',memo:'',docType:'출석부',qty:'1',delivery:'이메일(PDF)',requester:'teacher@test.kr',handler:'',handledAt:'',link:'',fixReason:''},
   {id:'D261015-005',requested:'2026-12-17',cls:'4반',name:'이경수',birth:'',detail:'',submitTo:'국민취업제도 운영기관',due:'2026-12-22',status:'처리완료',memo:'',docType:'출석부',qty:'',delivery:'',requester:'운영팀',handler:'',handledAt:'',link:'',fixReason:''}]};
 
@@ -197,13 +197,16 @@ test('the document inbox lists requests and a new request is sent with the selec
   await page.getByRole('button',{name:'새 신청 작성'}).click();
   await page.locator('select[data-g="name"]').selectOption('김동진');
   await page.locator('[data-doctype="교육참여확인서"]').click();
+  await page.locator('[data-doctype="수기 출석부"]').click();
+  await page.locator('[data-doctype="기타 양식"]').click();
+  await page.locator('input[data-g="docOther"]').fill('국취 출석 확인 양식');
   await page.locator('input[data-g="submitTo"]').fill('국민취업지원제도 운영기관');
   await page.locator('input[data-g="from"]').fill('2026-10-28');
   await page.locator('input[data-g="to"]').fill('2026-11-27');
   await page.getByRole('button',{name:'신청하기'}).click();
   await page.waitForFunction(()=>!document.querySelector('[data-submit]'));
   const create=posts.find(p=>p.action==='b2DocCreate');
-  assert.deepEqual(create.args,[{cls:'1',name:'김동진',docType:'교육참여확인서',qty:1,period:'2026-10-28 ~ 2026-11-27',purpose:'',submitTo:'국민취업지원제도 운영기관',due:'',delivery:'이메일(PDF)',memo:''}]);
+  assert.deepEqual(create.args,[{cls:'1',name:'김동진',docType:'교육참여확인서 · 수기 출석부 · 기타 양식(국취 출석 확인 양식)',qty:1,period:'2026-10-28 ~ 2026-11-27',purpose:'',submitTo:'국민취업지원제도 운영기관',due:'',delivery:'카카오톡 개별 전송',memo:''}]);
  });
 });
 
