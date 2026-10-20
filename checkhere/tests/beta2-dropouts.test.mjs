@@ -455,7 +455,7 @@ test('담임: 신청만(교육생·구분·사유·마지막 출석일·근로�
   assert.equal(await page.locator('[data-request] [data-err]').innerText(),'조기취업은 근로개시일을 넣어 주세요.');assert.equal(sheet.saves.length,0);
   await page.locator('[data-request] [data-g="startDate"]').fill('2026-12-14');await page.locator('[data-request] [data-g="reason"]').fill('12/14 ○○㈜ 입사');await page.locator('[data-request] [data-g="note"]').fill('서류는 다음 주');
   page.dialogAnswer.push(false);await page.locator('[data-request]').getByRole('button',{name:'신청하기'}).click();
-  assert.equal(dialogs.at(-1),'1반 정민호 학생을 「조기취업」(으)로 신청할까요?\n명부 상태도 함께 바뀌어 마지막 출석일 12/11(금) 다음 교육일부터 출결판·출석률에서 빠집니다. 판정·서류·수료 처리는 운영팀이 합니다.');
+  assert.equal(dialogs.at(-1),'1반 정민호 학생을 「조기취업」(으)로 신청할까요?\n명부 상태는 운영팀이 확인한 뒤 바뀝니다(마지막 출석일 12/11(금) 다음 교육일부터 출결판·출석률에서 빠짐). 판정·서류·수료 처리는 운영팀이 합니다.');
   assert.equal(sheet.saves.length,0,'declined: nothing sent');
   await page.locator('[data-request]').getByRole('button',{name:'신청하기'}).click();
   await rowOf(page,'정민호').waitFor();
@@ -468,7 +468,7 @@ test('담임: 신청만(교육생·구분·사유·마지막 출석일·근로�
   assert.match(await rowOf(page,'정민호').innerText(),/조기취업\s*12\/14 ○○㈜ 입사\s*메모: 서류는 다음 주[\s\S]*접수/);
   // 신청 취소: 확인창(아니오 → 그대로), 예 → 줄이 빠지고 명부는 재학, 관리자에게 알림
   page.dialogAnswer.push(false);await rowOf(page,'정민호').getByRole('button',{name:'신청 취소'}).click();
-  assert.equal(dialogs.at(-1),'정민호 (조기취업) 신청을 취소할까요?\n명부 상태가 아직 「조기취업」이면 재학으로 되돌립니다.');
+  assert.equal(dialogs.at(-1),'정민호 (조기취업) 신청을 취소할까요?\n운영팀이 확인하기 전이라 명부 상태는 그대로입니다.');
   assert.equal(sheet.drops.some(r=>r.name==='정민호'),true);
   await rowOf(page,'정민호').getByRole('button',{name:'신청 취소'}).click();
   await rowOf(page,'정민호').waitFor({state:'detached'});

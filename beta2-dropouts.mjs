@@ -311,7 +311,7 @@ async function mountTeacher(host,{client,teacherClass,me='',context,hideHead=fal
    <label class="b2-field wide">메모 (선택)<input data-g="note" maxlength="300" placeholder="운영팀에 전할 말" value="${esc(f.note)}" ${dis}></label>
   </div>${people.length?'':'<div class="b2-note" style="margin-top:10px">신청할 수 있는 재학생이 없습니다.</div>'}
   <div class="b2-chips" style="margin-top:12px;align-items:center"><span class="b2-err" data-err>${esc(formErr)}</span><span class="b2-grow"></span><button class="b2-btn primary" data-submit ${dis}>${sending?'신청 중…':'신청하기'}</button></div>
-  <p class="b2-tiny b2-muted" style="margin:8px 0 0">신청하면 운영팀에 알림이 가고, 명부 상태도 「${esc(f.kind)}」(으)로 바뀌어 마지막 출석일 다음 교육일부터 출결판·출석률에서 빠집니다. 판정·서류·수료 처리는 운영팀이 합니다.</p></section>`;
+  <p class="b2-tiny b2-muted" style="margin:8px 0 0">신청하면 운영팀에 알림이 갑니다. 명부 상태는 운영팀이 확인한 뒤 「${esc(f.kind)}」(으)로 바뀌고, 그때 마지막 출석일 다음 교육일부터 출결판·출석률에서 빠집니다. 판정·서류·수료 처리는 운영팀이 합니다.</p></section>`;
  }
  function renderList(){
   const mine=rows.filter(r=>r.cls===cls),vis=mine.filter(found);
@@ -364,7 +364,7 @@ async function mountTeacher(host,{client,teacherClass,me='',context,hideHead=fal
   formErr=!f.name?'교육생을 골라 주세요.':checkDropout(f,{admin:false});
   if(!formErr&&!choices().some(p=>p.name===f.name))formErr='명부의 재학생을 골라 주세요.';
   if(formErr){paintForm();return;}
-  if(!confirm(`${classLabel(cls)} ${f.name} 학생을 「${f.kind}」(으)로 신청할까요?\n명부 상태도 함께 바뀌어 마지막 출석일 ${md(f.lastDate)} 다음 교육일부터 출결판·출석률에서 빠집니다. 판정·서류·수료 처리는 운영팀이 합니다.`))return;
+  if(!confirm(`${classLabel(cls)} ${f.name} 학생을 「${f.kind}」(으)로 신청할까요?\n명부 상태는 운영팀이 확인한 뒤 바뀝니다(마지막 출석일 ${md(f.lastDate)} 다음 교육일부터 출결판·출석률에서 빠짐). 판정·서류·수료 처리는 운영팀이 합니다.`))return;
   sending=true;paintForm();
   try{
    await client.dropoutSave(requestPayload(f));
@@ -376,7 +376,7 @@ async function mountTeacher(host,{client,teacherClass,me='',context,hideHead=fal
  }
  async function cancelRequest(r){
   if(cancelling||!canCancel(r,me))return;
-  if(!confirm(`${r.name} (${r.kind}) 신청을 취소할까요?\n명부 상태가 아직 「${r.kind}」이면 재학으로 되돌립니다.`))return;
+  if(!confirm(`${r.name} (${r.kind}) 신청을 취소할까요?\n운영팀이 확인하기 전이라 명부 상태는 그대로입니다.`))return;
   cancelling=r.row;render();
   try{
    await client.dropoutSave({row:r.row,was:{cls:r.cls,name:r.name},cls:r.cls,name:r.name,remove:true});
