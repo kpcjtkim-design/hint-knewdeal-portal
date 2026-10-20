@@ -37,7 +37,7 @@ test('direct editor previews only corresponding defaults, preserves real times a
    </script>`});
    const path=join(base,u.pathname.slice(1));if(/\.(mjs|css)$/.test(path)&&existsSync(path))return route.fulfill({contentType:path.endsWith('.css')?'text/css':'text/javascript',body:readFileSync(path,'utf8')});return route.abort();
   });
-  try{
+  try{await page.addInitScript(()=>sessionStorage.setItem('h2:hintWorkContext',JSON.stringify({classId:'2',date:'2026-11-05'})));
    await page.goto('https://fixture.test/');await page.getByRole('textbox',{name:'로컬 연결 키'}).fill('fixture');await page.getByRole('button',{name:'연결',exact:true}).click();
    await page.getByRole('button',{name:'검토·수정',exact:true}).click();await page.locator(scenario.memo==='entryMemo'?'#newEntryMemo':'#newExitMemo').fill(scenario.value);
    if(scenario.clearTime)await page.locator('#newEntry').fill('');

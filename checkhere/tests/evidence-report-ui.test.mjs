@@ -9,7 +9,7 @@ test('teacher home and scoped evidence panel reuse summaries; period changes mak
  try{
   await page.route('**/*',route=>{
    const u=new URL(route.request().url()),path=u.pathname.slice(1);
-   if(path==='attendance-derived-store.mjs')return route.fulfill({contentType:'text/javascript',body:`window.reads=[];window.writes=0;export async function readAttendanceSummary(db,cid){window.reads.push(cid);return {classId:cid,latestDate:'2026-09-14',dates:['2026-08-26','2026-09-14'],students:[{id:'a',name:cid+'반가상',history:{'2026-08-26':{raw:'인정출석',status:'인정지각',evidenceStatus:'미제출'},'2026-09-14':{raw:'인정출석',status:'인정조퇴',evidenceStatus:'반려'}}}]};}export async function syncAttendanceSummary(){window.writes++;throw Error('explicit only');}`});
+   if(path==='attendance-derived-store.mjs')return route.fulfill({contentType:'text/javascript',body:`window.reads=[];window.writes=0;export async function readAttendanceSummary(db,cid){window.reads.push(cid);return {classId:cid,latestDate:'2026-11-16',dates:['2026-10-28','2026-11-16'],students:[{id:'a',name:cid+'반가상',history:{'2026-10-28':{raw:'인정출석',status:'인정지각',evidenceStatus:'미제출'},'2026-11-16':{raw:'인정출석',status:'인정조퇴',evidenceStatus:'반려'}}}]};}export async function syncAttendanceSummary(){window.writes++;throw Error('explicit only');}`});
    if(u.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="host"></div><script type="module">
     import {mountAttendanceStatistics} from '/attendance-statistics.mjs';import {mountAttendanceEvidence} from '/attendance-evidence.mjs';
     const mode=new URL(location.href).searchParams.get('mode'),options={db:{},user:{email:'fixture@example.test'},classes:[{id:'1'},{id:'2'}],...(mode==='admin'?{}:{teacherClass:{id:'1'}})};

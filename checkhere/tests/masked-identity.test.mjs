@@ -17,7 +17,7 @@ import {readRequestRecord} from '../request-record.mjs';
 import {DELETE_MARKS} from '../day-data.mjs';
 import {createCurrentSaver} from '../../checkhere-current-core.mjs';
 
-const DAY0='2026-10-13',DAY='2026-10-14',DAY2='2026-10-15';
+const DAY0='2026-12-15',DAY='2026-12-16',DAY2='2026-12-17';
 const iso=(d,t)=>`${d}T${t}`;
 const ev=(d,type,t,eventId,memo=null)=>({eventId,userId:'u-'+type,time:iso(d,t),baseTime:iso(d,type==='COMPLETE'?'18:00:00':'09:00:00'),timeIndex:0,type,isRecognized:false,status:'NORMAL',memoByAdmin:memo,updatedAt:null});
 // 가상 학생(이름·번호 모두 가짜). sequence는 이름 순서와 다르게 둡니다(표는 이름순, 데이터는 순번순).
@@ -218,7 +218,7 @@ test('unlinked and duplicate-signature students are skipped and counted; a depar
     // 지난 원문 수집: 10/13에는 나간 학생이 있고, 마지막 원문 수집일(10/14)에는 없습니다.
     stored.push(...(await collect(reader,'2',DAY0)).records,...(await collect(reader,'2',DAY)).records);
     assert.equal(stored.filter(r=>r.name==='마가상').length,1);
-    const links=store(stored);assert.deepEqual([links.lastPlain('2').date,links.lastPlain('2').keys.size],[DAY,4],'the last plain day is 10/14 with four students');
+    const links=store(stored);assert.deepEqual([links.lastPlain('2').date,links.lastPlain('2').keys.size],[DAY,4],'the last plain day is 12/16 with four students');
     assert.equal(reader.responses.size,1,'only the day just opened keeps its page data (older days, with plain names, are dropped)');
     s.w.mode='masked';const c=collector(s,links);
     const day=await collect(c,'2',DAY2);
@@ -376,10 +376,10 @@ test('stored-match: the first-boot seed looks at recent days (a shrunk roster), 
   const records=[];
   for(let d=1;d<=10;d++){const date=`2026-10-${String(d).padStart(2,'0')}`;for(const n of names.filter(n=>d<=5||!gone.includes(n.name)))records.push({id:`2_${date}_${n.key}`,classId:'2',date,source:'live',readState:'complete',studentKey:n.key,name:n.name,phoneLast4:n.last4});}
   const links=store(records),last=links.lastPlain('2');
-  assert.deepEqual([last.date,last.keys.size,last.keys.has('key-4')],['2026-10-10',7,false]);
+  assert.deepEqual([last.date,last.keys.size,last.keys.has('key-4')],['2026-12-12',7,false]);
   // 10/15 가린 화면: 나간 마가상과 첫 글자·끝 4자리가 같은 새 학생은 연결하지 않습니다. 남은 학생은 잇습니다.
   const rows=[{seq:'1',name:'마**',phone:'010-****-1004',kind:'masked'},{seq:'2',name:'가**',phone:'010-****-1000',kind:'masked'}],entries=[{attendeeId:'att-new'},{attendeeId:'att-k0'}];
-  const got=resolveMasked({classId:'2',date:'2026-10-15',rows,entries,links,identities:links.identities('2'),lastPlain:last});
+  const got=resolveMasked({classId:'2',date:'2026-12-17',rows,entries,links,identities:links.identities('2'),lastPlain:last});
   assert.deepEqual(got[0],{skip:'unlinked'});assert.deepEqual([got[1].studentKey,got[1].source],['key-0','stored-match']);assert.equal(links.link('2','att-new'),null);
   // 마지막 원문 수집일에서 30일 뒤(새 기수가 같은 반 번호를 씀): 저장된 기록으로는 아무도 잇지 않습니다
   const later=store(records);
