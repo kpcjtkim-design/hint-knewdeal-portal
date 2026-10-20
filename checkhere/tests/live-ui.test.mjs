@@ -10,9 +10,9 @@ import {createBridge} from '../server.mjs';
 import {studentKey,recordId,version} from '../identity.mjs';
 import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mjs';
 import {mergeCurrentRecords} from '../../checkhere-current-core.mjs';
-// 날짜는 요청 허용 범위(2026-07-27~2026-10-22) 안으로 고정합니다(docs/checkhere-handoff-review.md 8번).
+// 날짜는 요청 허용 범위(2기 2026-10-28~2027-01-22) 안으로 고정합니다(docs/checkhere-handoff-review.md 8번).
 // 연결 프로그램은 수집 PC의 실제 연결 프로그램(8765)과 겹치지 않는 포트에서 열고, 화면에는 HINT_TEST_BRIDGE로 알려 줍니다.
-const ROOT=join(import.meta.dirname,'../..'),DATE='2026-10-12',PORT=18943,BRIDGE=`http://127.0.0.1:${PORT}`;
+const ROOT=join(import.meta.dirname,'../..'),DATE='2026-12-14',PORT=18943,BRIDGE=`http://127.0.0.1:${PORT}`;
 const NAMES=['가상하나','가상둘','01000000001','01000000002'],SIGNAL_KEYS=['at','build','busy','by','capabilities','lastErrorAt','privacy','queue','state'];
 const until=async(f,what,ms=20000)=>{for(const end=Date.now()+ms;!await f();){if(Date.now()>end)throw Error(what+' 대기 시간 초과');await new Promise(r=>setTimeout(r,50));}};
 

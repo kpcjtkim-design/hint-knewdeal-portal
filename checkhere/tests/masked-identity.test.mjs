@@ -17,7 +17,7 @@ import {readRequestRecord} from '../request-record.mjs';
 import {DELETE_MARKS} from '../day-data.mjs';
 import {createCurrentSaver} from '../../checkhere-current-core.mjs';
 
-const DAY0='2026-10-13',DAY='2026-10-14',DAY2='2026-10-15';
+const DAY0='2026-12-15',DAY='2026-12-16',DAY2='2026-12-17';
 const iso=(d,t)=>`${d}T${t}`;
 const ev=(d,type,t,eventId,memo=null)=>({eventId,userId:'u-'+type,time:iso(d,t),baseTime:iso(d,type==='COMPLETE'?'18:00:00':'09:00:00'),timeIndex:0,type,isRecognized:false,status:'NORMAL',memoByAdmin:memo,updatedAt:null});
 // 가상 학생(이름·번호 모두 가짜). sequence는 이름 순서와 다르게 둡니다(표는 이름순, 데이터는 순번순).
@@ -218,7 +218,7 @@ test('unlinked and duplicate-signature students are skipped and counted; a depar
     // 지난 원문 수집: 10/13에는 나간 학생이 있고, 마지막 원문 수집일(10/14)에는 없습니다.
     stored.push(...(await collect(reader,'2',DAY0)).records,...(await collect(reader,'2',DAY)).records);
     assert.equal(stored.filter(r=>r.name==='마가상').length,1);
-    const links=store(stored);assert.deepEqual([links.lastPlain('2').date,links.lastPlain('2').keys.size],[DAY,4],'the last plain day is 10/14 with four students');
+    const links=store(stored);assert.deepEqual([links.lastPlain('2').date,links.lastPlain('2').keys.size],[DAY,4],'the last plain day is 12/16 with four students');
     assert.equal(reader.responses.size,1,'only the day just opened keeps its page data (older days, with plain names, are dropped)');
     s.w.mode='masked';const c=collector(s,links);
     const day=await collect(c,'2',DAY2);

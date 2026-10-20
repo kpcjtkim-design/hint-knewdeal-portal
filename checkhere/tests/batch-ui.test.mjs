@@ -27,7 +27,7 @@ test('several classes and a period run as one bridge job; each finished day is s
         return route.fulfill({headers,json:state()});
       }
       if(u.pathname==='/')return route.fulfill({contentType:'text/html',body:`<meta charset="utf-8"><div id="host"></div><script type="module">import{mountCheckHere}from'/checkhere-ui.mjs';window.saves=[];await mountCheckHere(document.querySelector('#host'),{load:async()=>[],save:async(records,job)=>{window.saves.push({job:job.id,days:[...new Set(records.map(r=>r.classId+'|'+r.date))],n:records.length});return {verified:true,recordCount:records.length,partialCount:0};},onController:c=>window.controller=c});</script>`});
-      if(['/checkhere-ui.mjs','/checkhere/bulk-collect.mjs','/attendance-beta-core.mjs','/checkhere-name-core.mjs','/survey-identity.mjs','/checkhere/rules.mjs','/checkhere/ui.css'].includes(u.pathname))return route.fulfill({contentType:u.pathname.endsWith('.css')?'text/css':'text/javascript',body:readFileSync(join(base,u.pathname.slice(1)),'utf8')});
+      if(['/cohort.mjs','/checkhere-ui.mjs','/checkhere/bulk-collect.mjs','/attendance-beta-core.mjs','/checkhere-name-core.mjs','/survey-identity.mjs','/checkhere/rules.mjs','/checkhere/ui.css'].includes(u.pathname))return route.fulfill({contentType:u.pathname.endsWith('.css')?'text/css':'text/javascript',body:readFileSync(join(base,u.pathname.slice(1)),'utf8')});
       return route.abort();
     });
     await page.goto('https://fixture.test/');await page.getByRole('textbox',{name:'로컬 연결 키'}).fill('k');await page.getByRole('button',{name:'연결',exact:true}).click();
