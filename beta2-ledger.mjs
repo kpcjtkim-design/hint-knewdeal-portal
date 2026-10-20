@@ -21,8 +21,8 @@ import {withdrawRequest} from './checkhere-request-actions.mjs';
 import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnApply} from './beta2-checkhere-core.mjs';
 import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
-// 사유 드롭다운(사용자 요청 2026-10-20): 분류 → 세부(인적성은 종류)로 표준 글, 직접 입력도 됨. 취업박람회 인정 출결은 추가 증빙(기업면접 확인서) 배지·거르기·알림.
-import {subOptions,splitReason,composeReason,tidyReason,typeWarning,reasonPick,reasonOptions,STANDARD,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
+// 사유 드롭다운(사용자 요청 2026-10-20): 분류 → 세부(인적성·자격증은 종류)로 표준 글, 직접 입력도 됨. 취업박람회 인정 출결은 추가 증빙(기업면접 확인서) 배지·거르기·알림.
+import {subOptions,splitReason,composeReason,tidyReason,typeWarning,reasonChecks,reasonPick,reasonOptions,STANDARD,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
 import {isIsoDate,BASE_RULE,isTestClass} from './cohort.mjs';
@@ -137,19 +137,19 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   return `<b>${t(raw)}</b> → <b>${t(record.exit)}</b>${delButton(row,record,'exit')}${period?`<span class="b2-small b2-muted" style="white-space:nowrap"> · 교시 기록 ${t(record.entry)}${entryX}</span>`:''}${trips.length||record.outingCount?`<span class="b2-sub">외출 ${Math.max(trips.length,+record.outingCount||0)}회 ${esc(trips.join(', '))}</span>`:''}${memo?`<span class="b2-sub">${memo}</span>`:''}`;
  }
  // 행 안 입력칸: 유형, 그 유형에 필요한 시간만, 사유(적당히 좁게, 전체 글은 title). 초안이 있으면 초안 값을 보입니다.
- // 분류·세부(인적성 종류) 드롭다운. 세부가 없는 분류(기타)는 하나만.
- // 사유 칸(사용자 추가 지시 2026-10-20): 칸 자체가 드롭다운(지금까지 쓴 사유). 인적성은 바로 옆에 종류 드롭다운(기타면 종류 직접 입력), 목록에 없으면 '기타' → 직접 입력 칸.
+ // 분류·세부(인적성·자격증 종류) 드롭다운. 세부가 없는 분류(기타)는 하나만.
+ // 사유 칸(사용자 추가 지시 2026-10-20): 칸 자체가 드롭다운(지금까지 쓴 사유). 인적성·자격증은 바로 옆에 종류 드롭다운(자격증 X 종류는 인정 출결에서 막음)(기타면 종류 직접 입력), 목록에 없으면 '기타' → 직접 입력 칸.
  // 출석 기본 행(기록 없음)은 사유를 저장하지 않아 드롭다운을 잠급니다. customOpen: '기타'를 고른 학생(빈 글이어도 직접 입력 칸을 둠).
  function pickHtml(row,v,n,noReason){
   const s=reasonPick(v.reason,{custom:customOpen.has(row.name)}),need=recognizedType(v.type)?'사유 (필수)':'사유',off='출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)';
   return `<select class="b2-rmain" data-inline="rmain" aria-label="${n} 사유" ${noReason?`disabled title="${off}"`:`title="${esc(v.reason||need)}"`}>${reasonOptions(s.main,{type:v.type,blank:noReason?'사유 없음':need})}</select>`
-   +(s.main==='인적성'?`<select class="b2-rsub" data-inline="rsub" aria-label="${n} 인적성 종류" title="인적성 종류">${subOptions('인적성',s.apt)}</select>`:'')
-   +(s.main==='인적성'&&s.input?`<input class="b2-reason" data-inline="rapt" maxlength="40" value="${esc(s.custom)}" aria-label="${n} 인적성 종류 직접 입력" placeholder="종류 직접 입력">`:'')
+   +(s.kind?`<select class="b2-rsub" data-inline="rsub" aria-label="${n} ${s.kind} 종류" title="${s.kind} 종류">${subOptions(s.kind,s.apt,{type:v.type,cls})}</select>`:'')
+   +(s.kind&&s.input?`<input class="b2-reason" data-inline="rapt" data-kind="${esc(s.kind)}" maxlength="40" value="${esc(s.custom)}" aria-label="${n} ${s.kind} 종류 직접 입력" placeholder="종류 직접 입력">`:'')
    +(s.main===OTHER?`<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(v.reason)}" aria-label="${n} 사유 직접 입력" placeholder="${need} 직접 입력" title="${esc(v.reason)}">`:'');
  }
  // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님,
  // 교육일이 아닌 날의 인정 출결(막지 않음, 17반 테스트반은 모든 날을 교육일로 보므로 없음)
- function pickNote(row){const v=valuesOf(row),w=typeWarning(v.type,pickOf(v.reason).cat),off=String(v.type||'').startsWith('인정')&&offDay(date)&&!isTestClass(cls);return `${off?`<span class="b2-xnote" data-offday-note>${OFFDAY_RECOGNIZED_NOTE}</span>`:''}${isJobFair(v.reason)&&!extraEvidence(row.rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}`;}
+ function pickNote(row){const v=valuesOf(row),w=typeWarning(v.type,pickOf(v.reason).cat),off=String(v.type||'').startsWith('인정')&&offDay(date)&&!isTestClass(cls);return `${off?`<span class="b2-xnote" data-offday-note>${OFFDAY_RECOGNIZED_NOTE}</span>`:''}${isJobFair(v.reason)&&!extraEvidence(row.rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}${reasonChecks(v.type,v.reason,{cls}).map(c=>`<span class="${c.level==='error'?'b2-err':'b2-xnote'}" style="display:block" data-reason-check="${c.level}">${esc(c.text)}</span>`).join('')}`;}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
@@ -424,10 +424,10 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 인적성 종류 기타는 '인적성()'로 두고 종류 직접 입력 칸에 씁니다(저장 때 빈 괄호는 지움).
  function pickReason(name,which,value){
   const row=rowOf(name);if(!row)return;const cur=valuesOf(row).reason||'';let text;
-  if(which==='rmain'){if(value===OTHER){customOpen.add(name);text=STANDARD.has(tidyReason(cur))||/^인적성/.test(cur)?'':cur;}else{customOpen.delete(name);text=value;}}
-  else text=value===OTHER?'인적성()':composeReason('인적성',value);
+  if(which==='rmain'){if(value===OTHER){customOpen.add(name);text=STANDARD.has(tidyReason(cur))||reasonPick(cur).kind?'':cur;}else{customOpen.delete(name);text=value;}}
+  else{const k=reasonPick(cur).kind||'인적성';text=value===OTHER?`${k}()`:composeReason(k,value);} // 종류 분류: 인적성·자격증
   setDraft(name,{reason:text});paint(name,{force:true});paintBulk();
-  focusField(name,which==='rmain'?(value==='인적성'?'rsub':value===OTHER?'reason':'rmain'):value===OTHER?'rapt':'rsub');
+  focusField(name,which==='rmain'?(reasonPick(value).kind?'rsub':value===OTHER?'reason':'rmain'):value===OTHER?'rapt':'rsub');
  }
  // 증빙 드롭다운(초안만, 저장은 모아서): 반려면 옆에 반려 사유 칸을 열어 그 칸으로, 아니면 칸을 닫습니다(적어 둔 반려 사유는 초안에 남지만 반려가 아니면 저장하지 않음).
  function setEvidence(name,ev){setDraft(name,{ev});paint(name,{force:true});paintBulk();focusField(name,ev==='반려'?'evr':'ev');}
@@ -578,7 +578,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const t=e.target,k=t.dataset?.inline,name=t.closest?.('tbody[data-student]')?.dataset.student;
   if(t.hasAttribute?.('data-memo-input')){memoUi.text=t.value;return;} // 메모 직접 입력은 초안이 아님
   if(k==='rmain'||k==='rsub'||k==='ev')return; // 드롭다운은 change에서
-  if(k==='rapt'&&name){if(bulk)return;setDraft(name,{reason:`인적성(${t.value})`});syncPick(name);paintMsg(name);paintBulk();return;} // 인적성 종류 직접 입력
+  if(k==='rapt'&&name){if(bulk)return;setDraft(name,{reason:`${t.dataset.kind||'인적성'}(${t.value})`});syncPick(name);paintMsg(name);paintBulk();return;} // 인적성·자격증 종류 직접 입력
   if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason'){customOpen.add(name);t.title=t.value;syncPick(name);}if(k==='evr')t.title=t.value||'반려 사유 (필수)';paintMsg(name);paintBulk();return;}
  });
  host.addEventListener('change',e=>{

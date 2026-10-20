@@ -10,7 +10,7 @@
 // 아무 날짜 기록(사용자 결정 2026-10-20 '수정 자체는 언제든 유연하게'): 시트가 주는 날짜(portalData.days)는 오늘까지의 교육일이라, 교육일이 아닌 날·아직 오지 않은 날의
 // 원장 기록(portalData.recs)은 출결판에 칸을 더해 보이고, 「다른 날짜」 칸으로 아무 날이나 열어 기록합니다(시트 출결판 탭에는 교육일만 나옴).
 import {isIsoDate,isTrainingDay} from './cohort.mjs';
-import {catOptions,subOptions,splitReason,composeReason,tidyReason,typeWarning,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_NOTICE,EXTRA_LABEL} from './attendance-reason-catalog.mjs';
+import {catOptions,subOptions,splitReason,composeReason,tidyReason,typeWarning,reasonChecks,catOf,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_NOTICE,EXTRA_LABEL} from './attendance-reason-catalog.mjs';
 export function mountTeacherBeta(el, OPT) {
   OPT = OPT || {};
   const R = el.shadowRoot || el.attachShadow({ mode: 'open' });
@@ -101,16 +101,16 @@ export function mountTeacherBeta(el, OPT) {
     const r=f.r||'사유';if(f.type==='인정출석')return'(인정출석)'+r+'_담임:'+t;if(f.type==='인정지각')return'(인정지각)'+r+'_담임:'+t+'('+tm(f.inT)+')';if(f.type==='인정조퇴')return'(인정조퇴)'+r+'_담임:'+t+'('+tm(f.outT)+')';return'(인정외출)'+r+'_담임:'+t+'('+tm(f.oa)+'~'+tm(f.ob)+')';}
   // 사유 드롭다운: 지금 글(S.f.r)에서 분류·세부를 읽어 보입니다. 표준 글이 아니면 '기타 (직접 입력)', 비었거나 '해당없음'이면 '분류 고르기'.
   function pickState(){const t=S.f.r||'',s=splitReason(t);return {cat:s.cat||(t&&t!=='해당없음'?OTHER:''),sub:s.sub};}
-  function pickHtml(){const {cat,sub}=pickState(),o=subOptions(cat,sub);return '<select class="in" id="rc" aria-label="사유 분류">'+catOptions(cat,{type:S.f.type})+'</select>'+(o?'<select class="in" id="rs" aria-label="'+(cat==='인적성'?'인적성 종류':'세부 사유')+'">'+o+'</select>':'');}
+  function pickHtml(){const {cat,sub}=pickState(),o=subOptions(cat,sub,{type:S.f.type,cls:S.cls});return '<select class="in" id="rc" aria-label="사유 분류">'+catOptions(cat,{type:S.f.type})+'</select>'+(o?'<select class="in" id="rs" aria-label="'+(catOf(cat)?.kind?cat+' 종류':'세부 사유')+'">'+o+'</select>':'');}
   // 안내: 취업박람회 추가 증빙(인정 출결이면 이행 여부 배지), 인정 출결인데 인정 분류가 아니면 짧은 말
-  function pickNote(){const f=S.f,x=extraEvidence({type:f.type,reason:f.r,ev:f.ev}),w=typeWarning(f.type,pickState().cat);return (isJobFair(f.r)?'<div class="xn" role="note">'+esc(EXTRA_NOTICE)+(x?'<br><span class="xb'+(x.done?' ok':'')+'">'+esc(x.done?'추가 증빙 '+x.state:EXTRA_LABEL+' · '+x.state)+'</span>':' (인정출석·인정지각·인정조퇴·인정외출일 때)')+'</div>':'')+(w?'<div class="note" style="color:var(--orange);margin-top:4px">'+esc(w)+'</div>':'');}
+  function pickNote(){const f=S.f,x=extraEvidence({type:f.type,reason:f.r,ev:f.ev}),w=typeWarning(f.type,pickState().cat);return (isJobFair(f.r)?'<div class="xn" role="note">'+esc(EXTRA_NOTICE)+(x?'<br><span class="xb'+(x.done?' ok':'')+'">'+esc(x.done?'추가 증빙 '+x.state:EXTRA_LABEL+' · '+x.state)+'</span>':' (인정출석·인정지각·인정조퇴·인정외출일 때)')+'</div>':'')+(w?'<div class="note" style="color:var(--orange);margin-top:4px">'+esc(w)+'</div>':'')+reasonChecks(f.type,f.r,{cls:S.cls}).map(c=>'<div class="note" data-reason-check="'+c.level+'" style="margin-top:4px;font-weight:700;color:var('+(c.level==='error'?'--red':'--orange')+')">'+esc(c.text)+'</div>').join('');}
   function syncPick(){const a=$('#rp'),b=$('#rn');if(a){a.innerHTML=pickHtml();bindPick();}if(b)b.innerHTML=pickNote();}
-  // 분류를 고르면 첫 세부(인적성은 '인적성')로 글을 만들고, 기타는 괄호 안에 직접 씁니다('인적성()' → 저장 때 빈 괄호는 지움).
+  // 분류를 고르면 첫 세부(인적성·자격증은 '인적성'·'자격증' → 옆 종류)로 글을 만들고, 기타는 괄호 안에 직접 씁니다('인적성()' → 저장 때 빈 괄호는 지움).
   function setReason(text,focusSub){S.f.r=text;const r=$('#r');if(r)r.value=text;const m=$('#mm');if(m)m.textContent=memo();syncPick();later();
     if(focusSub&&$('#rs'))$('#rs').focus();else if(/\(\)$/.test(text)&&r){r.focus();r.setSelectionRange(text.length-1,text.length-1);}}
   function bindPick(){
     const c=$('#rc'),s=$('#rs');
-    if(c)c.onchange=()=>{const k=c.value;if(!k)return setReason('');if(k===OTHER){if(splitReason(S.f.r).cat)setReason('');const r=$('#r');if(r)r.focus();return;}setReason(composeReason(k,''),k==='인적성');};
+    if(c)c.onchange=()=>{const k=c.value;if(!k)return setReason('');if(k===OTHER){if(splitReason(S.f.r).cat)setReason('');const r=$('#r');if(r)r.focus();return;}setReason(composeReason(k,''),!!catOf(k)?.kind);};
     if(s)s.onchange=()=>{const k=pickState().cat;setReason(s.value===OTHER?k+'()':composeReason(k,s.value));};
   }
   function panel(noFocus){
@@ -120,7 +120,7 @@ export function mountTeacherBeta(el, OPT) {
     let h='<h2>'+esc(S.sel.n)+'</h2><div class="note">'+md(S.sel.day)+(S.sel.day===S.d.mainDay?' · 오늘':'')+(dayTag(S.sel.day)?' · '+dayTag(S.sel.day):'')+'</div><div class="lab">유형</div><div class="chips">'+TYPES.map(t=>'<button class="chip" data-t="'+t+'" aria-pressed="'+(f.type===t)+'">'+t+'</button>').join('')+'</div>';
     if(f.type==='해당없음')h+='<div class="note" style="margin-top:10px">아직 입력 전입니다. 위에서 출석 또는 다른 유형을 고르세요.</div>';
     if(f.type!=='출석'&&f.type!=='해당없음'){
-      h+='<div class="lab">사유 (선택 · 분류를 고르거나 직접 입력 · Enter로 저장)</div><div class="rp" id="rp">'+pickHtml()+'</div><input class="in" id="r" value="'+esc(f.r)+'" placeholder="병원 진료, 교통 지연, 면접…"><div id="rn">'+pickNote()+'</div><div class="qr">'+['해당없음','개인일정','병결','면접','교통사정','예비군'].map(q=>'<button class="'+(q==='해당없음'?'na':'')+'" data-q="'+q+'">'+q+'</button>').join('')+'</div>';
+      h+='<div class="lab">사유 (선택 · 분류를 고르거나 직접 입력 · Enter로 저장)</div><div class="rp" id="rp">'+pickHtml()+'</div><input class="in" id="r" value="'+esc(f.r)+'" placeholder="병원 진료, 교통 지연, 면접…"><div id="rn">'+pickNote()+'</div><div class="qr">'+['해당없음','개인일정','병원','면접','교통사정','예비군'].map(q=>'<button class="'+(q==='해당없음'?'na':'')+'" data-q="'+q+'">'+q+'</button>').join('')+'</div>';
       h+=timesView(f);
       const m=memo();if(m)h+='<div class="memo"><span id="mm">'+esc(m)+'</span><button id="cp">복사</button></div>';
       if(f.type.indexOf('인정')===0)h+='<div class="note" style="margin-top:8px">증빙서류: '+esc(f.ev||'미제출')+(f.evr?' · '+esc(f.evr):'')+' (운영팀 확인)</div>';

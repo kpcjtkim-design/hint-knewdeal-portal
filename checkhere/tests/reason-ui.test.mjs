@@ -38,11 +38,11 @@ const PAGES={
  '/status.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mount} from '/beta2-status.mjs';import {decodeBundle} from '/beta2-core.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
   window.view=await mount(document.getElementById('root'),{client:{bundle:async()=>decodeBundle(${JSON.stringify(RAW)}),checkhereDisease:async()=>({})},classes:[{id:'1'},{id:'2'}],tab:'evidence'});</script>`};
 
-async function page(path,run,{portal=PORTAL}={}){
+async function page(path,run,{portal=PORTAL,ledger=LEDGER}={}){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),p=await browser.newPage(),errors=[],posts=[];
  p.on('pageerror',e=>errors.push(e.message));
  try{
-  let rev=LEDGER.rev;
+  let rev=ledger.rev;
   await p.route('**/*',async route=>{
    const url=new URL(route.request().url());
    if(url.href.startsWith(SDK+'firebase-firestore.js'))return route.fulfill({contentType:'text/javascript',body:SDK_STUB});
@@ -50,7 +50,7 @@ async function page(path,run,{portal=PORTAL}={}){
    if(PAGES[url.pathname])return route.fulfill({contentType:'text/html;charset=utf-8',body:PAGES[url.pathname]});
    if(url.pathname==='/api/teacher-beta'){
     const body=route.request().postDataJSON(),a=body.args?.[0];posts.push(body);
-    const data=body.action==='portalData'?portal:body.action==='b2Bundle'?{...LEDGER,rev}:body.action==='b2Rev'?{rev,sync:{}}:body.action==='b2Save'?{ok:true,rev:++rev,sig:`sig-${a.name}-${rev}`,memo:'',evApplied:a.ev||(a.type.startsWith('인정')?'미제출':'해당없음'),check:''}:{ok:true};
+    const data=body.action==='portalData'?portal:body.action==='b2Bundle'?{...ledger,rev}:body.action==='b2Rev'?{rev,sync:{}}:body.action==='b2Save'?{ok:true,rev:++rev,sig:`sig-${a.name}-${rev}`,memo:'',evApplied:a.ev||(a.type.startsWith('인정')?'미제출':'해당없음'),check:''}:{ok:true};
     return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});
    }
    const file=join(base,decodeURIComponent(url.pathname));
@@ -74,7 +74,7 @@ test('teacher 사유: 분류 → 세부·인적성 종류 드롭다운이 표준
   assert.equal(await p.locator('#rs').getAttribute('aria-label'),'인적성 종류');
   assert.deepEqual(await p.locator('#rs option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
   const cats=await p.locator('#rc option').allTextContents();
-  for(const l of ['병원·질병','면접','인적성','취업박람회','예비군·민방위','시험(자격증·어학)','경조사','공가(관공서·법원)','교통 (인정 아님)','취업활동(설명회·상담) (인정 아님)','개인사정 (인정 아님)','기타 (직접 입력)'])assert.ok(cats.includes(l),l);
+  for(const l of ['병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)'])assert.ok(cats.includes(l),l);
   // 종류를 바꾸면 '인적성(GSAT)'으로 저장(입력이 멈추면 0.7초 뒤)
   await p.locator('#rs').selectOption('GSAT');assert.equal(await p.locator('#r').inputValue(),'인적성(GSAT)');
   await p.waitForFunction(()=>document.querySelector('#root').shadowRoot.querySelector('#st').textContent.startsWith('저장'));
@@ -108,7 +108,8 @@ test('teacher 취업박람회: 추가 증빙 안내·배지, 저장하면 담임
   assert.deepEqual(await p.evaluate(()=>window.notes[0]),{title:'추가 증빙 필요 · 1반 고다원',body:'11/5 인정출석 취업박람회 · 기업면접 확인서 제출이 필요합니다.',name:'고다원',date:'2026-11-05',r:'취업박람회'});
   assert.equal(saves(posts).at(-1).r,'취업박람회');
   // 세부를 바꿔도(이미 필요) 알림은 다시 남기지 않습니다.
-  await p.locator('#rs').selectOption('취업박람회(현장 면접)');await p.waitForTimeout(900);
+  await p.locator('#rs').selectOption('기타');assert.equal(await p.locator('#r').inputValue(),'취업박람회()');
+  await p.keyboard.type('현장 면접');await p.keyboard.press('Enter');await p.waitForTimeout(400);
   assert.equal(saves(posts).at(-1).r,'취업박람회(현장 면접)');assert.equal(await p.evaluate(()=>window.notes.length),1);
   // 인정이 아닌 결석이면 안내만(이행 추적 없음)
   await p.locator('[data-t="결석"]').click();await p.waitForTimeout(300);
@@ -178,9 +179,10 @@ test('출결대조 사유 칸 = 드롭다운 하나(240px): 지금까지 쓴 사
   assert.equal(await sub(go).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(go).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
   const groups=await main(go).locator('optgroup').evaluateAll(g=>g.map(x=>x.label));
-  assert.deepEqual(groups,['병원·질병','면접','인적성','취업박람회','예비군·민방위','시험(자격증·어학)','경조사','공가(관공서·법원)','교통 (인정 아님)','취업활동(설명회·상담) (인정 아님)','개인사정 (인정 아님)']);
+  assert.deepEqual(groups,['병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정']);
   const values=await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value));
-  for(const v of ['병원','병원(치과)','병결','면접(최종)','인적성','취업박람회','예비군','민방위','시험(자격증)','조모상','공가(법원 출석)','교통사정','개인일정','기타'])assert.ok(values.includes(v),v);
+  for(const v of ['병결','면접(최종)','시험(자격증)','취업박람회(현장 면접)'])assert.ok(!values.includes(v),`${v} is no longer listed`);
+  for(const v of ['병원','병원(치과)','병원(진료 위한 검사)','일반건강검진','면접','인적성','취업박람회','예비군','민방위','자격증','조모상','공가(법원 출석)','교통사정','개인일정','기타'])assert.ok(values.includes(v),v);
   // 240px 안, 종류 드롭다운은 같은 줄 바로 옆
   const box=await go.locator('.b2-rpick').boundingBox(),a=await main(go).boundingBox(),b=await sub(go).boundingBox();
   assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(a.y),Math.round(b.y));assert.ok(b.x>a.x);
@@ -281,5 +283,71 @@ test('담임 출결판 시간 칸 없음(사용자 지시 2026-10-20): 입실·�
   await p.waitForFunction(()=>/고다원/.test(document.querySelector('#root').shadowRoot.querySelector('#pn h2')?.textContent||''));
   assert.match(await pn.locator('#tv').innerText(),/없음 · 시간은 운영팀이 체크히어 기록으로 맞춥니다/);
   assert.match(await pn.locator('#mm').innerText(),/^지각_담임:김지아\(--:--\)$/);
+ },{portal});
+});
+
+// 목록 개정(사용자 2026-10-20): 자격증 시험 + 옆 종류 드롭다운(인적성과 같은 방식), 과정별 X는 인정 출결에서 막고 저장된 X는 빨간 경고, △는 주의 배지, 일반건강검진은 막힌 항목
+test('출결대조 자격증: 옆 종류 드롭다운, X(어학시험·지게차) 막기·빨간 경고, △ 주의, 일반건강검진 막기, 옛 병원(검진)은 검진 종류 확인',async()=>{
+ const ledger={...LEDGER,ledger:[L('2026-11-05','1','고다원','인정출석',{reason:'자격증(어학시험)',sig:'sig-고다원'}),L('2026-11-05','1','김동진','인정조퇴',{reason:'병원(검진)',outT:'15:00',sig:'sig-김동진'})]};
+ await page('/ledger.html',async(p,posts)=>{
+  const row=n=>p.locator(`tbody[data-student="${n}"] tr[data-name]`),go=row('고다원'),dong=row('김동진'),park=row('박서연');
+  const main=r=>r.locator('select[data-inline="rmain"]'),sub=r=>r.locator('select[data-inline="rsub"]');
+  await main(go).waitFor();
+  // 저장된 인정출석 + 어학시험(1반 모빌리티 AI → 임베디드AI 기준 X): 그대로 보이고 빨간 경고
+  assert.equal(await main(go).inputValue(),'자격증');assert.equal(await sub(go).inputValue(),'어학시험');assert.equal(await sub(go).getAttribute('aria-label'),'고다원 자격증 종류');
+  assert.equal(await go.locator('[data-reason-check="error"]').textContent(),'(인정 안 됨) 어학시험(토익, 오픽 등) · 임베디드AI 과정 인정 제외');
+  assert.equal(await go.locator('[data-reason-check="error"]').evaluate(e=>e.classList.contains('b2-err')),true);
+  assert.equal(await sub(go).locator('option[value="지게차운전기능사"]').isDisabled(),true);assert.equal(await sub(go).locator('option[value="어학시험"]').isDisabled(),false,'the saved value stays selectable');
+  // 사유 칸 240px 안에 사유 + 종류, 그 옆 증빙 드롭다운(110px)
+  const box=await go.locator('.b2-rpick').boundingBox(),evb=await go.locator('select[data-inline="ev"]').boundingBox();
+  assert.ok(box.width<=240.5,`width ${box.width}`);assert.ok(Math.abs(evb.width-110)<1,`ev ${evb.width}`);assert.ok(evb.x>=box.x+box.width-1);
+  // 옛 '병원(검진)'은 기타(직접 입력)로 보이고 '검진 종류 확인 필요' 주의
+  assert.equal(await main(dong).inputValue(),'기타');assert.match(await dong.locator('[data-reason-check="warn"]').textContent(),/^검진 종류 확인 필요/);
+  // 새 기록: 인정출석 → 자격증 → 종류 칸(포커스), X는 막힘, △는 '(관련성 확인 필요)'과 주의 배지
+  await park.locator('[data-inline="type"]').selectOption('인정출석');
+  assert.equal(await main(park).locator('option[value="일반건강검진"]').isDisabled(),true,'일반건강검진 cannot be picked for 인정 출결');
+  assert.equal(await main(park).locator('option[value="일반건강검진"]').textContent(),'(인정 안 됨) 일반건강검진');
+  await main(park).selectOption('자격증');
+  assert.equal(await sub(park).evaluate(e=>e===document.activeElement),true,'the type box takes focus');
+  assert.equal(await sub(park).locator('option[value="어학시험"]').isDisabled(),true);assert.equal(await sub(park).locator('option[value="어학시험"]').textContent(),'(인정 안 됨) 어학시험(토익, 오픽 등)');
+  assert.equal(await sub(park).locator('option[value="가스기사"]').textContent(),'가스기사 (관련성 확인 필요)');
+  await sub(park).selectOption('가스기사');assert.equal(await park.locator('[data-reason-check="warn"]').textContent(),'가스기사 · 관련성 확인 필요(임베디드AI 과정)');
+  await sub(park).selectOption('기타');const kind=park.locator('input[data-inline="rapt"]');assert.equal(await kind.evaluate(e=>e===document.activeElement),true);
+  await p.keyboard.type('정보처리기사');assert.equal(await main(park).inputValue(),'자격증');
+  // 인정이 아닌 출결이면 X도 고를 수 있음
+  await go.locator('[data-inline="type"]').selectOption('결석');
+  assert.equal(await sub(go).locator('option[value="지게차운전기능사"]').isDisabled(),false);assert.equal(await go.locator('[data-reason-check]').count(),0);
+  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('2건 저장',{exact:true}).waitFor();
+  assert.deepEqual(posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].type,b.args[0].reason]),[['고다원','결석','자격증(어학시험)'],['박서연','인정출석','자격증(정보처리기사)']]);
+  assert.equal(await sub(park).inputValue(),'기타');assert.equal(await park.locator('input[data-inline="rapt"]').inputValue(),'정보처리기사');
+  assert.equal(await park.locator('[data-reason-check="warn"]').textContent(),'정보처리기사 · 관련성 확인 필요(임베디드AI 과정)','after saving the caution stays');
+ },{ledger});
+});
+
+test('담임 사유 자격증: 분류 자격증 시험 → 종류(인적성과 같은 방식), X는 인정 출결에서 막힘, 일반건강검진 막힘·빨간 경고',async()=>{
+ const portal={...PORTAL,recs:{...PORTAL.recs,'고다원|2026-11-05':{type:'인정출석',inT:'',outT:'',oa:'',ob:'',r:'자격증(전기기사)',ev:'',evr:''}}};
+ await page('/teacher.html',async(p,posts)=>{
+  await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await p.waitForSelector('#rc');
+  assert.equal(await p.locator('#rc').inputValue(),'자격증');assert.equal(await p.locator('#rs').inputValue(),'전기기사');assert.equal(await p.locator('#rs').getAttribute('aria-label'),'자격증 종류');
+  assert.equal(await p.locator('#rs option[value="어학시험"]').isDisabled(),true);assert.equal(await p.locator('#rs option[value="어학시험"]').textContent(),'(인정 안 됨) 어학시험(토익, 오픽 등)');
+  assert.equal(await p.locator('[data-reason-check]').count(),0,'전기기사 is O');
+  await p.locator('#rs').selectOption('컴퓨터활용능력');assert.equal(await p.locator('#r').inputValue(),'자격증(컴퓨터활용능력)');
+  assert.equal(await p.locator('[data-reason-check="warn"]').textContent(),'컴퓨터활용능력 · 관련성 확인 필요(임베디드AI 과정)');
+  await p.waitForTimeout(900);assert.equal(saves(posts).at(-1).r,'자격증(컴퓨터활용능력)');
+  await p.locator('#rs').selectOption('기타');assert.equal(await p.locator('#r').inputValue(),'자격증()');
+  await p.keyboard.type('정보처리기사');await p.keyboard.press('Enter');await p.waitForTimeout(400);
+  assert.equal(saves(posts).at(-1).r,'자격증(정보처리기사)');assert.equal(await p.locator('#rs').inputValue(),'기타');
+  // 분류를 자격증으로 고르면 '자격증' → 종류 칸에 포커스
+  await p.locator('#rc').selectOption('면접');await p.locator('#rc').selectOption('자격증');assert.equal(await p.locator('#r').inputValue(),'자격증');
+  assert.equal(await p.evaluate(()=>document.querySelector('#root').shadowRoot.activeElement?.id),'rs');
+  // 병원 → 일반건강검진은 인정 출결에서 막힘, 직접 쓰면 빨간 경고
+  await p.locator('#rc').selectOption('병원');
+  assert.equal(await p.locator('#rs option[value="일반건강검진"]').isDisabled(),true);assert.equal(await p.locator('#rs option[value="병원(진료 위한 검사)"]').textContent(),'진료 위한 검사');
+  await p.locator('#r').fill('일반건강검진');
+  assert.equal(await p.locator('[data-reason-check="error"]').textContent(),'(인정 안 됨) 일반건강검진 · 진료 위한 검사만 인정됩니다');
+  // 결석이면 막지 않음
+  await p.locator('[data-t="결석"]').click();await p.waitForTimeout(300);
+  assert.equal(await p.locator('#rs option[value="일반건강검진"]').isDisabled(),false);assert.equal(await p.locator('[data-reason-check]').count(),0);
+  assert.ok(!(await p.locator('[data-q]').allTextContents()).includes('병결'),'quick reasons no longer offer 병결');
  },{portal});
 });

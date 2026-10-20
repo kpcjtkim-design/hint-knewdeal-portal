@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STANDARD,reasonPick,reasonOptions,REASON_CATS,APTITUDE,OTHER,RECOGNIZED,EXTRA_DOC,EXTRA_LABEL,composeReason,splitReason,tidyReason,reasonKind,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,catOptions,subOptions,typeWarning,catOf} from '../../attendance-reason-catalog.mjs';
+import {STANDARD,reasonPick,reasonOptions,REASON_CATS,APTITUDE,CERTS,KINDS,COURSE_CERT_COLUMN,certColumn,certRule,certOf,reasonChecks,isGeneralCheckup,OTHER,RECOGNIZED,EXTRA_DOC,EXTRA_LABEL,composeReason,splitReason,tidyReason,reasonKind,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,catOptions,subOptions,typeWarning,catOf} from '../../attendance-reason-catalog.mjs';
 import {reasonCategory,suggestReason} from '../../checkhere-proposal-core.mjs';
 import {normalizePeriodReason} from '../../attendance-period-core.mjs';
 import {reasonFor} from '../../attendance-reason-parser.mjs';
@@ -9,14 +9,15 @@ import {hasHospitalRecognition} from '../../disease-recognition-core.mjs';
 import {sheetToCheckHere} from '../../beta2-checkhere-core.mjs';
 
 // 드롭다운이 만드는 표준 글 전부(분류 → 세부, 인적성은 종류)
-const ALL=REASON_CATS.flatMap(c=>c.aptitude?APTITUDE.map(([v])=>({c,text:composeReason(c.key,v)})):c.subs.map(s=>({c,text:composeReason(c.key,s.text)})));
+const ALL=REASON_CATS.flatMap(c=>c.kind?KINDS[c.kind].map(([v])=>({c,text:composeReason(c.key,v)})):c.subs.map(s=>({c,s,text:composeReason(c.key,s.text)})));
 // 표준 글 → 체크히어 메모 분류(reasonCategory). 인정 출결에 쓰는 분류는 하나로 정해져야 체크히어로 보냅니다.
-const EXPECT={병원:'병원',면접:'면접',인적성:'인적성',취업박람회:'취업박람회',시험:'시험',공가:'공가'};
+const EXPECT={병원:'병원',면접:'면접',인적성:'인적성',취업박람회:'취업박람회',자격증:'시험',공가:'공가'};
 
 test('every composed reason is recognised by the existing parsers: CheckHere category, disease, period remarks',()=>{
  assert.ok(ALL.length>=50,'catalog covers the reasons used so far');
- for(const {c,text} of ALL){
+ for(const {c,s,text} of ALL){
   const cat=reasonCategory(text);
+  if(s?.recognized===false){assert.equal(cat,'',text);assert.equal(isDiseaseReason(text),false,`disease ${text}`);assert.equal(normalizePeriodReason(text),text);continue;} // 일반건강검진
   if(c.key==='예비군')assert.equal(cat,text.startsWith('민방위')?'민방위':'예비군',text);
   else if(c.key==='경조사')assert.equal(cat,/상$/.test(text)?text:'경조사',text);
   else if(EXPECT[c.key])assert.equal(cat,EXPECT[c.key],text);
@@ -26,7 +27,7 @@ test('every composed reason is recognised by the existing parsers: CheckHere cat
   if(c.types.some(t=>RECOGNIZED.includes(t)))assert.ok(EXPECT[c.key]||['예비군','경조사'].includes(c.key));
  }
  // 기간 출결 비고(가-3 → 단위기간): '분류(세부)'도 분류로 봅니다.
- for(const [text,want] of [['면접(최종)','면접'],['병원(치과)','병원'],['취업박람회(현장 면접)','취업박람회'],['예비군(동원훈련)','예비군'],['인적성(HMAT)','인적성'],['인적성(NCS)','인적성'],['인적성 HMAT','인적성'],['AI 인적성 검사','인적성'],['인적성(내가 쓴 종류)','인적성'],['시험(자격증)','시험(자격증)'],['개인사정(이사)','개인사정(이사)'],['','개인사정'],['병원','병원'],['채용 박람회','취업박람회']])
+ for(const [text,want] of [['면접(최종)','면접'],['병원(치과)','병원'],['취업박람회(현장 면접)','취업박람회'],['예비군(동원훈련)','예비군'],['인적성(HMAT)','인적성'],['인적성(NCS)','인적성'],['인적성 HMAT','인적성'],['AI 인적성 검사','인적성'],['인적성(내가 쓴 종류)','인적성'],['시험(자격증)','시험(자격증)'],['자격증(전기기사)','자격증(전기기사)'],['병원(진료 위한 검사)','병원'],['개인사정(이사)','개인사정(이사)'],['','개인사정'],['병원','병원'],['채용 박람회','취업박람회']])
   assert.equal(normalizePeriodReason(text),want,text);
  // 가-3 원문에서 이름 뒤 사유로 그대로 읽힙니다(괄호를 지우지 않음).
  assert.equal(reasonFor('홍길동','인정출석 홍길동 인적성(HMAT)',['홍길동']),'인적성(HMAT)');
@@ -60,7 +61,14 @@ test('2) 인적성 types: HMAT·GSAT… compose 인적성(종류), 기타 takes 
 
 test('saved texts map back to the dropdowns, old quick texts are found, unknown texts stay as free text',()=>{
  for(const {c,text} of ALL){const s=splitReason(text);assert.equal(s.cat,c.key,text);assert.equal(composeReason(s.cat,s.sub,s.custom),text,text);}
- for(const [text,cat] of [['병결','병원'],['개인일정','개인사정'],['교통사정','교통'],['면접','면접'],['예비군','예비군'],['병원(감기)','병원']])assert.equal(splitReason(text).cat,cat,text);
+ for(const [text,cat] of [['개인일정','개인사정'],['교통사정','교통'],['면접','면접'],['예비군','예비군'],['민방위','예비군'],['병원(감기)','병원']])assert.equal(splitReason(text).cat,cat,text);
+ // 목록에서 빠진 옛 글: 분류가 남은 것은 그 분류의 기타(세부 직접 입력), 분류가 없어진 것은 직접 입력(cat ''). 해석기는 그대로입니다.
+ assert.deepEqual(splitReason('병결'),{cat:'',sub:'',custom:'병결'});assert.equal(reasonCategory('병결'),'병원');assert.equal(isDiseaseReason('병결'),true);
+ assert.deepEqual(splitReason('면접(1차)'),{cat:'면접',sub:OTHER,custom:'1차'});assert.equal(reasonCategory('면접(최종)'),'면접');assert.equal(normalizePeriodReason('면접(1차)'),'면접');
+ assert.deepEqual(splitReason('예비군(동원훈련)'),{cat:'예비군',sub:OTHER,custom:'동원훈련'});assert.equal(reasonCategory('예비군(동원훈련)'),'예비군');
+ assert.deepEqual(splitReason('취업박람회(현장 면접)'),{cat:'취업박람회',sub:OTHER,custom:'현장 면접'});assert.equal(reasonCategory('취업박람회(현장 면접)'),'취업박람회');
+ assert.deepEqual(splitReason('시험(자격증)'),{cat:'',sub:'',custom:'시험(자격증)'});assert.equal(reasonCategory('시험(자격증)'),'시험');assert.equal(reasonKind('시험(자격증)'),'자격증');
+ assert.deepEqual(splitReason('병원(검진)'),{cat:'병원',sub:OTHER,custom:'검진'});assert.equal(reasonCategory('병원(검진)'),'병원');assert.equal(isDiseaseReason('병원(검진)'),true);
  assert.deepEqual(splitReason('병원(감기)'),{cat:'병원',sub:OTHER,custom:'감기'});assert.equal(composeReason('병원',OTHER,'감기'),'병원(감기)');
  assert.deepEqual(splitReason('병원 진료 후 복귀'),{cat:'',sub:'',custom:'병원 진료 후 복귀'});
  assert.deepEqual(splitReason(''),{cat:'',sub:'',custom:''});
@@ -70,7 +78,7 @@ test('saved texts map back to the dropdowns, old quick texts are found, unknown 
  // 드롭다운 글: 모든 분류 + 기타, 인적성은 종류 + 기타, 출결과 맞지 않는 분류는 '(인정 아님)'
  const opts=catOptions('면접',{type:'인정출석'});
  for(const c of REASON_CATS)assert.ok(opts.includes(`>${c.label}`),c.label);
- assert.match(opts,/value="면접" selected/);assert.match(opts,/교통 \(인정 아님\)/);assert.match(opts,/기타 \(직접 입력\)/);
+ assert.match(opts,/value="면접" selected/);assert.match(opts,/>\(인정 안 됨\) 교통</);assert.match(opts,/>\(인정 안 됨\) 취업활동</);assert.match(opts,/>\(인정 안 됨\) 개인사정</);assert.doesNotMatch(opts,/인정 아님/);assert.match(opts,/기타 \(직접 입력\)/);
  assert.match(subOptions('인적성','GSAT'),/value="GSAT" selected>GSAT\(삼성\)/);assert.match(subOptions('인적성'),/종류 고르기/);assert.match(subOptions('인적성'),/기타 \(직접 입력\)/);
  assert.equal(subOptions('없음'),'');assert.equal(typeWarning('인정출석','교통'),'교통은 보통 인정 사유가 아닙니다');assert.equal(typeWarning('지각','교통'),'');
  assert.equal(catOf('취업박람회').extra,EXTRA_DOC);
@@ -105,17 +113,78 @@ test('3) 취업박람회 + 인정 출결 needs the extra 기업면접 확인서 
 
 test('출결대조 사유 드롭다운 하나: 표준 글은 그대로 고르고, 인적성은 옆 종류, 목록에 없으면 기타 + 직접 입력',()=>{
  assert.ok(STANDARD.has('병원(치과)')&&STANDARD.has('인적성')&&STANDARD.has('개인일정')&&!STANDARD.has('인적성(HMAT)')&&!STANDARD.has('병원 진료'));
- assert.deepEqual(reasonPick(''),{main:'',apt:'',input:false,custom:''});
- assert.deepEqual(reasonPick('면접(최종)'),{main:'면접(최종)',apt:'',input:false,custom:''});
- assert.deepEqual(reasonPick('인적성'),{main:'인적성',apt:'',input:false,custom:''});
- assert.deepEqual(reasonPick('인적성(HMAT)'),{main:'인적성',apt:'HMAT',input:false,custom:''});
- assert.deepEqual(reasonPick('인적성()'),{main:'인적성',apt:OTHER,input:true,custom:''});
- assert.deepEqual(reasonPick('인적성(DCAT)'),{main:'인적성',apt:OTHER,input:true,custom:'DCAT'});
- assert.deepEqual(reasonPick('병원 진료'),{main:OTHER,apt:'',input:true,custom:''},'old free texts stay editable');
- assert.deepEqual(reasonPick('',{custom:true}),{main:OTHER,apt:'',input:true,custom:''});
+ assert.deepEqual(reasonPick(''),{main:'',kind:'',apt:'',input:false,custom:''});
+ assert.deepEqual(reasonPick('면접'),{main:'면접',kind:'',apt:'',input:false,custom:''});
+ assert.deepEqual(reasonPick('면접(최종)'),{main:OTHER,kind:'',apt:'',input:true,custom:''},'a removed entry is free text');
+ assert.deepEqual(reasonPick('인적성'),{main:'인적성',kind:'인적성',apt:'',input:false,custom:''});
+ assert.deepEqual(reasonPick('인적성(HMAT)'),{main:'인적성',kind:'인적성',apt:'HMAT',input:false,custom:''});
+ assert.deepEqual(reasonPick('인적성()'),{main:'인적성',kind:'인적성',apt:OTHER,input:true,custom:''});
+ assert.deepEqual(reasonPick('인적성(DCAT)'),{main:'인적성',kind:'인적성',apt:OTHER,input:true,custom:'DCAT'});
+ assert.deepEqual(reasonPick('자격증(전기기사)'),{main:'자격증',kind:'자격증',apt:'전기기사',input:false,custom:''});
+ assert.deepEqual(reasonPick('자격증(정보처리기사)'),{main:'자격증',kind:'자격증',apt:OTHER,input:true,custom:'정보처리기사'});
+ assert.deepEqual(reasonPick('시험(자격증)'),{main:OTHER,kind:'',apt:'',input:true,custom:''});
+ assert.deepEqual(reasonPick('병원 진료'),{main:OTHER,kind:'',apt:'',input:true,custom:''},'old free texts stay editable');
+ assert.deepEqual(reasonPick('',{custom:true}),{main:OTHER,kind:'',apt:'',input:true,custom:''});
  assert.deepEqual(reasonPick('교통',{custom:true}).main,OTHER,'a picked 기타 stays open while typing a listed word');
  const o=reasonOptions('취업박람회',{type:'인정출석',blank:'사유 (필수)'});
- assert.match(o,/^<option value="" >사유 \(필수\)<\/option>/);assert.match(o,/<option value="취업박람회" selected>/);assert.match(o,/<optgroup label="교통 \(인정 아님\)">/);assert.match(o,/<option value="기타" >기타 \(직접 입력\)<\/option>$/);
+ assert.match(o,/^<option value="" >사유 \(필수\)<\/option>/);assert.match(o,/<option value="취업박람회" selected>/);assert.match(o,/<optgroup label="\(인정 안 됨\) 교통">/);assert.match(o,/<option value="취업활동\(채용설명회\)" >\(인정 안 됨\) 취업활동\(채용설명회\)<\/option>/);assert.match(o,/<option value="기타" >기타 \(직접 입력\)<\/option>$/);
  assert.equal((o.match(/<option /g)||[]).length,STANDARD.size+2);
- for(const t of STANDARD)assert.ok(reasonCategory(t)||['교통','교통사정','교통(사고)','개인사정','개인일정'].includes(t)||/^(교통|취업활동|개인사정)/.test(t),t);
+ for(const t of STANDARD)assert.ok(reasonCategory(t)||t==='일반건강검진'||['교통','교통사정','교통(사고)','개인사정','개인일정'].includes(t)||/^(교통|취업활동|개인사정)/.test(t),t);
+});
+
+test('목록 개정(사용자 2026-10-20): 병결 없음, 면접·취업박람회 하나, 예비군·민방위 둘, 자격증 시험 + 종류, 인정 안 됨 표시는 화면 글에만',()=>{
+ const subs=k=>catOf(k).subs.map(s=>s.text);
+ assert.deepEqual(subs('병원'),['병원','병원(치과)','병원(통원 치료)','병원(입원)','병원(수술)','병원(진료 위한 검사)','일반건강검진']);
+ assert.deepEqual(subs('면접'),['면접']);assert.deepEqual(subs('취업박람회'),['취업박람회']);assert.deepEqual(subs('예비군'),['예비군','민방위']);
+ assert.equal(catOf('시험'),null);assert.equal(catOf('자격증').label,'자격증 시험');assert.match(catOf('자격증').evidence,/응시확인서\(접수확인서 불가\)/);
+ assert.deepEqual(REASON_CATS.filter(c=>!c.types.includes('인정출석')).map(c=>c.label),['(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정']);
+ assert.ok(!STANDARD.has('병결')&&!STANDARD.has('면접(최종)')&&!STANDARD.has('취업박람회(현장 면접)')&&STANDARD.has('자격증')&&STANDARD.has('취업활동(채용설명회)'));
+ assert.equal(catOf('취업박람회').extra,EXTRA_DOC);
+ // 자격증 종류: FAQ 시트 순서, 값은 괄호 없는 짧은 이름
+ assert.deepEqual(CERTS.map(([,l])=>l),['어학시험(토익, 오픽 등)','가스기사','건설안전기사','공조냉동기계기사','금속재료기사','산업안전기사','산업안전산업기사','일반기계기사','전기기사','전기공사기사','품질경영기사','무선설비기사','지게차운전기능사','컴퓨터활용능력','SQLD','데이터분석전문가(ADP)','데이터분석준전문가(ADsP)','ISTQB','AICE','자동차정비산업기사','자동차정비기능사','자동화설비기능사','정보보안기사','정보통신기사']);
+ assert.ok(CERTS.every(([v])=>!/[()]/.test(v)));
+ assert.equal(composeReason('자격증','전기기사'),'자격증(전기기사)');assert.equal(composeReason('자격증',OTHER,' 정보처리기사 '),'자격증(정보처리기사)');assert.equal(composeReason('자격증',''),'자격증');
+ assert.deepEqual(splitReason('자격증(ADsP)'),{cat:'자격증',sub:'ADsP',custom:''});assert.deepEqual(splitReason('자격증(정보처리기사)'),{cat:'자격증',sub:OTHER,custom:'정보처리기사'});
+ for(const [v] of CERTS){const t=composeReason('자격증',v);assert.equal(reasonCategory(t),'시험',t);assert.equal(isDiseaseReason(t),false,t);assert.equal(reasonKind(t),'자격증',t);}
+ const rec={id:'r',version:'v',readState:'complete',classId:'2',date:'2026-11-05',name:'가상',teacher:'가상담임',rawEntry:'09:40:00',entry:'09:40:00',exit:'18:00:00',outings:[]};
+ assert.equal(suggestReason({status:'인정지각',reason:'자격증(전기기사)',record:rec}).text,'(인정지각)시험_담임:가상담임(09:40)');
+});
+
+test('자격증 과정별 인정 기준(FAQ Q~S열): 모빌리티 AI·테스트반은 임베디드AI, 제조지능화는 제조지능화 열, X는 인정 출결에서 막고 △는 관련성 확인',()=>{
+ assert.deepEqual(COURSE_CERT_COLUMN,{'모빌리티 AI':'emb','제조지능화':'mfg'});
+ assert.equal(certColumn('1'),'emb');assert.equal(certColumn('2'),'mfg');assert.equal(certColumn('17'),'emb');assert.equal(certColumn(''),'emb');
+ assert.equal(certRule('SQLD','1'),'O');assert.equal(certRule('SQLD','2'),'△');assert.equal(certRule('산업안전산업기사','1'),'△');assert.equal(certRule('산업안전산업기사','2'),'O');
+ assert.equal(certRule('자동화설비기능사','1'),'△','시트 빈칸은 △');assert.equal(certRule('정보보안기사','2'),'△');assert.equal(certRule('어학시험','1'),'X');assert.equal(certRule('지게차운전기능사','2'),'X');
+ assert.equal(certRule('정보처리기사','1'),'△','목록에 없는 종류는 관련성 확인');
+ // 드롭다운: X는 '(인정 안 됨)'이고 인정 출결이면 막힘, 인정이 아닌 출결이면 고를 수 있음, △는 '(관련성 확인 필요)'
+ const o=subOptions('자격증','',{type:'인정출석',cls:'2'});
+ assert.match(o,/<option value="어학시험"  disabled>\(인정 안 됨\) 어학시험\(토익, 오픽 등\)<\/option>/);assert.match(o,/<option value="지게차운전기능사"  disabled>/);
+ assert.match(o,/<option value="SQLD" >SQLD \(관련성 확인 필요\)<\/option>/);assert.match(o,/<option value="전기기사" >전기기사<\/option>/);assert.match(o,/^<option value="" selected>종류 고르기/);assert.match(o,/기타 \(직접 입력\)<\/option>$/);
+ assert.match(subOptions('자격증','',{type:'인정출석',cls:'1'}),/<option value="SQLD" >SQLD<\/option>/);
+ assert.doesNotMatch(subOptions('자격증','',{type:'결석',cls:'2'}),/disabled/);
+ assert.match(subOptions('자격증','어학시험',{type:'인정출석',cls:'2'}),/<option value="어학시험" selected>/,'a saved X stays visible (with a red warning)');
+ // 경고: X·일반건강검진은 빨강(error), △·검진 종류 모름은 주의(warn), 인정이 아닌 출결은 없음
+ assert.deepEqual(reasonChecks('인정출석','자격증(어학시험)',{cls:'1'}),[{level:'error',text:'(인정 안 됨) 어학시험(토익, 오픽 등) · 임베디드AI 과정 인정 제외'}]);
+ assert.deepEqual(reasonChecks('인정출석','자격증(SQLD)',{cls:'2'}),[{level:'warn',text:'SQLD · 관련성 확인 필요(제조지능화 과정)'}]);
+ assert.deepEqual(reasonChecks('인정출석','자격증(SQLD)',{cls:'1'}),[]);
+ assert.deepEqual(reasonChecks('인정출석','자격증',{cls:'1'}),[{level:'warn',text:'자격증 종류 확인 필요'}]);
+ assert.deepEqual(reasonChecks('결석','자격증(어학시험)',{cls:'1'}),[]);
+ assert.equal(reasonChecks('인정지각','시험(어학)',{cls:'2'})[0].level,'error','old free text for a language test is also not recognised');
+ assert.equal(reasonChecks('인정출석','토익 응시',{cls:'2'})[0].level,'error');
+ assert.equal(certOf('면접',''),null);
+});
+
+test('검진 구분(규정 0917 「일반건강검진은 불인정」): 진료 위한 검사만 질병 인정, 일반건강검진은 막힌 항목, 옛 병원(검진)은 종류 확인',()=>{
+ assert.ok(isGeneralCheckup('일반건강검진')&&isGeneralCheckup('일반 검진')&&!isGeneralCheckup('병원(진료 위한 검사)'));
+ assert.equal(isDiseaseReason('일반건강검진'),false);assert.equal(isDiseaseReason('일반 건강 검진'),false);assert.equal(isDiseaseReason('병원(진료 위한 검사)'),true);assert.equal(isDiseaseReason('검진'),true);
+ assert.equal(reasonCategory('일반건강검진'),'');assert.equal(reasonCategory('병원(진료 위한 검사)'),'병원');
+ const o=reasonOptions('',{type:'인정출석'});
+ assert.match(o,/<option value="일반건강검진"  disabled>\(인정 안 됨\) 일반건강검진<\/option>/);
+ assert.match(o,/<option value="병원\(진료 위한 검사\)" >병원\(진료 위한 검사\)<\/option>/);
+ assert.doesNotMatch(reasonOptions('',{type:'결석'}),/disabled/);
+ assert.match(subOptions('병원','',{type:'인정출석'}),/<option value="일반건강검진"  disabled>\(인정 안 됨\) 일반건강검진<\/option>/);
+ assert.deepEqual(reasonChecks('인정출석','일반건강검진'),[{level:'error',text:'(인정 안 됨) 일반건강검진 · 진료 위한 검사만 인정됩니다'}]);
+ assert.deepEqual(reasonChecks('인정출석','병원(검진)'),[{level:'warn',text:'검진 종류 확인 필요 · 진료 위한 검사만 인정(일반건강검진은 인정 안 됨)'}]);
+ assert.deepEqual(reasonChecks('인정출석','병원(진료 위한 검사)'),[]);assert.deepEqual(reasonChecks('결석','일반건강검진'),[]);
+ assert.equal(typeWarning('인정출석','개인사정'),'개인사정은 보통 인정 사유가 아닙니다');
 });
