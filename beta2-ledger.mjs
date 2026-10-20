@@ -251,6 +251,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 같은 반·날짜를 다시 읽을 때(새로고침)는 새 기록이 올 때까지 지금 기록을 지우지 않습니다(그사이 '기록 없음'으로 계산하지 않게).
  async function loadCheckHere(){
   const n=++chSeq,c=cls,d=date;unwatch?.();unwatch=null;if(recordsDay!==`${c}|${d}`){records=[];recordsNote='';recordsDay=`${c}|${d}`;}live='체크히어 확인 중';renderRows();
+  void import('./beta2-daytimes.mjs').then(m=>m.loadDayTimes(client,c,d)).then(ch=>{if(ch&&n===chSeq&&life.alive())renderRows();},()=>{}); // 그날 교육시간 기준(현장교육 일정, 견학일 지각 10:10·조퇴 16:50)을 반·날짜마다 한 번 읽어 대조 판정에 씀(beta2-daytimes.mjs, 2026-10-19)
   try{
    identities=await loadCheckHereIdentities(db,c,students()).catch(()=>[]);if(n!==chSeq||!life.alive())return;
    const recs=await loadCheckHereDay(db,c,d);if(n!==chSeq||!life.alive())return;

@@ -198,8 +198,8 @@ async function mountAdminModule(path,method,options,{wide=false}={}){
  if(currentAdminHost(host))adminWork=work;else disposePageWork(work);
 }
 // 2기 메뉴(2026-10-19부터 기본, 예전 /beta2 메뉴). b2로 시작하는 탭은 beta2-admin.mjs가 그립니다.
-// 교육 운영 탭 중 cohort.json features가 false인 것은 '11월 중 2기 기준으로 열림'으로 감춥니다(1기 시간표·설문·Drive 구조를 쓰던 화면).
-const ADMIN_GROUPS=[{name:'홈',items:[['b2home','홈']]},{name:'출결',items:[['b2ledger','출결대조'],['b2status','출결 현황'],['b2downloads','내려받기'],['checkhere','체크히어 수집']]},{name:'서류발급',items:[['b2docs','서류발급 신청함']]},{name:'민원·이슈',items:[['b2vocs','민원·이슈 처리함']]},{name:'교육 운영',items:[['timetable','시간표'],['surveys','만족도조사'],['materials','강의자료'],['uploads','업로드 확인']]},{name:'공지·설정',items:[['urgent','긴급 요청'],['classes','반별 자료·바로가기'],['users','계정·권한'],['settings','공통 설정']]},{name:'미리보기',items:[['b2teacher','담임 화면'],['studentPreview','학생 화면']]}];
+// 교육시간 조정(b2times, 현장교육 일정 모듈 시간)·교육생 상태(b2roster, 명부 상태)는 2026-10-19 사용자 요청 ④·⑦. 교육 운영 탭 중 cohort.json features가 false인 것은 '11월 중 2기 기준으로 열림'으로 감춥니다(1기 시간표·설문·Drive 구조를 쓰던 화면).
+const ADMIN_GROUPS=[{name:'홈',items:[['b2home','홈']]},{name:'출결',items:[['b2ledger','출결대조'],['b2status','출결 현황'],['b2roster','교육생 상태'],['b2downloads','내려받기'],['checkhere','체크히어 수집']]},{name:'서류발급',items:[['b2docs','서류발급 신청함']]},{name:'민원·이슈',items:[['b2vocs','민원·이슈 처리함']]},{name:'교육 운영',items:[['b2times','교육시간 조정'],['timetable','시간표'],['surveys','만족도조사'],['materials','강의자료'],['uploads','업로드 확인']]},{name:'공지·설정',items:[['urgent','긴급 요청'],['classes','반별 자료·바로가기'],['users','계정·권한'],['settings','공통 설정']]},{name:'미리보기',items:[['b2teacher','담임 화면'],['studentPreview','학생 화면']]}];
 const LATER_TABS={timetable:'timetable',surveys:'surveys',materials:'materials',uploads:'uploads',studentPreview:'studentPreview'};
 const laterTab=tab=>!!LATER_TABS[tab]&&!feature(LATER_TABS[tab]);
 function laterView(label){const host=document.getElementById('adminBody');if(currentAdminHost(host))host.innerHTML=`<section class="card panel later-feature"><h2>${esc(label)}</h2><p class="muted">${esc(FEATURE_LATER_TEXT)}</p></section>`;}

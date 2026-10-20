@@ -93,7 +93,7 @@ test('the 2기 site opens the administrator menu on the 2기 home without being 
   assert.equal(await page.locator('.b2-alert').nth(2).locator('b').innerText(),'1','one new document request');
   assert.ok(posts.some(p=>p.action==='b2Bundle'&&p.args[0]==='all'));
   await page.getByRole('button',{name:'출결',exact:true}).click();
-  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','내려받기','체크히어 수집']);
+  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','교육생 상태','내려받기','체크히어 수집']);
  });
 });
 
