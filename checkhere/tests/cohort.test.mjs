@@ -145,5 +145,5 @@ test('Firebase is the 2기 project; /old goes to the 1기 alias; bridge, storage
  assert.deepEqual([...C.ADMINS],['hint.kpc@gmail.com','kpc.jtkim@gmail.com']);assert.equal(C.APPROVER,'hint.kpc@gmail.com');
  assert.equal(C.SHEET_API.urlEnv,'HINT_SHEET_API_URL');assert.equal(C.SHEET_API.keyEnv,'HINT_SHEET_API_KEY');
  assert.ok(!JSON.stringify(json).includes('AKfycbzChr0p'),'데이터 API 주소는 cohort.json에 두지 않고 Vercel 환경변수에만');
- assert.equal(C.feature('nope'),false);assert.equal(C.feature('timetable'),true,'2기 시간표(261014+261007 기준) 열림');for(const f of ['materials','surveys','uploads','periodRoster','operationsWork','dropout'])assert.equal(C.feature(f),false,f);
+ assert.equal(C.feature('nope'),false);assert.equal(C.feature('timetable'),true,'2기 시간표(261014+261007 기준) 열림');assert.equal(C.feature('periodRoster'),true,'2기 단위기간 출석부(1기 양식, 출결원장 기준) 열림');for(const f of ['materials','surveys','uploads','operationsWork','dropout'])assert.equal(C.feature(f),false,f);
 });

@@ -76,7 +76,7 @@ const DATA={
     "materials": false,
     "surveys": false,
     "uploads": false,
-    "periodRoster": false,
+    "periodRoster": true,
     "operationsWork": false,
     "dropout": false,
     "attendanceReader": false,
