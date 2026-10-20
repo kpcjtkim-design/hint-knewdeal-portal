@@ -62,7 +62,7 @@ test('excel sync, move chooser, conflicts, bulk work and teacher change notices'
   await page.getByRole('button',{name:/^시간표 저장/}).click();await page.getByRole('status').getByText(/시간표 저장 완료/).waitFor();
   assert.deepEqual((await docOf('timetableBetaDrafts/2')).entries.map(e=>e.date),['2026-11-16','2026-11-18','2026-11-20']);
   // 8. Publishing records the change teachers should notice.
-  await page.locator('#classFilter').selectOption('1');await page.getByRole('button',{name:'선택 반 담임에게 공개'}).click();await page.locator('#publishConfirm:not([disabled])').waitFor();await page.locator('#publishConfirm').click();await page.getByRole('status').getByText('1/1개 반 공개 완료').waitFor();
+  await page.locator('#classFilter').selectOption('1');await page.getByRole('button',{name:'선택 반 담임에게 다시 공개'}).click();await page.locator('#publishConfirm:not([disabled])').waitFor();await page.locator('#publishConfirm').click();await page.getByRole('status').getByText('1/1개 반 공개 완료').waitFor();
   const recent=(await docOf('timetableBetaPublished/1')).recentChanges;assert.deepEqual(recent.map(c=>[c.id,c.from,c.to,c.at]),[['xlsx-1-7','2026-11-18','2026-11-18 09:00–18:00','2026-11-23'],['xlsx-1-8','2026-11-20','2026-11-20 09:00–18:00','2026-11-23'],['xlsx-1-6','2026-11-17','2026-11-23','2026-11-23']]);assert.deepEqual(recent[0].fields.sort(),['강사','시작','종료'].sort());
   // 9. Teacher: badge, change panel, print and calendar export.
   await page.evaluate(()=>window.mountTeacher());await page.locator('.changed-badge').first().waitFor();

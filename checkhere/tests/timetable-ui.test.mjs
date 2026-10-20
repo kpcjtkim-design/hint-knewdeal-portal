@@ -9,7 +9,7 @@ test('timetable imports, edits, conflict-checks, publishes and renders teacher m
   const name=u.pathname.slice(1);if(u.hostname==='fixture.test'&&/^(?:[\w.-]+\/)*[\w.-]+\.(?:mjs|css|json)$/.test(name)&&!name.split('/').includes('..')&&existsSync(join(base,name)))return route.fulfill({contentType:name.endsWith('.css')?'text/css':name.endsWith('.json')?'application/json':'text/javascript',body:readFileSync(join(base,name),'utf8')});return route.abort();
  });
  await page.goto('https://fixture.test/');await page.getByRole('button',{name:'엑셀 기준 16개 반 가져오기'}).click();await page.getByRole('status').getByText(/16\/16개 반 가져오기 완료/).waitFor();
- assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaDrafts/')).length),16);
+ assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaDrafts/')).length),16);assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaPublished/')).length),16,'import publishes to teachers in the same flow');assert.equal(await page.getByRole('button',{name:/담임에게 지금 공개/}).count(),0,'nothing left to publish');
  await page.getByRole('button',{name:'강사 관리',exact:true}).click();await page.getByRole('button',{name:'+ 강사 등록'}).click();await page.getByLabel('이름',{exact:true}).fill('시험 강사');await page.getByLabel('연락처',{exact:true}).fill('010-0000-0000');await page.getByRole('button',{name:'저장',exact:true}).click();await page.getByText('시험 강사',{exact:true}).waitFor();
  await page.getByRole('button',{name:'반별 시간표',exact:true}).click();await page.locator('#classFilter').selectOption('1');await page.locator('#date').fill('2026-11-17');await page.locator('#date').dispatchEvent('change');await page.locator('[data-edit]').first().click();assert.deepEqual(errors,[]);await page.locator('#editor select[name=instructorId]').selectOption({label:'시험 강사'});await page.getByRole('button',{name:'편집본 저장',exact:true}).click();await page.getByRole('status').getByText(/편집본을 저장/).waitFor();
  // Dragging edits a local draft only; swapping, undoing and saving preserve unrelated fields.
@@ -19,12 +19,14 @@ test('timetable imports, edits, conflict-checks, publishes and renders teacher m
  const a=beforeDrag.entries.find(e=>e.id===firstId),b=beforeDrag.entries.find(e=>e.id===secondId);
  await first.dragTo(second);await page.getByRole('heading',{name:/수업을 어떻게 옮길까요/}).waitFor();await page.getByRole('button',{name:/^끼워넣기/}).click();await page.getByRole('status').getByText(/수업을 끼워 넣고/).waitFor();
  assert.deepEqual(await page.evaluate(()=>window.docs['timetableBetaDrafts/1']),beforeDrag,'drag does not save');
- assert(await page.getByRole('button',{name:'선택 반 담임에게 공개'}).isDisabled());
+ assert(await page.getByRole('button',{name:'선택 반 담임에게 다시 공개'}).isDisabled());
  assert.equal(await page.locator(`[data-edit="${firstId}"]`).getAttribute('aria-label'),`1반 ${b.date} ${a.title} 수정`);
  await page.getByRole('button',{name:'이동 되돌리기'}).click();assert.equal(await page.locator(`[data-edit="${firstId}"]`).getAttribute('aria-label'),`1반 ${a.date} ${a.title} 수정`);
  assert.equal(await page.locator('[data-drop-date="2026-11-21"]').count(),0,'weekends hidden by default');assert.match(await page.locator('.admin-grid > .grid-head').first().innerText(),/4주차/,'2기 주차(10/26 주가 1주차)');await page.getByLabel('주말 표시').check();await page.locator(`[data-edit="${firstId}"]`).dragTo(page.locator('[data-drop-date="2026-11-21"]'),{targetPosition:{x:20,y:15}});
  await page.getByRole('button',{name:/^시간표 저장/}).click();await page.getByRole('status').getByText(/시간표 저장 완료/).waitFor();
  const saved=await page.evaluate(()=>window.docs['timetableBetaDrafts/1']);assert.equal(saved.entries.length,beforeDrag.entries.length);assert.deepEqual(saved.entries.find(e=>e.id===firstId),{...a,date:'2026-11-21'});
+ // Board save publishes the same entries to teachers (publishEntries: no Excel source fields, instructor name instead of contact).
+ const pub=await page.evaluate(()=>window.docs['timetableBetaPublished/1']);assert.equal(pub.sourceRevision,saved.revision);assert.deepEqual(pub.entries.map(e=>[e.id,e.date]),[...saved.entries].sort((x,y)=>x.date.localeCompare(y.date)||(x.start||'99:99').localeCompare(y.start||'99:99')||(x.order??0)-(y.order??0)||x.id.localeCompare(y.id)).map(e=>[e.id,e.date]));assert.equal(pub.entries.some(e=>'sourceText' in e||'origin' in e),false);assert.equal(pub.entries.find(e=>e.id===firstId).date,'2026-11-21');
  await page.getByRole('button',{name:'월간',exact:true}).click();assert.equal(await page.locator('.month-grid .day-cell').count(),42);
  await page.getByRole('button',{name:'전체 일정',exact:true}).click();assert((await page.locator('.calendar-month').count())>=3);
  assert.equal(await page.locator('[data-edit]').count(),saved.entries.length,'whole schedule shows each entry once');
@@ -33,8 +35,8 @@ test('timetable imports, edits, conflict-checks, publishes and renders teacher m
  await page.locator('#classFilter').selectOption('1');
  const boardOut=join(base,'checkhere/test-results');mkdirSync(boardOut,{recursive:true});await page.screenshot({path:join(boardOut,'timetable-admin-months.png')});
  await page.getByRole('button',{name:'주간',exact:true}).click();
- assert.equal(await page.evaluate(()=>Object.keys(window.docs).filter(k=>k.startsWith('timetableBetaPublished/')).length),0);
- await page.getByRole('button',{name:'선택 반 담임에게 공개'}).click();await page.getByRole('button',{name:'공개 확정',exact:true}).click();await page.getByRole('status').getByText(/1\/1개 반 공개 완료/).waitFor();assert.equal(await page.evaluate(()=>JSON.stringify(window.docs['timetableBetaPublished/1']).includes('010-0000')),false);
+ const pubRevision=await page.evaluate(()=>window.docs['timetableBetaPublished/1'].revision);
+ await page.getByRole('button',{name:'선택 반 담임에게 다시 공개'}).click();await page.getByRole('button',{name:'공개 확정',exact:true}).click();await page.getByRole('status').getByText(/1\/1개 반 공개 완료/).waitFor();assert.equal(await page.evaluate(()=>window.docs['timetableBetaPublished/1'].revision),pubRevision+1,'explicit re-publish still works');assert.equal(await page.evaluate(()=>JSON.stringify(window.docs['timetableBetaPublished/1']).includes('010-0000')),false);
  const finalLesson=await page.evaluate(()=>{const e=window.docs['timetableBetaDrafts/1'].entries.filter(e=>e.title==='MCU 프로그래밍').sort((a,b)=>a.date.localeCompare(b.date));return e.at(-1);});
  await page.locator('#date').fill(finalLesson.date);await page.locator('#date').dispatchEvent('change');
  await page.locator('.lecture-end.notice').filter({hasText:'MCU 프로그래밍'}).waitFor();
