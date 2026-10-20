@@ -21,7 +21,7 @@ export async function mount(host,{db,user,classes,client,open}){
   const alert=(n,label,sub,go,hot)=>`<button class="b2-card b2-alert ${hot&&n?'hot':''}" data-go="${esc(go)}"><span class="b2-small b2-muted">${esc(label)}</span><b>${n}</b><span class="b2-tiny b2-muted">${esc(sub)}</span></button>`;
   const index=new Map(bundle.ledger.map(r=>[`${r.cls}|${r.name}|${r.date}`,r]));
   body.innerHTML=`<div class="b2-alerts">${alert(disease.rows.length,`질병 인정 ${DISEASE.warn}회 이상`,`${DISEASE.max}회 도달 ${disease.atLimit} · 초과 ${disease.exceeded}`,'b2status:disease',true)}${alert(evidence.length,'증빙 미제출·반려',`${new Set(evidence.map(e=>e.cls+e.name)).size}명`,'b2status:evidence',true)}${alert(newDocs.length,'새 서류발급 신청',`진행 중 ${openDocs.length}건`,'b2docs',true)}${alert(+voc?.admin||0,'민원·이슈 답변 대기',voc?`진행 중 ${Object.values(voc.open||{}).reduce((a,b)=>a+b,0)}건`:'확인 중','b2vocs',true)}</div>
-  <div class="b2-head" style="margin-top:18px"><div><h3>${md(day)} 반별 출결</h3><p>카드를 누르면 그 반 출결대조로 갑니다. 마스터시트 출결원장 기준입니다.</p></div></div>
+  <div class="b2-head" style="margin-top:18px"><div><h3>${md(day)} 반별 출결</h3><p>카드를 누르면 그 반 현황(출결·누적·중도탈락·서류·민원·시간표)으로 갑니다. 마스터시트 출결원장 기준입니다.</p></div></div>
   <div class="b2-grid">${classes.map(c=>{const info=bundle.classes.find(x=>String(x.id)===String(c.id))||{},n=dayCounts(dayView(bundle,c.id,day,index));return `<button class="b2-card b2-class" data-class="${esc(c.id)}"><b>${esc(c.id)}반 · ${esc(info.course||c.course)}</b><span class="b2-sub">${esc(info.region||c.region)} · 담임 ${esc(info.teacher||'미등록')}</span><div class="nums"><span>총원 <b>${n.총원}</b></span><span>출석 <b>${n.출석}</b></span><span style="color:#b91c1c">결석 <b>${n.결석}</b></span><span>지·조·외 <b>${n.지각+n.조퇴+n.외출}</b></span><span>인정 <b>${n.인정}</b></span>${n.확인필요?`<span class="b2-badge t-late">확인 ${n.확인필요}</span>`:''}</div></button>`;}).join('')}</div>`;
  }
  async function showSection(){
@@ -38,7 +38,8 @@ export async function mount(host,{db,user,classes,client,open}){
  host.addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.section){if(section!==t.dataset.section&&work?.canLeave&&!work.canLeave())return;section=t.dataset.section;void showSection();return;}
-  if(t.dataset.class){open('b2ledger',{classId:t.dataset.class,date:bundle?.days.filter(d=>d<=bundle.today).at(-1)});return;}
+  // 반 카드 → 그 반 현황(beta2-class.mjs, 사용자 2026-10-20). 출결대조는 반 현황 안 「이 날 출결대조 열기」로 갑니다(같은 날짜).
+  if(t.dataset.class){open('b2class',{classId:t.dataset.class,date:bundle?.days.filter(d=>d<=bundle.today).at(-1)});return;}
   if(t.dataset.go){const [tab,a,b]=t.dataset.go.split(':');open(tab,tab==='b2ledger'?{classId:b,filter:a}:a?{tab:a}:{});}
  });
  const stop=client.watch(()=>{if(section==='summary')void load(true);},{current:()=>bundle?.rev||0,interval:60000});life.on(stop);

@@ -42,7 +42,7 @@ export async function mount(host,opts={}){
 async function mountAdmin(host,{client,classes=[],selected,context,hideHead=false,notify=defaultNotify}={}){
  const life=lifecycle(host),admin=true,VIEWS=ADMIN_VIEWS;
  let view=VIEWS.some(([k])=>k===context?.tab)?context.tab:'list';
- let cls=String(context?.classId||'all'),search='',kindF='all',stateF='all',riskOnly=true,outcomeF='all';
+ let cls=String(context?.classId||'all'),search='',kindF='all',stateF=['all','wait','teacher','done'].includes(context?.state)?context.state:'all',riskOnly=true,outcomeF='all';
  let rows=[],max=12,bundle=null,completions=[],err='',seq=0,editor=null,busy='',batchNote='';
  const picked=new Set(),pickedDone=new Set();
  host.innerHTML=`<div class="b2 b2d"><style>${STYLE}</style>${hideHead?'':`<div class="b2-head"><div><h2>중도탈락·수료</h2><p>마스터시트 「중도탈락」 탭을 여기서 모두 처리합니다. 저장하면 탭과 명부 상태(재학·중도탈락·조기취업·수료)가 함께 바뀌고 그 반 출결판도 다시 그려집니다. 담임은 담임 화면에서 신청만 하고(「담임 신청」 표시), 판정·서류·확인·수료 처리는 여기서 합니다.</p></div></div>`}
