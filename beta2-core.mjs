@@ -29,7 +29,13 @@ export function ledgerIndex(bundle){
 export const rosterFor=(bundle,cls)=>bundle.roster.filter(p=>p.cls===String(cls));
 // 2기 담임 화면 기준: 재학·빈 상태이거나, 상태 변경일(마지막 출석일)까지는 재학으로 셉니다. 그다음 교육일부터 빠집니다.
 export const enrolledOn=(person,date)=>!person.status||person.status==='재학'||(!!person.changed&&person.changed>=date);
-export const courseDays=(bundle,{from='',to=bundle.today}={})=>bundle.days.filter(d=>(!from||d>=from)&&d<=to);
+// 교육일: 실제 반(1~16)은 교육일자(bundle.days)만. 17반 테스트반(cohort test, 사용자 결정 2026-10-20)은 개강 전에도 시험할 수 있게
+// 그 반 출결원장에 기록이 있는 날을 모두 교육일로 봅니다(그 반 학생 모두에게, 기록 없는 학생은 출석). 공식 합계에서 빠지는 것은 그대로(studentStats).
+export function classDays(bundle,cls){
+ if(cls===null||cls===undefined||!isTestClass(cls))return bundle.days;
+ return [...new Set([...bundle.days,...bundle.ledger.filter(r=>String(r.cls)===String(cls)&&isIsoDate(r.date)).map(r=>r.date)])].sort();
+}
+export const courseDays=(bundle,{from='',to=bundle.today,cls=null}={})=>classDays(bundle,cls).filter(d=>(!from||d>=from)&&d<=to);
 export function teacherOf(bundle,cls){return bundle.classes.find(c=>String(c.id)===String(cls))?.teacher||'';}
 
 // 한 반·하루: 명부 순서대로 출결원장 기록(없으면 출석, 재학 전후면 해당없음)
@@ -49,12 +55,14 @@ export function dayCounts(rows){
 }
 
 // 학생별 기간 통계: 교육일 중 재학일만 세고, 출석률은 마스터시트와 같이 (재학 교육일 - 결석) / 재학 교육일
-export function studentStats(bundle,{cls=null,from='',to=bundle.today}={},index=ledgerIndex(bundle)){
- const days=courseDays(bundle,{from,to});
+// 출결 통계·증빙·질병 인정 모두 교육일만 셉니다(사용자 2026-10-20: 인정 출결은 교육일에만). 실제 반의 교육일이 아닌 날 인정 기록은 offDayRecords로 따로 알립니다.
+export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=false}={},index=ledgerIndex(bundle)){
+ const cache=new Map(),daysOf=c=>cache.get(c)||cache.set(c,courseDays(bundle,{from,to,cls:c})).get(c);
  // 전체(cls 없음) 합계·집계에서는 시험용 테스트반(cohort test)을 뺍니다. 테스트반을 골라 보면 그 반만 보입니다.
- return bundle.roster.filter(p=>cls?p.cls===String(cls):!isTestClass(p.cls)).map(p=>{
+ // withTest: 증빙서류·질병 인정 '전체 반' 목록처럼 테스트반 줄도 보여야 할 때(합계는 부르는 쪽에서 테스트반을 뺍니다).
+ return bundle.roster.filter(p=>cls?p.cls===String(cls):withTest||!isTestClass(p.cls)).map(p=>{
   const counts={},evidence=[],disease=[];let enrolled=0;
-  for(const d of days){
+  for(const d of daysOf(p.cls)){
    const rec=index.get(ledgerKey(p.cls,p.name,d));
    if(!enrolledOn(p,d)&&!rec)continue;enrolled++;
    const t=rec?rec.type:'출석';counts[t]=(counts[t]||0)+1;
@@ -135,12 +143,20 @@ export function neededTimes(type,v){
 export function evidenceRows(stats){
  return stats.flatMap(s=>s.evidence.map(e=>({cls:s.cls,name:s.name,...e}))).sort((a,b)=>Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }
-// 추가 증빙(취업박람회 인정 출결, 사용자 요청 2026-10-20 ③): 이행 여부(미제출·반려·확인)와 함께 모두 보입니다(못 한 것 먼저). 재학 아닌 날도 기록이 있으면 넣고, 전체 반이면 테스트반은 뺍니다.
-export function extraEvidenceRows(bundle,{cls=null,from='',to=bundle.today}={}){
- const days=new Set(courseDays(bundle,{from,to}));
- return bundle.ledger.filter(r=>days.has(r.date)&&(cls?String(r.cls)===String(cls):!isTestClass(r.cls))).map(r=>({r,x:extraEvidence(r)})).filter(v=>v.x)
+// 추가 증빙(취업박람회 인정 출결, 사용자 요청 2026-10-20 ③): 이행 여부(미제출·반려·확인)와 함께 모두 보입니다(못 한 것 먼저). 재학 아닌 날도 기록이 있으면 넣고(교육일만), 전체 반이면 테스트반은 뺍니다(withTest면 넣음).
+export function extraEvidenceRows(bundle,{cls=null,from='',to=bundle.today,withTest=false}={}){
+ const cache=new Map(),daysOf=c=>cache.get(c)||cache.set(c,new Set(courseDays(bundle,{from,to,cls:c}))).get(c);
+ return bundle.ledger.filter(r=>(cls?String(r.cls)===String(cls):withTest||!isTestClass(r.cls))&&daysOf(String(r.cls)).has(r.date)).map(r=>({r,x:extraEvidence(r)})).filter(v=>v.x)
   .map(({r,x})=>({cls:String(r.cls),name:r.name,date:r.date,type:r.type,reason:r.reason||'',state:x.state,done:x.done,evr:r.evr||''}))
   .sort((a,b)=>Number(a.done)-Number(b.done)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
+}
+// 실제 반에서 교육일이 아닌 날(주말·휴일·개강 전·앞날)에 적힌 인정 기록: 통계·증빙·질병 인정에 들지 않으므로 증빙서류 화면 위에 따로 알립니다(사용자 2026-10-20).
+// 테스트반은 기록 있는 날이 모두 교육일이라 여기 없습니다. from·to는 빈 값이면 끝이 없습니다.
+export function offDayRecords(bundle,{cls=null,from='',to=''}={}){
+ const days=new Set(bundle.days);
+ return bundle.ledger.filter(r=>recognizedType(r.type)&&!isTestClass(r.cls)&&(!cls||String(r.cls)===String(cls))&&!days.has(r.date)&&(!from||r.date>=from)&&(!to||r.date<=to))
+  .map(r=>({cls:String(r.cls),name:r.name,date:r.date,type:r.type,reason:r.reason||'',state:r.evApplied||r.ev||'미제출'}))
+  .sort((a,b)=>Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko')||a.date.localeCompare(b.date));
 }
 // 중도탈락·수료 위험(출석률이 수료 기준 cohort COMPLETION_RATE % 미만)
 export function dropoutRows(stats,{threshold=COMPLETION_RATE}={}){

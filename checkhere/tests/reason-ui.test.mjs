@@ -14,6 +14,10 @@ const COLS=['date','cls','name','type','inT','outT','oa','ob','reason','ev','evr
 const L=(date,cls,name,type,o={})=>COLS.map(k=>({date,cls,name,type,reason:'',ev:'',evr:'',evApplied:type.startsWith('인정')?(o.ev||'미제출'):'해당없음',prov:'포털',sig:'s',...o})[k]??'');
 const RAW={rev:3,today:'2026-11-06',days:['2026-11-04','2026-11-05','2026-11-06'],classes:[{id:'1',teacher:'김지아'},{id:'2',teacher:''}],roster:[['1','고다원','재학',''],['1','김동진','재학',''],['2','이경수','재학','']],ledgerCols:COLS,
  ledger:[L('2026-11-04','1','고다원','인정출석',{reason:'취업박람회',ev:'확인'}),L('2026-11-05','1','김동진','인정조퇴',{reason:'취업박람회(현장 면접)',outT:'15:00'}),L('2026-11-05','2','이경수','인정지각',{reason:'인적성(GSAT)',inT:'10:00'}),L('2026-11-06','2','이경수','인정출석',{reason:'취업박람회',ev:'반려',evr:'날짜 없음'})]};
+// 17반 테스트반·교육일 아닌 날(사용자 2026-10-20): 실제 반의 개강 전 인정 기록은 안내 한 줄로만, 테스트반은 기록 있는 날이 모두 교육일이라 목록에 '17반 · 테스트반'으로
+const RAW_T={rev:4,today:'2026-11-06',days:['2026-11-04','2026-11-05','2026-11-06'],classes:[{id:'1',teacher:'김지아'},{id:'17',teacher:''}],roster:[['1','고다원','재학',''],['17','시험가','재학',''],['17','시험나','재학','']],ledgerCols:COLS,
+ ledger:[L('2026-10-20','1','고다원','인정출석',{reason:'병원'}),L('2026-11-05','1','고다원','인정지각',{reason:'교통',inT:'10:00'}),
+  ...['2026-10-17','2026-10-18','2026-10-19','2026-10-20'].map(d=>L(d,'17','시험가','인정출석',{reason:'병원 진료'}))]};
 // 출결대조(beta2-ledger.mjs): 진짜 2기 클라이언트(beta2-data.mjs)가 가짜 /api/teacher-beta와 이야기합니다. 지난 날(11/5)이라 체크히어 자동 요청은 없습니다.
 const LEDGER={rev:7,today:'2026-11-06',days:['2026-11-05','2026-11-06'],classes:[{id:'1',teacher:'김지아'}],roster:[['1','고다원','재학',''],['1','김동진','재학',''],['1','박서연','재학','']],ledgerCols:COLS,
  ledger:[L('2026-11-05','1','고다원','인정출석',{reason:'인적성(HMAT)',sig:'sig-고다원'}),L('2026-11-05','1','김동진','인정조퇴',{reason:'취업박람회',outT:'15:00',sig:'sig-김동진'})]};
@@ -29,6 +33,8 @@ const PAGES={
   const user={email:'hint.kpc@gmail.com',getIdToken:async()=>'tok'};setNotifyContext({db:{},user});window.view=await mount(document.getElementById('root'),{db:{},user,classes:[{id:'1'}],client:createBeta2Client(user,{db:{}}),selected:'1',context:{classId:'1',date:'2026-11-05'}});</script>`,
  '/teacher-notify.html':`<!doctype html><meta charset="utf-8"><div id="toast"></div><div id="root"></div><script type="module">import {mountTeacherBeta} from '/teacher-beta.js';import {setNotifyContext} from '/notify.mjs';setNotifyContext({db:{},user:{email:'teacher@test.kr'}});window.tb=mountTeacherBeta(document.getElementById('root'),{cls:1,tab:'board',endpoint:'/api/teacher-beta'});</script>`,
  '/teacher.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mountTeacherBeta} from '/teacher-beta.js';window.notes=[];window.tb=mountTeacherBeta(document.getElementById('root'),{cls:1,tab:'board',endpoint:'/api/teacher-beta',notify:(n,sel,f)=>window.notes.push({...n,name:sel.n,date:sel.day,r:f.r})});</script>`,
+ '/status-test.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mount} from '/beta2-status.mjs';import {decodeBundle} from '/beta2-core.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
+  window.view=await mount(document.getElementById('root'),{client:{bundle:async()=>decodeBundle(${JSON.stringify(RAW_T)}),checkhereDisease:async()=>({})},classes:[{id:'1'},{id:'17'}],tab:'evidence'});</script>`,
  '/status.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mount} from '/beta2-status.mjs';import {decodeBundle} from '/beta2-core.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
   window.view=await mount(document.getElementById('root'),{client:{bundle:async()=>decodeBundle(${JSON.stringify(RAW)}),checkhereDisease:async()=>({})},classes:[{id:'1'},{id:'2'}],tab:'evidence'});</script>`};
 
@@ -134,6 +140,31 @@ test('출결 현황 › 증빙서류: 취업박람회 추가 증빙 배지와 �
   assert.deepEqual(await p.locator('.b2-table').nth(1).locator('tbody tr td:nth-child(6)').allTextContents(),['추가 증빙 필요 · 기업면접 확인서 · 미제출','추가 증빙 필요 · 기업면접 확인서 · 반려 반려: 날짜 없음','추가 증빙 확인']);
   await p.selectOption('#s2Class','2');
   assert.deepEqual(await p.locator('.b2-table').nth(1).locator('tbody tr td:nth-child(2)').allTextContents(),['이경수']);
+ });
+});
+
+test('출결 현황: 실제 반 교육일 아닌 날 인정 기록은 안내 한 줄만, 17반 테스트반은 개강 전 기록도 증빙서류·질병 인정 목록에(전체 반에도, 숫자 상자는 빼고)',async()=>{
+ await page('/status-test.html',async p=>{
+  const main=n=>p.locator('#s2Body > .b2-table-wrap .b2-table').nth(n),col=(n,i)=>main(n).locator(`tbody tr td:nth-child(${i})`).allTextContents();
+  await p.waitForSelector('#s2OffDay');
+  assert.match(await p.locator('#s2OffDay summary').textContent(),/교육일이 아닌 날의 인정 기록 1건은 통계·증빙에 들지 않습니다/);
+  assert.deepEqual(await p.locator('#s2OffDay tbody tr td:nth-child(3)').allTextContents(),['10/20(화)'],'펼치면 목록');
+  assert.deepEqual(await col(0,1),['1반','17반 · 테스트반','17반 · 테스트반','17반 · 테스트반','17반 · 테스트반']);
+  assert.deepEqual(await col(0,3),['11/5(목)','10/17(토)','10/18(일)','10/19(월)','10/20(화)'],'실제 반 10/20 기록은 목록에 없음');
+  const stat=await p.locator('.b2-stat').allTextContents();assert.ok(stat.includes('1미제출')&&stat.includes('1학생'),stat.join('|'));
+  assert.match(await p.locator('#s2Body').textContent(),/테스트반 증빙 미제출·반려 4건은 목록에만 보이고 위 숫자에는 넣지 않았습니다/);
+  await p.selectOption('#s2Class','17');
+  assert.deepEqual(await col(0,2),['시험가','시험가','시험가','시험가']);
+  assert.equal(await p.locator('#s2OffDay').count(),0);
+  assert.ok((await p.locator('.b2-stat').allTextContents()).includes('4미제출'));
+  await p.selectOption('#s2Class','all');
+  await p.evaluate(()=>window.view.setView('disease'));
+  await p.waitForSelector('#s2Body > .b2-table-wrap');
+  assert.deepEqual(await col(0,1),['17반 · 테스트반']);assert.deepEqual(await col(0,3),['4/6회']);
+  assert.ok((await p.locator('.b2-stat').allTextContents()).includes('04회 이상'),'공식 숫자 상자는 테스트반 제외');
+  assert.match(await p.locator('#s2Body').textContent(),/테스트반 질병 인정 4회 이상 1건은 목록에만/);
+  await p.evaluate(()=>window.view.setView('stats'));
+  assert.deepEqual(await col(0,1),['1반'],'출결 통계 전체 합계에는 테스트반 없음');
  });
 });
 
