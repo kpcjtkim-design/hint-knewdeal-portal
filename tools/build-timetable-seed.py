@@ -23,7 +23,7 @@ sys.stdout.reconfigure(encoding='utf-8'); sys.stderr.reconfigure(encoding='utf-8
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEED, REFERENCE, HISTORY = ROOT / 'timetable-seed.json', ROOT / 'timetable-reference.json', ROOT / 'timetable-seeds'
 COHORT = json.loads((ROOT / 'cohort.json').read_text(encoding='utf-8'))
-CLASSES = {c['id']: c for c in COHORT['classes']}
+CLASSES = {c['id']: c for c in COHORT['classes'] if not c.get('test')}  # 17반 시험용 테스트반은 일정표에 없음
 HOLIDAYS = {h['date']: h['name'] for h in COHORT['holidays']}
 # 반 → (2행 장소 정규식, 4행 트랙 번호). 과정(모빌리티 AI·제조지능화)은 cohort.json 반 과정과 4행이 같아야 합니다. 같은 장소·과정이 둘이면 트랙 번호로 가릅니다.
 CLASS_PLACES = {'1': (r'서울대', None), '2': (r'한양대', None), '3': (r'후인원', None), '4': (r'후인원', None), '5': (r'청주', None),

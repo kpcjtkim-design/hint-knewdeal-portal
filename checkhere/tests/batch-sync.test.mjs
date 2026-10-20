@@ -80,7 +80,7 @@ test('remembered addresses survive a restart; a lost login stops the batch inste
 test('cancelling stops between days and rejects bad input',async()=>{
   const {c}=fakeCollector({lectures:lectures(),scan:false}),b=await bridge(c,18814);
   try{
-    await assert.rejects(b.api('sync-batch',{classIds:['17'],dates:['2026-11-03']}),/반\(1~16\)/);
+    await assert.rejects(b.api('sync-batch',{classIds:['18'],dates:['2026-11-03']}),/반\(1~17\)/);// 17반은 시험용 테스트반
     await assert.rejects(b.api('sync-batch',{classIds:['2'],dates:['2026-02-30']}),/날짜/);
     const slow=c.readDetails;c.readDetails=async r=>{await new Promise(x=>setTimeout(x,30));return slow(r);};
     const started=await b.api('sync-batch',{classIds:['2'],dates:['2026-11-03','2026-11-05'],mode:'full'});

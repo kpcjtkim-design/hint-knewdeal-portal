@@ -1,4 +1,6 @@
-import {ADMINS,CLASSES,COHORT,isClassId} from './cohort.mjs';
+import {ADMINS,REAL_CLASSES as CLASSES,COHORT,isClassId as anyClassId,isTestClass} from './cohort.mjs';
+// 설문은 공식 반만 봅니다(17반 시험용 테스트반은 설문 대상이 아님).
+const isClassId=id=>anyClassId(id)&&!isTestClass(id);
 const HOLIDAY_NAMES=COHORT.holidays.map(h=>h.name);
 import {createSurveyIdentityMatcher,surveyBaseName} from './survey-identity.mjs';
 import {isoLabel,portalStatus} from './attendance-beta-core.mjs';

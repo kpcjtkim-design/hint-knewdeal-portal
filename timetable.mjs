@@ -5,7 +5,7 @@ import {loadSurveyLinks,surveyLink} from './survey-links.mjs';
 import {shiftForHoliday} from './timetable-holiday.mjs';
 import {createTimetableBoard,moveLesson} from './timetable-board.mjs';
 import {todayKST,startDate,weekDays,monthDays,sortEntries,validateEntry,conflicts,publishEntries,visibleToday,lectureEndDays,lectureEndsOn} from './timetable-core.mjs';
-import {feature} from './cohort.mjs';
+import {feature,withoutTestClasses} from './cohort.mjs';
 import {createTimetableStore} from './timetable-store.mjs';
 import {curriculumPlan,correctedSeed} from './timetable-reference.mjs';
 import {swapLesson,neighbour,conflictMap,classProgress,progressText,hideWeekend,bulkAssign,copyPeriod,recentChanges,toIcs} from './timetable-tools.mjs';
@@ -23,7 +23,8 @@ function lesson(e,instructors={},click=false,cid='',ending=false,extra={}){
  return `<div class="lesson-container"><${click?'button':'article'} class="lesson" style="${paint(e.module)}" ${click?`draggable="${e.kind!=='holiday'}" data-edit="${esc(e.id)}" data-cid="${esc(cid)}" aria-label="${esc(cid+'반 '+e.date+' '+e.title+' 수정')}"`:''}>${extra.changed?`<small class="changed-badge">${esc(extra.changed)}</small>`:''}<small>${esc(e.module)}${e.online?' · 비대면':''}</small><strong>${esc(e.title)}${e.day?' · '+e.day+'일차':''}</strong><small>${esc(time)}</small>${e.kind==='holiday'?'':`<small>${esc(name||'강사 미등록')}${e.venue?' · '+esc(e.venue):''}</small>`}${e.note?`<small>${esc(e.note)}</small>`:''}${extra.warn?`<small class="warn" title="${esc(extra.warn)}">⚠ ${esc(extra.warn)}</small>`:''}${e.review?.length?`<small class="warn">⚠ 일정표 판끼리 다름 · ${esc(e.review.map(f=>({subject:'과목',hours:'시간',instructor:'강사'})[f]||f).join('·'))} 확인</small>`:''}</${click?'button':'article'}>${(e.materials||[]).map(m=>`<a class="lecture-end" target="_blank" rel="noopener" href="${esc(materialUrl(m.url))}">자료 · ${esc(m.title)} ↗</a>`).join('')}${ending?endMark(cid,e):''}</div>`;
 }
 function shell(host){const root=host.shadowRoot||host.attachShadow({mode:'open'});root.innerHTML='<link rel="stylesheet" href="/timetable.css?v=20260929-1"><div id="content"></div><dialog id="editor"></dialog>';return root;}
-export async function mountTimetableAdmin(host,{db,user,classes}){
+export async function mountTimetableAdmin(host,{db,user,classes:all}){
+ const classes=withoutTestClasses(all);// 시간표 관리·일괄 작업은 공식 반만(17반 시험용 테스트반 뺌)
  const root=shell(host),store=createTimetableStore(db,user),surveys=createSurveyStore(db,user),$=s=>root.querySelector(s),content=$('#content');
  let surveyCatalog={events:[]},seed,reference,catalog,drafts={},published={},instructors={},selected='all',date=startDate(),mode='schedule',busy=false,message='',error=false,view='week',pending={},undo=[],disposed=false,planCache=null,showWeekend=false,warnings=new Map(),seedBases={};
  const meta=cid=>classes.find(c=>String(c.id)===String(cid))||{id:cid};

@@ -215,7 +215,7 @@ async function adminView(user,p,tab='b2home',selected='1',workContext=null){let 
 async function beta2Admin(user,p,tab,selected,context){return mountAdminModule('/beta2-admin.mjs?v=20261020-m1','mountBeta2Admin',{db,user,classes:CLASSES,tab,selected,context,open:(next,ctx={})=>adminView(user,p,next,ctx.classId||selected,ctx)},{wide:tab==='b2ledger'});}
 
 async function surveysAdmin(user,p,workContext=null){return mountAdminModule('/survey-view.mjs?v=20260922-work1','mountSurveys',{db,user,classes:CLASSES,initialClassId:workContext?.classId});}
-async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261019-t2','mountTimetableAdmin',{db,user,classes:CLASSES.filter(c=>!c.test)},{wide:true});}
+async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261020-m1','mountTimetableAdmin',{db,user,classes:CLASSES.filter(c=>!c.test)},{wide:true});}
 async function attachTeacherTimetable(parent,user,c){
  const hero=parent.querySelector('.hero'),alive=()=>parent.isConnected&&parent.querySelector('.hero')===hero;
  try{const mod=await import('/teacher-workspace.mjs?v=20261020-m1');if(!alive())return;const work=await mod.mountTeacherWorkspace(parent,{db,user,classInfo:c,preview:parent.id==='adminBody'});if(!alive())disposePageWork(work);else if(parent.id==='adminBody')adminWork=work;else teacherWork=work;}catch(e){if(alive()){const note=document.createElement('p');note.textContent='담임 요약을 불러오지 못했습니다. '+e.message;parent.append(note);}}

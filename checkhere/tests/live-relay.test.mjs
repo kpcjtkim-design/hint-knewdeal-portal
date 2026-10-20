@@ -8,7 +8,7 @@ import {studentKey,recordId,version} from '../identity.mjs';
 import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mjs';
 import {ATTEND_DELETE} from '../rules.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
-import {CLASS_IDS,LIVE_HOUR_MS,LIVE_MARK,baseTag,buildLiveRequest,editorReason,hourPlan,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
+import {RELAY_CLASS_IDS as CLASS_IDS,LIVE_HOUR_MS,LIVE_MARK,baseTag,buildLiveRequest,editorReason,hourPlan,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
 import {createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
 import {deletionGate} from '../../beta2-checkhere-core.mjs';
 

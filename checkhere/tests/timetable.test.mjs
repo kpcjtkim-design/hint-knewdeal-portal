@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 import {sortEntries,weekDays,monthDays,validateEntry,conflicts,publishEntries,visibleToday,lectureEndDays,lectureEndsOn,startDate,isOffDay} from '../../timetable-core.mjs';
-import {CLASS_IDS,TRAINING_DAYS,HOLIDAYS,classInfo} from '../../cohort.mjs';
+import {REAL_CLASS_IDS as CLASS_IDS,TRAINING_DAYS,HOLIDAYS,classInfo} from '../../cohort.mjs';// 시간표는 공식 16반(17반 시험용 테스트반 없음)
 const seed=JSON.parse(readFileSync(new URL('../../timetable-seed.json',import.meta.url)));
 // 2기 기준: 261014(최신)+261007 절충, 1007판 15반 과정명 한 줄 밀림 바로잡음(사용자 확인 2026-10-19).
 test('2기 seed: 16 classes, one lesson on each of the 60 training days, cohort holidays, no invented times or contacts',()=>{
