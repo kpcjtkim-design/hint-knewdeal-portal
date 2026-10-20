@@ -2,6 +2,8 @@
 import {rosterFor} from './beta2-core.mjs';
 import {COURSE_START,COURSE_END} from './cohort.mjs';
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
+import {notify} from './notify.mjs';
+import {linkFor} from './notify-core.mjs';
 
 const STATE_CLASS={'접수':'t-rec','처리중':'t-late','보완 필요':'t-absent','처리완료':'e-ok','취소':'t-na'};
 const OPEN=['접수','처리중','보완 필요'];
@@ -66,6 +68,8 @@ export async function mount(host,{client,classes,selected,teacherClass=null}){
   try{
    const res=await client.docCreate({cls:form.cls,name:form.name,docType:type,qty:form.qty,period:form.from||form.to?`${form.from||'?'} ~ ${form.to||'?'}`:'',purpose:form.purpose.trim(),submitTo:form.submitTo.trim(),due:form.due,delivery:form.delivery,memo:form.memo.trim()});
    toast(`신청했습니다 · ${res.id}${res.mailed?' · 운영팀 메일 알림 완료':' · 메일 알림 실패(시트에는 저장됨)'}`);
+   // 포털 알림(notify.mjs): 운영 관리자 알림함에 한 건. 못 남겨도 신청은 그대로(작은 안내만).
+   void notify('서류발급',{audience:'admins',cls:form.cls,title:`서류발급 신청 · ${form.cls}반 ${form.name}`,body:[`${type} ${form.qty||1}부`,`제출처 ${form.submitTo.trim()}`,form.due?`마감 ${md(form.due)}`:''].filter(Boolean).join(' · '),link:linkFor('b2docs',{cls:form.cls,id:res.id})});
    form=blank();creating=!admin;busy=false;await load();
   }catch(e){busy=false;err=e.message;render();}
  }

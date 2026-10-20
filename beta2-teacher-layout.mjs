@@ -15,11 +15,13 @@ const LATER_TEXT='11월 중에 열립니다. 준비되면 운영팀이 안내합
 export const TEACHER_TABS=[['today','오늘 할 일'],['attendance','출결'],['documents','서류 발급'],['feedback','민원·설문'],['schedule','시간표·자료'],['info','우리 반']];
 export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
 // 머리말 아래 한 줄 안내: 이 화면에서 무엇을 하는지(서류 발급·민원은 모듈 머리말 대신 이 줄이 설명합니다)
-const HINTS={today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
+const HINTS={notify:'운영팀이 보낸 알림(서류 발급·민원 답글 등)을 봅니다. 누르면 그 화면으로 갑니다.',today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
  documents:'교육생에게 필요한 출석부·확인서를 신청합니다. 신청하면 운영팀에 바로 알림이 가고, 처리 상황은 아래 목록에서 봅니다.',voc:'수업·시설·출결 등 운영팀에 알릴 일을 접수하고 답글을 주고받습니다. 운영팀이 답하면 위에 알림이 뜹니다.',surveys:'교육생 만족도 설문 결과를 봅니다.',timetable:'우리 반 전체 시간표를 봅니다.',materials:'강의자료를 열어 봅니다.',links:'자주 쓰는 폴더·양식 바로가기입니다.',info:'반장·부반장·총무와 교육생 명부(중도탈락·조기취업)를 관리합니다.'};
+// 알림함(머리글 종): 탭 줄에는 없는 칸
+const NOTIFY_TAB=['notify','알림'];
 const BETA_PANES=new Set(['board','reason']),STATUS_VIEWS=new Set(['stats','evidence','disease']);
 // 큰 탭·하위 탭 바로잡기: 모르는 큰 탭이면 오늘 할 일, 모르는 하위 탭이면 그 큰 탭의 첫 하위 탭(출결은 출결판)
-export function teacherRoute(m,s){if(!TEACHER_TABS.some(([k])=>k===m))return ['today',''];const subs=TEACHER_SUBS[m];return [m,subs?(subs.some(([k])=>k===s)?s:subs[0][0]):''];}
+export function teacherRoute(m,s){if(m==='notify')return ['notify',''];if(!TEACHER_TABS.some(([k])=>k===m))return ['today',''];const subs=TEACHER_SUBS[m];return [m,subs?(subs.some(([k])=>k===s)?s:subs[0][0]):''];}
 // 주소 #t/큰탭/하위탭 ↔ 화면(오늘 할 일은 주소 끝을 비웁니다)
 export const routeFromHash=hash=>{const [t,m,s]=String(hash||'').replace(/^#/,'').split('/');return t==='t'?teacherRoute(m,s):['today',''];};
 const routeHash=(m,s)=>m==='today'?'':`#t/${m}${s?'/'+s:''}`;
@@ -35,7 +37,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  const eyebrow=hero.querySelector('.eyebrow'),heroTitle=hero.querySelector('h2');if(eyebrow)eyebrow.textContent='우리 반';if(heroTitle)heroTitle.textContent=className;
  const switcher=parent.querySelector('.preview-controls')||parent.querySelector('.teacher-class-switch');if(switcher){switcher.classList.add('teacher-header-switch');bar.prepend(switcher);}
  const wrap=document.createElement('div');wrap.className='b2 t2';bar.after(wrap);
- wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs t2-main" role="tablist" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button type="button" class="b2-tab" role="tab" data-main="${k}" aria-selected="false">${l}</button>`).join('')}</nav><nav class="b2-tabs t2-sub" id="t2Sub" role="tablist" aria-label="세부 메뉴" hidden></nav><header class="t2-head" id="t2Head"><h2></h2><p class="t2-ctx"></p><p class="t2-hint"></p></header>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" role="tabpanel" hidden></section>`).join('')}`;
+ wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs t2-main" role="tablist" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button type="button" class="b2-tab" role="tab" data-main="${k}" aria-selected="false">${l}</button>`).join('')}</nav><nav class="b2-tabs t2-sub" id="t2Sub" role="tablist" aria-label="세부 메뉴" hidden></nav><header class="t2-head" id="t2Head"><h2></h2><p class="t2-ctx"></p><p class="t2-hint"></p></header>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" role="tabpanel" hidden></section>`).join('')}<section data-panel="notify" role="tabpanel" hidden></section>`; // notify: 머리글 종으로 여는 알림함(탭 줄에는 없음)
  const $=s=>wrap.querySelector(s),panel=k=>wrap.querySelector(`[data-panel="${k}"]`),head=$('#t2Head');
  // 담임 홈 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다. 시간표는 아직 닫혀 있어 할 일 아래로 둡니다.
  const tasks=following.find(e=>e.classList.contains('task-grid')),taskHead=tasks?.previousElementSibling,notice=following.find(e=>e.classList.contains('notice')),noticeHead=notice?.previousElementSibling,urgent=parent.querySelector('.urgent-stack');
@@ -47,7 +49,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  const links=document.createElement('div');for(const e of following)if(![tasks,taskHead,notice,noticeHead].includes(e))links.append(e);
  panel('documents').innerHTML='<div data-slot="documents" id="t2Docs"></div>';
  for(const [k,subs] of Object.entries(TEACHER_SUBS))panel(k).innerHTML=subs.map(([s])=>`<div data-sub="${s}" hidden></div>`).join('');
- panel('info').innerHTML='<div data-slot="info"></div>';
+ panel('info').innerHTML='<div data-slot="info"></div>';panel('notify').innerHTML='<div data-slot="notify"></div>';
  wrap.querySelector('[data-sub="links"]').append(links);
 
  const works=[],loaded=new Set(),tries={};let main='',sub='',beta=null,betaWait=null,status=null,statusWait=null,disposed=false;
@@ -88,7 +90,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   materials:['./lecture-materials.mjs',(m,slot)=>m.mountLectureMaterials(slot,{db,user,classes:[classInfo],teacherClass:classInfo,readOnly:true})],
   surveys:['./survey-view.mjs',(m,slot)=>m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo})],
   documents:['./beta2-docs.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
-  voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})]
+  voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
+  notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab);void go(tm,ts||'',{push:true});}})]
  };
  async function load(key,slot){
   const job=MOUNTS[key];if(!job||loaded.has(key))return;loaded.add(key);
@@ -109,7 +112,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   if(subs.length)panel(main).querySelectorAll('[data-sub]').forEach(d=>{d.hidden=d.dataset.sub!==sub;});
   // 머리말은 지금 큰 탭 화면 맨 위로 옮깁니다: 화면 이름 / 오늘 · 날짜 · 반 이름 / 한 줄 안내
   panel(main).prepend(head);
-  head.querySelector('h2').textContent=(subs.find(([k])=>k===sub)||TEACHER_TABS.find(([k])=>k===main))[1];
+  head.querySelector('h2').textContent=(subs.find(([k])=>k===sub)||[...TEACHER_TABS,NOTIFY_TAB].find(([k])=>k===main))[1];
   head.querySelector('.t2-ctx').textContent=`오늘 · ${md(seoulToday())} · ${className}`;
   head.querySelector('.t2-hint').textContent=HINTS[sub||main]||'';
  }
@@ -126,7 +129,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   try{
    if(betaTab())await showBeta(slot);
    else if(STATUS_VIEWS.has(sub))await showStatus(slot);
-   else await load(main==='documents'?'documents':sub,slot);
+   else await load(main==='documents'||main==='notify'?main:sub,slot);
   }catch(e){if(alive())failed(slot,e,'');}
   if(main==='today')await load('timetable-today',today.querySelector('#t2Timetable'));
  }
@@ -162,8 +165,10 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   el.hidden=false;el.classList.toggle('hard',report.rows.some(r=>r.count>=6));
   el.innerHTML=`<span>⚠ 질병 인정 ${report.rows.length?report.rows.map(r=>`${esc(r.name)} ${r.count}/6회${r.count>6?' 초과':r.count===6?' 도달':''}`).join(' · '):'4회 이상 없음'}${report.review.length?` · 체크히어 메모와 다른 날 ${report.review.length}명 확인 필요`:''}</span><button type="button" data-alert-go="1">자세히</button>`;
  }catch{}})();
+ // 알림함: 머리글 종(index.html)이 'hint:notify-open'을 보내면 알림 칸을 엽니다(사용자 요청 2026-10-19). 주소는 #t/notify.
+ const openNotify=()=>void go('notify','',{push:true});document.addEventListener('hint:notify-open',openNotify);
  const dispose=()=>{
-  if(disposed)return;disposed=true;observer.disconnect();offVoc();clearInterval(vocTimer);removeEventListener('popstate',onAddress);removeEventListener('hashchange',onAddress);works.forEach(w=>w?.dispose?.());
+  if(disposed)return;disposed=true;observer.disconnect();offVoc();clearInterval(vocTimer);removeEventListener('popstate',onAddress);removeEventListener('hashchange',onAddress);document.removeEventListener('hint:notify-open',openNotify);works.forEach(w=>w?.dispose?.());
   // 미리보기를 떠나면 담임 탭 주소(#t/…)를 지웁니다(관리자 화면 주소에 남지 않게).
   if(preview&&/^#t\//.test(location.hash))history.replaceState(history.state,'',location.pathname+location.search);
  };

@@ -2,6 +2,8 @@
 // 마스터시트 민원이슈 탭에 함께 남고, 알림은 포털 화면으로만 합니다(beta2.gs b2Voc*, 메일 없음). teacherClass가 있으면 담임 화면, 없으면 처리함.
 import {onBeta2Rev,lastBeta2Rev} from './beta2-data.mjs';
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
+import {notify} from './notify.mjs';
+import {linkFor} from './notify-core.mjs';
 
 const STATE_CLASS={'접수':'t-rec','처리중':'t-late','완료':'e-ok','보류':'t-na','해당없음':'t-na'};
 const TYPES=['수업·강사','시설·환경','출결','행정·서류','교육생 고충','안전','기타'];
@@ -66,6 +68,8 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
   catch(e){if(life.alive())$('#v2List').innerHTML=errorBox(e);}
  }
  const took=state=>{if(state){vocRev=state.rev;onState?.(state);}};
+ // 포털 알림(notify.mjs, 사용자 요청 2026-10-19): 담임이 쓰면 운영 관리자에게, 운영팀이 쓰면 그 반 담임(접수한 담임 계정도)에게. 못 남겨도 글은 그대로(작은 안내만).
+ const tell=({cls,id,title,body,author=''})=>void notify('민원',{...(admin?{audience:'class',to:/@/.test(author)?[author]:[]}:{audience:'admins'}),cls,title,body,link:linkFor('b2vocs',{cls,id})});
  async function create(){
   err='';
   if(!form.type)err='유형을 골라 주세요.';else if(!form.detail.trim())err='내용을 적어 주세요.';
@@ -74,6 +78,7 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
   try{
    const res=await client.vocCreate({cls:form.cls,type:form.type,detail:form.detail.trim(),side});
    toast(`접수했습니다 · ${res.id}`);
+   tell({cls:form.cls,id:res.id,title:`민원·이슈 접수 · ${form.cls}반 ${form.type}`,body:form.detail});
    form.type='';form.detail='';creating=!admin;busy=false;openKey=res.id;took(res.state);await load();
   }catch(e){busy=false;err=e.message;render();}
  }
@@ -84,7 +89,9 @@ export async function mount(host,{client,classes,selected,teacherClass=null,onSt
   try{
    const res=await client.vocReply({key:r.key,sig:r.sig,cls:r.cls,text,status,side});
    delete drafts[r.key];busy=false;if(res.id&&res.id!==r.key)openKey=res.id; // 예전 기록은 이때 번호가 생깁니다
-   toast(res.unchanged?'바뀐 것이 없습니다.':'보냈습니다');took(res.state);await load();
+   toast(res.unchanged?'바뀐 것이 없습니다.':'보냈습니다');took(res.state);
+   if(!res.unchanged)tell({cls:r.cls,id:res.id||r.key,title:`민원·이슈 ${text?'답글':'처리 상태'} · ${r.cls}반 ${r.type||''}`,body:[status?`[처리 상태 ${status}]`:'',text].filter(Boolean).join(' '),author:r.author});
+   await load();
   }catch(e){busy=false;d.err=e.message;render();}
  }
  async function seen(r){

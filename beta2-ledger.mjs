@@ -3,6 +3,7 @@
 // 모아서 저장·학생 아래 얇은 직접 요청 줄(checkhere-proposals.mjs compact)은 사용자 결정 2026-10-16입니다.
 // 요청은 승인 대기로 남고, 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만입니다(사용자 결정 2026-10-16, 중계는 읽기 전용).
 // Firestore 함수는 아래 SDK 주소에서 바로 불러옵니다(2기 전용 Firebase 프로젝트라 1기 자료 저장 가드가 없습니다). 2기에는 운영총괄 동기화가 없어 '운영총괄 가져오기·되돌리기·동기화 확인'도 없습니다.
+// 출결대조 메모(사용자 요청 2026-10-19): 이름 아래 「+ 메모」→ 수기출석·증빙 빠른 칩·직접 입력(100자)을 누르면 바로 b2LedgerMemo로 저장하고 관리자 알림(notify.mjs)을 남깁니다. 출결 초안과 따로라 「변경 N건 저장」에 세지 않습니다.
 import {doc,setDoc,onSnapshot,query,collection,where,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,B2_TYPES} from './beta2-core.mjs';
 import {esc,md,badge,evBadge,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
@@ -14,11 +15,14 @@ import {withdrawRequest} from './checkhere-request-actions.mjs';
 import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnApply} from './beta2-checkhere-core.mjs';
 import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
+import {notify} from './notify.mjs';
+import {linkFor} from './notify-core.mjs';
 
 const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치']];
 const EVIDENCE=[['','자동 (인정이면 미제출)'],['미제출','미제출'],['확인','확인'],['반려','반려'],['해당없음','해당없음']];
 const TIMES=['inT','outT','oa','ob'],ALL={inT:'x',outT:'x',oa:'x',ob:'x'};
-const COLUMNS=['times','entryMemo','exitMemo'],PARTS=['msg','mark','status','prop']; // 직접 요청 줄의 세 칸, 따로 채우는 행 부분
+const COLUMNS=['times','entryMemo','exitMemo'],PARTS=['msg','mark','status','prop','memo','memoedit']; // 직접 요청 줄의 세 칸, 따로 채우는 행 부분
+const MEMO_PICKS=['수기출석 사인 미비','수기출석 미제출','수기출석 확인 완료','증빙 미제출','증빙 보완 필요','증빙 확인 완료'],MEMO_MAX=100; // 출결대조 메모 빠른 칩
 const koreaNow=()=>{const s=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Seoul'});return {date:s.slice(0,10),seconds:+s.slice(11,13)*3600+ +s.slice(14,16)*60};};
 const hm=v=>/^\d{2}:\d{2}/.test(String(v||''))?String(v).slice(0,5):'';
 // 저장된 값 한 줄 요약('그사이 바뀜'에 시트 최신 값을 보일 때)
@@ -34,6 +38,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // bulk: 모아 저장 중 {done,total}(그동안 행 입력칸 잠금), bulkRun: 그 약속, bulkNote: 끝난 뒤 도구줄 요약('6건 저장 · 1건 확인 필요')
  // pinned: 필터·검색을 바꾼 뒤 손댄 학생(필터에서 빠져도 3초·되돌리기·요청 상태가 보이게 남김, 필터·검색을 다시 바꾸면 풀림)
  const drafts=new Map(),notes=new Map(),invalid=new Set(),jobs=new Map(),bodies=new Map(),drawn=new Map(),stale=new Set(),shown=new Map(),pinned=new Set();
+ // memos: '반|이름|날짜' → {memo,by}(b2LedgerMemos, 반·기간마다 한 번 읽고 저장 뒤 다시), memoUi: 열린 메모 줄 하나(open 이름, 직접 입력 칸·글, 저장 중 이름, 오류)
+ const memos=new Map(),memoUi={open:'',custom:false,text:'',busy:'',err:''};let memoRange='',memoSeq=0;
  host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>출결대조</h2><p>마스터시트 출결원장과 체크히어 기록을 나란히 봅니다. 행에서 유형·시간·사유를 고쳐 두고 「변경 N건 저장」(Ctrl+S)으로 모아서 저장합니다(Enter는 다음 학생 같은 칸, Esc는 그 행 되돌림).</p></div><div id="b2Sync"></div></div>
  <section class="b2-card"><div class="b2-toolbar">
   <label class="b2-field">반<select id="b2Class">${classOptions(classes,cls)}</select></label>
@@ -88,7 +94,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 그래야 고친 행이 바로 사라져 3초·되돌리기·요청 상태·저장 전 초안을 못 보거나, 입력 중인 칸이 지워지는 일이 없습니다.
  function visible(){
   const q=search.trim(),held=new Set(sync.holds().filter(h=>h.cls===cls&&h.date===date).map(h=>h.name));
-  const keep=r=>pinned.has(r.name)||held.has(r.name)||jobs.has(r.name)||hasDraft(r.name)||notes.has(r.name)||editing===r.name||typing(bodies.get(r.name));
+  const keep=r=>pinned.has(r.name)||held.has(r.name)||jobs.has(r.name)||hasDraft(r.name)||notes.has(r.name)||editing===r.name||memoUi.open===r.name||typing(bodies.get(r.name));
   return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff'))));
  }
  // × 버튼: 켜지는 조건(deletionGate: 규칙 게시 깃발·권한, 중계는 필요 없음)이 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
@@ -135,7 +141,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 저장 안내([data-msg])·저장 전 표시([data-mark])·상태 칩([data-status])·직접 요청 줄([data-prop])은 비워 두고 따로 채웁니다(초마다 바뀌거나 입력 중이어도 다른 칸을 건드리지 않게).
  function rowHtml(row){
   const cmp=compareRow(row),out=!row.enrolled&&!row.rec,record=matchFor(row),tone=`${cmp.state==='diff'?'diff':''} ${editing===row.name?'editing':''}`;
-  return `<tr class="${tone} ${out?'out':'has-req'}" data-name="${esc(row.name)}"><td><span class="b2-name">${esc(row.name)}</span><span data-mark></span>${row.status&&row.status!=='재학'?`<span class="b2-sub">${esc(row.status)}${row.changed?' · '+md(row.changed):''}</span>`:''}</td><td>${ledgerCell(row)}</td><td>${checkhereCell(row,record)}${out?'':'<div class="b2-status" data-status></div>'}</td><td><span class="b2-match ${cmp.state}">${cmp.state==='ok'?'✓ ':cmp.state==='diff'?'⚠ ':''}${esc(cmp.text)}</span></td><td>${evidenceOk(row)?`<button class="b2-btn small ${editing===row.name?'dark':''}" data-edit>${editing===row.name?'닫기':'증빙'}</button>`:''}</td></tr>`
+  return `<tr class="${tone} ${out?'out':'has-req'}" data-name="${esc(row.name)}"><td><span class="b2-name">${esc(row.name)}</span><span data-mark></span>${row.status&&row.status!=='재학'?`<span class="b2-sub">${esc(row.status)}${row.changed?' · '+md(row.changed):''}</span>`:''}${out?'':'<div data-memo></div>'}</td><td>${ledgerCell(row)}</td><td>${checkhereCell(row,record)}${out?'':'<div class="b2-status" data-status></div>'}</td><td><span class="b2-match ${cmp.state}">${cmp.state==='ok'?'✓ ':cmp.state==='diff'?'⚠ ':''}${esc(cmp.text)}</span></td><td>${evidenceOk(row)?`<button class="b2-btn small ${editing===row.name?'dark':''}" data-edit>${editing===row.name?'닫기':'증빙'}</button>`:''}</td></tr>`
+   +(out?'':`<tr class="b2-memo-row ${tone}" data-memo-row hidden><td colspan="5"><div data-memoedit></div></td></tr>`) // 출결대조 메모 칩 줄(열 때만, paintMemo)
    +(out?'':`<tr class="b2-req-row ${tone}"><td colspan="5"><div class="b2-req" data-prop></div></td></tr>`)
    +(editing===row.name?`<tr class="editing"><td colspan="5">${editorHtml(row)}</td></tr>`:'');
  }
@@ -169,6 +176,51 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(typing(box)){stale.add(name);return false;}
   box.innerHTML=html;shown.set('prop|'+name,html);return true;
  }
+ // 출결대조 메모: 이름 아래 단추(메모가 있으면 그 글)와 열었을 때 학생 아래 칩 줄. 행을 다시 그리지 않고 따로 채우고, 직접 입력 중이면 칩 줄은 건너뜁니다.
+ const memoKey=(c,n,d)=>`${c}|${n}|${d}`,memoOf=name=>memos.get(memoKey(cls,name,date))||null;
+ function memoTagHtml(name){
+  const m=memoOf(name),open=memoUi.open===name;
+  return m?`<button class="b2-memo-tag has" data-memo-toggle aria-expanded="${open}" title="${esc(`출결대조 메모${m.by?' · '+m.by:''} · 눌러서 바꾸기`)}">메모 · ${esc(m.memo)}</button>`:`<button class="b2-memo-tag" data-memo-toggle aria-expanded="${open}" title="출결대조 메모 남기기 (수기출석·증빙)">+ 메모</button>`;
+ }
+ function memoEditHtml(name){
+  const cur=memoOf(name)?.memo||'',u=memoUi,off=u.busy===name?'disabled':'';
+  return `<div class="b2-memo-edit"><span class="b2-req-head">출결대조 메모</span>${MEMO_PICKS.map(t=>`<button class="b2-chip" data-memo-pick="${esc(t)}" aria-pressed="${cur===t}" ${off}>${esc(t)}</button>`).join('')}<button class="b2-chip" data-memo-custom aria-pressed="${u.custom}" ${off}>직접 입력</button>${u.custom?`<input class="b2-memo-input" data-memo-input maxlength="${MEMO_MAX}" value="${esc(u.text)}" placeholder="짧게 적기 (${MEMO_MAX}자 이내)" aria-label="${esc(name)} 출결대조 메모 직접 입력" ${off}><button class="b2-btn small primary" data-memo-save ${off}>저장</button>`:''}${cur?`<button class="b2-btn small ghost" data-memo-clear ${off}>메모 지우기</button>`:''}<button class="b2-btn small ghost" data-memo-close>닫기</button>${off?'<span class="b2-saving">메모 저장 중…</span>':''}${u.err?`<span class="b2-err">${esc(u.err)}</span>`:''}<span class="b2-tiny b2-muted">누르면 바로 저장되고 운영 관리자 알림함에 알림이 갑니다(출결 수정 저장과 따로).</span></div>`;
+ }
+ function paintMemo(name){
+  const tb=bodies.get(name);if(!tb)return;
+  patch(name,'memo',memoTagHtml(name));
+  const open=memoUi.open===name,tr=tb.querySelector('tr[data-memo-row]'),box=tb.querySelector('[data-memoedit]');if(tr)tr.hidden=!open;if(!box)return;
+  if(open&&typing(box)&&memoUi.busy!==name)return;
+  patch(name,'memoedit',open?memoEditHtml(name):'');
+ }
+ // 반·기간(첫 교육일~오늘) 메모를 한 번 읽습니다(force: 새로고침·시트 변경·저장 뒤). 못 읽으면 다음 읽기 때 다시 합니다.
+ async function loadMemos({force=false}={}){
+  if(!bundle)return;const c=cls,from=bundle.days[0]||'',to=bundle.today||'',k=`${c}|${from}|${to}`;
+  if(!force&&memoRange===k)return;memoRange=k;const n=++memoSeq;
+  try{
+   const res=await client.call('b2LedgerMemos',{cls:c,from,to});if(n!==memoSeq||!life.alive())return;
+   for(const key of [...memos.keys()])if(key.startsWith(c+'|'))memos.delete(key);
+   for(const r of res?.rows||[])if(String(r.cls)===c&&String(r.memo||'').trim())memos.set(memoKey(c,r.name,r.date),{memo:String(r.memo).trim(),by:r.by||''});
+  }catch(e){if(n!==memoSeq||!life.alive())return;memoRange='';say(`출결대조 메모를 불러오지 못했습니다: ${e.message}`,'warn');}
+  if(c===cls)for(const name of bodies.keys())paintMemo(name);
+ }
+ // 메모 저장(빈 글이면 지움). 바로 저장하고 관리자 알림을 남깁니다(알림 실패는 작은 안내만, 메모는 저장된 그대로). 출결 초안·모아 저장과 섞이지 않습니다.
+ async function saveMemo(name,text){
+  const memo=String(text??'').replace(/\s+/g,' ').trim().slice(0,MEMO_MAX),c=cls,d=date,k=memoKey(c,name,d),before=memos.get(k)?.memo||'';
+  if(memoUi.busy)return;if(memo===before){memoUi.custom=false;memoUi.err='';paintMemo(name);return;}
+  memoUi.busy=name;memoUi.err='';paintMemo(name);
+  try{
+   const res=await client.call('b2LedgerMemo',{cls:c,name,date:d,memo});
+   if(memo)memos.set(k,{memo,by:user?.email||''});else memos.delete(k);
+   if(bundle&&String(res?.cls??c)===cls&&+res?.rev===+bundle.rev+1)bundle.rev=+res.rev; // 메모만 바뀐 변경 번호로 출결원장을 다시 읽지 않게(그사이 다른 변경이 있었으면 그대로 다시 읽음)
+   memoUi.custom=false;memoUi.text='';
+   toast(`${name} · ${md(d)} 출결대조 메모를 ${memo?'저장했':'지웠'}습니다.`);
+   void notify('출결대조 메모',{audience:'admins',cls:c,title:`출결대조 메모 · ${c}반 ${name}`,body:memo?`${md(d)} ${memo}`:`${md(d)} 메모를 지웠습니다 (전: ${before})`,link:linkFor('b2ledger',{cls:c,date:d})});
+   void loadMemos({force:true});
+  }catch(e){memoUi.err=`메모를 저장하지 못했습니다: ${e.message}`;}
+  finally{memoUi.busy='';if(life.alive()&&sameDay(`${c}|${d}`))paintMemo(name);}
+ }
+ function openMemo(name){const prev=memoUi.open;Object.assign(memoUi,{open:prev===name?'':name,custom:false,text:'',err:''});if(prev&&prev!==name)paintMemo(prev);paintMemo(name);}
  const focusSel=a=>!a?null:a.dataset.inline?`[data-inline="${a.dataset.inline}"]`:a.dataset.f?`[data-f="${a.dataset.f}"]`:a.dataset.proposalEdit?`[data-proposal-edit="${CSS.escape(a.dataset.proposalEdit)}"]${a.dataset.time?`[data-time="${a.dataset.time}"]`:''}`:null;
  // 한 학생만 다시 그립니다. 입력칸에 포커스가 있는 행은 건너뛰고 focusout 때 다시 그립니다(force는 유형 변경·되돌림처럼 화면이 바뀌어야 할 때, 포커스를 되살림).
  // 초안이 있는 행도 다시 그립니다(입력칸 값은 초안에서 오므로 그대로이고 체크히어·대조 칸만 새 값).
@@ -189,7 +241,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
     }finally{painting=false;}
    }
   }
-  paintMsg(name);paintStatus(name);
+  paintMsg(name);paintStatus(name);paintMemo(name);
   if((redrawn||paintProp(name))&&bind)proposals.bind(students());
   if(redrawn||!typing(el))stale.delete(name);
  }
@@ -263,7 +315,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // to: 바꿀 반. 반은 묶음을 다 읽은 뒤에 바꿉니다(그동안 화면·저장은 지금 반 그대로라 반과 학생이 섞이지 않음). 못 읽으면 반 선택을 되돌립니다.
  // 새로 읽어 화면에 넣었으면 true(못 읽었거나 다른 읽기에 밀렸으면 아님 — 그사이 바뀜 안내가 옛 값을 최신이라 하지 않게).
  async function load({fresh=false,keepCheckHere=false,to=cls}={}){
-  const n=++seq,from=cls;say('');
+  const n=++seq,from=cls,memoFresh=fresh;say('');
   try{
    // 읽는 사이 이 화면의 저장이 끝났으면 그 저장이 빠진 묶음일 수 있어 다시 읽습니다(옛 지문으로 '시트가 바뀜'·옛 값 다시 보내기가 되지 않게).
    let b,gen;do{gen=saveGen;b=await client.bundle(to,{fresh});if(n!==seq||!life.alive())return;fresh=true;}while(gen!==saveGen);
@@ -276,7 +328,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    cls=to;bundle=b;date=next;dateOptions();rows=dayView(bundle,cls,date);
    if(editing&&!rows.some(r=>r.name===editing)){editing=null;form=null;}
    for(const [k,d] of [...drafts]){const row=rowOf(k);if(!row||sameAs(d,saved(row))){drafts.delete(k);notes.delete(k);invalid.delete(k);}}
-   renderRows();stopped(r);
+   renderRows();stopped(r);void loadMemos({force:memoFresh}); // 출결대조 메모: 반·기간마다 한 번, 새로 읽을 때(새로고침·시트 변경)는 다시
    if(!keepCheckHere||moved)await loadCheckHere();
    void loadProposals();return true;
   }catch(e){if(n!==seq||!life.alive())return false;if(to!==from){$('#b2Class').value=cls;say(`${to}반을 불러오지 못해 ${cls}반을 그대로 보입니다: ${e.message}`,'err');}else showEmpty(errorBox(e));return false;}
@@ -479,6 +531,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 입력할 때마다 초안만 고칩니다(저장은 「변경 N건 저장」·Ctrl+S). 저장 전 표시·도구줄 건수는 다시 그리지 않고 고칩니다.
  host.addEventListener('input',e=>{
   const t=e.target,k=t.dataset?.inline,name=t.closest?.('tbody[data-student]')?.dataset.student;
+  if(t.hasAttribute?.('data-memo-input')){memoUi.text=t.value;return;} // 메모 직접 입력은 초안이 아님
   if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason')t.title=t.value;paintMsg(name);paintBulk();return;}
   const f=t.dataset?.f;if(f&&f!=='ev'&&form){form[f]=t.value;form.dirty=true;}
  });
@@ -495,6 +548,12 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(bulk)return;
   if(e.key==='Enter'){e.preventDefault();nextRow(name,`[data-inline="${k}"]`);}
   else if(e.key==='Escape'){e.preventDefault();revertRow(name);}
+ });
+ // 메모 직접 입력: Enter 저장, Esc 닫기(한글 입력 중에는 그대로)
+ host.addEventListener('keydown',e=>{
+  const t=e.target,name=t.closest?.('tbody[data-student]')?.dataset.student;if(!t.matches?.('[data-memo-input]')||!name||e.isComposing||e.keyCode===229)return;
+  if(e.key==='Enter'){e.preventDefault();if(memoUi.text.trim())void saveMemo(name,memoUi.text);else{memoUi.err='메모를 적어 주세요. 지우려면 「메모 지우기」를 누릅니다.';paintMemo(name);}}
+  else if(e.key==='Escape'){e.preventDefault();openMemo(name);}
  });
  // 포커스 때문에 미뤄 둔 행 다시 그리기(칸을 벗어나도 저장하지 않음)
  host.addEventListener('focusout',e=>{
@@ -513,6 +572,12 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const t=e.target.closest('button');if(!t||!host.contains(t))return;
   if(t.dataset.filter){filter=t.dataset.filter;pinned.clear();renderRows();return;}
   const name=t.closest('tbody[data-student]')?.dataset.student,row=name?rowOf(name):null;if(!row)return;
+  // 출결대조 메모(모아 저장 중에도 됨, 출결 초안과 따로): 열기·닫기, 빠른 칩, 직접 입력, 지우기
+  if(t.hasAttribute('data-memo-toggle')||t.hasAttribute('data-memo-close')){openMemo(name);return;}
+  if(t.dataset.memoPick){void saveMemo(name,t.dataset.memoPick);return;}
+  if(t.hasAttribute('data-memo-custom')){memoUi.custom=!memoUi.custom;memoUi.text=memoUi.custom?memoOf(name)?.memo||'':'';memoUi.err='';paintMemo(name);if(memoUi.custom)bodies.get(name)?.querySelector('[data-memo-input]')?.focus();return;}
+  if(t.hasAttribute('data-memo-save')){if(memoUi.text.trim())void saveMemo(name,memoUi.text);else{memoUi.err='메모를 적어 주세요. 지우려면 「메모 지우기」를 누릅니다.';paintMemo(name);}return;}
+  if(t.hasAttribute('data-memo-clear')){void saveMemo(name,'');return;}
   if(t.hasAttribute('data-inline-cancel')){if(!bulk)revertRow(name);return;} // 모아 저장 중에는 초안을 그대로 둠(Esc도 같음)
   if(t.dataset.hint){setDraft(name,{reason:t.dataset.hint});paint(name,{force:true});paintBulk();focusField(name,'reason');return;}
   if(t.dataset.act==='undo'&&e.detail!==0)return; // 마우스·터치는 pointerdown에서 이미 처리
@@ -540,7 +605,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  }
  // 모두 되돌리기·새로고침(확인 뒤): 출결 초안만 버립니다(같은 반·날짜라 직접 요청 편집값은 남음).
  function discard(){for(const n of [...drafts.keys()])forget(n);notes.clear();invalid.clear();bulkNote='';paintBulk();}
- function clearEdits(){discard();pinned.clear();editing=null;form=null;formErr='';}
+ function clearEdits(){discard();pinned.clear();editing=null;form=null;formErr='';Object.assign(memoUi,{open:'',custom:false,text:'',err:''});}
  const dropDrafts=what=>!drafts.size||(confirm(`저장하지 않은 출결 수정 ${drafts.size}건이 있습니다. ${what} 사라집니다. 계속할까요?`)&&(discard(),true));
  async function switchTo(sel,run){
   if(switching){sel.value=sel===$('#b2Class')?cls:date;return;}

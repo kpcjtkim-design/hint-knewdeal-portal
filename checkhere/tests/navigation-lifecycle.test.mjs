@@ -85,6 +85,7 @@ test('auth changes clear the read session and ignore a previous account profile 
  const clearReadSession=()=>window.events.push('clear'),profileFor=user=>new Promise(resolve=>window.profiles[user.id]=resolve);
  const loginView=()=>window.events.push('login'),denied=()=>window.events.push('denied'),fatal=()=>window.events.push('fatal');
  const adminView=user=>window.events.push('admin:'+user.id),teacherView=user=>window.events.push('teacher:'+user.id);
+ const startNotify=()=>{},stopNotify=()=>{};// 알림함(notify)은 이 시험 밖
  ${authHandler}
  </script>`,{},async page=>{
   await page.waitForFunction(()=>window.authChange);
