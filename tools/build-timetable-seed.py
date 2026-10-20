@@ -19,7 +19,7 @@ import json, re, sys, csv, datetime, pathlib, collections
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding='utf-8'); sys.stderr.reconfigure(encoding='utf-8')
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEED, REFERENCE, HISTORY = ROOT / 'timetable-seed.json', ROOT / 'timetable-reference.json', ROOT / 'timetable-seeds'
 COHORT = json.loads((ROOT / 'cohort.json').read_text(encoding='utf-8'))
