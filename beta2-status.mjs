@@ -45,8 +45,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
    let last='';const lines=[`출결 증빙서류 제출·보완 요청 (${title})`];for(const r of rows){if(last!==r.cls){last=r.cls;lines.push('',`[${r.cls}반]`);}lines.push(`${r.name} · ${md(r.date)} · ${r.type} · ${r.state==='반려'?'반려 · 보완 필요'+(r.evr?` (${r.evr})`:''):'미제출'}${r.extra?` · 추가 증빙: ${EXTRA_DOC}`:''}`);}
    if(!rows.length)lines.push('제출·보완 대상이 없습니다.');
    if(open.length)lines.push('',`[추가 증빙 · 취업박람회 ${EXTRA_DOC}]`,...open.map(r=>`${r.cls}반 · ${r.name} · ${md(r.date)} · ${r.type} · ${r.state}`));
-   current={csv:[['반','이름','교육일','유형','사유','서류 상태','반려 사유','추가 증빙'],...rows.map(r=>[r.cls,r.name,r.date,r.type,r.reason,r.state,r.evr,r.extra?EXTRA_DOC:'']),...extra.filter(r=>r.done).map(r=>[r.cls,r.name,r.date,r.type,r.reason,r.state,r.evr,`${EXTRA_DOC} · 이행`])],copy:lines.join('
-')};
+   current={csv:[['반','이름','교육일','유형','사유','서류 상태','반려 사유','추가 증빙'],...rows.map(r=>[r.cls,r.name,r.date,r.type,r.reason,r.state,r.evr,r.extra?EXTRA_DOC:'']),...extra.filter(r=>r.done).map(r=>[r.cls,r.name,r.date,r.type,r.reason,r.state,r.evr,`${EXTRA_DOC} · 이행`])],copy:lines.join('\n')};
   }
   if(view==='disease'){
    const ids=cls==='all'?withoutTestClasses(classes).map(c=>String(c.id)):[cls];// 전체는 테스트반 뺌
