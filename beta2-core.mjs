@@ -118,10 +118,36 @@ export function convertedText(c){
 // 단위기간마다 3회 = 1일이라 전체 회수 ÷ 3과 다를 수 있어 지·조·외가 있는 단위기간을 따로 적습니다: '1단위 4회→1일 · 2단위 2회→0일'.
 export const convertedUnitsText=c=>(c?.units||[]).filter(u=>u.partial).map(u=>`${u.no?`${u.no}단위`:'기간 밖'} ${u.partial}회→${u.converted}일`).join(' · ');
 
+// 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석"): 학생마다 단위기간별로 (재학 교육일 − 환산 결석) ÷ 재학 교육일 ≥ 0.8이면 이수.
+//  - 재학 교육일: 그 단위기간의 교육일(classDays) 가운데 재학(enrolledOn 또는 기록 있음)이고 해당없음이 아닌 날. 앞날도 재학이면 넣습니다(꽉 찬 기간 기준).
+//  - 환산 결석: 그 단위기간 오늘까지의 결석 + floor(지·조·외·중복 ÷ 3)(convertedAbsences와 같은 셈).
+//  - 정수로 견줍니다: 환산 결석 × 5 ≤ 재학 교육일이면 이수(허용 = floor(재학 교육일 ÷ 5): 꽉 찬 1단위 23일 → 4일, 2단위 19일 → 3일, 3단위 18일 → 3일).
+//  - 상태: 끝난 기간(오늘 > 끝날) 이수·미이수, 아직 끝나지 않은 기간 진행 중(이미 허용을 넘었으면 미이수 확정), 시작 전, 재학 교육일이 없으면 해당없음.
+//  수료 판정(전체 환산 결석 한도)에는 묶지 않습니다(단위 미이수가 수료에 영향을 주는지는 정하지 않음, 표시만).
+export const UNIT_PASS_RATE=0.8,UNIT_FAIL_STATES=Object.freeze(['미이수','미이수 확정']);
+export const unitAllowed=days=>Math.floor(days*(1-UNIT_PASS_RATE)+1e-9);
+export function unitCompletion(bundle,person,{index=ledgerIndex(bundle),today=bundle.today,periods=UNIT_PERIODS,days:all=classDays(bundle,person.cls)}={}){
+ return periods.map(p=>{
+  let days=0;const entries=[];
+  for(const d of all){
+   if(d<p.from||d>p.to)continue;
+   const rec=index.get(ledgerKey(person.cls,person.name,d));
+   if(!enrolledOn(person,d)&&!rec)continue;
+   if(rec?.type===NONE_TYPE)continue;
+   days++;if(!today||d<=today)entries.push({date:d,type:rec?rec.type:'출석'});
+  }
+  const c=convertedAbsences(entries,{periods:[p]}).units[0],allowed=unitAllowed(days),over=c.total>allowed,done=!!today&&today>p.to;
+  const state=!days?'해당없음':today&&today<p.from?'시작 전':done?(over?'미이수':'이수'):over?'미이수 확정':'진행 중';
+  return {no:p.no,from:p.from,to:p.to,days,absent:c.absent,partial:c.partial,converted:c.converted,total:c.total,allowed,rate:days?(days-c.total)/days*100:null,state,failed:UNIT_FAIL_STATES.includes(state)};
+ });
+}
+// 화면 글: '1단위 미이수(환산 결석 5일 > 허용 4일 / 재학 교육일 23일)'
+export const unitText=u=>`${u.no}단위 ${u.state}${u.days?`(환산 결석 ${u.total}일 ${u.total>u.allowed?'>':'≤'} 허용 ${u.allowed}일 / 재학 교육일 ${u.days}일)`:''}`;
+
 // 학생별 기간 통계: 교육일 중 재학일만 세고, 출석률은 마스터시트와 같이 (재학 교육일 - 결석) / 재학 교육일
 // 출결 통계·증빙·질병 인정 모두 교육일만 셉니다(사용자 2026-10-20: 인정 출결은 교육일에만). 실제 반의 교육일이 아닌 날 인정 기록은 offDayRecords로 따로 알립니다.
 export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=false}={},index=ledgerIndex(bundle)){
- const cache=new Map(),daysOf=c=>cache.get(c)||cache.set(c,courseDays(bundle,{from,to,cls:c})).get(c);
+ const cache=new Map(),daysOf=c=>cache.get(c)||cache.set(c,courseDays(bundle,{from,to,cls:c})).get(c),full=new Map(),fullOf=c=>full.get(c)||full.set(c,classDays(bundle,c)).get(c);
  // 전체(cls 없음) 합계·집계에서는 시험용 테스트반(cohort test)을 뺍니다. 테스트반을 골라 보면 그 반만 보입니다.
  // withTest: 증빙서류·질병 인정 '전체 반' 목록처럼 테스트반 줄도 보여야 할 때(합계는 부르는 쪽에서 테스트반을 뺍니다).
  return bundle.roster.filter(p=>cls?p.cls===String(cls):withTest||!isTestClass(p.cls)).map(p=>{
@@ -138,7 +164,8 @@ export function studentStats(bundle,{cls=null,from='',to=bundle.today,withTest=f
   const absent=(counts['결석']||0)+(DUP_RULE.absent?counts[DUP_TYPE]||0:0); // 중복은 결석이 아님(출석률에서 출석한 날, counts.중복으로 따로 셈)
   const partial=Object.entries(counts).reduce((n,[t,c])=>n+partialCount(t)*c,0); // 지·조·외 합계(무단 지각·조퇴·외출 횟수, 중복 하루 = DUP_RULE.partialWeight회)
   // conv: 환산 결석(convertedAbsences, 단위기간마다 지·조·외 3회 = 1일). 결석 한도·수료 판정은 conv.total, 출석률은 환산 없이 absent로.
-  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,partial,conv:convertedAbsences(entries),rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
+  // units: 단위기간 이수(unitCompletion, 기간 고름과 관계없이 꽉 찬 단위기간 기준). 수료 판정에는 쓰지 않습니다.
+  return {cls:p.cls,name:p.name,status:p.status||'재학',changed:p.changed,days:enrolled,counts,absent,partial,conv:convertedAbsences(entries),units:unitCompletion(bundle,p,{index,days:fullOf(p.cls)}),rate:enrolled?(enrolled-absent)/enrolled*100:null,evidence,disease};
  });
 }
 

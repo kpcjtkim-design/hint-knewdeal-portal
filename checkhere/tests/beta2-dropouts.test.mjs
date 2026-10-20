@@ -123,6 +123,17 @@ test('converted absences decide the limit: 11 결석 + 3 지각 = 12 → 한도 
  assert.deepEqual((r=>[r.verdict,r.absent])(suggestVerdict({kind:'조기취업',cls:'1',name:'바',lastDate:'2026-12-04',startDate:start},late)),['제적',13]);
 });
 
+// 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석"): 결석 한도·수료 명단에 표시만, 수료 결과(outcome)·결석 수준(level)에는 묶지 않음.
+test('unit completion is shown next to the limit and the completion list but does not change level or outcome',()=>{
+ const roster=[['1','가','재학',''],['1','나','재학','']];
+ const ledger=[...mark('1','가',U1.slice(0,5),'결석'),...mark('1','나',U1.slice(0,4),'결석'),...mark('1','나',U2.slice(0,4),'결석')];
+ const b=decodeBundle(rawBundle(roster,ledger)),rows=absenceRows(b,{cls:'1'}),by=n=>rows.find(r=>r.name===n);
+ assert.deepEqual([by('가').level,by('가').units.map(u=>u.state),by('가').unitFailed.map(u=>u.no)],['',['미이수','진행 중','시작 전'],[1]],'5 결석 is far below 12 but fails 1단위 (23일 중 4일까지)');
+ assert.deepEqual([by('나').level,by('나').units.map(u=>u.state),by('나').unitFailed.map(u=>u.no)],['',['이수','미이수 확정','시작 전'],[2]],'2단위 is running but 4 > 3 already');
+ const done=completionRows(b,{cls:'1'});
+ assert.deepEqual(done.map(r=>[r.name,r.outcome,r.unitFailed.map(u=>`${u.no}단위 ${u.state}`)]),[['가','수료 예정',['1단위 미이수']],['나','수료 예정',['2단위 미이수 확정']]]);
+});
+
 /* ---------- Vercel 중계(api/teacher-beta.js) ---------- */
 const SHEET='https://script.test/exec',KEY='secret-key-123',ADMIN_EMAIL='hint.kpc@gmail.com',TEACHER='teacher@test.kr';
 const PROFILES={[TEACHER]:{role:{stringValue:'TEACHER'},primaryClassId:{stringValue:'1'},tempClassIds:{arrayValue:{values:[{stringValue:'7'}]}}}};
@@ -415,10 +426,15 @@ test('관리자: 여러 건 관리자 확인, 결석 한도 12일 판정, 수료
   const body=page.locator('#d2Body');await body.getByText('2기는 60교육일의 80%').waitFor();
   assert.match(await page.locator('.b2-stats').innerText(),/5\s*재학생[\s\S]*1\s*주의 \(10~11일\)[\s\S]*1\s*한도 도달 \(12일\)[\s\S]*1\s*제적 대상 \(13일~\)/);
   assert.deepEqual(await page.locator('#d2Body tbody tr .b2-name').allInnerTexts(),['고다원','테스트갑','김동진','박서연']);
-  assert.match(await body.innerText(),/테스트반 결석 주의 이상 1건은 목록에만/);
+  assert.match(await body.innerText(),/테스트반 결석 주의 이상·단위 미이수 1건은 목록에만/);
   assert.match(await page.locator('tr[data-key="1|고다원"]').innerText(),/13 \/ 12[\s\S]*0일[\s\S]*제적 대상[\s\S]*중도탈락 등록/);
   assert.match(await page.locator('tr[data-key="1|박서연"]').innerText(),/11 \/ 12\s*결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일[\s\S]*1일[\s\S]*주의/);
   assert.equal(await page.locator('tr[data-key="1|박서연"] [data-conv]').getAttribute('title'),'2단위 3회→1일');
+  // 단위기간 이수 열 3개(TODAY 12/10: 1단위 끝남, 2단위 진행 중, 3단위 시작 전)
+  assert.deepEqual(await page.locator('tr[data-key="1|박서연"] [data-unit]').allInnerTexts(),['미이수','진행 중','시작 전']);
+  assert.equal(await page.locator('tr[data-key="1|박서연"] [data-unit="1"]').getAttribute('title'),'1단위 미이수(환산 결석 10일 > 허용 4일 / 재학 교육일 23일)');
+  assert.match(await page.locator('.b2-stats').innerText(),/3\s*단위 미이수/);
+  assert.match(await body.innerText(),/단위기간 이수: 기간마다 \(재학 교육일 − 환산 결석\) ÷ 재학 교육일이 80% 이상/);
   assert.match(await body.innerText(),/환산 결석 12일까지는 수료할 수 있고 13일부터 제적 대상[\s\S]*단위기간마다 3회를 결석 1일로/);
   // 결석 한도에서 바로 등록 칸 열기
   await page.locator('tr[data-key="1|고다원"]').getByRole('button',{name:'중도탈락 등록'}).click();
@@ -428,10 +444,12 @@ test('관리자: 여러 건 관리자 확인, 결석 한도 12일 판정, 수료
   await page.getByRole('tab',{name:'수료 명단'}).click();await page.locator('#d2Body tbody tr').first().waitFor();
   const rowText=async name=>page.locator(`#d2Body tr[data-key="1|${name}"]`).innerText();
   assert.match(await rowText('최유진'),/수료\s*조기취업 · 판정 수료가능 · 관리자 확인/);
-  assert.match(await rowText('고다원'),/미수료\s*결석 13일 · 한도 12일 초과\(제적 대상\)/);
+  assert.match(await rowText('고다원'),/미수료\s*1단위 미이수\s*결석 13일 · 한도 12일 초과\(제적 대상\)/);
   assert.match(await rowText('한수빈'),/미수료\s*중도탈락 · 마지막 출석 11\/2 · 개인 사정/);
   assert.match(await rowText('이하늘'),/수료 예정\s*재학 · 결석 0일 \/ 한도 12일/);
-  assert.match(await rowText('박서연'),/11\s*결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일\s*수료 예정\s*재학 · 결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일 \/ 한도 12일/);
+  assert.equal(await page.locator('#d2Body tr[data-key="1|이하늘"] [data-unit-fail]').count(),0);
+  assert.match(await rowText('김동진'),/수료 예정\s*1단위 미이수\s*재학 · 결석 12일 \/ 한도 12일/,'unit failure is shown but the outcome stays 수료 예정');
+  assert.match(await rowText('박서연'),/11\s*결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일\s*수료 예정\s*1단위 미이수\s*재학 · 결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일 \/ 한도 12일/);
   assert.match(await page.locator('.b2-stats').innerText(),/1\s*수료[\s\S]*4\s*수료 예정[\s\S]*0\s*확인 대기[\s\S]*3\s*미수료/,'class 17 not counted');
   assert.equal(await page.locator('[data-pickdone="1|고다원"]').count(),0,'over the limit cannot be completed');
   await page.locator('[data-pickdone="1|이하늘"]').check();await page.locator('[data-pickdone="1|정민호"]').check();
@@ -522,6 +540,10 @@ test('담임: 신청만(교육생·구분·사유·마지막 출석일·근로�
   assert.deepEqual(await page.locator('#d2Body tbody tr .b2-name').allInnerTexts(),['김동진','이하늘','정민호','최유진','고다원','박서연','한수빈']);
   assert.match(await rowText('김동진'),/재학\s*12 \/ 12일 한도 도달\s*0일 더 결석하면 한도\s*수료 예정\s*재학 · 결석 12일 \/ 한도 12일/);
   assert.match(await rowText('이하늘'),/1 \/ 12일\s*결석 0일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 1일\s*11일 더 결석하면 한도\s*수료 예정/);
+  // 담임도 자기 반 단위기간 이수 현황(보기만)
+  assert.deepEqual(await page.locator('#d2Body tr[data-key="1|이하늘"] [data-unit]').allInnerTexts(),['이수','진행 중','시작 전']);
+  assert.deepEqual(await page.locator('#d2Body tr[data-key="1|김동진"] [data-unit]').allInnerTexts(),['미이수','진행 중','시작 전']);
+  assert.match(await page.locator('.b2-stats').innerText(),/\d+\s*단위 미이수/);
   assert.match(await rowText('고다원'),/13 \/ 12일 제적 대상\s*한도 초과\s*미수료\s*결석 13일 · 한도 12일 초과\(제적 대상\)/);
   assert.match(await rowText('최유진'),/조기취업[\s\S]*확인 대기\s*조기취업 · 판정 전/);
   assert.match(await rowText('한수빈'),/중도탈락[\s\S]*미수료\s*중도탈락 · 마지막 출석 11\/2/);

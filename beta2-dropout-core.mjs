@@ -34,12 +34,13 @@ export function absenceLevel(n,max=MAX_ABSENCE){
 
 // 학생별 결석(교육일·재학 기간만, beta2-core studentStats)과 결석 한도 판정. 한도는 환산 결석(total = 결석 + 단위기간마다 지·조·외 3회 = 1일)으로 봅니다. 환산 결석 많은 순.
 // absent는 출결원장 「결석」만(출석률과 같은 값), partial은 지·조·외 횟수, converted는 그것을 환산한 일수, conv는 단위기간 나눔까지.
+// units·unitFailed: 단위기간 이수(기간별 80%, 표시만 · level에는 넣지 않음).
 // withTest: 전체 반 목록에 테스트반 줄도 넣습니다(합계는 부르는 쪽이 official()로 뺌).
 export function absenceRows(bundle,{cls=null,max=MAX_ABSENCE,withTest=true}={}){
  const left=courseDays(bundle,{from:bundle.today?nextDay(bundle.today):'',to:COURSE_END}).length;
  return studentStats(bundle,{cls,withTest:withTest&&!cls}).map(st=>{
   const lv=absenceLevel(st.conv.total,max);
-  return {cls:st.cls,name:st.name,status:st.status,changed:st.changed,days:st.days,absent:st.absent,partial:st.partial,converted:st.conv.converted,total:st.conv.total,conv:st.conv,rate:st.rate,remaining:st.status==='재학'?left:0,...lv};
+  return {cls:st.cls,name:st.name,status:st.status,changed:st.changed,days:st.days,absent:st.absent,partial:st.partial,converted:st.conv.converted,total:st.conv.total,conv:st.conv,units:st.units,unitFailed:st.units.filter(u=>u.failed),rate:st.rate,remaining:st.status==='재학'?left:0,...lv};
  }).sort((a,b)=>b.total-a.total||b.absent-a.absent||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
 }
 const nextDay=iso=>{const d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);};
@@ -122,6 +123,7 @@ export function sameForm(a,b){return JSON.stringify(formOf(a))===JSON.stringify(
 // 수료 명단(사용자: "중도탈락 및 수료 명단 직접 사이트에서"): 명부 학생마다 결과와 까닭.
 // 결과: 수료(b2Completions: 명부 수료 + 조기취업 수료가능·관리자 확인) · 수료 예정(재학, 환산 결석 한도 안) · 확인 대기(조기취업인데 판정·확인 전) · 미수료(중도탈락·조기취업 제적·환산 결석 한도 초과)
 // absent는 출결원장 「결석」, total은 환산 결석(지·조·외 단위기간마다 3회 = 1일), conv는 나눔(화면 글 convertedText).
+// units·unitFailed: 단위기간 이수(beta2-core unitCompletion, 기간별 80%). 표시만 하고 결과(outcome)에는 묶지 않습니다(사용자 2026-10-20: 영향 여부 미정).
 export const OUTCOMES=Object.freeze(['수료','수료 예정','확인 대기','미수료']);
 export function completionRows(bundle,{completions=[],dropouts=[],cls=null,max=MAX_ABSENCE,withTest=true}={}){
  max=maxOf(max);
@@ -139,7 +141,7 @@ export function completionRows(bundle,{completions=[],dropouts=[],cls=null,max=M
   else if(status==='수료'){outcome='수료';why='명부 수료';}
   else if(st.conv.total>max){outcome='미수료';why=`${convertedText(st.conv)} · 한도 ${max}일 초과(제적 대상)`;}
   else {outcome='수료 예정';why=`재학 · ${convertedText(st.conv)} / 한도 ${max}일`;}
-  return {cls:st.cls,name:st.name,status,changed:st.changed,absent:st.absent,partial:st.partial,converted:st.conv.converted,total:st.conv.total,conv:st.conv,outcome,why};
+  return {cls:st.cls,name:st.name,status,changed:st.changed,absent:st.absent,partial:st.partial,converted:st.conv.converted,total:st.conv.total,conv:st.conv,units:st.units,unitFailed:st.units.filter(u=>u.failed),outcome,why};
  }).sort((a,b)=>OUTCOMES.indexOf(a.outcome)-OUTCOMES.indexOf(b.outcome)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
 }
 // 공식 합계(숫자 상자): 전체 반이면 테스트반을 뺍니다.

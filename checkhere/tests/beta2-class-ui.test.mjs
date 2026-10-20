@@ -148,6 +148,9 @@ test('홈 반 카드는 반 현황을 열고, 카드마다 그 반 자료를 보
   assert.deepEqual(await total.locator('li[data-risk]').evaluateAll(l=>l.map(x=>x.dataset.risk)),['고다원','김동진']);
   assert.match(await total.locator('li[data-risk="김동진"]').innerText(),/주의[\s\S]*환산 결석 1일 \/ 한도 3일[\s\S]*결석 0일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 1일[\s\S]*2일 더 결석하면 한도/);
   assert.equal(await stat(page,'total','주의'),'1');
+  // 단위기간 이수(기간별 80%, 표시만): 11/5는 1단위 진행 중, 이 묶음의 1단위 교육일 7일 → 허용 1일. 고다원 결석 3일 → 미이수 확정
+  assert.equal(await stat(page,'total','단위 미이수'),'1');
+  assert.match(await total.locator('[data-unit-fail]').innerText(),/고다원 1단위 미이수 확정/);
   assert.match(await total.innerText(),/결석 한도 3일\(넘으면 제적 대상\)은 환산 결석으로 봅니다/);
   assert.equal(await stat(page,'total','질병 인정 4회 이상'),'1');
   assert.equal(await stat(page,'total','증빙 미제출·반려'),'5');

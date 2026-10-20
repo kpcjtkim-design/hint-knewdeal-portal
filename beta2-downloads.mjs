@@ -10,7 +10,7 @@ export async function mount(host,{db,user,classes:all,client}){
  // Excel 도구(ExcelJS·JSZip)는 1기 화면과 같은 것을 씁니다. 두 기능은 따로 불러와 한쪽이 실패해도 다른 쪽은 열립니다.
  const libraries=()=>import('./excel-libraries.mjs').then(p=>p.periodLibraries());
  if(period){const roster=host.querySelector('#b2PeriodRoster');
-  try{const r=await import('./attendance-period-b2.mjs?v=20261020-du1');if(life.alive())works.push(r.mountB2Period(roster,{client,classes:all,loadLibraries:libraries}));}
+  try{const r=await import('./attendance-period-b2.mjs?v=20261020-tt2');if(life.alive())works.push(r.mountB2Period(roster,{client,classes:all,loadLibraries:libraries}));}
   catch(e){if(life.alive())roster.innerHTML=errorBox(e);}}
  try{
   const m=await import('./attendance-upload.mjs');

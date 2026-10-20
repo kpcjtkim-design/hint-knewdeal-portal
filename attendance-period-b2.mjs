@@ -4,7 +4,7 @@
 import {esc} from './beta2-ui.mjs';
 import {UNIT_PERIODS,isTestClass,REAL_CLASS_IDS,mdLabel} from './cohort.mjs';
 import {ledgerIndex} from './beta2-core.mjs';
-import {prepareB2Period,b2PeriodProfile,b2PeriodCheck,b2PeriodFileName,b2PeriodZipName,periodIdFor} from './attendance-period-b2-core.mjs?v=20261020-du1';
+import {prepareB2Period,b2PeriodProfile,b2PeriodCheck,b2PeriodFileName,b2PeriodZipName,periodIdFor} from './attendance-period-b2-core.mjs?v=20261020-tt2';
 import {buildPeriodWorkbook} from './attendance-period-workbook.mjs?v=20261020-pr1';
 import {attendanceDownloadPreflight} from './download-preflight-core.mjs';
 import {confirmDownloadPreflight} from './download-preflight-ui.mjs';
@@ -47,7 +47,7 @@ export function mountB2Period(host,{client,classes,loadLibraries}){
     try{
      const result=prepareB2Period({bundle,classId:id,from,to,index}),profile=b2PeriodProfile(templates,id,bundle.classes.find(c=>String(c.id)===id)||{});
      prepared.push({result,profile});checks.push(b2PeriodCheck(result));const s=result.stats;
-     write(`${id}반: 학생 ${s.students}명 / 교육일 ${s.days}일 / ${s.cells}건 · 인정출석 ${s.recognizedFull} · 인정지각 ${s.recognizedLate} · 인정조퇴 ${s.recognizedEarly} · 인정외출 ${s.recognizedOuting} · 중도포기 등 ${s.dropout}명 · 개인사정 ${s.personal} · 확인필요 ${result.reviews.length}건${profile.missing.length?` · 마스터시트 반정보에 ${profile.missing.join('·')} 없음(빈칸)`:''}`);
+     write(`${id}반: 학생 ${s.students}명 / 교육일 ${s.days}일 / ${s.cells}건 · 인정출석 ${s.recognizedFull} · 인정지각 ${s.recognizedLate} · 인정조퇴 ${s.recognizedEarly} · 인정외출 ${s.recognizedOuting} · 중도포기 등 ${s.dropout}명 · 개인사정 ${s.personal} · 확인필요 ${result.reviews.length}건${s.unitFail?` · 단위 미이수 ${s.unitFail}명`:''}${profile.missing.length?` · 마스터시트 반정보에 ${profile.missing.join('·')} 없음(빈칸)`:''}`);
     }catch(e){failures.push({classId:id,message:e.message});write(`${id}반 생성 불가: ${e.message}`);}
    }
    const sum=key=>prepared.reduce((n,p)=>n+p.result.stats[key],0),count=prepared.reduce((n,p)=>n+p.result.reviews.length,0);

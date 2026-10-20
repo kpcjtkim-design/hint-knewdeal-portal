@@ -154,3 +154,19 @@ test("a ledger '중복' goes into the 1기 sheet as 중복: attended day, counte
  // 가상가: 지각(11/2)·인정지각(11/4, 1기 수식은 인정도 셈)·중복(11/5) → 지/조/외/중복 3회(중복 1회), 결석 0, 출석일수 = 훈련일수
  assert.equal(s.getCell(18,7).value.result,0);assert.equal(s.getCell(18,8).value.result,3);assert.equal(s.getCell(18,6).value.result,s.getCell(18,5).value.result);
 });
+
+// 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석"): 고른 기간이 한 단위기간 안이면 그 단위기간 미이수·미이수 확정 학생을 확인필요 시트에.
+test('the review sheet lists students who fail the unit period (80% attendance, converted absences); custom ranges across periods do not',()=>{
+ const [u1,u2]=UNIT_PERIODS,in1=TRAINING_DAYS.filter(d=>d>=u1.from&&d<=u1.to),in2=TRAINING_DAYS.filter(d=>d>=u2.from&&d<=u2.to);
+ const raw={...RAW,today:'2026-12-10',roster:[['1','가상가','재학',''],['1','가상다','재학',''],['1','가상마','재학','']],
+  ledger:[...in1.slice(0,4).map(d=>L(d,'1','가상가','결석')),...in1.slice(4,7).map(d=>L(d,'1','가상가','지각')),...in1.slice(0,4).map(d=>L(d,'1','가상다','결석')),...in2.slice(0,4).map(d=>L(d,'1','가상마','결석'))]};
+ const unitRows=r=>r.reviews.filter(x=>/^단위기간 미이수/.test(x[6]));
+ const r1=prepareB2Period({bundle:decodeBundle(raw),classId:'1',from:u1.from,to:u1.to});
+ assert.deepEqual(unitRows(r1).map(x=>[x[1],x[2],x[6]]),[['가상가','','단위기간 미이수(기간별 80% 출석): 1단위 미이수(환산 결석 5일 > 허용 4일 / 재학 교육일 23일) · 결석 4일 + 지·조·외 3회(→ 1일) = 환산 결석 5일']],'가상다 4일 is still 이수');
+ assert.equal(r1.stats.unitFail,1);
+ const r2=prepareB2Period({bundle:decodeBundle(raw),classId:'1',from:u2.from,to:u2.to});
+ assert.deepEqual(unitRows(r2).map(x=>[x[1],x[6]]),[['가상마','단위기간 미이수(기간별 80% 출석): 2단위 미이수 확정(환산 결석 4일 > 허용 3일 / 재학 교육일 19일)']]);
+ assert.equal(b2PeriodCheck(r2).issues.filter(i=>/단위기간 미이수/.test(i.message)).length,1,'shown before download as a review item');
+ const across=prepareB2Period({bundle:decodeBundle(raw),classId:'1',from:'2026-11-20',to:'2026-12-04'});
+ assert.equal(unitRows(across).length,0);
+});

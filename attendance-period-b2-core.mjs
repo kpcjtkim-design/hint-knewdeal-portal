@@ -10,7 +10,9 @@
 //  - 원장 유형 '중복'(지각·조퇴·외출 가운데 둘 이상, 2026-10-20)은 1기 양식처럼 '중복'(검은 글자)으로 넣습니다. 1기 수식 그대로 출석일수와 지각·조퇴·외출 칸에 하루씩 들고
 //    결석이 아닙니다(1기 운영총괄 '중복(지각+조퇴+외출)'과 같은 셈). 비고는 'M/D(중복-사유)'.
 //  - 훈련생 상태: 명부 상태가 재학이 아니고 마지막 출석일(상태 변경일)이 기간 끝 전이면 그 상태(중도탈락은 1기 표기 '중도포기'), 아니면 훈련중.
-import {classDays,ledgerIndex,ledgerKey,rosterFor,enrolledOn,recognizedType} from './beta2-core.mjs';
+//  - 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석", beta2-core unitCompletion): 고른 기간이 한 단위기간 안이면 그 단위기간(꽉 찬 기간)을 미이수·미이수 확정인
+//    학생을 확인필요 시트에 한 줄씩 넣습니다(날짜 칸 비움). 출석부 양식(E~I열 수식)은 1기 그대로이며 환산 결석·이수 칸은 없습니다.
+import {classDays,ledgerIndex,ledgerKey,rosterFor,enrolledOn,recognizedType,unitCompletion,unitText,convertedText} from './beta2-core.mjs';
 import {normalizePeriodReason} from './attendance-period-core.mjs';
 import {classInfo,isIsoDate,UNIT_PERIODS,COHORT,mdLabel} from './cohort.mjs';
 
@@ -35,7 +37,7 @@ export function prepareB2Period({bundle,classId,from,to,index=ledgerIndex(bundle
  if(new Set(dates).size!==dates.length)throw Error('교육일이 중복되어 생성할 수 없습니다.');
  const roster=rosterFor(bundle,cls);
  if(!roster.length)throw Error('마스터시트 명부에 이 반 학생이 없습니다.');
- const reviews=[],stats={students:roster.length,days:dates.length,cells:0,recognizedLate:0,recognizedEarly:0,recognizedOuting:0,recognizedFull:0,personal:0,dropout:0,future:0,evidenceMissing:0,evidenceRejected:0};
+ const reviews=[],stats={students:roster.length,days:dates.length,cells:0,unitFail:0,recognizedLate:0,recognizedEarly:0,recognizedOuting:0,recognizedFull:0,personal:0,dropout:0,future:0,evidenceMissing:0,evidenceRejected:0};
  const add=(name,date,ledgerType,status,reason,message,evidence='')=>reviews.push([cls,name,date,ledgerType,status,reason,message,evidence,'미확인']);
  const names=new Map();for(const p of roster)names.set(p.name,(names.get(p.name)||0)+1);
  const dateSet=new Set(dates),inRange=bundle.ledger.filter(r=>String(r.cls)===cls&&r.date>=from&&r.date<=to);
@@ -71,6 +73,10 @@ export function prepareB2Period({bundle,classId,from,to,index=ledgerIndex(bundle
   if(p.status&&p.status!=='재학'&&(!p.changed||p.changed<to)){trainingStatus=TRAINING_STATUS[p.status]||p.status;stats.dropout++;}
   return {id:`${cls}_${i}_${p.name}`,name:p.name,trainingStatus,cells,remarks:cells.filter(c=>c.abnormal).map(c=>`${mdLabel(c.date)}(${c.status}-${c.reason})`).join('\n')};
  });
+ // 단위기간 이수: 고른 기간이 들어 있는 단위기간 하나(사용자 지정 기간이 두 단위기간에 걸치면 넣지 않음).
+ const unit=UNIT_PERIODS.find(p=>from>=p.from&&to<=p.to);
+ if(unit){const all=classDays(bundle,cls);for(const p of roster){const u=unitCompletion(bundle,p,{index,today,periods:[unit],days:all})[0];
+  if(u.failed){stats.unitFail++;add(p.name,'','','','',`단위기간 미이수(기간별 80% 출석): ${unitText(u)}${u.partial?` · ${convertedText(u)}`:''}`);}}}
  if(stats.cells!==stats.students*stats.days)throw Error('학생·교육일 건수 검증에 실패했습니다.');
  const source=inRange.filter(r=>dateSet.has(r.date)).sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name,'ko'))
   .map(r=>[r.date,r.name,r.type,r.inT||'',r.outT||'',r.oa||'',r.ob||'',r.reason||'',r.evApplied||r.ev||'',r.evr||'',r.check||'']);

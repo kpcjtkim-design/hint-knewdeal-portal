@@ -126,14 +126,17 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
   const s=state('bundle','누적 출결을 계산하는 중…');if(s)return card('total','누적',s);
   const b=bundle(),max=maxAbs(),stats=studentStats(b,{cls}),sum=stats.reduce((a,x)=>({d:a.d+x.days,ab:a.ab+x.absent,p:a.p+x.partial}),{d:0,ab:0,p:0}); // p: 지·조·외 합계(중복 1회)
   const rate=sum.d?(sum.d-sum.ab)/sum.d*100:null,taught=courseDays(b,{cls}).length,total=classDays(b,cls).length;
-  const risk=absenceRows(b,{cls,max}).filter(r=>r.status==='재학'&&r.level),lv=l=>risk.filter(r=>r.level===l).length;
+  const rowsAll=absenceRows(b,{cls,max}),risk=rowsAll.filter(r=>r.status==='재학'&&r.level),lv=l=>risk.filter(r=>r.level===l).length;
+  // 단위기간 미이수(사용자 결정 2026-10-20 기간별 80% 출석, beta2-core unitCompletion): 재학생 가운데 끝난 기간 미이수 또는 진행 중 미이수 확정. 표시만(수료 판정과 별개).
+  const unitFail=rowsAll.filter(r=>r.status==='재학'&&r.unitFailed.length);
   const disease=diseaseReport(stats).rows,evidence=evidenceRows(stats),extra=extraEvidenceRows(b,{cls}).filter(r=>!r.done);
   // 결석 한도 위험은 환산 결석(결석 + 지·조·외 단위기간마다 3회 = 1일, 사용자 결정 2026-10-20)으로 봅니다(absenceRows level). 지·조·외가 있으면 나눔을 함께 보입니다.
   const item=r=>`<li data-risk="${esc(r.name)}"><b class="b2-name">${esc(r.name)}</b><span class="b2-badge ${r.tone==='bad'?'t-absent':'t-late'}">${esc(r.level)}</span><span class="b2-small">환산 결석 ${r.total}일 / 한도 ${max}일</span>${r.partial?`<span class="b2-sub" data-conv title="${esc(convertedUnitsText(r.conv))}">${esc(convertedText(r.conv))}</span>`:''}<span class="b2-small b2-muted">${r.level==='주의'?`${r.left}일 더 결석하면 한도`:r.level==='한도 도달'?'1일 더 결석하면 제적 대상':'한도 초과'}${r.remaining?` · 남은 교육일 ${r.remaining}일`:''}</span></li>`;
   card('total','누적',
-   `${nums([['반 출석률',pct(rate)],['교육일',`${taught}/${total}`],['지·조·외(중복 포함)',sum.p],['제적 대상',lv('제적 대상'),lv('제적 대상')?'bad':''],['한도 도달',lv('한도 도달'),lv('한도 도달')?'bad':''],['주의',lv('주의'),lv('주의')?'alert':'']])}
+   `${nums([['반 출석률',pct(rate)],['교육일',`${taught}/${total}`],['지·조·외(중복 포함)',sum.p],['제적 대상',lv('제적 대상'),lv('제적 대상')?'bad':''],['한도 도달',lv('한도 도달'),lv('한도 도달')?'bad':''],['주의',lv('주의'),lv('주의')?'alert':''],['단위 미이수',unitFail.length,unitFail.length?'bad':'']])}
    <div class="b2-tiny b2-muted">출석률 = (재학 교육일 − 결석) ÷ 재학 교육일, 오늘까지 교육일만 셉니다. 결석 한도 ${max}일(넘으면 제적 대상)은 환산 결석으로 봅니다: 결석 + 지·조·외(중복 포함) 단위기간마다 3회 = 1일.</div>
    ${list(risk.slice(0,5).map(item),'결석 한도 주의 이상 재학생이 없습니다.')}${risk.length>5?`<div class="b2-tiny b2-muted">외 ${risk.length-5}명</div>`:''}
+   ${unitFail.length?`<div class="b2-small" data-unit-fail>단위기간 미이수(기간별 80% 출석, 표시만): ${unitFail.slice(0,5).map(r=>`${esc(r.name)} ${r.unitFailed.map(u=>`${u.no}단위 ${u.state}`).join('·')}`).join(' · ')}${unitFail.length>5?` 외 ${unitFail.length-5}명`:''}</div>`:''}
    ${nums([[`질병 인정 ${DISEASE.warn}회 이상`,disease.length,disease.length?'alert':''],['증빙 미제출·반려',evidence.length,evidence.length?'alert':''],['추가 증빙 미이행',extra.length,extra.length?'alert':'']])}
    ${disease.length?`<div class="b2-small">질병 인정: ${disease.slice(0,5).map(d=>`${esc(d.name)} ${d.count}회${d.level&&d.level!=='주의'?`(${esc(d.level)})`:''}`).join(' · ')}</div>`:''}`,
    go('결석 한도','b2dropouts',{tab:'absence'})+go('질병 인정','b2status',{tab:'disease'})+go('증빙서류','b2status',{tab:'evidence'}));

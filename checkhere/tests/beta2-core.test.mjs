@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,extraEvidenceRows,offDayRecords,classDays,dropoutRows,isDiseaseReason,syncText,enrolledOn,convertedAbsences,convertedText,convertedUnitsText,PARTIALS_PER_ABSENCE} from '../../beta2-core.mjs';
+import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,extraEvidenceRows,offDayRecords,classDays,dropoutRows,isDiseaseReason,syncText,enrolledOn,convertedAbsences,convertedText,convertedUnitsText,PARTIALS_PER_ABSENCE,unitCompletion,unitText,unitAllowed} from '../../beta2-core.mjs';
 import {TRAINING_DAYS,UNIT_PERIODS} from '../../cohort.mjs';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -283,4 +283,34 @@ test('converted absences: 지각·조퇴·외출·중복 3회 = 결석 1일 per 
  const st=studentStats(decodeBundle(raw),{cls:'1'})[0];
  assert.deepEqual([st.days,st.absent,st.partial,Math.round(st.rate*10)/10],[6,1,3,83.3],'rate keeps 결석 only');
  assert.deepEqual([st.conv.absent,st.conv.partial,st.conv.converted,st.conv.total],[1,3,1,2]);
+});
+
+// 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석"): (재학 교육일 − 환산 결석) ÷ 재학 교육일 ≥ 0.8. 꽉 찬 기간 1단위 4일·2단위 3일·3단위 3일까지.
+test('unit completion: per unit period (enrolled days − converted absences) ÷ enrolled days ≥ 80%; running periods show 진행 중 or 미이수 확정',()=>{
+ const [u1,u2,u3]=UNIT_PERIODS,days=p=>TRAINING_DAYS.filter(d=>d>=p.from&&d<=p.to),in1=days(u1),in2=days(u2);
+ assert.deepEqual([u1,u2,u3].map(p=>unitAllowed(days(p).length)),[4,3,3],'full periods: 23·19·18 days → 4·3·3');
+ assert.deepEqual([5,10,15,20].map(unitAllowed),[1,2,3,4]);
+ const make=(rows,{today='2026-12-10',roster=[['1','가','재학','']]}={})=>decodeBundle({rev:1,today,days:[...TRAINING_DAYS],classes:[{id:'1'}],roster,ledgerCols:COLS,ledger:rows.map(([d,t])=>L(d,'가',t))});
+ const units=(rows,o)=>{const b=make(rows,o);return unitCompletion(b,b.roster[0]);};
+ const st=u=>u.map(x=>x.state);
+ // 12/10: 1단위 끝남, 2단위 진행 중, 3단위 시작 전
+ assert.deepEqual(st(units(in1.slice(0,4).map(d=>[d,'결석']))),['이수','진행 중','시작 전'],'4 of 23 → 82.6%');
+ const five=units(in1.slice(0,5).map(d=>[d,'결석']));
+ assert.deepEqual([five[0].state,five[0].total,five[0].allowed,five[0].days,Math.round(five[0].rate*10)/10,five[0].failed],['미이수',5,4,23,78.3,true]);
+ assert.equal(unitText(five[0]),'1단위 미이수(환산 결석 5일 > 허용 4일 / 재학 교육일 23일)');
+ // 환산: 4 결석 + 3 지각 → 5 → 미이수, 인정지각은 세지 않음
+ assert.equal(units([...in1.slice(0,4).map(d=>[d,'결석']),...in1.slice(4,7).map(d=>[d,'지각'])])[0].state,'미이수');
+ assert.equal(units([...in1.slice(0,4).map(d=>[d,'결석']),...in1.slice(4,7).map(d=>[d,'인정지각'])])[0].state,'이수');
+ // 진행 중 기간: 허용(3일)을 이미 넘으면 미이수 확정, 아니면 진행 중
+ assert.equal(units(in2.slice(0,3).map(d=>[d,'결석']))[1].state,'진행 중');
+ assert.equal(units(in2.slice(0,4).map(d=>[d,'결석']))[1].state,'미이수 확정');
+ // 해당없음 날은 재학 교육일에서 빠짐: 23 − 8 = 15일 → 허용 3일
+ const na=units([...in1.slice(0,8).map(d=>[d,'해당없음']),...in1.slice(8,12).map(d=>[d,'결석'])])[0];
+ assert.deepEqual([na.days,na.allowed,na.state],[15,3,'미이수']);
+ // 재학 전후: 11/4 중도탈락이면 1단위 재학 교육일 6일 → 허용 1일, 2·3단위는 해당없음
+ const left=units(in1.slice(0,2).map(d=>[d,'결석']),{roster:[['1','가','중도탈락','2026-11-04']]});
+ assert.deepEqual(left.map(u=>[u.days,u.allowed,u.state]),[[6,1,'미이수'],[0,0,'해당없음'],[0,0,'해당없음']]);
+ // studentStats도 같은 단위기간 이수를 붙임(수료 판정과는 별개)
+ const b=make(in1.slice(0,5).map(d=>[d,'결석']));
+ assert.deepEqual(studentStats(b,{cls:'1'})[0].units.map(u=>u.state),['미이수','진행 중','시작 전']);
 });
