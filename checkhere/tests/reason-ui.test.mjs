@@ -258,3 +258,26 @@ test('담임 출결판 아무 날짜(사용자 결정 2026-10-20): 교육일이 
   assert.match(await root.locator('#pn').innerText(),/교육일 아님/,'오른쪽 칸에도 작은 안내');
  },{portal});
 });
+
+test('담임 출결판 시간 칸 없음(사용자 지시 2026-10-20): 입실·퇴실·외출 입력칸은 없고 저장된 시간은 보기만, 사유 드롭다운·체크히어 메모 추천은 남고, 저장 때 저장된 시간을 그대로 보냄',async()=>{
+ const portal={...PORTAL,recs:{...PORTAL.recs,'김동진|2026-11-04':{type:'인정조퇴',inT:'',outT:'15:00',oa:'',ob:'',r:'취업박람회',ev:'',evr:''},'고다원|2026-11-04':{type:'지각',inT:'',outT:'',oa:'',ob:'',r:'',ev:'',evr:''}}};
+ await page('/teacher.html',async(p,posts)=>{
+  const root=p.locator('#root');await root.locator('table.g').waitFor();
+  await root.locator('select[data-n="김동진"][data-d="2026-11-04"]').focus();
+  const pn=root.locator('#pn');await pn.locator('#tv').waitFor();
+  assert.equal(await pn.locator('input[type="time"]').count(),0,'시간 입력칸 없음');
+  for(const id of ['inT','outT','oa','ob'])assert.equal(await pn.locator('#'+id).count(),0,id);
+  assert.match(await pn.locator('#tv').innerText(),/시간\(보기만\): 퇴실 15:00/);
+  assert.equal(await pn.locator('#rc').count(),1,'사유 분류 드롭다운');assert.equal(await pn.locator('#r').count(),1,'사유 직접 입력');
+  assert.match(await pn.locator('#mm').innerText(),/^\(인정조퇴\)취업박람회_담임:김지아\(15:00\)$/,'체크히어 메모 추천(저장된 시간으로)');
+  assert.equal(await pn.locator('#cp').count(),1,'메모 복사');
+  await pn.locator('[data-q="면접"]').click();
+  for(let i=0;i<50&&!saves(posts).length;i++)await p.waitForTimeout(100);
+  const s=saves(posts)[0];assert.deepEqual([s.name,s.date,s.type,s.r,s.inT,s.outT,s.oa,s.ob],['김동진','2026-11-04','인정조퇴','면접','','15:00','',''],'저장된 시간을 그대로 보냄');
+  // 지각인데 입실 시간이 없으면: 담임은 넣지 않고 운영팀이 맞춘다는 안내만
+  await root.locator('select[data-n="고다원"][data-d="2026-11-04"]').focus();
+  await p.waitForFunction(()=>/고다원/.test(document.querySelector('#root').shadowRoot.querySelector('#pn h2')?.textContent||''));
+  assert.match(await pn.locator('#tv').innerText(),/없음 · 시간은 운영팀이 체크히어 기록으로 맞춥니다/);
+  assert.match(await pn.locator('#mm').innerText(),/^지각_담임:김지아\(--:--\)$/);
+ },{portal});
+});

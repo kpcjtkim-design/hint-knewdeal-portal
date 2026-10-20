@@ -5,6 +5,8 @@
 // Shadow DOM 안에 그려서 기존 포털 CSS와 서로 간섭하지 않습니다.
 // 포털에 이미 있는 반 정보(머리글)·금주 시간표·만족도 집계는 기존 탭을 쓰고 여기서는 다시 그리지 않습니다.
 // 사유는 분류 → 세부(인적성은 종류) 드롭다운으로 표준 글을 만들고 직접 고칠 수도 있습니다(attendance-reason-catalog.mjs, 사용자 요청 2026-10-20). 취업박람회는 추가 증빙 안내·알림.
+// 시간 칸 없음(사용자 지시 2026-10-20 '담임화면 출결판에서 입퇴실 및 외출시간 입력하는건 빼줘. 다만 체크히어 메모 추천사유만 남겨둬'): 오른쪽 칸은 유형·사유(분류 → 세부 드롭다운, 직접 입력,
+// 빠른 사유)와 체크히어 메모 추천(복사)만. 입실·퇴실·외출 시간은 저장된 값을 보기만 하고, 저장할 때는 저장된 시간을 그대로 다시 보냅니다(portalSave는 빈 칸을 ''로 덮으므로).
 // 아무 날짜 기록(사용자 결정 2026-10-20 '수정 자체는 언제든 유연하게'): 시트가 주는 날짜(portalData.days)는 오늘까지의 교육일이라, 교육일이 아닌 날·아직 오지 않은 날의
 // 원장 기록(portalData.recs)은 출결판에 칸을 더해 보이고, 「다른 날짜」 칸으로 아무 날이나 열어 기록합니다(시트 출결판 탭에는 교육일만 나옴).
 import {isIsoDate,isTrainingDay} from './cohort.mjs';
@@ -74,7 +76,7 @@ export function mountTeacherBeta(el, OPT) {
     // 2026-10-19: 안내는 순서대로 짧게, 맨 앞 칸(기준일)에 '오늘'(한국 날짜가 기준일이 아니면 '기준일') 표시, 학생이 없으면 쉬운 말로
     if(!d.kids.length){$('#v').innerHTML='<div class="card"><div class="sec">교육생이 없습니다</div><div class="note">마스터시트 명부에 이 반 교육생이 아직 없습니다. 명단이 비어 있으면 운영팀에 알려 주세요.</div></div>';return;}
     const first=d.mainDay===new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())?'오늘':'기준일';
-    let h='<div class="wrap"><div><ol class="steps"><li>학생 칸을 눌러 출석·지각·결석 등을 고르면 바로 저장됩니다.</li><li>지각·조퇴·외출은 오른쪽(휴대폰은 아래) 칸에 시간과 사유를 적어 주세요.</li></ol><div class="note" style="margin-bottom:6px">아직 입력하지 않은 칸은 「해당없음」으로 보입니다.</div><div class="note anyday" style="margin-bottom:6px"><label>다른 날짜 <input type="date" id="anyDay" aria-label="다른 날짜 열기"></label> <span id="anyNote">교육일이 아닌 날·아직 오지 않은 날도 열어 기록할 수 있습니다.</span></div><div class="scroll"><table class="g"><thead><tr><th class="nm">이름</th>'+days.map(x=>{const t=x===d.mainDay,tag=dayTag(x);return '<th class="'+(t?'today':'')+(tag?' off':'')+'" data-day="'+x+'">'+md(x)+(t?'<small>'+first+'</small>':tag?'<small class="tag">'+tag+'</small>':'')+'</th>';}).join('')+'</tr></thead><tbody>';
+    let h='<div class="wrap"><div><ol class="steps"><li>학생 칸을 눌러 출석·지각·결석 등을 고르면 바로 저장됩니다.</li><li>지각·조퇴·외출·인정은 오른쪽(휴대폰은 아래) 칸에서 사유를 골라 주세요. 시간은 보기만 합니다.</li></ol><div class="note" style="margin-bottom:6px">아직 입력하지 않은 칸은 「해당없음」으로 보입니다.</div><div class="note anyday" style="margin-bottom:6px"><label>다른 날짜 <input type="date" id="anyDay" aria-label="다른 날짜 열기"></label> <span id="anyNote">교육일이 아닌 날·아직 오지 않은 날도 열어 기록할 수 있습니다.</span></div><div class="scroll"><table class="g"><thead><tr><th class="nm">이름</th>'+days.map(x=>{const t=x===d.mainDay,tag=dayTag(x);return '<th class="'+(t?'today':'')+(tag?' off':'')+'" data-day="'+x+'">'+md(x)+(t?'<small>'+first+'</small>':tag?'<small class="tag">'+tag+'</small>':'')+'</th>';}).join('')+'</tr></thead><tbody>';
     d.kids.forEach(k=>{h+='<tr><td class="nm">'+esc(k.name)+(k.status!=='재학'?' <span class="note">'+esc(k.status)+'</span>':'')+'</td>';
       days.forEach(x=>{const tc=x===d.mainDay?'today':'';const v=cellVal(k.name,x);if(v===null){h+='<td class="'+tc+'"></td>';return;}const c=CODE[v]||['-','k-na'];const sel=S.sel&&S.sel.n===k.name&&S.sel.day===x?' sel':'';const r=d.recs[k.name+'|'+x];const miss=r&&(r.ev==='미제출'||r.ev==='반려'||(!r.ev&&String(r.type).indexOf('인정')===0))?' *':'';
         h+='<td class="cell '+tc+'"><select class="'+c[1]+sel+'" data-n="'+esc(k.name)+'" data-d="'+x+'" title="'+esc(k.name)+' '+md(x)+'">'+TYPES.map(t=>'<option value="'+t+'"'+(t===v?' selected':'')+'>'+t+(t===v?miss:'')+'</option>').join('')+'</select></td>';});
@@ -113,14 +115,13 @@ export function mountTeacherBeta(el, OPT) {
   }
   function panel(noFocus){
     const p=$('#pn');if(!p)return;
-    if(!S.sel){p.innerHTML='<h2>사유·시간 입력</h2><div class="note" style="margin-top:6px">출결판에서 학생 칸을 누르면 여기에서 사유와 시간을 적을 수 있습니다.</div>';return;}
-    const f=S.f,need=NEED[f.type]||'',warn=x=>' style="border-color:var(--orange)"';
+    if(!S.sel){p.innerHTML='<h2>사유 입력</h2><div class="note" style="margin-top:6px">출결판에서 학생 칸을 누르면 여기에서 사유를 고르고 체크히어 메모 추천을 볼 수 있습니다.</div>';return;}
+    const f=S.f;
     let h='<h2>'+esc(S.sel.n)+'</h2><div class="note">'+md(S.sel.day)+(S.sel.day===S.d.mainDay?' · 오늘':'')+(dayTag(S.sel.day)?' · '+dayTag(S.sel.day):'')+'</div><div class="lab">유형</div><div class="chips">'+TYPES.map(t=>'<button class="chip" data-t="'+t+'" aria-pressed="'+(f.type===t)+'">'+t+'</button>').join('')+'</div>';
     if(f.type==='해당없음')h+='<div class="note" style="margin-top:10px">아직 입력 전입니다. 위에서 출석 또는 다른 유형을 고르세요.</div>';
     if(f.type!=='출석'&&f.type!=='해당없음'){
       h+='<div class="lab">사유 (선택 · 분류를 고르거나 직접 입력 · Enter로 저장)</div><div class="rp" id="rp">'+pickHtml()+'</div><input class="in" id="r" value="'+esc(f.r)+'" placeholder="병원 진료, 교통 지연, 면접…"><div id="rn">'+pickNote()+'</div><div class="qr">'+['해당없음','개인일정','병결','면접','교통사정','예비군'].map(q=>'<button class="'+(q==='해당없음'?'na':'')+'" data-q="'+q+'">'+q+'</button>').join('')+'</div>';
-      h+='<div class="g2"><div><div class="lab">입실</div><input class="in" type="time" id="inT" value="'+esc(f.inT)+'"'+(need==='inT'&&!f.inT?warn():'')+'></div><div><div class="lab">퇴실</div><input class="in" type="time" id="outT" value="'+esc(f.outT)+'"'+(need==='outT'&&!f.outT?warn():'')+'></div>';
-      h+='<div><div class="lab">외출 시작</div><input class="in" type="time" id="oa" value="'+esc(f.oa)+'"'+(need==='oa'&&!f.oa?warn():'')+'></div><div><div class="lab">외출 종료</div><input class="in" type="time" id="ob" value="'+esc(f.ob)+'"'+(need==='oa'&&!f.ob?warn():'')+'></div></div>';
+      h+=timesView(f);
       const m=memo();if(m)h+='<div class="memo"><span id="mm">'+esc(m)+'</span><button id="cp">복사</button></div>';
       if(f.type.indexOf('인정')===0)h+='<div class="note" style="margin-top:8px">증빙서류: '+esc(f.ev||'미제출')+(f.evr?' · '+esc(f.evr):'')+' (운영팀 확인)</div>';
     }
@@ -129,9 +130,16 @@ export function mountTeacherBeta(el, OPT) {
     p.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{S.f.type=b.dataset.t;const el=R.querySelector('.g select[data-n="'+window.CSS.escape(S.sel.n)+'"][data-d="'+S.sel.day+'"]');if(el){el.value=S.f.type;paint(el,S.f.type);}panel();save();});
     p.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.f.r=b.dataset.q;const r=$('#r');if(r)r.value=S.f.r;const m=$('#mm');if(m)m.textContent=memo();syncPick();save();});
     bindPick();
-    ['r','inT','outT','oa','ob'].forEach(id=>{const el=$('#'+id);if(!el)return;el.oninput=()=>{S.f[id]=el.value;const m=$('#mm');if(m)m.textContent=memo();if(id==='r')syncPick();later();};el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();save();el.blur();}};});
+    ['r'].forEach(id=>{const el=$('#'+id);if(!el)return;el.oninput=()=>{S.f[id]=el.value;const m=$('#mm');if(m)m.textContent=memo();if(id==='r')syncPick();later();};el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();save();el.blur();}};});
     const c=$('#cp');if(c)c.onclick=()=>navigator.clipboard.writeText(memo()).then(()=>toast('메모를 복사했습니다'),()=>toast('직접 선택해 복사해 주세요'));
     const r=$('#r');if(r&&!r.value&&!noFocus)r.focus();
+  }
+  // 저장된 시간(보기만). 그 유형에 필요한 시간이 비었으면 '운영팀이 체크히어 기록으로 맞춤'만 알립니다(담임은 입력하지 않음).
+  function timesView(f){
+    const need=NEED[f.type]||'',shown=[['inT','입실'],['outT','퇴실']].filter(([k])=>f[k]).map(([k,l])=>l+' '+esc(f[k]));
+    if(f.oa||f.ob)shown.push('외출 '+esc(f.oa||'--:--')+'~'+esc(f.ob||'--:--'));
+    const miss=need&&!(need==='oa'?f.oa&&f.ob:f[need]);
+    return '<div class="note tv" id="tv" style="margin-top:8px">시간(보기만): '+(shown.length?shown.join(' · '):'없음')+(miss?' · 시간은 운영팀이 체크히어 기록으로 맞춥니다':'')+'</div>';
   }
   function st(t,k){const s=$('#st');if(s){s.textContent=t;s.className='status'+(k?' '+k:'');}}
   function later(){st('입력 중…');clearTimeout(S.timer);S.timer=setTimeout(save,700);}
@@ -140,12 +148,16 @@ export function mountTeacherBeta(el, OPT) {
     clearTimeout(S.timer);S.timer=null;if(!S.sel)return;
     const sel=S.sel,f=Object.assign({},S.f,{r:tidyReason(S.f.r)}),before=S.d.recs[sel.n+'|'+sel.day];
     st('저장 중…');
-    try{const res=await run('portalSave',{cls:S.cls,pin:S.pin,name:sel.n,date:sel.day,type:f.type,inT:f.inT,outT:f.outT,oa:f.oa,ob:f.ob,r:f.r});
+    // 시간은 담임이 고치지 않으므로 저장된 값(없으면 빈 값)을 그대로 보냅니다. portalSave는 보내지 않은 시간을 ''로 덮어 지우기 때문입니다.
+    const keep=before||{};
+    try{const res=await run('portalSave',{cls:S.cls,pin:S.pin,name:sel.n,date:sel.day,type:f.type,inT:keep.inT||'',outT:keep.outT||'',oa:keep.oa||'',ob:keep.ob||'',r:f.r});
       if(!res.ok){st(res.msg,'err');return;}
       const key=sel.n+'|'+sel.day;if(f.type==='해당없음')delete S.d.recs[key];else S.d.recs[key]=Object.assign({ev:'',evr:''},S.d.recs[key]||{},f);
       if(extraEvidenceStarted(before&&{type:before.type,reason:before.r},{type:f.type,reason:f.r}))extraAlert(sel,f);
       const b=R.querySelector('.g select[data-n="'+window.CSS.escape(sel.n)+'"][data-d="'+sel.day+'"]');if(b&&b.value!==f.type){b.value=f.type;paint(b,f.type);}
-      if(S.sel===sel)st(res.warn?'저장했습니다 · '+res.warn:'저장했습니다',res.warn?'warn':'ok');
+      // 시트 안내 가운데 시간 칸(입실 시간·퇴실 시간·외출 구간)은 담임이 채우지 않으므로 빼고 사유만 보입니다.
+      const w=String(res.warn||'').replace(/은 나중에 채워도 됩니다$/,'').split('·').filter(x=>x==='사유').join('·'),warn=w?w+'은 나중에 채워도 됩니다':'';
+      if(S.sel===sel)st(warn?'저장했습니다 · '+warn:'저장했습니다',warn?'warn':'ok');
     }catch(e){st('저장하지 못했습니다 · '+e.message+' · 다시 골라 주세요','err');}
   }
 
