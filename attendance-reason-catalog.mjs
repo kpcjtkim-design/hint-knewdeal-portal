@@ -11,6 +11,10 @@
 import {classInfo} from './cohort.mjs';
 export const RECOGNIZED=['인정출석','인정지각','인정조퇴','인정외출'],PLAIN=['지각','조퇴','외출','결석'];
 export const OTHER='기타'; // 세부 '기타(직접 입력)' 값
+// '해당없음'(사용자 2026-10-20 '출결 시트는 관리자든 담임이든 해당없음 선택할 수 있는 항목 부활좀'): 사유 드롭다운 맨 위(빈칸 바로 아래) 고정 항목, 저장 글 그대로 '해당없음'.
+// 해석기에는 사유 없음과 같습니다(체크히어 분류·질병·기간 비고·배지 모두 ''). 관리자 「사유 목록」에서는 숨기기만(목록 데이터 naHidden: true), 이름 바꾸기·지우기 없음.
+export const NA='해당없음';
+export const isNA=text=>String(text??'').replace(/\s+/g,'')===NA;
 export const NOT_RECOGNIZED='(인정 안 됨)',NEEDS_CHECK='(관련성 확인 필요)';
 export const RULES=['O','△','X']; // 자격증 종류 과정별 기준: O 인정 · △ 관련성 확인 시 인정 가능 · X 인정 제외
 const EXCLUDE=/확인\s*필요|불명|미정|아님|취소/; // 체크히어 메모 분류를 정하지 않는 글(고정 규칙)
@@ -92,6 +96,7 @@ export function validateReasonCatalog(data){
  const errors=[],e=m=>{if(errors.length<20)errors.push(m);};
  if(!data||typeof data!=='object'||Array.isArray(data))return {ok:false,errors:['목록이 객체가 아닙니다'],data:null};
  const {cats,kinds={},courses,courseMap={},defaultCourse}=data;
+ if(data.naHidden!==undefined&&typeof data.naHidden!=='boolean')e(`'${NA}' 숨기기(naHidden)가 참/거짓이 아닙니다`);
  if(!Array.isArray(courses)||!courses.length||courses.length>6||!courses.every(c=>str(c?.key,12)&&str(c?.label,30)&&optStr(c?.code,20)))e('과정 기준(courses) 모양이 틀립니다');
  const courseKeys=new Set((Array.isArray(courses)?courses:[]).map(c=>c?.key));
  if(courseKeys.size!==(courses?.length||0))e('과정 기준 키가 겹칩니다');
@@ -112,7 +117,7 @@ export function validateReasonCatalog(data){
  if(!Array.isArray(cats)||!cats.length||cats.length>40)return {ok:false,errors:[...errors,'분류(cats)가 없습니다'],data:null};
  const keys=new Set(),texts=new Set();
  for(const c of cats){
-  if(!c||!str(c.key,20)||!noParen(c.key)||c.key===OTHER){e(`분류 키 '${c?.key??''}'이 틀립니다(괄호·'기타' 안 됨)`);continue;}
+  if(!c||!str(c.key,20)||!noParen(c.key)||c.key===OTHER||c.key===NA){e(`분류 키 '${c?.key??''}'이 틀립니다(괄호·'기타'·'${NA}' 안 됨)`);continue;}
   if(keys.has(c.key))e(`분류 '${c.key}'가 겹칩니다`);keys.add(c.key);
   if(!str(c.label,40))e(`분류 '${c.key}' 이름이 비었습니다`);
   if(typeof c.recognized!=='boolean')e(`분류 '${c.key}' 인정 여부가 없습니다`);
@@ -124,6 +129,7 @@ export function validateReasonCatalog(data){
   if(!c.kind&&!c.subs.length)e(`분류 '${c.key}'에 세부가 없습니다`);
   for(const s of c.subs){
    if(!s||!str(s.text,60)){e(`분류 '${c.key}'에 빈 세부가 있습니다`);continue;}
+   if(s.text===NA)e(`'${NA}'는 고정 항목이라 세부로 넣을 수 없습니다`);
    if(texts.has(s.text))e(`세부 '${s.text}'가 겹칩니다`);texts.add(s.text);
    if(!optStr(s.label,60)||!optStr(s.memo,20)||!optStr(s.note,200)||!strList(s.words,20,30)||!strList(s.except,10,30)||!strList(s.beats,10,20))e(`세부 '${s.text}' 글이 틀립니다`);
    for(const f of ['recognized','disease','hidden'])if(s[f]!==undefined&&typeof s[f]!=='boolean')e(`세부 '${s.text}' ${f}가 참/거짓이 아닙니다`);
@@ -162,7 +168,7 @@ function compile(data){
  const visible=cats.filter(c=>!c.hidden);
  const standard=new Set(visible.flatMap(c=>c.kind?[c.key]:[...(c.side?[c.key]:[]),...c.subs.filter(s=>!s.hidden).map(s=>s.text)]));
  const extraCat=cats.find(c=>c.extra)||null;
- return {data,kinds,cats,visible,entries,standard,extraCat,courses:data.courses,courseMap:data.courseMap||{},defaultCourse:data.defaultCourse};
+ return {data,naHidden:data.naHidden===true,kinds,cats,visible,entries,standard,extraCat,courses:data.courses,courseMap:data.courseMap||{},defaultCourse:data.defaultCourse};
 }
 const matches=(e,t)=>{if(!e.words.length)return false;let x=t;for(const w of e.except)if(w)x=x.split(w).join('|');return e.words.some(w=>x.includes(w));};
 const alive=hits=>hits.filter(e=>!hits.some(o=>o!==e&&o.memo!==e.memo&&e.memo&&o.beats.includes(e.memo)));
@@ -195,6 +201,7 @@ export function withReasonCatalog(data,fn){const keep=C;try{C=compile(data);retu
 
 // ── 드롭다운·저장 글 ──
 export const catOf=key=>C.cats.find(c=>c.key===key)||null;
+export const naShown=()=>!C.naHidden; // 사유 드롭다운·담임 빠른 사유에 '해당없음'을 보일지
 const kindCat=key=>{const c=catOf(key);return c?.kind?c:null;};
 const kindItems=(key,{all=false}={})=>(C.kinds[key]?.items||[]).filter(i=>all||!i.hidden);
 const recognizedType=t=>RECOGNIZED.includes(String(t||''));
@@ -318,6 +325,7 @@ export function subOptions(key,selected='',{type='',cls=''}={}){
 export function reasonPick(text,{custom=false}={}){
  const t=clean(text),none={main:'',kind:'',apt:'',input:false,custom:''},free={main:OTHER,kind:'',apt:'',input:true,custom:''};
  if(custom)return free;
+ if(isNA(t))return {main:NA,kind:'',apt:'',input:false,custom:''}; // 고정 항목(숨겨도 저장된 값이면 보임)
  const k=kindText(t);
  if(k&&!k.cat.hidden){const known=kindKnown(k.cat,k.value);return known?{main:k.key,kind:k.key,apt:k.value,input:false,custom:''}:k.paren?{main:k.key,kind:k.key,apt:OTHER,input:true,custom:k.value}:{main:k.key,kind:k.key,apt:'',input:false,custom:''};}
  for(const c of C.visible){
@@ -334,7 +342,7 @@ export function reasonPick(text,{custom=false}={}){
 export function reasonOptions(main='',{type='',blank='사유 고르기',catalog=null}={}){
  if(catalog)return withReasonCatalog(catalog,()=>reasonOptions(main,{type,blank}));
  const lock=anyRecognized(type);
- return `<option value="" ${main?'':'selected'}>${esc(blank)}</option>`+C.visible.map(c=>{
+ return `<option value="" ${main?'':'selected'}>${esc(blank)}</option>`+(!C.naHidden||main===NA?`<option value="${NA}" ${main===NA?'selected':''}>${NA}</option>`:'')+C.visible.map(c=>{
   if(c.side)return `<option value="${esc(c.key)}" ${c.key===main?'selected':''}>${esc(shown(c))}</option>`;
   const s=c.subs.find(x=>!x.hidden);if(!s)return '';
   const ok=subRecognized(c,s),off=lock&&!!c.recognized&&s.recognized===false&&s.text!==main;

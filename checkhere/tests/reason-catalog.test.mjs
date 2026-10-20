@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STANDARD,reasonPick,reasonOptions,REASON_CATS,APTITUDE,CERTS,KINDS,COURSE_CERT_COLUMN,certColumn,certRule,certOf,reasonChecks,isGeneralCheckup,DEFAULT_REASON_CATALOG,cloneCatalog,validateReasonCatalog,setReasonCatalog,resetReasonCatalog,reasonCatalogSource,OTHER,RECOGNIZED,EXTRA_DOC,EXTRA_LABEL,composeReason,splitReason,tidyReason,reasonKind,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,catOptions,subOptions,typeWarning,catOf} from '../../attendance-reason-catalog.mjs';
+import {NA,isNA,naShown,isDiseaseText,periodCategoryOf,STANDARD,reasonPick,reasonOptions,REASON_CATS,APTITUDE,CERTS,KINDS,COURSE_CERT_COLUMN,certColumn,certRule,certOf,reasonChecks,isGeneralCheckup,DEFAULT_REASON_CATALOG,cloneCatalog,validateReasonCatalog,setReasonCatalog,resetReasonCatalog,reasonCatalogSource,OTHER,RECOGNIZED,EXTRA_DOC,EXTRA_LABEL,composeReason,splitReason,tidyReason,reasonKind,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,catOptions,subOptions,typeWarning,catOf} from '../../attendance-reason-catalog.mjs';
 import {reasonCategory,suggestReason} from '../../checkhere-proposal-core.mjs';
 import {normalizePeriodReason} from '../../attendance-period-core.mjs';
 import {reasonFor} from '../../attendance-reason-parser.mjs';
@@ -129,8 +129,8 @@ test('출결대조 사유 드롭다운 하나: 표준 글은 그대로 고르고
  const o=reasonOptions('취업박람회',{type:'인정출석',blank:'사유 (필수)'});
  assert.match(o,/^<option value="" >사유 \(필수\)<\/option>/);assert.match(o,/<option value="취업박람회" selected>/);assert.match(o,/<option value="교통" >\(인정 안 됨\) 교통<\/option>/);assert.match(o,/<option value="취업활동" >\(인정 안 됨\) 취업활동<\/option>/);assert.match(o,/<option value="기타" >기타 \(직접 입력\)<\/option>$/);
  // 옆 종류 드롭다운 일반화(사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운'): 분류마다 하나(세부가 둘 이상이면 값 = 분류 키), optgroup 없음
- assert.doesNotMatch(o,/optgroup/);assert.equal((o.match(/<option /g)||[]).length,REASON_CATS.filter(c=>!c.hidden).length+2);
- assert.deepEqual([...o.matchAll(/<option value="([^"]*)"/g)].map(m=>m[1]),['','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
+ assert.doesNotMatch(o,/optgroup/);assert.equal((o.match(/<option /g)||[]).length,REASON_CATS.filter(c=>!c.hidden).length+3,'blank, 해당없음, categories, 기타');
+ assert.deepEqual([...o.matchAll(/<option value="([^"]*)"/g)].map(m=>m[1]),['','해당없음','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
  for(const t of STANDARD)assert.ok(reasonCategory(t)||t==='일반건강검진'||['교통','교통사정','교통(사고)','개인사정','개인일정'].includes(t)||/^(교통|취업활동|개인사정)/.test(t),t);
 });
 
@@ -257,6 +257,45 @@ const CORPUS=[...STANDARD,...ALL.map(x=>x.text),'','해당없음','병결','병�
  '인적성 시험','GSAT 응시','AI 인적성 검사','AI 인적성','온라인 인적성 검사','인적성 HMAT','인적성-GSAT','인적성 검사 LG Way Fit','L-TAB','LTAB','AI역량검사','AI 역량 검사','인적성(내가 쓴 종류)','인적성(DCAT)',
  '경조사(조모상)','외조모상','조모상','외조부상','조부상','부친상 경조사','모친상','결혼','출산','경조사','법원 출석','관공서','공가','투표','천재지변',
  '교통사정','교통','교통 지연','개인사정','개인일정','늦잠','이사','병원 면접','병원 또는 면접 확인 필요','병원 확인 필요','사유 미정','취소','면접 아님','취업 상담','국취제 상담','채용설명회','실업인정교육'];
+// '해당없음' 부활(사용자 2026-10-20 '출결 시트는 관리자든 담임이든 해당없음 선택할 수 있는 항목 부활좀'): 드롭다운 맨 위 고정 항목, 저장 글 그대로
+test("'해당없음': 사유 드롭다운 빈칸 바로 아래 고정 항목, 저장 글 그대로, 인정 출결이면 사유 필요 경고(막지 않음), 해석기는 지금 동작 그대로(사유 없음과 같음 · 기간 비고만 글 그대로)",async()=>{
+ const {reasonNotesHtml,pickReasonText,REASON_REQUIRED_NOTE}=await import('../../reason-pick.mjs');
+ assert.equal(NA,'해당없음');assert.ok(isNA('해당없음')&&isNA(' 해당 없음 ')&&!isNA('')&&!isNA('해당'));assert.equal(naShown(),true);
+ assert.match(reasonOptions('',{type:'인정출석'}),/^<option value="" selected>사유 고르기<\/option><option value="해당없음" >해당없음<\/option><option value="병원" >/);
+ assert.match(reasonOptions('해당없음'),/<option value="해당없음" selected>해당없음<\/option>/);
+ assert.deepEqual(reasonPick('해당없음'),{main:NA,kind:'',apt:'',input:false,custom:''});
+ assert.deepEqual(pickReasonText('',`rmain`,NA),{text:'해당없음',custom:false,focus:'rmain'});
+ assert.equal(pickReasonText('해당없음','rmain',OTHER).text,'','기타 from 해당없음 starts empty');
+ assert.equal(tidyReason('해당없음'),'해당없음','saved as is');
+ // 경고: 인정 출결이면 두 화면 모두 '인정 출결은 사유가 필요합니다'(막지 않음), 인정이 아니면 없음
+ for(const required of [false,true]){
+  assert.match(reasonNotesHtml({type:'인정출석',reason:'해당없음',cls:'1',required}),new RegExp(`data-reason-check="required">${REASON_REQUIRED_NOTE}<`));
+  assert.equal(reasonNotesHtml({type:'지각',reason:'해당없음',cls:'1',required}),'');assert.equal(reasonNotesHtml({type:'결석',reason:'해당없음',cls:'1',required}),'');
+ }
+ assert.equal(REASON_REQUIRED_NOTE,'인정 출결은 사유가 필요합니다');
+ assert.doesNotMatch(reasonNotesHtml({type:'인정출석',reason:'',cls:'1'}),/required/,'출결대조 keeps its save-time check for an empty reason');
+ // 해석기: 사유 없음('')과 같음(체크히어 분류·질병·배지·추가 증빙·인정 확인·체크히어 메모 제안·출결대조 체크히어 보내기)
+ const rec={id:'r',version:'v',readState:'complete',classId:'1',date:'2026-11-05',name:'가상',teacher:'가상담임',rawEntry:'09:40:00',entry:'09:40:00',exit:'18:00:00',outings:[]};
+ const live={...rec,rawEntry:'09:00:00',entry:'09:00:00',schedule:'09:00 ~ 18:00',source:'live',phoneLast4:'1234'};
+ const view=x=>({cat:reasonCategory(x),disease:isDiseaseReason(x),diseaseText:isDiseaseText(x),kind:reasonKind(x),fair:isJobFair(x),checks:reasonChecks('인정출석',x,{cls:'1'}),extra:extraEvidence({type:'인정출석',reason:x}),
+  memo:['인정지각','지각','인정출석'].map(status=>suggestReason({status,reason:x,record:rec})),send:['인정출석','지각','결석'].map(type=>sheetToCheckHere({row:{type,reason:x},record:live,sheetTeacher:'가상담임',date:'2026-11-05',me:'a@b.c'}))});
+ assert.deepEqual(view('해당없음'),view(''));assert.deepEqual(view(' 해당 없음 '),view(''));
+ assert.equal(reasonCategory('해당없음'),'');assert.equal(isDiseaseReason('해당없음'),false);assert.equal(reasonKind('해당없음'),'');assert.equal(periodCategoryOf('해당없음'),'');
+ assert.equal(suggestReason({status:'인정지각',reason:'해당없음',record:rec}).text,'(인정지각)[사유 확인]_담임:가상담임(09:40)');
+ // 기간 비고(normalizePeriodReason)는 지금 동작 그대로 고정: 빈 글은 '개인사정', '해당없음'은 글 그대로(분류로 줄이지 않음)
+ assert.equal(normalizePeriodReason(''),'개인사정');assert.equal(normalizePeriodReason('해당없음'),'해당없음');
+ // 관리자 숨기기(naHidden): 드롭다운·빠른 사유에서 빠지고, 저장된 값이면 그대로 보임. 분류 키·세부 글로는 쓸 수 없음. 옛 저장본(naHidden 없음)은 보임
+ const d=cloneCatalog(DEFAULT_REASON_CATALOG);
+ try{
+  assert.equal(setReasonCatalog({...d,naHidden:true}).ok,true);assert.equal(naShown(),false);
+  assert.doesNotMatch(reasonOptions(''),/해당없음/);assert.match(reasonOptions('해당없음'),/<option value="해당없음" selected>해당없음<\/option>/);
+  assert.equal(setReasonCatalog(d).ok,true);assert.equal(naShown(),true,'an old saved list without naHidden shows it');
+ }finally{resetReasonCatalog();}
+ assert.match(validateReasonCatalog({...d,naHidden:'yes'}).errors.join('|'),/naHidden/);
+ const k=cloneCatalog(d);k.cats[0].key='해당없음';assert.equal(validateReasonCatalog(k).ok,false);
+ const sb=cloneCatalog(d);sb.cats[0].subs.push({text:'해당없음',label:'해당없음'});assert.match(validateReasonCatalog(sb).errors.join('|'),/고정 항목/);
+});
+
 test('데이터 해석기 = 옛 고정 규칙(기본 목록): 체크히어 분류·질병·기간 비고·추가 증빙이 옛 기록에서 그대로',()=>{
  resetReasonCatalog();
  for(const t of CORPUS){

@@ -79,7 +79,7 @@ test('teacher 사유 = 관리자와 같은 드롭다운 하나: 인적성은 바
   assert.equal(await main(p).getAttribute('aria-label'),'고다원 사유');assert.equal(await sub(p).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(p).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
   // 사유 드롭다운은 분류마다 하나(세부가 둘 이상이면 옆 종류 드롭다운, 사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운')
-  assert.deepEqual(await main(p).locator('option').allTextContents(),['사유 (필수)','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);
+  assert.deepEqual(await main(p).locator('option').allTextContents(),['사유 (필수)','해당없음','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);
   const a=await main(p).boundingBox(),b=await sub(p).boundingBox();assert.equal(Math.round(a.y),Math.round(b.y),'the type box sits right beside');assert.ok(b.x>a.x);
   assert.equal(await mm.textContent(),'(인정출석)인적성(HMAT)_담임:김지아');
   // 종류를 바꾸면 메모 추천이 바로 바뀌고 0.7초 뒤 저장
@@ -104,11 +104,16 @@ test('teacher 사유 = 관리자와 같은 드롭다운 하나: 인적성은 바
   await p.locator('[data-q="교통사정"]').click();assert.equal(await main(p).inputValue(),'교통');assert.equal(await sub(p).inputValue(),'교통사정');assert.equal(await free(p).count(),0);
   assert.match(await p.locator('#rn').innerText(),/교통은 보통 인정 사유가 아닙니다/);
   assert.equal((await saved(p,posts,6)).r,'교통사정');
-  // 해당없음 = 사유 비우기 → 인정 출결은 사유가 필요하다는 경고가 바로
-  await p.locator('[data-q="해당없음"]').click();assert.equal(await main(p).inputValue(),'');
+  // 해당없음(사용자 2026-10-20 부활): 빠른 단추는 예전처럼 사유 글 '해당없음'으로 저장, 드롭다운 맨 위 항목, 인정 출결이면 경고(막지 않음)
+  await p.locator('[data-q="해당없음"]').click();assert.equal(await main(p).inputValue(),'해당없음');assert.equal(await sub(p).count(),0);assert.equal(await free(p).count(),0);
   assert.equal(await p.locator('#rn [data-reason-check="required"]').textContent(),'인정 출결은 사유가 필요합니다');
-  assert.equal(await mm.textContent(),'(인정출석)사유_담임:김지아');
-  assert.equal((await saved(p,posts,7)).r,'');
+  assert.equal(await mm.textContent(),'(인정출석)해당없음_담임:김지아');
+  assert.equal((await saved(p,posts,7)).r,'해당없음');
+  // 사유를 비우면(사유 고르기) 같은 경고, 해당없음을 드롭다운에서 다시 고르면 저장 글 그대로
+  await main(p).selectOption('');assert.equal(await p.locator('#rn [data-reason-check="required"]').count(),1);assert.equal((await saved(p,posts,8)).r,'');
+  await main(p).selectOption('해당없음');assert.equal((await saved(p,posts,9)).r,'해당없음');
+  // 인정이 아닌 유형이면 경고 없음
+  await p.locator('[data-t="지각"]').click();assert.equal(await p.locator('#rn [data-reason-check]').count(),0);assert.equal(await main(p).inputValue(),'해당없음');
   assert.ok(!(await p.locator('[data-q]').allTextContents()).includes('병결'),'quick reasons no longer offer 병결');
   assert.equal(await p.evaluate(()=>window.notes.length),0,'no extra-evidence notice for other reasons');
  });
@@ -219,8 +224,8 @@ test('출결대조 사유 칸 = 드롭다운 하나(240px): 지금까지 쓴 사
   assert.equal(await sub(go).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(go).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
   // 사유 드롭다운은 분류마다 하나(세부가 둘 이상인 분류는 옆 종류 드롭다운, 사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운')
-  assert.deepEqual(await main(go).locator('option').allTextContents(),['사유 (필수)','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);assert.equal(await main(go).locator('optgroup').count(),0);
-  assert.deepEqual(await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value)),['','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
+  assert.deepEqual(await main(go).locator('option').allTextContents(),['사유 (필수)','해당없음','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);assert.equal(await main(go).locator('optgroup').count(),0);
+  assert.deepEqual(await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value)),['','해당없음','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
   // 240px 안, 종류 드롭다운은 같은 줄 바로 옆
   const box=await go.locator('.b2-rpick').boundingBox(),a=await main(go).boundingBox(),b=await sub(go).boundingBox();
   assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(a.y),Math.round(b.y));assert.ok(b.x>a.x);
@@ -363,6 +368,19 @@ test('출결대조 자격증: 옆 종류 드롭다운, X(어학시험·지게차
   assert.equal(await sub(park).inputValue(),'기타');assert.equal(await park.locator('input[data-inline="rapt"]').inputValue(),'정보처리기사');
   assert.equal(await park.locator('[data-reason-check="warn"]').textContent(),'정보처리기사 · 관련성 확인 필요(임베디드AI 과정)','after saving the caution stays');
  },{ledger});
+});
+
+test("출결대조 '해당없음'(사용자 2026-10-20 부활): 빈칸 바로 아래 고정 항목, 저장 글 그대로, 인정 출결이면 '인정 출결은 사유가 필요합니다' 경고만(저장은 됨)",async()=>{
+ await page('/ledger.html',async(p,posts)=>{
+  const row=n=>p.locator(`tbody[data-student="${n}"] tr[data-name]`),go=row('고다원'),dong=row('김동진'),main=r=>r.locator('select[data-inline="rmain"]');
+  await main(go).waitFor();
+  assert.deepEqual((await main(go).locator('option').allTextContents()).slice(0,3),['사유 (필수)','해당없음','병원·질병']);
+  await main(go).selectOption('해당없음');assert.equal(await go.locator('[data-reason-check="required"]').textContent(),'인정 출결은 사유가 필요합니다');
+  await dong.locator('[data-inline="type"]').selectOption('결석');await main(dong).selectOption('해당없음');assert.equal(await dong.locator('[data-reason-check]').count(),0);
+  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('2건 저장',{exact:true}).waitFor();
+  assert.deepEqual(posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].type,b.args[0].reason]),[['고다원','인정출석','해당없음'],['김동진','결석','해당없음']]);
+  assert.equal(await main(go).inputValue(),'해당없음');assert.equal(await go.locator('[data-reason-check="required"]').count(),1,'stays after saving');
+ });
 });
 
 test('담임 사유 자격증: 사유 드롭다운 자격증 → 바로 옆 종류(관리자와 같음), X는 인정 출결에서 막힘, △는 주의, 일반건강검진 막힘·빨간 경고',async()=>{

@@ -3,7 +3,7 @@
 // 목록·판정은 attendance-reason-catalog.mjs(settings/reasonCatalog가 있으면 그 목록)를 그대로 쓰고, 여기서는 칸의 HTML·고른 값 → 저장 글·경고 글만 만듭니다.
 // 칸 모양: 사유 드롭다운 하나(data-inline="rmain") + 옆 목록이 있는 분류(인적성·자격증 종류, 세부가 둘 이상인 병원·경조사·공가·예비군·교통·취업활동·개인사정)는
 // 바로 옆 종류 드롭다운(rsub) + 옆 칸 기타면 직접 입력(rapt, data-kind, '분류(글)') + '기타'면 사유 직접 입력(reason).
-import {reasonPick,reasonOptions,subOptions,composeReason,tidyReason,typeWarning,reasonChecks,splitReason,STANDARD,OTHER,isJobFair,extraEvidence,EXTRA_DOC} from './attendance-reason-catalog.mjs';
+import {reasonPick,reasonOptions,subOptions,composeReason,tidyReason,typeWarning,reasonChecks,splitReason,STANDARD,OTHER,isNA,isJobFair,extraEvidence,EXTRA_DOC} from './attendance-reason-catalog.mjs';
 import {isTestClass} from './cohort.mjs';
 
 export const OFFDAY_RECOGNIZED_NOTE='교육일이 아닌 날의 인정 출결은 통계·증빙에 들지 않습니다'; // 사용자 2026-10-20 '애초에 교육일 날만 인정출결이 되는거 아닌지?': 막지 않고 경고
@@ -26,7 +26,7 @@ export function reasonPickHtml({reason='',type='',cls='',name='',custom=false,lo
 export function pickReasonText(cur,which,value){
  cur=String(cur||'');
  if(which==='rmain'){
-  if(value===OTHER)return {text:STANDARD.has(tidyReason(cur))||reasonPick(cur).kind?'':cur,custom:true,focus:'reason'};
+  if(value===OTHER)return {text:STANDARD.has(tidyReason(cur))||isNA(cur)||reasonPick(cur).kind?'':cur,custom:true,focus:'reason'};
   return {text:value,custom:false,focus:reasonPick(value).kind?'rsub':'rmain'};
  }
  const k=reasonPick(cur).kind||'인적성';
@@ -38,8 +38,9 @@ export const kindInputText=(kind,value)=>`${kind||'인적성'}(${value})`;
 // 사유 경고(저장 전에 고르는 대로 보임, 저장은 막지 않음). 출결대조 행 안내와 같은 글·모양입니다.
 // offDay: 그날이 교육일이 아님(17반 테스트반은 경고 없음), rec: 저장된 기록 {type, reason, ev, evApplied}(취업박람회 추가 증빙이 이미 붙었으면 안내 생략),
 // required: 인정 출결인데 사유가 비었으면 '인정 출결은 사유가 필요합니다'(담임 화면, 출결대조는 저장 때 '입력 필요: 사유').
+// '해당없음'은 두 화면 모두 인정 출결이면 같은 경고(막지 않음, 사용자 2026-10-20 '해당없음' 부활).
 export function reasonNotesHtml({type='',reason='',cls='',offDay=false,rec=null,required=false}={}){
  const cat=splitReason(reason).cat||(String(reason||'').trim()?OTHER:''),w=typeWarning(type,cat),off=recognized(type)&&offDay&&!isTestClass(cls);
- const need=required&&recognized(type)&&!tidyReason(reason);
+ const need=recognized(type)&&(isNA(reason)||required&&!tidyReason(reason));
  return `${need?`<span class="b2-err" style="display:block" data-reason-check="required">${REASON_REQUIRED_NOTE}</span>`:''}${off?`<span class="b2-xnote" data-offday-note>${OFFDAY_RECOGNIZED_NOTE}</span>`:''}${isJobFair(reason)&&!extraEvidence(rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognized(type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}${reasonChecks(type,reason,{cls}).map(c=>`<span class="${c.level==='error'?'b2-err':'b2-xnote'}" style="display:block" data-reason-check="${c.level}">${esc(c.text)}</span>`).join('')}`;
 }

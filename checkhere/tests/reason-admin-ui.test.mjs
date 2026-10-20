@@ -47,7 +47,7 @@ async function page(path,run,{docs={},fail=false}={}){
 }
 const saved=p=>p.evaluate(()=>window.fsDocs['settings/reasonCatalog']);
 // 미리보기 사유 드롭다운의 분류 이름(맨 앞 '사유 고르기'와 끝 '기타' 빼고). 분류마다 하나(옆 종류 드롭다운 일반화, 사용자 2026-10-20)
-const groups=p=>p.locator('#rcPvMain option').evaluateAll(o=>o.map(x=>x.textContent).slice(1,-1));
+const groups=p=>p.locator('#rcPvMain option').evaluateAll(o=>o.map(x=>x.textContent).slice(1,-1).filter(t=>t!=='해당없음'));
 
 test('사유 목록 편집: 이름·인정·숨기기·세부·종류 기준 → 미리보기, 저장(rev·저장한 사람), 저장 뒤 지금 목록도 바뀜',async()=>{
  await page('/admin.html',async(p,dialogs)=>{
@@ -59,6 +59,12 @@ test('사유 목록 편집: 이름·인정·숨기기·세부·종류 기준 →
   await p.locator('[data-c="label"]').fill('병원·질병(진료)');
   assert.equal((await groups(p))[0],'병원·질병(진료)');assert.match(await p.locator('#rcSaved').textContent(),/저장 전 변경 있음/);assert.equal(await p.locator('#rcSave').isDisabled(),false);
   await p.locator('#rcNewSub').fill('병원(한방)');await p.locator('#rcAddSub').click();
+  // '해당없음'(사용자 2026-10-20 부활): 분류 목록 맨 위 고정 항목, 숨기기만(이름 칸·순서 단추 없음) → 저장하면 naHidden
+  const na=p.locator('#rcNa');assert.match(await na.textContent(),/해당없음/);assert.match(await na.textContent(),/고정/);
+  assert.equal(await na.locator('input[type="text"],button').count(),0,'no rename, move or delete');
+  assert.equal(await p.locator('#rcPvMain option[value="해당없음"]').count(),1);
+  await p.locator('#rcNaHidden').check();assert.equal(await p.locator('#rcPvMain option[value="해당없음"]').count(),0);
+  await p.locator('#rcNaHidden').uncheck();assert.equal(await p.locator('#rcPvMain option[value="해당없음"]').count(),1);await p.locator('#rcNaHidden').check();
   // 세부 목록 = 옆 종류 드롭다운 목록: 미리보기에서 병원·질병을 고르면 옆 칸에 새 세부
   assert.match(await p.locator('#rcSideNote').textContent(),/바로 옆 종류 드롭다운에 아래 세부/);
   assert.equal(await p.locator('#rcPvMain option[value="병원(한방)"]').count(),0);
@@ -86,7 +92,7 @@ test('사유 목록 편집: 이름·인정·숨기기·세부·종류 기준 →
   await p.locator('#rcSave').click();
   await p.locator('#rcMsg',{hasText:'저장했습니다 · 저장본 1번'}).waitFor();
   const doc=await saved(p);assert.equal(doc.rev,1);assert.equal(doc.updatedBy,'hint.kpc@gmail.com');assert.equal(doc.updatedAt,'ts');
-  assert.equal(doc.catalog.cats[0].key,'공가');assert.equal(doc.catalog.cats[0].recognized,false);assert.equal(doc.catalog.cats.find(c=>c.key==='면접').hidden,true);
+  assert.equal(doc.catalog.naHidden,true);assert.equal(doc.catalog.cats[0].key,'공가');assert.equal(doc.catalog.cats[0].recognized,false);assert.equal(doc.catalog.cats.find(c=>c.key==='면접').hidden,true);
   assert.equal(doc.catalog.kinds['자격증'].items.find(i=>i.value==='SQLD').rules.mfg,'X');assert.ok(doc.catalog.cats.some(c=>c.key==='훈련기관행사'));
   assert.equal(await p.evaluate(()=>window.cat.validateReasonCatalog(window.fsDocs['settings/reasonCatalog'].catalog).ok),true);
   assert.equal(await p.evaluate(()=>window.cat.reasonCategoryOf('공가(투표)')),'','the saved list applies right away on this screen');
@@ -152,7 +158,7 @@ test('담임 출결판은 저장된 사유 목록을 따릅니다: 숨긴 분류
   await p.waitForFunction(()=>window.load);assert.deepEqual(await p.evaluate(()=>[window.load.from,window.load.warning,window.load.rev]),['saved','',7]);
   const main=p.locator('#rp [data-inline="rmain"]'),sub=p.locator('#rp [data-inline="rsub"]'),free=p.locator('#rp [data-inline="reason"]');
   await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await main.waitFor();
-  const groups=await main.locator('option').evaluateAll(o=>o.map(x=>x.textContent).slice(1,-1));
+  const groups=await main.locator('option').evaluateAll(o=>o.map(x=>x.textContent).slice(2,-1));assert.equal(await main.locator('option').nth(1).textContent(),'해당없음');
   assert.equal(groups[0],'훈련기관 행사');assert.ok(!groups.includes('면접'),'hidden');assert.ok(groups.includes('(인정 안 됨) 공가(관공서·법원)'));
   // 저장된 '면접'(숨긴 분류)은 기타 + 글 그대로
   assert.equal(await main.inputValue(),'기타');assert.equal(await free.inputValue(),'면접');

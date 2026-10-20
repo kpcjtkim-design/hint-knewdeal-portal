@@ -12,7 +12,7 @@
 // 아무 날짜 기록(사용자 결정 2026-10-20 '수정 자체는 언제든 유연하게'): 시트가 주는 날짜(portalData.days)는 오늘까지의 교육일이라, 교육일이 아닌 날·아직 오지 않은 날의
 // 원장 기록(portalData.recs)은 출결판에 칸을 더해 보이고, 「다른 날짜」 칸으로 아무 날이나 열어 기록합니다(시트 출결판 탭에는 교육일만 나옴).
 import {isIsoDate,isTrainingDay} from './cohort.mjs';
-import {tidyReason,STANDARD,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_LABEL} from './attendance-reason-catalog.mjs';
+import {tidyReason,STANDARD,NA,naShown,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_LABEL} from './attendance-reason-catalog.mjs';
 import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText} from './reason-pick.mjs';
 export function mountTeacherBeta(el, OPT) {
   OPT = OPT || {};
@@ -127,7 +127,7 @@ export function mountTeacherBeta(el, OPT) {
       el.onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();save();el.blur();}};
     });
   }
-  // 빠른 사유: 지금 목록에 있는 표준 글만(관리자가 숨기면 빠짐), '해당없음'은 사유 비우기
+  // 빠른 사유: 지금 목록에 있는 표준 글만(관리자가 숨기면 빠짐), '해당없음'은 예전처럼 사유 글 '해당없음'(사용자 2026-10-20 부활, 관리자가 숨기면 빠짐)
   const QUICK=['해당없음','개인일정','병원','면접','교통사정','예비군'];
   function panel(noFocus){
     const p=$('#pn');if(!p)return;
@@ -136,14 +136,14 @@ export function mountTeacherBeta(el, OPT) {
     let h='<h2>'+esc(S.sel.n)+'</h2><div class="note">'+md(S.sel.day)+(S.sel.day===S.d.mainDay?' · 오늘':'')+(dayTag(S.sel.day)?' · '+dayTag(S.sel.day):'')+'</div><div class="lab">유형</div><div class="chips">'+TYPES.map(t=>'<button class="chip" data-t="'+t+'" aria-pressed="'+(f.type===t)+'">'+t+'</button>').join('')+'</div>';
     if(f.type==='해당없음')h+='<div class="note" style="margin-top:10px">아직 입력 전입니다. 위에서 출석 또는 다른 유형을 고르세요.</div>';
     if(f.type!=='출석'&&f.type!=='해당없음'){
-      h+='<div class="lab">'+(f.type.indexOf('인정')===0?'사유 (필수)':'사유')+' · 고르면 바로 저장 · 직접 입력은 Enter</div><div class="rp" id="rp">'+pickHtml()+'</div><div class="evb" id="evb">'+evHtml()+'</div><div class="rn" id="rn">'+pickNote()+'</div><div class="qr">'+QUICK.filter(q=>q==='해당없음'||STANDARD.has(q)).map(q=>'<button class="'+(q==='해당없음'?'na':'')+'" data-q="'+q+'"'+(q==='해당없음'?' title="사유 비우기"':'')+'>'+q+'</button>').join('')+'</div>';
+      h+='<div class="lab">'+(f.type.indexOf('인정')===0?'사유 (필수)':'사유')+' · 고르면 바로 저장 · 직접 입력은 Enter</div><div class="rp" id="rp">'+pickHtml()+'</div><div class="evb" id="evb">'+evHtml()+'</div><div class="rn" id="rn">'+pickNote()+'</div><div class="qr">'+QUICK.filter(q=>q===NA?naShown():STANDARD.has(q)).map(q=>'<button class="'+(q===NA?'na':'')+'" data-q="'+q+'">'+q+'</button>').join('')+'</div>';
       h+=timesView(f);
       const m=memo();if(m)h+='<div class="memo"><span id="mm">'+esc(m)+'</span><button id="cp">복사</button></div>';
     }
     h+='<div class="status" id="st"></div>';
     p.innerHTML=h;
     p.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{S.f.type=b.dataset.t;const el=R.querySelector('.g select[data-n="'+window.CSS.escape(S.sel.n)+'"][data-d="'+S.sel.day+'"]');if(el){el.value=S.f.type;paint(el,S.f.type);}panel();save();});
-    p.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.custom=false;S.f.r=b.dataset.q==='해당없음'?'':b.dataset.q;syncPick();save();});
+    p.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.custom=false;S.f.r=b.dataset.q;syncPick();save();});
     bindPick();
     const c=$('#cp');if(c)c.onclick=()=>navigator.clipboard.writeText(memo()).then(()=>toast('메모를 복사했습니다'),()=>toast('직접 선택해 복사해 주세요'));
     const first=$('#rp [data-inline="reason"]')||$('#rp [data-inline="rmain"]');if(first&&!f.r&&!noFocus)first.focus();
