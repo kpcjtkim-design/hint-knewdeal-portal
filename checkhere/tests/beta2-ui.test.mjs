@@ -731,12 +731,11 @@ test('an evidence-only save never sends automatically but offers 체크히어 �
   const withdrawn=order.findIndex(w=>w[0]==='tx.update'&&w[1]==='checkhereRequests/b2_old'&&w[2]==='withdrawn'),created=order.findIndex(w=>w[0]==='set');
   assert.ok(withdrawn>=0&&withdrawn<created,'withdraw first, then the new request');
   assert.deepEqual(order[created][3],{entryMemo:''});
-  // (10) 증빙만 저장 → 자동 요청 없음, 체크히어가 다르면 '체크히어 맞추기'(누르면 같은 3초 흐름)
+  // (10) 증빙만 저장(사유 옆 증빙 드롭다운 → 모아 저장) → 자동 요청 없음, 체크히어가 다르면 '체크히어 맞추기'(누르면 같은 3초 흐름)
   await chip(page,'가상증빙').getByRole('button',{name:'체크히어 맞추기'}).waitFor();
-  await student(page,'가상증빙').getByRole('button',{name:'증빙',exact:true}).click();
-  await student(page,'가상증빙').locator('select[data-f="ev"]').selectOption('확인');
-  await student(page,'가상증빙').getByRole('button',{name:'증빙 저장'}).click();
-  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상증빙"] [data-editor]'));
+  await student(page,'가상증빙').locator('select[data-inline="ev"]').selectOption('확인');
+  assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장','the evidence change is a row draft');
+  await saveChanges(page);
   assert.deepEqual(savesOf(posts,'가상증빙'),[{cls:'1',name:'가상증빙',date:D,type:'인정출석',inT:'',outT:'',oa:'',ob:'',reason:'병원 진료',ev:'확인',evr:'',before:'sig-가상증빙-2026-11-05'}]);
   await page.waitForTimeout(3500);
   assert.equal((await requestWrites(page)).filter(w=>w.name==='가상증빙').length,0,'evidence only: no automatic request');
@@ -811,23 +810,56 @@ test('changing the class keeps the current class until the new ledger arrives; i
  },virtual(body=>fail&&['b2Rev','b2Bundle'].includes(body.action)?{ok:false,error:'가상 연결 실패'}:null));
 });
 
-test('an evidence save that conflicts keeps the editor and the chosen values while the latest row loads',async()=>{
+test('evidence sits right after the reason dropdown (사용자 2026-10-20): 반려 opens a required reason box, the batch save sends ev and evr, a conflict keeps the evidence draft, and Esc·새로고침·모두 되돌리기 treat it like any draft',async()=>{
  let n=0;
  await beta(async(page,posts)=>{
   await openLedger(page);
-  const s=student(page,'가상증빙');
-  await s.getByRole('button',{name:'증빙',exact:true}).click();
-  await s.locator('select[data-f="ev"]').selectOption('반려');
-  await s.locator('input[data-f="evr"]').fill('가상 반려 사유');
-  await s.getByRole('button',{name:'증빙 저장'}).click();
-  await s.getByText('그사이 바뀐 기록이 있어 최신 값을 불러왔습니다. 확인 후 다시 저장해 주세요.').waitFor();
-  assert.equal(await s.locator('[data-editor]').count(),1);
-  assert.equal(await s.locator('select[data-f="ev"]').inputValue(),'반려');
-  assert.equal(await s.locator('input[data-f="evr"]').inputValue(),'가상 반려 사유');
+  const dialogs=[];let answer=false;page.on('dialog',d=>{dialogs.push(d.message());void(answer?d.accept():d.dismiss());});
+  const s=student(page,'가상증빙'),ev=s.locator('select[data-inline="ev"]'),evr=s.locator('input[data-inline="evr"]'),saveAll=page.locator('#b2SaveAll');
+  // 맨 오른쪽 「증빙」 단추·칸은 없고, 증빙은 사유 드롭다운 바로 옆 작은 드롭다운
+  assert.deepEqual(await page.locator('#b2Table thead th').allInnerTexts(),['이름','출결원장 (마스터시트)','체크히어','대조']);
+  assert.equal(await page.getByRole('button',{name:'증빙',exact:true}).count(),0);
+  assert.equal(await ev.evaluate(e=>e.previousElementSibling?.classList.contains('b2-rpick')),true,'right after the reason dropdown');
+  assert.deepEqual(await ev.locator('option').allTextContents(),['자동 (인정이면 미제출)','미제출','확인','반려','해당없음']);
+  assert.equal(await ev.getAttribute('aria-label'),'가상증빙 증빙');assert.equal(await ev.inputValue(),'');
+  const w=await ev.evaluate(e=>e.getBoundingClientRect().width);assert.ok(w>=100&&w<=112,`width ${w}`);
+  assert.equal(await evr.count(),0);
+  assert.equal(await student(page,'가상출석').locator('select[data-inline="ev"]').count(),0,'출석 rows have no evidence select');
+  // 반려 → 옆에 반려 사유 칸(포커스), 비어 있으면 모아 저장이 '반려 사유를 적어 주세요.'로 멈춤
+  await ev.selectOption('반려');
+  await evr.waitFor();assert.equal(await evr.evaluate(e=>e===document.activeElement),true,'the 반려 reason box takes focus');
+  assert.equal(await saveAll.innerText(),'변경 1건 저장');
+  await s.locator('[data-mark]').getByText('저장 전').waitFor();
+  await saveAll.click();
+  await s.getByText('반려 사유를 적어 주세요.').waitFor();
+  await page.locator('#b2BulkNote').getByText('1건 확인 필요').waitFor();
+  assert.equal(savesOf(posts,'가상증빙').length,0,'nothing is sent without a 반려 reason');
+  assert.equal(await evr.evaluate(e=>e===document.activeElement),true,'focus goes to the 반려 reason box');
+  await evr.fill('가상 반려 사유');
+  assert.equal(await s.getByText('반려 사유를 적어 주세요.').count(),0,'checked again while typing');
+  // 그사이 바뀜: 초안(증빙·반려 사유)은 남고 최신 값을 읽은 뒤 다시 저장하면 그 값으로
+  await saveChanges(page);
+  await s.getByText(/그사이 바뀜 · 저장 안 됨/).waitFor();
+  assert.equal(await ev.inputValue(),'반려');assert.equal(await evr.inputValue(),'가상 반려 사유');
   assert.ok(posts.filter(p=>p.action==='b2Bundle').length>=2,'the latest ledger was read');
-  await s.getByRole('button',{name:'증빙 저장'}).click();
-  await page.waitForFunction(()=>!document.querySelector('tbody[data-student="가상증빙"] [data-editor]'));
-  assert.deepEqual(savesOf(posts,'가상증빙').map(x=>[x.ev,x.evr]),[['반려','가상 반려 사유'],['반려','가상 반려 사유']]);
+  await saveChanges(page);
+  assert.deepEqual(savesOf(posts,'가상증빙').map(x=>[x.type,x.reason,x.ev,x.evr]),[['인정출석','병원 진료','반려','가상 반려 사유'],['인정출석','병원 진료','반려','가상 반려 사유']]);
+  assert.equal(await saveAll.innerText(),'변경 0건 저장');
+  assert.equal(await ev.inputValue(),'반려');assert.equal(await evr.inputValue(),'가상 반려 사유','the saved 반려 reason shows in its box');
+  assert.equal(await s.getByText('반려: 가상 반려 사유').count(),0,'no second 반려 line under the box');
+  // Esc는 증빙 초안도 되돌림
+  await ev.selectOption('확인');assert.equal(await evr.count(),0);assert.equal(await saveAll.innerText(),'변경 1건 저장');
+  await ev.press('Escape');assert.equal(await ev.inputValue(),'반려');assert.equal(await saveAll.innerText(),'변경 0건 저장');
+  // 새로고침은 묻고(아니오면 그대로), 모두 되돌리기는 확인 뒤 시트 값으로
+  await ev.selectOption('미제출');
+  await page.locator('#b2Reload').click();
+  for(let i=0;i<100&&dialogs.length<1;i++)await page.waitForTimeout(50);
+  assert.deepEqual(dialogs,['저장하지 않은 출결 수정 1건이 있습니다. 새로 읽으면 사라집니다. 계속할까요?']);
+  assert.equal(await ev.inputValue(),'미제출');
+  answer=true;await page.locator('#b2RevertAll').click();
+  await page.waitForFunction(()=>document.querySelector('#b2SaveAll')?.textContent==='변경 0건 저장');
+  assert.equal(await ev.inputValue(),'반려');
+  assert.equal(savesOf(posts,'가상증빙').length,2);
  },virtual(body=>body.action==='b2Save'&&body.args[0].name==='가상증빙'&&++n===1?{ok:false,error:'CONFLICT: 그사이 다른 사람이 이 기록을 바꿨습니다.'}:null));
 });
 
@@ -1070,21 +1102,20 @@ test('a conflict whose latest ledger cannot be read keeps the draft and its base
  }));
 });
 
-test('an evidence save pressed while that row\'s batch save runs says it was not saved when the batch save fails',async()=>{
+test('a reason and an evidence change in one row go in one batch save; the evidence select is locked while it runs and a failed save keeps both drafts',async()=>{
  await beta(async(page,posts)=>{
   await openLedger(page);
-  const s=student(page,'가상증빙');
+  const s=student(page,'가상증빙'),ev=s.locator('select[data-inline="ev"]');
   await setReason(s,'병원 진료 2');
-  await s.getByRole('button',{name:'증빙',exact:true}).click();
-  await s.locator('select[data-f="ev"]').selectOption('확인');
+  await ev.selectOption('확인');
+  assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장','one row, one draft');
   await page.locator('#b2SaveAll').click();
   await page.locator('#b2SaveAll').getByText('저장 중 1/1').waitFor();
-  await s.getByRole('button',{name:'증빙 저장'}).click();
-  await s.getByText(/이어서 저장 대기/).waitFor();
+  assert.equal(await ev.isDisabled(),true,'locked while the batch save runs');
   await page.waitForFunction(()=>/^변경 \d+건 저장$/.test(document.querySelector('#b2SaveAll')?.textContent||''),null,{timeout:15000});
-  await s.getByText('앞선 출결 저장이 끝나지 않아 증빙은 저장하지 않았습니다. 확인 후 다시 눌러 주세요.').waitFor();
-  assert.equal(await s.locator('select[data-f="ev"]').inputValue(),'확인','the chosen evidence stays');
-  assert.equal(await s.getByRole('button',{name:'증빙 저장'}).isEnabled(),true);
-  assert.deepEqual(savesOf(posts,'가상증빙').map(x=>x.reason),['병원 진료 2'],'only the failed row save was sent');
+  await s.getByText(/가상 저장 실패/).waitFor();
+  assert.equal(await ev.inputValue(),'확인','the chosen evidence stays');assert.equal(await ev.isEnabled(),true);
+  assert.equal(await reasonText(s),'병원 진료 2');
+  assert.deepEqual(savesOf(posts,'가상증빙').map(x=>[x.reason,x.ev,x.evr]),[['병원 진료 2','확인','']],'reason and evidence in one save');
  },virtual(async body=>{if(body.action==='b2Save'){await new Promise(r=>setTimeout(r,1500));return {ok:false,error:'가상 저장 실패'};}return null;}));
 });

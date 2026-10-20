@@ -214,10 +214,12 @@ test('출결대조 사유 칸 = 드롭다운 하나(240px): 지금까지 쓴 사
   // 저장된 '인적성(DCAT)'은 종류 기타 + 'DCAT'
   assert.equal(await sub(go).inputValue(),'기타');assert.equal(await go.locator('input[data-inline="rapt"]').inputValue(),'DCAT');
   await park.locator('.e-extra').waitFor();assert.equal(await p.locator('[data-filter="extra"]').textContent(),'추가 증빙2');
-  // 증빙 편집기: 취업박람회 안내, 「확인」으로 저장하면 이행
-  await dong.locator('[data-edit]').click();
-  assert.match(await p.locator('.b2-editor').innerText(),/취업박람회 · 추가 증빙 기업면접 확인서까지 받았으면 「확인」/);
-  await p.locator('.b2-editor [data-f="ev"]').selectOption('확인');await p.locator('.b2-editor [data-save]').click();
+  // 사유 바로 옆 증빙 드롭다운(사용자 2026-10-20): 취업박람회 안내는 title, 「확인」을 모아 저장하면 이행
+  const ev=dong.locator('select[data-inline="ev"]');
+  assert.equal(await ev.evaluate(e=>e.previousElementSibling?.classList.contains('b2-rpick')),true);
+  assert.match(await ev.getAttribute('title'),/취업박람회 · 추가 증빙 기업면접 확인서까지 받았으면 「확인」/);
+  await ev.selectOption('확인');assert.equal(await p.locator('#b2SaveAll').textContent(),'변경 1건 저장');
+  await p.locator('#b2SaveAll').click();
   await dong.locator('.b2-badge.e-ok',{hasText:'추가 증빙 확인'}).waitFor();
   assert.equal(await p.locator('[data-filter="extra"]').textContent(),'추가 증빙1');
   assert.deepEqual(posts.filter(b=>b.action==='b2Save').at(-1).args[0].ev,'확인');
