@@ -5,7 +5,8 @@
 // 머리말 '오늘 · 날짜 · 반 이름'과 한 줄 안내, 주소 #t/큰탭/하위탭으로 새로고침·뒤로가기·바로 열기, 불러오기 실패는 쉬운 말과 '다시 시도'.
 import {createBeta2Client,onBeta2Rev} from './beta2-data.mjs';
 import {studentStats,diseaseReport} from './beta2-core.mjs';
-import {ensureBeta2Css,esc,md,loading} from './beta2-ui.mjs';
+import {ensureBeta2Css,esc,md,loading,toast} from './beta2-ui.mjs';
+import {loadReasonCatalog} from './reason-catalog-store.mjs';
 import {feature,DISEASE,classInfo as cohortClass} from './cohort.mjs';
 // 탭 → 열림 표시(cohort.json features). 1기 시간표 시드·1기 설문 카탈로그를 쓰던 화면이라 2기 자료가 생길 때까지 닫습니다.
 const LATER={'timetable-today':'timetable',timetable:'timetable',materials:'materials',surveys:'surveys'};
@@ -32,6 +33,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  const hero=parent.querySelector('.hero');if(!hero)return null;
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
  const cls=String(classInfo.id),client=createBeta2Client(user,{db}),known=cohortClass(cls),className=`${cls}반 ${known?known.name:classInfo.course||''}`.trim();
+ // 사유 목록(관리자 「사유 목록」, settings/reasonCatalog): 출결판 사유 드롭다운보다 먼저 읽습니다(못 읽으면 기본 목록 + 경고 한 번).
+ const reasons=loadReasonCatalog(db,user).then(r=>{if(r.firstWarning)toast(r.warning);}).catch(()=>{});
  const bar=document.createElement('section');bar.className='teacher-context-bar';hero.before(bar);hero.classList.add('teacher-header-class');bar.append(hero);
  // 머리 카드의 반 이름도 머리말과 같은 모양(1반 서울(관악구)_모빌리티 AI_서울대)으로
  const eyebrow=hero.querySelector('.eyebrow'),heroTitle=hero.querySelector('h2');if(eyebrow)eyebrow.textContent='우리 반';if(heroTitle)heroTitle.textContent=className;
@@ -70,7 +73,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=import(fresh('./teacher-beta.js?v=20261020-rs1','beta')).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261020-rs1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -160,7 +163,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  client.rev().catch(()=>{});
  // 질병 인정 경고: 4회 이상이면 모든 탭 위에 띄웁니다(출결원장 기준, 체크히어 메모와 다르면 함께 표시).
  (async()=>{try{
-  const [b,ch]=await Promise.all([client.bundle(cls),client.checkhereDisease([cls])]);if(!alive())return;
+  const [b,ch]=await Promise.all([client.bundle(cls),client.checkhereDisease([cls]),reasons]);if(!alive())return; // 질병 판정도 사유 목록을 따름
   const report=diseaseReport(studentStats(b,{cls}),ch),el=$('#t2Alert');
   if(!report.rows.length&&!report.review.length)return;
   el.hidden=false;el.classList.toggle('hard',report.rows.some(r=>r.count>=6));

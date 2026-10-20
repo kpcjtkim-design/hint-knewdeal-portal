@@ -1,23 +1,16 @@
 // Deterministic suggestions. No attendance, evidence, or CheckHere write occurs here.
 // 지각·조퇴 기준 시각은 그날·그 반 규칙(cohort ruleFor: 기본 09:10·17:50, 공장견학 날 10:10·16:50)입니다.
 import {ruleFor,lateAfter,earlyBefore} from './cohort.mjs';
+import {reasonCategoryOf} from './attendance-reason-catalog.mjs';
 const ruleOf=r=>ruleFor(r?.date,r?.classId),lateAt=r=>lateAfter(ruleOf(r)),earlyAt=r=>earlyBefore(ruleOf(r));
 export const ACTIVE_REQUESTS=['pending','approved','applying'];
 export const PROPOSAL_STATUS={pending:'승인 대기',approved:'승인됨 · 반영 대기',applying:'반영 중',verified:'반영 확인 완료',rejected:'반려',withdrawn:'요청취소',conflict:'원본 변경 · 재확인',partial:'일부 반영 · 재확인',failed:'반영 실패',unknown:'결과 미확인'};
 const hm=v=>/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(v||'')?v.slice(0,5):'';
 export const sourceRecord=r=>Object.fromEntries(['id','classId','date','name','phoneLast4','version','entry','rawEntry','exit','entryMemo','exitMemo','outings','teacher','schedule','readState'].map(k=>[k,r?.[k]??null]));
 export const sameRecord=(a,b)=>JSON.stringify(sourceRecord(a))===JSON.stringify(sourceRecord(b));
-export function reasonCategory(reason){
-  const text=String(reason||'').trim();
-  if(!text||/확인\s*필요|불명|미정|아님|취소/.test(text))return '';
-  // 2026-10-20 사유 드롭다운(attendance-reason-catalog.mjs): 취업박람회·경조사·공가를 더하고 인적성 종류(HMAT·GSAT…)도 인적성으로 봅니다.
-  // 목록 개정(2026-10-20): '자격증(종류)'는 체크히어 메모 분류 '시험', 일반건강검진(규정 0917 불인정)은 병원으로 보지 않습니다.
-  const found=[['병원',/병원|병결|병가|진료|치료|질병|입원|통원|수술|(?<!일반\s*(?:건강\s*)?)검진/],['면접',/면접/],['인적성',/인적성|HMAT|GSAT|SKCT|L-?TAB|AI\s*역량\s*검사/i],['취업박람회',/취업\s*박람회|채용\s*박람회|잡\s*페어|job\s*fair/i],['예비군',/예비군/],['민방위',/민방위/],['시험',/시험|응시|자격증/],['외조모상',/외조모상/],['외조부상',/외조부상/],['조모상',/(?<!외)조모상/],['조부상',/(?<!외)조부상/],['모친상',/모친상/],['부친상',/부친상/],['경조사',/경조사/],['공가',/공가|법원|관공서/]].filter(([,re])=>re.test(text));
-  // An aptitude examination is a single category even when described as an exam; a job-fair interview is the job fair; a named funeral beats the generic 경조사.
-  const has=k=>found.some(([v])=>v===k),funeral=found.some(([v])=>/상$/.test(v));
-  const kinds=found.map(([k])=>k).filter(k=>!(k==='시험'&&has('인적성'))&&!(k==='면접'&&has('취업박람회'))&&!(k==='경조사'&&funeral));
-  return kinds.length===1?kinds[0]:'';
-}
+// 체크히어 메모 분류: 사유 목록 데이터(attendance-reason-catalog.mjs, 관리자 「사유 목록」에서 바꿀 수 있음)의 찾는 말·체크히어 분류·인정 여부로 정합니다(사용자 2026-10-20).
+// 기본 목록의 결과는 예전 고정 규칙과 같습니다(인적성 > 시험, 취업박람회 > 면접, 이름 있는 상 > 경조사, 일반건강검진은 병원 아님, '확인 필요'·'아님' 등은 '').
+export const reasonCategory=reason=>reasonCategoryOf(reason);
 export function suggestReason({status,reason,record:r,teacher=r?.teacher||''}){
   if(status==='출석')return {field:'entryMemo',fields:['entryMemo','exitMemo'],text:'',clear:true,supported:true,blocked:false,notes:['정상출석 · 사유 공란을 추천합니다. 기존 사유가 있으면 공란 변경요청으로 비울 수 있습니다.']};
   const recognized=/^인정(출석|지각|조퇴|외출)$/.test(status),kind=status.replace(/^인정/,'');

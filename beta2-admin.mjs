@@ -1,13 +1,16 @@
 // 2기 관리자 화면 묶음. index.html이 b2로 시작하는 탭을 여기로 넘깁니다. 고른 화면만 불러옵니다.
 import {createBeta2Client,onBeta2Rev,lastBeta2Rev} from './beta2-data.mjs';
 import {ensureBeta2Css,errorBox,toast} from './beta2-ui.mjs';
+import {loadReasonCatalog} from './reason-catalog-store.mjs';
 const SCREENS={b2home:()=>import('./beta2-home.mjs'),b2ledger:()=>import('./beta2-ledger.mjs'),b2status:()=>import('./beta2-status.mjs'),b2downloads:()=>import('./beta2-downloads.mjs'),b2docs:()=>import('./beta2-docs.mjs'),b2vocs:()=>import('./beta2-voc.mjs'),
- b2times:()=>import('./beta2-times.mjs'),b2roster:()=>import('./beta2-roster.mjs'),b2notify:()=>import('./notify-inbox.mjs'),b2dropouts:()=>import('./beta2-dropouts.mjs')}; // 교육시간 조정·교육생 상태(2026-10-19) b2notify: 홈 › 알림(알림함) b2dropouts: 출결 › 중도탈락·수료(2026-10-20)
+ b2times:()=>import('./beta2-times.mjs'),b2roster:()=>import('./beta2-roster.mjs'),b2notify:()=>import('./notify-inbox.mjs'),b2dropouts:()=>import('./beta2-dropouts.mjs'),b2reasons:()=>import('./beta2-reasons.mjs')}; // 교육시간 조정·교육생 상태(2026-10-19) b2notify: 홈 › 알림(알림함) b2dropouts: 출결 › 중도탈락·수료(2026-10-20) b2reasons: 공지·설정 › 사유 목록(2026-10-20)
 export async function mountBeta2Admin(host,{db,user,classes,tab,selected,context,open}){
  ensureBeta2Css();
  const client=createBeta2Client(user,{db});
  watchVoc(client,open,tab);
- try{const m=await SCREENS[tab]();if(!host.isConnected)return null;return await m.mount(host,{db,user,classes,client,selected,context,open});}
+ // 사유 목록(settings/reasonCatalog)을 먼저 읽어 드롭다운·해석기가 같은 목록을 씁니다(문서가 깨졌거나 못 읽으면 기본 목록 + 경고 한 번).
+ const reasons=loadReasonCatalog(db,user).then(r=>{if(r.firstWarning)toast(r.warning);}).catch(()=>{});
+ try{const [m]=await Promise.all([SCREENS[tab](),reasons]);if(!host.isConnected)return null;return await m.mount(host,{db,user,classes,client,selected,context,open});}
  catch(e){if(host.isConnected)host.innerHTML=`<div class="b2">${errorBox(e)}</div>`;return null;}
 }
 

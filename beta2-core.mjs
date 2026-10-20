@@ -4,15 +4,16 @@ import {seconds} from './checkhere/rules.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
 import {ruleFor,DISEASE,COMPLETION_RATE,isIsoDate,isTestClass} from './cohort.mjs';
 import {ruleOn,SOURCE_SHEET} from './beta2-daytimes.mjs';
-import {extraEvidence} from './attendance-reason-catalog.mjs'; // 취업박람회 추가 증빙(2026-10-20)
+import {extraEvidence,isDiseaseText} from './attendance-reason-catalog.mjs'; // 취업박람회 추가 증빙·질병 판정(2026-10-20)
 
 export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출'];
 export const B2_EVIDENCE=['','미제출','반려','확인','해당없음'];
 export const B2_PRESENT=new Set(['출석','지각','조퇴','외출','인정지각','인정조퇴','인정외출']);
 export const recognizedType=t=>String(t||'').startsWith('인정');
-// 사유 표기(병결·병원·병가·진료…)를 질병으로 봅니다.
-export const DISEASE_REASON=/병원|병결|병가|진료|질병|입원|통원|수술|치료|(?<!일반\s*(?:건강\s*)?)검진/; // 일반건강검진은 질병 인정 아님(규정 0917, 2026-10-20)
-export const isDiseaseReason=reason=>DISEASE_REASON.test(String(reason||''));
+// 사유 표기(병결·병원·병가·진료…)를 질병으로 봅니다: 사유 목록 데이터에서 '질병 포함'인 분류·세부의 찾는 말(일반건강검진은 아님, 규정 0917).
+// DISEASE_REASON은 기본 목록과 같은 옛 규칙(참고용)입니다. 판정은 isDiseaseReason(관리자가 바꾼 목록을 따름)을 씁니다.
+export const DISEASE_REASON=/병원|병결|병가|진료|질병|입원|통원|수술|치료|(?<!일반\s*(?:건강\s*)?)검진/;
+export const isDiseaseReason=reason=>isDiseaseText(reason);
 export const diseaseLevel=n=>n>DISEASE.max?'초과':n===DISEASE.max?`${DISEASE.max}회 도달`:n>=DISEASE.warn?'주의':'';
 
 export function decodeBundle(raw){
