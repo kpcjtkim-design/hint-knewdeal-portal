@@ -67,6 +67,8 @@ function answer(body){
   case 'b2DayTimes':return p.cls==='1'&&p.date===TODAY?DAYTIMES:{date:p.date,cls:p.cls,start:'09:00',end:'18:00',lateAfter:'09:10',earlyBefore:'17:50',source:'기본',modules:[]};
   case 'b2LedgerMemos':return {...MEMOS,rows:MEMOS.rows.filter(r=>!p.cls||r.cls===p.cls)};
   case 'b2ModuleTimes':return {rev:5,rows:[]};
+  // 반 임원(2026-10-20): 1반 반장 한수빈이 중도탈락이라 보궐 필요
+  case 'b2Officers':return {rev:5,roles:['반장','부반장','총무','앰버서더'],kinds:['최초','보궐'],rows:[],current:{[p.cls||'1']:p.cls&&p.cls!=='1'?{반장:null,부반장:null,총무:null,앰버서더:null}:{반장:{row:2,name:'한수빈',kind:'최초',start:'2026-10-28'},부반장:{row:4,name:'고다원',kind:'보궐',start:'2026-11-02'},총무:null,앰버서더:{row:3,name:'김동진',kind:'최초',start:'2026-10-28'}}},needs:p.cls&&p.cls!=='1'?[]:[{cls:'1',role:'반장',name:'한수빈',status:'중도탈락',changed:'2026-11-04',row:2}]};
   default:return {};
  }
 }
@@ -120,6 +122,9 @@ test('홈 반 카드는 반 현황을 열고, 카드마다 그 반 자료를 보
   const info=section(page,'info');
   assert.match(await info.locator('[data-teacher]').innerText(),/김지아/);
   assert.match(await info.innerText(),/모빌리티 AI 실무/);
+  await info.locator('[data-officer="반장"]').waitFor();
+  assert.deepEqual(await info.locator('[data-officer]').allInnerTexts(),['한수빈 최초 보궐 필요','고다원 보궐','없음','김동진 최초'],'four officers with 최초/보궐 and 보궐 필요');
+  assert.ok(posts.some(b=>b.action==='b2Officers'&&b.args[0]?.cls==='1'));
   assert.equal(await stat(page,'info','총원'),'4');assert.equal(await stat(page,'info','재학'),'3');assert.equal(await stat(page,'info','중도탈락'),'1');
 
   // 2. 그날 출결: 한수빈(11/4 중도탈락)은 빠지고, 출석 외 세 명이 유형·사유와 함께
