@@ -8,7 +8,7 @@ test('admin downloads fresh raw without Firebase writes; partial failure require
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1400,height:1000}}),base=join(import.meta.dirname,'../..');
  let value=10,fail=false,googleReads=0;const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const catalog={events:[{id:'event',classId:'1',title:'SW 테스팅',date:'2026-11-05'}],responseSources:[{id:'source',title:'임베디드AI-HW(SW 테스팅)',sheetUrl:'https://docs.google.com/spreadsheets/d/raw-fixture/edit#gid=3'}]};
- try{
+ try{await page.addInitScript(()=>{const offset=Date.parse('2027-01-25T10:00:00+09:00')-Date.now(),Real=Date;globalThis.Date=class extends Real{constructor(...a){super(...(a.length?a:[Real.now()+offset]));}static now(){return Real.now()+offset;}};});
   await page.route('**/*',async route=>{
    const req=route.request(),u=new URL(req.url());
    if(u.hostname==='www.gstatic.com'&&u.pathname.endsWith('firebase-auth.js'))return route.fulfill({contentType:'text/javascript',body:`export class GoogleAuthProvider{addScope(scope){if(scope!=='https://www.googleapis.com/auth/spreadsheets.readonly')throw Error('unexpected scope');}setCustomParameters(){}static credentialFromResult(){return{accessToken:'fixture'}}}export async function reauthenticateWithPopup(){return{}}`});

@@ -24,12 +24,12 @@ async function fixture(page,{period=false,partial=false}={}){
   if(/\.(mjs|css)$/.test(path)&&existsSync(join(base,path)))return route.fulfill({contentType:path.endsWith('.css')?'text/css':'text/javascript',body:readFileSync(join(base,path),'utf8')});
   return route.abort();
  });
- await page.goto('https://fixture.test/');
+ /* 2기에서 닫힌 화면(1기 방식 시트 리더·단위기간 출석부·설문)의 동작 시험이라 시험 안에서만 cohort 기능을 켭니다. */await page.route('**/cohort.mjs',r=>r.fulfill({contentType:'text/javascript',body:readFileSync(new URL('../../cohort.mjs',import.meta.url),'utf8').replace(/"(attendanceReader|periodRoster|surveys|timetable|materials|uploads)": false/g,'"$1": true')}));await page.goto('https://fixture.test/');
 }
 
 test('attendance RAW waits for simple preflight confirmation; dismiss/reopen reuses fetched data',async()=>{
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
- try{
+ try{await page.addInitScript(()=>{const offset=Date.parse('2027-01-25T10:00:00+09:00')-Date.now(),Real=Date;globalThis.Date=class extends Real{constructor(...a){super(...(a.length?a:[Real.now()+offset]));}static now(){return Real.now()+offset;}};});
   await fixture(page);await page.locator('#dlFrom').fill('2026-11-03');await page.locator('#dlTo').fill('2026-11-03');await page.locator('#dlStart').click();
   const modal=page.locator('[data-download-preflight]');await modal.waitFor();
   assert.match(await modal.innerText(),/서류 미제출 \/ 반려\s+1건 \/ 0건/);assert.match(await modal.innerText(),/체크히어 미반영 요청\s+검사하지 않음/);
@@ -44,7 +44,7 @@ test('attendance RAW waits for simple preflight confirmation; dismiss/reopen reu
 
 test('partial RAW requires explicit partial-data confirmation and includes failure audit unchanged',async()=>{
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage();
- try{
+ try{await page.addInitScript(()=>{const offset=Date.parse('2027-01-25T10:00:00+09:00')-Date.now(),Real=Date;globalThis.Date=class extends Real{constructor(...a){super(...(a.length?a:[Real.now()+offset]));}static now(){return Real.now()+offset;}};});
   await fixture(page,{partial:true});await page.locator('#dlFrom').fill('2026-11-03');await page.locator('#dlTo').fill('2026-11-03');await page.locator('#dlStart').click();
   await page.locator('#dlStatus').filter({hasText:'1개 원본 수집 실패'}).waitFor();assert.equal(await page.evaluate(()=>window.saved.length),0);
   await page.locator('#dlSave').click();const modal=page.locator('[data-download-preflight]');await modal.waitFor();
@@ -57,7 +57,7 @@ test('partial RAW requires explicit partial-data confirmation and includes failu
 
 test('unit-period XLSX and ZIP both confirm the same prepared data without extra reads or builds',async()=>{
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
- try{
+ try{await page.addInitScript(()=>{const offset=Date.parse('2027-01-25T10:00:00+09:00')-Date.now(),Real=Date;globalThis.Date=class extends Real{constructor(...a){super(...(a.length?a:[Real.now()+offset]));}static now(){return Real.now()+offset;}};});
   await fixture(page,{period:true});await page.locator('#periodFrom').fill('2026-11-03');await page.locator('#periodTo').fill('2026-11-03');await page.locator('#periodCheck').click();
   await page.locator('#periodState').filter({hasText:'사전 점검 완료'}).waitFor();await page.locator('#periodGenerate').click();
   await page.getByRole('button',{name:'1반 Excel 다운로드',exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.saved.length),0);

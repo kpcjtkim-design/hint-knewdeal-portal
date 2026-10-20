@@ -376,10 +376,10 @@ test('stored-match: the first-boot seed looks at recent days (a shrunk roster), 
   const records=[];
   for(let d=1;d<=10;d++){const date=`2026-10-${String(d).padStart(2,'0')}`;for(const n of names.filter(n=>d<=5||!gone.includes(n.name)))records.push({id:`2_${date}_${n.key}`,classId:'2',date,source:'live',readState:'complete',studentKey:n.key,name:n.name,phoneLast4:n.last4});}
   const links=store(records),last=links.lastPlain('2');
-  assert.deepEqual([last.date,last.keys.size,last.keys.has('key-4')],['2026-12-12',7,false]);
+  assert.deepEqual([last.date,last.keys.size,last.keys.has('key-4')],['2026-10-10',7,false]);
   // 10/15 가린 화면: 나간 마가상과 첫 글자·끝 4자리가 같은 새 학생은 연결하지 않습니다. 남은 학생은 잇습니다.
   const rows=[{seq:'1',name:'마**',phone:'010-****-1004',kind:'masked'},{seq:'2',name:'가**',phone:'010-****-1000',kind:'masked'}],entries=[{attendeeId:'att-new'},{attendeeId:'att-k0'}];
-  const got=resolveMasked({classId:'2',date:'2026-12-17',rows,entries,links,identities:links.identities('2'),lastPlain:last});
+  const got=resolveMasked({classId:'2',date:'2026-10-15',rows,entries,links,identities:links.identities('2'),lastPlain:last});
   assert.deepEqual(got[0],{skip:'unlinked'});assert.deepEqual([got[1].studentKey,got[1].source],['key-0','stored-match']);assert.equal(links.link('2','att-new'),null);
   // 마지막 원문 수집일에서 30일 뒤(새 기수가 같은 반 번호를 씀): 저장된 기록으로는 아무도 잇지 않습니다
   const later=store(records);
