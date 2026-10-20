@@ -89,6 +89,7 @@ test('3) 취업박람회 + 인정 출결 needs the extra 기업면접 확인서 
  assert.equal(extraEvidenceStarted({type:'결석',reason:'취업박람회'},{type:'인정출석',reason:'취업박람회'}),true);
  assert.equal(extraEvidenceStarted({type:'인정출석',reason:'취업박람회'},{type:'인정출석',reason:'취업박람회(현장 면접)'}),false,'already needed → no second notice');
  assert.equal(extraEvidenceStarted({type:'인정출석',reason:'취업박람회'},{type:'인정출석',reason:'면접'}),false);
+ assert.equal(extraEvidenceStarted(null,{type:'인정출석',reason:'취업박람회',ev:'확인'}),false,'already confirmed → nothing to ask');
  assert.deepEqual(extraNotice({cls:'3',name:'가상',date:'2026-11-05',type:'인정출석'}),{title:'추가 증빙 필요 · 3반 가상',body:'11/5 인정출석 취업박람회 · 기업면접 확인서 제출이 필요합니다.'});
  const COLS=['date','cls','name','type','inT','outT','oa','ob','reason','ev','evr','memo','evApplied','check','prov','flag','sig'];
  const L=(date,cls,name,type,o={})=>COLS.map(k=>({date,cls,name,type,reason:'',ev:'',evr:'',evApplied:type.startsWith('인정')?(o.ev||'미제출'):'해당없음',...o})[k]??'');

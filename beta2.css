@@ -28,6 +28,12 @@
 .b2 .t-absent{background:#fee2e2;color:#991b1b}.b2 .t-late{background:#fef3c7;color:#92400e}.b2 .t-rec{background:#dbeafe;color:#1d4ed8}.b2 .t-na{background:#f8fafc;color:#94a3b8}.b2 .t-dup{background:#ede9fe;color:#6d28d9}
 .b2 .e-ok{background:#dcfce7;color:#166534}.b2 .e-miss{background:#fee2e2;color:#b91c1c}.b2 .e-none{background:#f1f5f9;color:#64748b}
 .b2 .e-extra{background:#ffedd5;color:#9a3412;box-shadow:inset 0 0 0 1px #fdba74} /* 취업박람회 추가 증빙(기업면접 확인서) */
+.b2 .b2-xnote{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:6px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-size:11px;font-weight:800}
+/* 출결대조 사유 칸(240px): 분류·세부 드롭다운 한 줄 + 사유 글 한 줄(2026-10-20) */
+.b2 .b2-inline .b2-rpick{display:flex;flex-wrap:wrap;gap:4px;flex:0 1 240px;max-width:240px;min-width:0}
+.b2 .b2-inline .b2-rsel{display:flex;gap:4px;flex:1 1 100%;min-width:0}
+.b2 .b2-inline .b2-rsel select{flex:1 1 0;min-width:0;font-weight:600;padding:4px 5px}
+.b2 .b2-inline .b2-rpick .b2-reason{flex:1 1 100%;max-width:none;min-width:0}
 .b2 .b2-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#f1f5f9;font-size:12px;font-weight:700;color:#334155}
 .b2 .b2-pill.live::before{content:"";width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
 .b2 .b2-pill.wait::before{content:"";width:8px;height:8px;border-radius:50%;background:#f59e0b}

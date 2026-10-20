@@ -8,7 +8,7 @@
 // 출결대조 메모(사용자 요청 2026-10-19): 이름 아래 「+ 메모」→ 수기출석·증빙 빠른 칩·직접 입력(100자)을 누르면 바로 b2LedgerMemo로 저장하고 관리자 알림(notify.mjs)을 남깁니다. 출결 초안과 따로라 「변경 N건 저장」에 세지 않습니다.
 import {doc,setDoc,onSnapshot,query,collection,where,serverTimestamp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import {dayView,dayCounts,compareCheckHere,memoReason,timesFromRecord,neededTimes,teacherOf,recognizedType,B2_TYPES} from './beta2-core.mjs';
-import {esc,md,badge,evBadge,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
+import {esc,md,badge,evBadge,extraBadge,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {loadCheckHereDay,watchCheckHereDay} from './checkhere-snapshots.mjs';
 import {matchSnapshot} from './attendance-beta-core.mjs';
 import {loadCheckHereIdentities} from './checkhere-name-store.mjs';
@@ -17,11 +17,16 @@ import {withdrawRequest} from './checkhere-request-actions.mjs';
 import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnApply} from './beta2-checkhere-core.mjs';
 import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
+// 사유 드롭다운(사용자 요청 2026-10-20): 분류 → 세부(인적성은 종류)로 표준 글, 직접 입력도 됨. 취업박람회 인정 출결은 추가 증빙(기업면접 확인서) 배지·거르기·알림.
+import {catOptions,subOptions,splitReason,composeReason,tidyReason,typeWarning,OTHER,isJobFair,extraEvidence,EXTRA_DOC} from './attendance-reason-catalog.mjs';
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
 import {isIsoDate,BASE_RULE,YEARS} from './cohort.mjs';
 
-const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치']];
+const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치'],['extra','추가 증빙']]; // 추가 증빙: 취업박람회 인정 출결 중 증빙 「확인」 전
+const extraOpen=r=>{const x=extraEvidence(r?.rec);return !!x&&!x.done;};
+// 사유 드롭다운 위치: 지금 글에서 분류·세부를 읽습니다(표준 글이 아니면 '기타 (직접 입력)', 비면 '분류').
+const pickOf=text=>{const t=String(text||''),s=splitReason(t);return {cat:s.cat||(t.trim()?OTHER:''),sub:s.sub};};
 const EVIDENCE=[['','자동 (인정이면 미제출)'],['미제출','미제출'],['확인','확인'],['반려','반려'],['해당없음','해당없음']];
 const TIMES=['inT','outT','oa','ob'],ALL={inT:'x',outT:'x',oa:'x',ob:'x'};
 const COLUMNS=['times','entryMemo','exitMemo'],PARTS=['msg','mark','status','prop','memo','memoedit']; // 직접 요청 줄의 세 칸, 따로 채우는 행 부분
@@ -66,7 +71,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  const saved=row=>({type:row.type,inT:row.rec?.inT||'',outT:row.rec?.outT||'',oa:row.rec?.oa||'',ob:row.rec?.ob||'',reason:row.rec?.reason||''});
  const valuesOf=row=>({...saved(row),...drafts.get(row.name)});
  // 저장될 값(유형에 필요한 시간만, 사유 앞뒤 공백 없음)으로 비교합니다.
- const sameAs=(a,b)=>a.type===b.type&&JSON.stringify(neededTimes(a.type,a))===JSON.stringify(neededTimes(b.type,b))&&String(a.reason||'').trim()===String(b.reason||'').trim();
+ const sameAs=(a,b)=>a.type===b.type&&JSON.stringify(neededTimes(a.type,a))===JSON.stringify(neededTimes(b.type,b))&&tidyReason(a.reason)===tidyReason(b.reason); // 빈 괄호('인적성()')·겹친 공백은 같은 글
  const hasDraft=name=>drafts.has(name)||(editing===name&&!!form?.dirty);
  const typing=el=>{const a=document.activeElement;return !!a&&!!el&&el.contains(a)&&a.matches('input,select,textarea');};
  const sameDay=day=>day===`${cls}|${date}`;
@@ -99,7 +104,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  function visible(){
   const q=search.trim(),held=new Set(sync.holds().filter(h=>h.cls===cls&&h.date===date).map(h=>h.name));
   const keep=r=>pinned.has(r.name)||held.has(r.name)||jobs.has(r.name)||hasDraft(r.name)||notes.has(r.name)||editing===r.name||memoUi.open===r.name||typing(bodies.get(r.name));
-  return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff'))));
+  return rows.filter(r=>keep(r)||((!q||r.name.includes(q))&&(filter==='all'||(filter==='exceptions'&&r.rec&&r.type!=='출석')||(filter==='diff'&&compareRow(r).state==='diff')||(filter==='extra'&&extraOpen(r)))));
  }
  // × 버튼: 켜지는 조건(deletionGate: 규칙 게시 깃발·권한, 중계는 필요 없음)이 맞고, 기록 번호가 있는 칸이고(canDeleteTime), 출결원장 유형이 그 시간을 쓰지 않을 때만 켭니다.
  // v2(마지막 중계 신호에 time-delete-v2, 신호가 없으면 v2로 봄)면 관리자 1교시(ATTEND) 학생의 퇴실 ×·1교시 ×는 1교시·퇴실 두 칸을 함께 지웁니다(사용자 결정 2026-10-19, timeDeletePlan).
@@ -121,24 +126,28 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   return `<b>${t(raw)}</b> → <b>${t(record.exit)}</b>${delButton(row,record,'exit')}${period?`<span class="b2-small b2-muted" style="white-space:nowrap"> · 교시 기록 ${t(record.entry)}${entryX}</span>`:''}${trips.length||record.outingCount?`<span class="b2-sub">외출 ${Math.max(trips.length,+record.outingCount||0)}회 ${esc(trips.join(', '))}</span>`:''}${memo?`<span class="b2-sub">${memo}</span>`:''}`;
  }
  // 행 안 입력칸: 유형, 그 유형에 필요한 시간만, 사유(적당히 좁게, 전체 글은 title). 초안이 있으면 초안 값을 보입니다.
+ // 분류·세부(인적성 종류) 드롭다운. 세부가 없는 분류(기타)는 하나만.
+ function pickSelects(n,v){const {cat,sub}=pickOf(v.reason),o=subOptions(cat,sub);return `<select data-inline="rcat" aria-label="${n} 사유 분류" title="사유 분류">${catOptions(cat,{type:v.type,blank:'분류'})}</select>${o?`<select data-inline="rsub" aria-label="${n} ${cat==='인적성'?'인적성 종류':'세부 사유'}" title="${cat==='인적성'?'인적성 종류':'세부 사유'}">${o}</select>`:''}`;}
+ // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙, 인정 출결인데 인정 분류가 아님
+ function pickNote(v){const w=typeWarning(v.type,pickOf(v.reason).cat);return `${isJobFair(v.reason)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}`;}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
   const noReason=!row.rec&&v.type==='출석',record=matchFor(row),hint=memoReason(record?.entryMemo)||memoReason(record?.exitMemo);
-  return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형">${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT?time('inT','입실'):''}${need.outT?time('outT','퇴실'):''}${need.oa?time('oa','외출 시작')+time('ob','외출 종료'):''}<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(v.reason)}" aria-label="${n} 사유" ${noReason?'disabled placeholder="출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)" title="출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)"':`placeholder="${recognizedType(v.type)?'사유 (필수)':'사유'}" title="${esc(v.reason)}"`}>${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
+  return `${valid?'':badge(row.type)}<select data-inline="type" aria-label="${n} 출결 유형">${valid?'':'<option value="" selected>유형 선택 필요</option>'}${B2_TYPES.map(t=>`<option value="${t}" ${t===v.type?'selected':''}>${t}</option>`).join('')}</select>${need.inT?time('inT','입실'):''}${need.outT?time('outT','퇴실'):''}${need.oa?time('oa','외출 시작')+time('ob','외출 종료'):''}<span class="b2-rpick">${noReason?'':`<span class="b2-rsel" data-rsel>${pickSelects(n,v)}</span>`}<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(v.reason)}" aria-label="${n} 사유" ${noReason?'disabled placeholder="출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)" title="출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)"':`placeholder="${recognizedType(v.type)?'사유 (필수) · 위에서 고르거나 직접 입력':'사유 · 위에서 고르거나 직접 입력'}" title="${esc(v.reason)}"`}></span>${hint&&!noReason&&hint!==v.reason?`<button class="b2-btn small ghost" data-hint="${esc(hint)}" title="체크히어 메모의 사유">체크히어 메모: ${esc(hint)}</button>`:''}`;
  }
  function ledgerCell(row){
   const rec=row.rec,note=rec?.flag||'';
   if(!row.enrolled&&!rec)return `<fieldset class="b2-inline"><select data-inline="type" disabled aria-label="${esc(row.name)} 출결 유형"><option>해당없음</option></select></fieldset><span class="b2-sub">재학 기간 아님</span>`;
   // 모아 저장 중에는 fieldset으로 행 입력칸을 잠급니다(lock, 다시 그려도 잠긴 채).
-  return `<fieldset class="b2-inline" ${bulk?'disabled':''}>${inlineHtml(row)}</fieldset><div class="b2-inline-msg" data-msg></div>${evBadge(rec?.evApplied)}${rec?.evr?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
+  return `<fieldset class="b2-inline" ${bulk?'disabled':''}>${inlineHtml(row)}</fieldset><div class="b2-inline-msg" data-msg></div><div data-xnote>${pickNote(valuesOf(row))}</div>${evBadge(rec?.evApplied)}${extraBadge(extraEvidence(rec))}${rec?.evr?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
  }
  // 증빙 편집기: 증빙(ev)·반려 사유(evr)만 고칩니다. 유형·시간·사유는 행에서 바로 고칩니다.
  function editorHtml(row){
   const f=form,busy=jobs.has(row.name);
   return `<div class="b2-editor" data-editor="${esc(row.name)}"><div class="row"><label class="b2-field">증빙<select data-f="ev">${EVIDENCE.map(([v,l])=>`<option value="${v}" ${f.ev===v?'selected':''}>${l}</option>`).join('')}</select></label>${f.ev==='반려'?`<label class="b2-field b2-grow">반려 사유 (필수)<input data-f="evr" maxlength="300" value="${esc(f.evr)}"></label>`:'<span class="b2-grow"></span>'}
    <span class="b2-err">${esc(formErr)}</span><button class="b2-btn" data-cancel>취소</button><button class="b2-btn primary" data-save ${busy?'disabled':''}>${busy?'저장 중…':'증빙 저장'}</button></div>
-  <div class="b2-tiny b2-muted">저장하면 마스터시트 출결원장에 바로 반영됩니다.</div></div>`;
+  ${extraEvidence(row.rec)?`<div class="b2-tiny b2-xnote">취업박람회 · 추가 증빙 ${EXTRA_DOC}까지 받았으면 「확인」으로 저장합니다(그 전에는 미제출·반려로 남아 '추가 증빙' 목록에 보입니다).</div>`:''}<div class="b2-tiny b2-muted">저장하면 마스터시트 출결원장에 바로 반영됩니다.</div></div>`;
  }
  const evidenceOk=row=>!!row.rec&&B2_TYPES.includes(row.type)&&row.type!=='출석';
  // 학생 한 명 = <tbody data-student> 하나: 행, 그 아래 얇은 직접 요청 줄(재학 기간 아닌 행은 없음), 증빙 편집기.
@@ -266,7 +275,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(!life.alive()||!bundle)return;
   const list=visible(),counts=dayCounts(rows),diff=rows.filter(r=>compareRow(r).state==='diff').length;
   $('#b2Stats').innerHTML=[['총원',counts.총원],['출석',counts.출석],['결석',counts.결석,counts.결석?'bad':''],['지각',counts.지각],['조퇴',counts.조퇴],['외출',counts.외출],['인정',counts.인정],['체크히어 불일치',diff,diff?'alert':'']].map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${l}</span></div>`).join('');
-  $('#b2Filters').innerHTML=FILTERS.map(([k,l])=>`<button class="b2-chip" data-filter="${k}" aria-pressed="${filter===k}">${l}</button>`).join('');
+  const extraN=rows.filter(extraOpen).length;
+  $('#b2Filters').innerHTML=FILTERS.map(([k,l])=>`<button class="b2-chip" data-filter="${k}" aria-pressed="${filter===k}" ${k==='extra'?`title="취업박람회 인정 출결 중 ${EXTRA_DOC} 확인 전"`:''}>${l}${k==='extra'?`<span class="n">${extraN}</span>`:''}</button>`).join('');
   $('#b2Live').innerHTML=live==='live'?`<span class="b2-pill live">체크히어 실시간${records.length?` · ${records.length}명`:''}</span>`:live==='day'?`<span class="b2-pill">체크히어 저장본${records.length?` · ${records.length}명`:''}</span>`:live?`<span class="b2-pill wait">${esc(live)}</span>`:'';
   paintRelay();
   const keep=new Set(list.map(r=>r.name));
@@ -385,6 +395,16 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   drafts.set(name,next);
   if(invalid.has(name)){const miss=missing(next);if(miss)notes.set(name,miss.text);else{notes.delete(name);invalid.delete(name);}}
  }
+ // 사유 드롭다운: 분류를 고르면 첫 세부(인적성은 '인적성' → 종류 칸으로), 세부·종류를 고르면 '분류(세부)', 기타는 괄호 안에 직접 씁니다('인적성()' → 저장 때 빈 괄호는 지움).
+ function pickReason(name,which,value){
+  const row=rowOf(name);if(!row)return;const cur=valuesOf(row).reason||'',cat=which==='rcat'?value:pickOf(cur).cat;
+  const text=which==='rcat'?(!value?'':value===OTHER?(splitReason(cur).cat?'':cur):composeReason(value,'')):value===OTHER?`${cat}()`:composeReason(cat,value);
+  setDraft(name,{reason:text});paint(name,{force:true});paintBulk();
+  if(which==='rcat'&&value==='인적성')focusField(name,'rsub');
+  else if(value===OTHER){focusField(name,'reason');const n=bodies.get(name)?.querySelector('[data-inline="reason"]');if(n&&/\(\)$/.test(n.value))try{n.setSelectionRange(n.value.length-1,n.value.length-1);}catch{}}
+ }
+ // 사유를 직접 쓰는 동안 드롭다운·안내만 고칩니다(입력칸은 그대로).
+ function syncPick(name){const row=rowOf(name),el=bodies.get(name);if(!row||!el)return;const v=valuesOf(row),s=el.querySelector('[data-rsel]'),x=el.querySelector('[data-xnote]');if(s)s.innerHTML=pickSelects(esc(name),v);if(x)x.innerHTML=pickNote(v);}
  // 유형을 바꾸면 필요한 시간만 보이게 다시 그리고, 빈 시간은 체크히어 값으로 미리 채웁니다(저장은 모아서).
  function setType(name,type){
   const row=rowOf(name);if(!row)return;
@@ -486,7 +506,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    ev=rec?.ev||'';evr=rec?.evr||'';
   }
   // before: 초안은 처음 고칠 때의 지문(그사이 바뀐 행은 서버가 CONFLICT로 거절), 증빙은 지금 지문
-  const payload={cls,name,date,type:v.type,...neededTimes(v.type,v),reason:String(v.reason||'').trim(),ev:v.type==='출석'?'':ev,evr:v.type!=='출석'&&ev==='반려'?evr.trim():'',before:kind==='inline'?d0.base??(rec?.sig||''):rec?.sig||''};
+  const payload={cls,name,date,type:v.type,...neededTimes(v.type,v),reason:tidyReason(v.reason),ev:v.type==='출석'?'':ev,evr:v.type!=='출석'&&ev==='반려'?evr.trim():'',before:kind==='inline'?d0.base??(rec?.sig||''):rec?.sig||''};
   const prevRow=rec?pick(rec):null;
   sync.saveStarted(key);notes.delete(name);invalid.delete(name);
   if(kind==='evidence')paint(name,{force:true});else paintMsg(name);
@@ -547,12 +567,14 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  host.addEventListener('input',e=>{
   const t=e.target,k=t.dataset?.inline,name=t.closest?.('tbody[data-student]')?.dataset.student;
   if(t.hasAttribute?.('data-memo-input')){memoUi.text=t.value;return;} // 메모 직접 입력은 초안이 아님
-  if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason')t.title=t.value;paintMsg(name);paintBulk();return;}
+  if(k==='rcat'||k==='rsub')return; // 드롭다운은 change에서
+  if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason'){t.title=t.value;syncPick(name);}paintMsg(name);paintBulk();return;}
   const f=t.dataset?.f;if(f&&f!=='ev'&&form){form[f]=t.value;form.dirty=true;}
  });
  host.addEventListener('change',e=>{
   const t=e.target,name=t.closest?.('tbody[data-student]')?.dataset.student;
   if(t.dataset?.inline==='type'&&name){if(!bulk)setType(name,t.value);return;}
+  if((t.dataset?.inline==='rcat'||t.dataset?.inline==='rsub')&&name){if(!bulk)pickReason(name,t.dataset.inline,t.value);return;}
   if(t.dataset?.f==='ev'&&form&&editing){form.ev=t.value;form.dirty=true;paint(editing,{force:true});}
  });
  // Enter는 다음 학생 같은 칸(저장 안 함), Esc는 그 행 초안 되돌림. Ctrl+S는 문서 전체에서 받습니다(아래 onKey).

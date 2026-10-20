@@ -14,7 +14,19 @@ const COLS=['date','cls','name','type','inT','outT','oa','ob','reason','ev','evr
 const L=(date,cls,name,type,o={})=>COLS.map(k=>({date,cls,name,type,reason:'',ev:'',evr:'',evApplied:type.startsWith('인정')?(o.ev||'미제출'):'해당없음',prov:'포털',sig:'s',...o})[k]??'');
 const RAW={rev:3,today:'2026-11-06',days:['2026-11-04','2026-11-05','2026-11-06'],classes:[{id:'1',teacher:'김지아'},{id:'2',teacher:''}],roster:[['1','고다원','재학',''],['1','김동진','재학',''],['2','이경수','재학','']],ledgerCols:COLS,
  ledger:[L('2026-11-04','1','고다원','인정출석',{reason:'취업박람회',ev:'확인'}),L('2026-11-05','1','김동진','인정조퇴',{reason:'취업박람회(현장 면접)',outT:'15:00'}),L('2026-11-05','2','이경수','인정지각',{reason:'인적성(GSAT)',inT:'10:00'}),L('2026-11-06','2','이경수','인정출석',{reason:'취업박람회',ev:'반려',evr:'날짜 없음'})]};
+// 출결대조(beta2-ledger.mjs): 진짜 2기 클라이언트(beta2-data.mjs)가 가짜 /api/teacher-beta와 이야기합니다. 지난 날(11/5)이라 체크히어 자동 요청은 없습니다.
+const LEDGER={rev:7,today:'2026-11-06',days:['2026-11-05','2026-11-06'],classes:[{id:'1',teacher:'김지아'}],roster:[['1','고다원','재학',''],['1','김동진','재학',''],['1','박서연','재학','']],ledgerCols:COLS,
+ ledger:[L('2026-11-05','1','고다원','인정출석',{reason:'인적성(HMAT)',sig:'sig-고다원'}),L('2026-11-05','1','김동진','인정조퇴',{reason:'취업박람회',outT:'15:00',sig:'sig-김동진'})]};
+const SDK='https://www.gstatic.com/firebasejs/10.12.5/';
+const SDK_STUB=`window.sdkWrites=window.sdkWrites||[];const snap=d=>({exists:()=>d!==undefined,data:()=>d,metadata:{fromCache:false,hasPendingWrites:false}});
+export const getFirestore=()=>({}),doc=(db,...p)=>({path:p.join('/')}),collection=(db,...p)=>({path:p.join('/')}),query=c=>c,where=()=>({}),orderBy=()=>({}),limit=()=>({}),documentId=()=>'id',serverTimestamp=()=>'ts',arrayUnion=(...v)=>v;
+export const getDoc=async()=>snap(undefined),getDocFromServer=async()=>snap(undefined),getDocs=async()=>({docs:[],size:0}),getDocsFromServer=async()=>({docs:[],size:0,metadata:{}});
+export const onSnapshot=()=>()=>{};
+export const setDoc=async(ref,data)=>{window.sdkWrites.push(['set',ref.path,data]);},updateDoc=async(ref,data)=>{window.sdkWrites.push(['update',ref.path,data]);},deleteDoc=async ref=>{window.sdkWrites.push(['delete',ref.path]);},addDoc=async(c,data)=>{window.sdkWrites.push(['add',c.path,data]);return {id:'n'};};
+export const runTransaction=async(db,fn)=>fn({get:async()=>snap(undefined),set(){},update(){},delete(){}}),writeBatch=()=>({set(){},update(){},delete(){},commit:async()=>{}});`;
 const PAGES={
+ '/ledger.html':`<!doctype html><meta charset="utf-8"><div id="toast"></div><div id="root"></div><script type="module">import {mount} from '/beta2-ledger.mjs';import {createBeta2Client} from '/beta2-data.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
+  const user={email:'hint.kpc@gmail.com',getIdToken:async()=>'tok'};window.view=await mount(document.getElementById('root'),{db:{},user,classes:[{id:'1'}],client:createBeta2Client(user,{db:{}}),selected:'1',context:{classId:'1',date:'2026-11-05'}});</script>`,
  '/teacher.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mountTeacherBeta} from '/teacher-beta.js';window.notes=[];window.tb=mountTeacherBeta(document.getElementById('root'),{cls:1,tab:'board',endpoint:'/api/teacher-beta',notify:(n,sel,f)=>window.notes.push({...n,name:sel.n,date:sel.day,r:f.r})});</script>`,
  '/status.html':`<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">import {mount} from '/beta2-status.mjs';import {decodeBundle} from '/beta2-core.mjs';import {ensureBeta2Css} from '/beta2-ui.mjs';ensureBeta2Css();
   window.view=await mount(document.getElementById('root'),{client:{bundle:async()=>decodeBundle(${JSON.stringify(RAW)}),checkhereDisease:async()=>({})},classes:[{id:'1'},{id:'2'}],tab:'evidence'});</script>`};
@@ -23,11 +35,17 @@ async function page(path,run){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),p=await browser.newPage(),errors=[],posts=[];
  p.on('pageerror',e=>errors.push(e.message));
  try{
+  let rev=LEDGER.rev;
   await p.route('**/*',async route=>{
    const url=new URL(route.request().url());
+   if(url.href.startsWith(SDK+'firebase-firestore.js'))return route.fulfill({contentType:'text/javascript',body:SDK_STUB});
    if(url.hostname!=='fixture.test')return route.abort();
    if(PAGES[url.pathname])return route.fulfill({contentType:'text/html;charset=utf-8',body:PAGES[url.pathname]});
-   if(url.pathname==='/api/teacher-beta'){const body=route.request().postDataJSON();posts.push(body);return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data:body.action==='portalData'?PORTAL:{ok:true}})});}
+   if(url.pathname==='/api/teacher-beta'){
+    const body=route.request().postDataJSON(),a=body.args?.[0];posts.push(body);
+    const data=body.action==='portalData'?PORTAL:body.action==='b2Bundle'?{...LEDGER,rev}:body.action==='b2Rev'?{rev,sync:{}}:body.action==='b2Save'?{ok:true,rev:++rev,sig:`sig-${a.name}-${rev}`,memo:'',evApplied:a.ev||(a.type.startsWith('인정')?'미제출':'해당없음'),check:''}:{ok:true};
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});
+   }
    const file=join(base,decodeURIComponent(url.pathname));
    if(file.startsWith(base)&&existsSync(file)&&TYPES[extname(file)])return route.fulfill({contentType:TYPES[extname(file)],body:readFileSync(file)});
    return route.fulfill({status:404,body:''});
@@ -115,5 +133,59 @@ test('출결 현황 › 증빙서류: 취업박람회 추가 증빙 배지와 �
   assert.deepEqual(await p.locator('.b2-table').nth(1).locator('tbody tr td:nth-child(6)').allTextContents(),['추가 증빙 필요 · 기업면접 확인서 · 미제출','추가 증빙 필요 · 기업면접 확인서 · 반려 반려: 날짜 없음','추가 증빙 확인']);
   await p.selectOption('#s2Class','2');
   assert.deepEqual(await p.locator('.b2-table').nth(1).locator('tbody tr td:nth-child(2)').allTextContents(),['이경수']);
+ });
+});
+
+test('출결대조 사유 칸: 240px 안에 분류·세부(인적성 종류) 드롭다운, 직접 입력, 취업박람회 추가 증빙 배지·거르기·증빙 확인',async()=>{
+ await page('/ledger.html',async(p,posts)=>{
+  const row=n=>p.locator(`tbody[data-student="${n}"] tr[data-name]`),go=row('고다원'),dong=row('김동진'),park=row('박서연');
+  await go.locator('select[data-inline="rcat"]').waitFor();
+  // 저장된 글이 드롭다운 위치로: 인적성 · HMAT
+  assert.equal(await go.locator('[data-inline="rcat"]').inputValue(),'인적성');assert.equal(await go.locator('[data-inline="rsub"]').inputValue(),'HMAT');
+  assert.equal(await go.locator('[data-inline="rsub"]').getAttribute('aria-label'),'고다원 인적성 종류');
+  assert.ok((await go.locator('[data-inline="rsub"] option').allTextContents()).includes('L-TAB(롯데)'));
+  // 240px 안: 드롭다운 두 개가 한 줄, 사유 글이 그 아래 한 줄
+  const box=await go.locator('.b2-rpick').boundingBox(),cat=await go.locator('[data-inline="rcat"]').boundingBox(),sub=await go.locator('[data-inline="rsub"]').boundingBox(),txt=await go.locator('[data-inline="reason"]').boundingBox();
+  assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(cat.y),Math.round(sub.y));assert.ok(txt.y>cat.y);assert.ok(Math.abs(txt.width-box.width)<1);
+  // 출석 기본 행(기록 없음)은 사유를 저장하지 않으므로 드롭다운도 없습니다.
+  assert.equal(await park.locator('[data-inline="rcat"]').count(),0);
+  // 취업박람회 인정조퇴(증빙 미제출): 배지와 '추가 증빙' 거르기
+  assert.equal(await dong.locator('.e-extra').textContent(),'추가 증빙 필요 · 기업면접 확인서 · 미제출');
+  assert.equal(await dong.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서');
+  const chip=p.locator('[data-filter="extra"]');assert.equal(await chip.textContent(),'추가 증빙1');
+  await chip.click();assert.deepEqual(await p.locator('tbody tr[data-name]').evaluateAll(rs=>rs.map(r=>r.dataset.name)),['김동진']);
+  await p.locator('[data-filter="all"]').click();
+  // 종류 바꾸기 → '인적성(GSAT)', 기타 → 괄호 안에 직접
+  await go.locator('[data-inline="rsub"]').selectOption('GSAT');
+  assert.equal(await go.locator('[data-inline="reason"]').inputValue(),'인적성(GSAT)');assert.equal(await p.locator('#b2SaveAll').textContent(),'변경 1건 저장');
+  await go.locator('[data-inline="rsub"]').selectOption('기타');
+  assert.equal(await go.locator('[data-inline="reason"]').inputValue(),'인적성()');
+  await p.keyboard.type('DCAT');assert.equal(await go.locator('[data-inline="reason"]').inputValue(),'인적성(DCAT)');
+  assert.equal(await go.locator('[data-inline="rsub"]').inputValue(),'기타','typing keeps the dropdowns in step');
+  // 인정 출결에 인정 분류가 아닌 것(교통)은 짧은 안내, Esc로 되돌림
+  await dong.locator('[data-inline="rcat"]').selectOption('교통');
+  assert.equal(await dong.locator('[data-inline="reason"]').inputValue(),'교통');assert.match(await dong.innerText(),/교통은 보통 인정 사유가 아닙니다/);
+  assert.equal(await dong.locator('.b2-xnote').count(),0);
+  await dong.locator('[data-inline="reason"]').press('Escape');assert.equal(await dong.locator('[data-inline="reason"]').inputValue(),'취업박람회');
+  // 기록 없는 학생: 결석 → 취업박람회(인정 아님 안내) → 인정출석
+  await park.locator('[data-inline="type"]').selectOption('결석');
+  await park.locator('[data-inline="rcat"]').selectOption('취업박람회');
+  assert.equal(await park.locator('[data-inline="reason"]').inputValue(),'취업박람회');assert.equal(await park.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서 (인정 출결일 때)');
+  await park.locator('[data-inline="type"]').selectOption('인정출석');assert.equal(await park.locator('.b2-xnote').textContent(),'추가 증빙 필요 · 기업면접 확인서');
+  // 직접 쓰면 '기타 (직접 입력)', 다시 분류를 고르면 표준 글
+  await park.locator('[data-inline="reason"]').fill('가족 돌봄');assert.equal(await park.locator('[data-inline="rcat"]').inputValue(),'기타');
+  await park.locator('[data-inline="rcat"]').selectOption('취업박람회');
+  // 모아 저장: 빈 괄호는 지우고 표준 글 그대로
+  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('2건 저장',{exact:true}).waitFor();
+  const saved=posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].type,b.args[0].reason]);
+  assert.deepEqual(saved,[['고다원','인정출석','인적성(DCAT)'],['박서연','인정출석','취업박람회']]);
+  await park.locator('.e-extra').waitFor();assert.equal(await p.locator('[data-filter="extra"]').textContent(),'추가 증빙2');
+  // 증빙 편집기: 취업박람회 안내, 「확인」으로 저장하면 이행
+  await dong.locator('[data-edit]').click();
+  assert.match(await p.locator('.b2-editor').innerText(),/취업박람회 · 추가 증빙 기업면접 확인서까지 받았으면 「확인」/);
+  await p.locator('.b2-editor [data-f="ev"]').selectOption('확인');await p.locator('.b2-editor [data-save]').click();
+  await dong.locator('.b2-badge.e-ok',{hasText:'추가 증빙 확인'}).waitFor();
+  assert.equal(await p.locator('[data-filter="extra"]').textContent(),'추가 증빙1');
+  assert.deepEqual(posts.filter(b=>b.action==='b2Save').at(-1).args[0].ev,'확인');
  });
 });

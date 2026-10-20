@@ -56,8 +56,8 @@ export function extraEvidence(rec){
  const state=String(rec.evApplied||rec.ev||'').trim()||'미제출';
  return {state,done:state==='확인'||state==='해당없음',doc:EXTRA_DOC,label:EXTRA_LABEL};
 }
-// 저장 전·후: 추가 증빙이 새로 필요해졌는지(알림을 한 번만 남기려고). prev 없으면 새 기록.
-export const extraEvidenceStarted=(prev,next)=>!!extraEvidence(next)&&!extraEvidence(prev);
+// 저장 전·후: 추가 증빙이 새로 필요해졌는지(알림을 한 번만 남기려고, 이미 「확인」이면 아님). prev 없으면 새 기록.
+export const extraEvidenceStarted=(prev,next)=>{const x=extraEvidence(next);return !!x&&!x.done&&!extraEvidence(prev);};
 // 알림 글(notify.mjs '추가 증빙'): 반·이름·날짜·유형만(생년월일·전화 없음)
 export function extraNotice({cls,name,date,type}){
  const md=String(date||'').replace(/^\d{4}-0?(\d{1,2})-0?(\d{1,2})$/,'$1/$2');
