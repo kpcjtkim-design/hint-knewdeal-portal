@@ -1,0 +1,51 @@
+/* 2기 색감(시안 A · 공공기관형 네이비, 사용자 선택 2026-10-20). 배치는 건드리지 않고 색·글꼴·모서리만 덮어씁니다. */
+:root{--portal-navy:#0B2545;--portal-ink:#1B2430;--portal-line:#D9DEE7;--portal-primary:#1F4E8C;--portal-accent:#13807A;font-family:"Noto Sans KR",Pretendard,"Malgun Gothic",system-ui,sans-serif;color:#1B2430;background:#F3F5F8}
+body{background:#F3F5F8}
+.muted,.section-head p,.help,.mini-note{color:#5B6878}
+
+/* 머리글: 단색 남색 + 아래 청록 줄 */
+.topbar{background:#0B2545;border-bottom:3px solid var(--portal-accent)}
+.hint-wordmark small,.topbar .portal-brand .eyebrow{color:#B8C7DC}
+.topbar .portal-brand>div{border-left-color:rgba(255,255,255,.28)}
+.topbar .portal-role,.topbar .user-email{color:#D5DFEC}
+.topbar .admin-major button{color:#D5DFEC}
+.topbar .admin-major button.active{color:#fff;border-bottom-color:var(--portal-accent)}
+.topbar .admin-major button:hover{color:#fff;background:rgba(255,255,255,.08)}
+.topbar .top-actions .btn{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4)}
+.topbar .top-actions .btn:hover{background:rgba(255,255,255,.1)}
+.topbar .hint-bell{color:#fff}
+.teacher-header-class.hero .eyebrow,.teacher-header-switch label{color:#B8C7DC}
+.teacher-header-class.hero .chip{color:#D5DFEC}
+
+/* 하위 탭·버튼·카드 */
+.admin-tabs .tab.active{color:var(--portal-navy);border-bottom-color:var(--portal-primary)}
+.admin-crumb{color:#5B6878}
+.btn-primary,.page .btn-primary{background:var(--portal-primary);color:#fff}
+.btn-dark,.page .btn-dark{background:var(--portal-navy);color:#fff}
+.btn-soft{background:#E8EFF8;color:var(--portal-primary)}
+.eyebrow{color:var(--portal-primary)}
+.card,.page .card{border-color:var(--portal-line);border-radius:8px}
+.page .hero{background:var(--portal-navy);border-left-color:var(--portal-accent)}
+.page .num{background:#E8EFF8;color:var(--portal-navy)}
+.overview-card:hover{border-color:var(--portal-primary)}
+.login-card{border-top-color:var(--portal-navy)}
+.login-card .brand,.login-card .btn-primary{background:var(--portal-navy)}
+
+/* 2기 화면(.b2) 색 토큰. beta2.css가 나중에 붙으므로 html을 앞에 붙여 우선합니다. */
+html .b2{--b2-ink:#1B2430;--b2-sub:#5B6878;--b2-line:#D9DEE7;--b2-soft:#F6F8FA;--b2-blue:#1F4E8C;--b2-amber:#9A5B00;--b2-red:#B42318;--b2-green:#1E7B4F}
+html .b2 .b2-card{border-radius:8px;box-shadow:none}
+html .b2 .b2-tab[aria-selected="true"],html .b2 .b2-chip[aria-pressed="true"],html .b2 .b2-btn.dark,html .b2 .btn.dark{background:#0B2545;border-color:#0B2545;color:#fff}
+html .b2.t2 .t2-sub .b2-tab[aria-selected="true"]{background:transparent;color:#0B2545;border-bottom-color:var(--b2-blue)}
+html .b2 .b2-note{background:#E8EFF8;color:#163A6A}
+html .b2 .b2-st,html .b2 .b2-dirty{background:#E8EFF8;color:#1F4E8C}
+html .b2-vocbar{border-color:#1F4E8C;background:#E8EFF8;color:#163A6A}
+html .b2-vocpill,.toast{background:#0B2545}
+/* 홈 요약 카드: 위쪽 색 띠(순서대로 질병·증빙·서류·민원), 반 카드 */
+html .b2 .b2-alert{border-top:3px solid var(--b2-blue)}
+html .b2 .b2-alerts>.b2-alert:nth-child(1){border-top-color:#B42318}
+html .b2 .b2-alerts>.b2-alert:nth-child(2){border-top-color:#9A5B00}
+html .b2 .b2-alerts>.b2-alert:nth-child(3){border-top-color:#1F4E8C}
+html .b2 .b2-alerts>.b2-alert:nth-child(4){border-top-color:#13807A}
+html .b2 .b2-alert.hot{border-color:#F2C48D;border-top-color:#9A5B00;background:#FFF8EE}
+html .b2 .b2-class{background:#FAFBFC}
+html .b2 .b2-class:hover{border-color:#1F4E8C}
