@@ -53,7 +53,7 @@
   "checkhere": {"lectureNameRule": "[N반]", "lectureLinks": {}},
   "admins": ["hint.kpc@gmail.com", "kpc.jtkim@gmail.com"],
   "approver": "hint.kpc@gmail.com",
-  "teacherAccess": false,
+  "teacherAccess": true,
   "firebase": {
     "apiKey": "AIzaSyBAmlzBuD21IGRSK5yT7cpatHuelqn98do",
     "authDomain": "hint-knewdeal-2.firebaseapp.com",

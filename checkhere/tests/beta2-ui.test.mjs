@@ -51,7 +51,7 @@ export const onAuthStateChanged=(auth,cb)=>{setTimeout(()=>cb(${email?`{email:'$
 const TYPES={'.mjs':'text/javascript','.js':'text/javascript','.css':'text/css','.html':'text/html;charset=utf-8','.svg':'image/svg+xml'};
 
 // clock: 브라우저 시계(한국 날짜가 '오늘'인지 정함), days: 체크히어 그날 문서(getDocFromServer)
-async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/',clock=null,days=null}={}){
+async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/',clock=null,days=null,access=null}={}){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[],posts=[],plain=[];
  page.on('pageerror',e=>errors.push(e.message));
  try{
@@ -71,6 +71,7 @@ async function beta(run,{email='hint.kpc@gmail.com',api=()=>null,path='/',clock=
     const data=body.action==='portalData'?PORTAL:body.action==='b2Bundle'?BUNDLE:body.action==='b2Rev'?{rev:BUNDLE.rev,sync:BUNDLE.sync}:body.action==='b2Docs'?DOCS:body.action==='b2Save'?{ok:true,rev:6,sig:'new-sig',memo:'지각_담임:김지아(09:25)',evApplied:'해당없음',check:''}:body.action==='b2DocCreate'?{id:'D261013-002',mailed:true}:{};
     return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,data})});
    }
+   if(access!==null&&url.pathname==='/cohort.mjs')return route.fulfill({contentType:'text/javascript',body:readFileSync(join(base,'cohort.mjs'),'utf8').replace(/"teacherAccess": (?:true|false)/,`"teacherAccess": ${access}`)});
    const file=join(base,decodeURIComponent(url.pathname));
    if(file.startsWith(base)&&existsSync(file)&&TYPES[extname(file)])return route.fulfill({contentType:TYPES[extname(file)],body:readFileSync(file)});
    return route.fulfill({status:404,body:''});
@@ -224,7 +225,7 @@ test('teachers cannot open the 2기 site before teacher access opens (cohort tea
  await beta(async(page,posts)=>{
   await page.getByText('접근 권한이 없습니다').waitFor();
   assert.equal(posts.length,0);
- },{email:'teacher@test.kr'});
+ },{email:'teacher@test.kr',access:false});
 });
 
 test('the teacher preview merges 1기 and 2기 teacher tabs into six tabs with a disease warning on every tab',async()=>{

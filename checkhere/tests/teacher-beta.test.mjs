@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import handler,{resolveClass,teacherClassIds,b2Args,vocForTeacher} from '../../api/teacher-beta.js';
+import handler,{ACCESS,resolveClass,teacherClassIds,b2Args,vocForTeacher} from '../../api/teacher-beta.js';
+// 담임 열기(cohort teacherAccess)는 2026-10-20부터 켜져 있습니다. 닫혀 있을 때의 동작은 시험 안에서만 닫고 확인합니다.
+const closed=t=>{const was=ACCESS.teacher;ACCESS.teacher=false;t.after(()=>{ACCESS.teacher=was;});};
 
 const base=join(import.meta.dirname,'../..');
 const SHEET='https://script.test/exec',KEY='secret-key-123',ADMIN_EMAIL='hint.kpc@gmail.com';
@@ -36,7 +38,7 @@ function withEnv(t,url=SHEET,key=KEY){
 }
 
 test('the beta is administrator-only for now, so teacher requests never reach the sheet',async t=>{
- withEnv(t);const calls=backend(t);
+ withEnv(t);closed(t);const calls=backend(t);
  for(const email of ['teacher@test.kr','legacy@test.kr']){
   const res=await call({action:'portalData',args:[3,''],cls:3},{email});
   assert.deepEqual([res.statusCode,res.body.code],[403,'ADMIN_ONLY']);assert.match(res.body.error,/관리자만/);
@@ -103,7 +105,7 @@ test('missing configuration and upstream failures become readable messages witho
 });
 
 test('2기 베타 sheet actions carry the verified user, are administrator-only now, and class scope is decided on the server',async t=>{
- withEnv(t);const calls=backend(t);
+ withEnv(t);closed(t);const calls=backend(t);
  let res=await call({action:'b2Save',args:[{cls:'3',name:'가',date:'2026-09-01',type:'결석',actor:'fake@evil.kr'}]},{email:ADMIN_EMAIL});
  assert.equal(res.statusCode,200);
  assert.deepEqual(calls.at(-1).body,{key:KEY,action:'b2Save',args:[{cls:'3',name:'가',date:'2026-09-01',type:'결석',actor:'fake@evil.kr'}],actor:ADMIN_EMAIL,role:'ADMIN'},'the actor sent to Apps Script is the verified login, not a body field');

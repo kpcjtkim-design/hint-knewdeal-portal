@@ -34,7 +34,7 @@ export class GoogleAuthProvider{setCustomParameters(){}addScope(){}static creden
 export const onAuthStateChanged=(auth,cb)=>{setTimeout(()=>cb({email:'${email}',displayName:'가상',uid:'u1',getIdToken:async()=>'tok-1'}),0);return()=>{};};`;
 const TYPES={'.mjs':'text/javascript','.js':'text/javascript','.css':'text/css','.html':'text/html;charset=utf-8','.svg':'image/svg+xml','.json':'application/json'};
 // 시험용 cohort.mjs: Firebase 값만 채우고(teacher면 담임 로그인도 켬) 나머지는 그대로
-const cohortFor=teacher=>readFileSync(join(base,'cohort.mjs'),'utf8').replace('"apiKey": ""','"apiKey": "test-key"').replace('"appId": ""','"appId": "test-app"').replace('"teacherAccess": false',`"teacherAccess": ${teacher}`);
+const cohortFor=teacher=>readFileSync(join(base,'cohort.mjs'),'utf8').replace('"apiKey": ""','"apiKey": "test-key"').replace('"appId": ""','"appId": "test-app"').replace(/"teacherAccess": (?:true|false)/,`"teacherAccess": ${teacher}`);
 export const ANSWERS={portalData:()=>PORTAL,b2Bundle:()=>BUNDLE,b2Rev:()=>({rev:BUNDLE.rev,sync:BUNDLE.sync,voc:VOCS.state}),b2Docs:()=>DOCS,b2Vocs:()=>VOCS};
 
 // as: 'teacher'(담임 로그인, 화면이 바로 담임 화면) · 'admin'(관리자 → 미리보기 → 담임 화면). api(body)가 값을 돌려주면 그 응답을 씁니다({hold:Promise}면 그때까지 기다림).
