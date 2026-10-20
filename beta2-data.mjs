@@ -74,6 +74,11 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   vocCreate:p=>call('b2VocCreate',p),
   vocReply:p=>call('b2VocReply',p),
   vocSeen:p=>call('b2VocSeen',p),
-  roster:cls=>call('portalRoster',Number(cls),'')
+  roster:cls=>call('portalRoster',Number(cls),''),
+  // 중도탈락·수료(마스터시트 '중도탈락' 탭·명부, 2026-10-20): 담임은 Vercel이 자기 반으로 바꿉니다. 여러 명 상태는 관리자만.
+  dropouts:p=>call('b2Dropouts',p||{}),
+  dropoutSave:p=>call('b2DropoutSave',p),
+  completions:p=>call('b2Completions',p||{}),
+  rosterStatusMany:rows=>call('b2RosterStatusMany',{rows})
  };
 }

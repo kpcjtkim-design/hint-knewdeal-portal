@@ -6,7 +6,7 @@ import {onBeta2Rev} from './beta2-data.mjs';
 import {COHORT_LABEL,DISEASE,feature} from './cohort.mjs';
 
 const SECTIONS=[['summary','요약'],...(feature('operationsWork')?[['work','오늘 업무'],['handoff','담임 전달']]:[])];
-const MAP_OLD_TABS={attendanceOverview:'b2ledger',attendanceStats:'b2status',attendanceEvidence:'b2status',diseaseRisk:'b2status',dropoutStatus:'b2status',attendancePeriod:'b2downloads',preview:'b2teacher'};
+const MAP_OLD_TABS={attendanceOverview:'b2ledger',attendanceStats:'b2status',attendanceEvidence:'b2status',diseaseRisk:'b2status',dropoutStatus:'b2dropouts',attendancePeriod:'b2downloads',preview:'b2teacher'};
 
 export async function mount(host,{db,user,classes,client,open}){
  const life=lifecycle(host);

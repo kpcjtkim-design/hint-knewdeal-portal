@@ -95,7 +95,7 @@ test('the 2기 site opens the administrator menu on the 2기 home without being 
   assert.equal(await page.locator('.b2-alert').nth(2).locator('b').innerText(),'1','one new document request');
   assert.ok(posts.some(p=>p.action==='b2Bundle'&&p.args[0]==='all'));
   await page.getByRole('button',{name:'출결',exact:true}).click();
-  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','교육생 상태','내려받기','체크히어 수집']);
+  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','교육생 상태','중도탈락·수료','내려받기','체크히어 수집']);
  });
 });
 
@@ -210,17 +210,16 @@ test('the document inbox lists requests and a new request is sent with the selec
  });
 });
 
-test('출결 현황 combines statistics, evidence, disease and dropout views from the ledger',async()=>{
+test('출결 현황 combines statistics, evidence and disease views from the ledger (중도탈락·수료 moved to its own screen 2026-10-20)',async()=>{
  await beta(async page=>{
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   await page.getByRole('button',{name:'출결',exact:true}).click();
   await page.getByRole('button',{name:'출결 현황',exact:true}).click();
   await page.getByRole('heading',{name:'출결 현황'}).waitFor();
-  assert.deepEqual(await page.locator('.b2-tabs .b2-tab').allInnerTexts(),['출결 통계','증빙서류','질병 인정','중도탈락·수료']);
+  assert.deepEqual(await page.locator('.b2-tabs .b2-tab').allInnerTexts(),['출결 통계','증빙서류','질병 인정']);
   await page.getByRole('tab',{name:'질병 인정'}).click();
   await page.getByText('4/6회').waitFor();
-  await page.getByRole('tab',{name:'중도탈락·수료'}).click();
-  await page.getByText('한수빈').first().waitFor();
+  assert.equal(await page.locator('#s2Dropouts').innerText(),'중도탈락·수료','link to the 중도탈락·수료 screen');
  });
 });
 

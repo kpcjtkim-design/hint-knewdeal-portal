@@ -2,7 +2,8 @@
 // 알림 문서: {kind, title, body, cls, link, to:[이메일], toRole:'admin'?, toClass:'N'?, from, createdAt, readBy:[이메일]}. 생년월일·전화번호는 본문에 남기지 않습니다(cleanText).
 import {ADMINS,CLASS_ID_RE} from './cohort.mjs';
 
-export const KINDS=['서류발급','민원','출결대조 메모','추가 증빙']; // 추가 증빙: 취업박람회 인정 출결의 기업면접 확인서(2026-10-20, 반 담임 + 관리자)
+export const KINDS=['서류발급','민원','출결대조 메모','추가 증빙','중도탈락']; // 추가 증빙: 취업박람회 인정 출결의 기업면접 확인서(2026-10-20, 반 담임 + 관리자)
+// 중도탈락: 담임이 중도탈락·조기취업을 등록·고치·취소하면 관리자에게, 관리자가 확인하면 그 반 담임에게(beta2-dropouts.mjs, 2026-10-20). firestore.rules validNotification 종류 목록에도 있어야 저장됩니다.
 export const LIMIT=100,MAX_TO=10,TITLE_MAX=80,BODY_MAX=160;
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const normEmail=v=>{const s=String(v??'').trim().toLowerCase();return EMAIL_RE.test(s)?s:'';};
@@ -18,8 +19,8 @@ const LINK_RE=/^#([A-Za-z0-9_-]{1,40})(?:\?([A-Za-z0-9=&_.:%-]{0,150}))?$/;
 export function linkFor(tab,params={}){const q=new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined&&v!==null&&v!=='').map(([k,v])=>[k,String(v)])).toString();const l=`#${tab}${q?'?'+q:''}`;return LINK_RE.test(l)?l:`#${tab}`;}
 export const cleanLink=v=>LINK_RE.test(String(v??''))?String(v):'';
 export function parseLink(link){const m=LINK_RE.exec(String(link??''));return m?{tab:m[1],params:Object.fromEntries(new URLSearchParams(m[2]||''))}:null;}
-// 담임 화면에서 갈 곳(beta2-teacher-layout.mjs 탭): 서류발급 → 서류발급, 민원·이슈 → 민원·만족도 › 민원·이슈, 출결대조(추가 증빙 알림) → 출결 › 증빙서류, 그 밖은 오늘.
-export const teacherTarget=tab=>({b2docs:['documents'],b2vocs:['feedback','voc'],b2ledger:['attendance','evidence']})[tab]||['today'];
+// 담임 화면에서 갈 곳(beta2-teacher-layout.mjs 탭): 서류발급 → 서류발급, 민원·이슈 → 민원·만족도 › 민원·이슈, 출결대조(추가 증빙 알림) → 출결 › 증빙서류, 중도탈락 → 출결 › 중도탈락(하위 탭이 없으면 출결판), 그 밖은 오늘.
+export const teacherTarget=tab=>({b2docs:['documents'],b2vocs:['feedback','voc'],b2ledger:['attendance','evidence'],b2dropouts:['attendance','dropout']})[tab]||['today'];
 // 관리자 받는 사람: 설정(settings/global notifyAdmins, 이메일 목록)이 있으면 그것, 없으면 cohort.json admins(hint.kpc · kpc.jtkim).
 export function adminList(settings){const l=uniq((Array.isArray(settings?.notifyAdmins)?settings.notifyAdmins:[]).map(normEmail).filter(Boolean)).slice(0,MAX_TO);return l.length?l:[...ADMINS];}
 // 알림 문서(createdAt은 notify.mjs가 serverTimestamp로). audience: 'admins'(toRole admin + 관리자 목록) · 'class'(그 반 담임, toClass). 보낸 사람은 to에서 빼고 readBy에 넣어 '안 읽음'으로 세지 않습니다.

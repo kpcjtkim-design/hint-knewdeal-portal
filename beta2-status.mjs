@@ -1,11 +1,12 @@
-// 2기 출결 현황: 통계·증빙서류·질병 인정·중도탈락을 한 화면의 보기 전환으로 묶었습니다. 자료는 마스터시트 출결원장. 기준(질병 4/6회·수료 80%)은 cohort.json.
-import {studentStats,evidenceRows,extraEvidenceRows,offDayRecords,diseaseReport,dropoutRows,recognizedType} from './beta2-core.mjs';
+// 2기 출결 현황: 통계·증빙서류·질병 인정을 한 화면의 보기 전환으로 묶었습니다. 자료는 마스터시트 출결원장. 기준(질병 4/6회·수료 80%)은 cohort.json.
+// 중도탈락·수료는 2026-10-20부터 따로 화면(beta2-dropouts.mjs, 출결 › 중도탈락·수료)에서 마스터시트 중도탈락 탭과 함께 다룹니다. 예전 '중도탈락·수료' 보기로 오면 그 화면을 엽니다.
+import {studentStats,evidenceRows,extraEvidenceRows,offDayRecords,diseaseReport,recognizedType} from './beta2-core.mjs';
 import {EXTRA_DOC,EXTRA_LABEL,EXTRA_NOTICE} from './attendance-reason-catalog.mjs';
 import {EVIDENCE_PERIODS} from './attendance-evidence-core.mjs';
 import {esc,md,badge,extraBadge,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
 import {DISEASE,COMPLETION_RATE as PASS,isTestClass} from './cohort.mjs';
 
-export const STATUS_TABS=[['stats','출결 통계'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락·수료']];
+export const STATUS_TABS=[['stats','출결 통계'],['evidence','증빙서류'],['disease','질병 인정']];
 const pct=v=>v===null?'-':`${v.toFixed(1)}%`;
 // '전체 기간'은 시작을 열어 둡니다: 17반 테스트반은 개강 전 기록 날도 교육일로 보므로(beta2-core classDays) 그날도 들어가야 합니다. 실제 반은 교육일자만 세므로 달라지지 않습니다.
 // (attendance-evidence-core EVIDENCE_PERIODS는 1기 화면도 쓰므로 그대로 두고 여기서만 바꿉니다.)
@@ -13,10 +14,11 @@ const PERIODS=EVIDENCE_PERIODS.map(p=>p.id==='all'?{...p,from:''}:p);
 // 반 이름: 테스트반은 '17반 · 테스트반'으로 분명히 보입니다.
 const classLabel=id=>isTestClass(id)?`${id}반 · 테스트반`:`${id}반`;
 
-export async function mount(host,{client,classes,selected,context,teacherClass=null,tab,hideTabs=false}){
+export async function mount(host,{client,classes,selected,context,teacherClass=null,tab,hideTabs=false,open=null}){
  const life=lifecycle(host);
- let extraAll=false,view=tab||context?.tab||'stats',cls=teacherClass?String(teacherClass):String(context?.classId&&context?.tab?context.classId:'all'),period='all',search='',bundle=null,checkhere=null,checkhereFor='';
- host.innerHTML=`<div class="b2">${hideTabs?'':`<div class="b2-head"><div><h2>출결 현황</h2><p>마스터시트 출결원장 기준 통계·증빙서류·질병 인정·중도탈락을 한곳에서 봅니다.</p></div></div><div class="b2-tabs" role="tablist" id="s2Tabs"></div>`}
+ if((tab||context?.tab)==='dropout'&&open&&!teacherClass){open('b2dropouts',{classId:context?.classId});return {dispose:()=>life.dispose()};}
+ let extraAll=false,view=STATUS_TABS.some(([k])=>k===(tab||context?.tab))?tab||context.tab:'stats',cls=teacherClass?String(teacherClass):String(context?.classId&&context?.tab?context.classId:'all'),period='all',search='',bundle=null,checkhere=null,checkhereFor='';
+ host.innerHTML=`<div class="b2">${hideTabs?'':`<div class="b2-head"><div><h2>출결 현황</h2><p>마스터시트 출결원장 기준 통계·증빙서류·질병 인정을 한곳에서 봅니다.${open?' 중도탈락·조기취업·수료 명단은 <button type="button" class="b2-btn small soft" id="s2Dropouts">중도탈락·수료</button> 화면에서 처리합니다.':''}</p></div></div><div class="b2-tabs" role="tablist" id="s2Tabs"></div>`}
  <section class="b2-card"><div class="b2-toolbar">${teacherClass?'':`<label class="b2-field">반<select id="s2Class">${classOptions(classes,cls,{all:true})}</select></label>`}
   <label class="b2-field">기간<select id="s2Period">${PERIODS.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select></label>
   <label class="b2-field">이름 찾기<input id="s2Search" autocomplete="off" placeholder="이름"></label><span class="b2-grow"></span>
@@ -25,7 +27,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  const $=s=>host.querySelector(s),body=$('#s2Body');
  let current={rows:[],csv:[],copy:''};
  const range=()=>{const p=PERIODS.find(x=>x.id===period)||PERIODS[0];return {from:p.from,to:p.to<bundle.today?p.to:bundle.today,until:p.to};};
- // withTest: 증빙서류·질병 인정 '전체 반' 목록에는 테스트반 줄도 넣습니다(위 숫자 상자에서는 뺌). 출결 통계·중도탈락은 공식 합계라 넣지 않습니다.
+ // withTest: 증빙서류·질병 인정 '전체 반' 목록에는 테스트반 줄도 넣습니다(위 숫자 상자에서는 뺌). 출결 통계는 공식 합계라 넣지 않습니다.
  const stats=({withTest=false}={})=>{const {from,to}=range();return studentStats(bundle,{cls:cls==='all'?null:cls,from,to,withTest:withTest&&cls==='all'}).filter(s=>!search||s.name.includes(search));};
  const official=rows=>cls==='all'?rows.filter(r=>!isTestClass(r.cls)):rows;
  const testNote=(n,what)=>n?`<div class="b2-note" style="margin:8px 14px 0">테스트반 ${esc(what)} ${n}건은 목록에만 보이고 위 숫자에는 넣지 않았습니다.</div>`:'';
@@ -69,12 +71,6 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
     +(missing.length?`<div class="b2-note warn" style="margin:10px 14px">체크히어 집계 저장본이 없는 반: ${missing.map(id=>esc(classLabel(id))).join(', ')} · 이 반은 출결원장 기준만 봅니다.</div>`:'');
    current={csv:[['반','이름','인정 횟수','상태','인정일','출결원장에만','체크히어에만'],...report.rows.map(r=>[r.cls,r.name,r.count,r.level,r.dates.join(' '),r.onlyLedger.join(' '),r.onlyCheckHere.join(' ')])],copy:['질병 인정출석 제한위험자 · 출결원장 기준',...report.rows.map(r=>`${classLabel(r.cls)} · ${r.name} · ${r.count}/${DISEASE.max}회 · ${r.level} · ${r.dates.map(md).join(', ')}`)].join('\n')};
   }
-  if(view==='dropout'){
-   const {left,risk}=dropoutRows(list);
-   body.innerHTML=statBoxes([['중도탈락·조기취업 등',left.length],[`수료 위험 (${PASS}% 미만)`,risk.length,risk.length?'bad':'']])+`<h3 style="margin:14px 14px 8px">재학 아님</h3>`+table(['반','이름','상태','변경일','재학 기간 출석률','결석'],left.map(s=>`<tr><td>${esc(classLabel(s.cls))}</td><td class="b2-name">${esc(s.name)}</td><td>${esc(s.status)}</td><td>${s.changed?md(s.changed):'-'}</td><td>${pct(s.rate)}</td><td>${s.counts['결석']||0}</td></tr>`))
-    +`<h3 style="margin:16px 14px 8px">수료 위험 · 출석률 ${PASS}% 미만 재학생</h3>`+table(['반','이름','출석률','결석','교육일'],risk.sort((a,b)=>a.rate-b.rate).map(s=>`<tr class="diff"><td>${esc(classLabel(s.cls))}</td><td class="b2-name">${esc(s.name)}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.days}</td></tr>`));
-   current={csv:[['구분','반','이름','상태','변경일','출석률','결석'],...left.map(s=>['재학 아님',s.cls,s.name,s.status,s.changed,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0]),...risk.map(s=>['수료 위험',s.cls,s.name,s.status,'',s.rate.toFixed(1),s.counts['결석']||0])],copy:[`중도탈락·수료 위험 · ${title}`,...left.map(s=>`${classLabel(s.cls)} · ${s.name} · ${s.status}${s.changed?' '+md(s.changed):''}`),...risk.map(s=>`${classLabel(s.cls)} · ${s.name} · 수료 위험 ${pct(s.rate)}`)].join('\n')};
-  }
  }
  async function load(fresh=false){
   try{bundle=await client.bundle(teacherClass?cls:'all',{fresh});if(fresh)checkhereFor='';await render();}catch(e){if(life.alive())body.innerHTML=errorBox(e);}
@@ -86,6 +82,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  $('#s2Copy').onclick=()=>copyText(current.copy||'');
  $('#s2Csv').onclick=()=>downloadCsv(`출결현황_${STATUS_TABS.find(t=>t[0]===view)[1]}_${cls==='all'?'전체':cls+'반'}.csv`,current.csv||[]);
  $('#s2Reload').onclick=()=>void load(true);
+ if($('#s2Dropouts'))$('#s2Dropouts').onclick=()=>open('b2dropouts',{classId:cls==='all'?undefined:cls});
  await load();
  return {dispose:()=>life.dispose(),setView(v){view=v;void render();}};
 }

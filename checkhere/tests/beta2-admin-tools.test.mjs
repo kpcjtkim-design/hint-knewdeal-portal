@@ -368,7 +368,7 @@ test('교육시간 조정 clears a row to 시간 미정 with was, deletes a pref
 test('교육생 상태 changes a status with the last attendance day after confirming, refreshes the roster and returns a leaver to 재학',async()=>{
  await site(async(page,posts,dialogs,sheet)=>{
   await page.getByRole('button',{name:'출결',exact:true}).click();
-  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','교육생 상태','내려받기','체크히어 수집']);
+  assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','출결 현황','교육생 상태','중도탈락·수료','내려받기','체크히어 수집']);
   await page.getByRole('button',{name:'교육생 상태',exact:true}).click();
   await page.getByRole('heading',{name:'교육생 상태'}).waitFor();await page.locator('.b2r-row').first().waitFor();
   assert.deepEqual(await page.locator('.b2r-row .b2-name').allInnerTexts(),['고다원','김동진','한수빈'],'class 1 by default');
