@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,dropoutRows,isDiseaseReason,syncText,enrolledOn} from '../../beta2-core.mjs';
+import {decodeBundle,dayView,dayCounts,studentStats,diseaseReport,compareCheckHere,memoReason,timesFromRecord,neededTimes,evidenceRows,extraEvidenceRows,offDayRecords,classDays,dropoutRows,isDiseaseReason,syncText,enrolledOn} from '../../beta2-core.mjs';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
@@ -45,6 +45,42 @@ test('records on days that are not training days (weekend, before the course) ar
  assert.deepEqual(diseaseReport(after).rows,diseaseReport(before).rows);
  assert.deepEqual(studentStats(b,{cls:'1',from:'2026-10-01'}).find(x=>x.name==='가').absent,0,'a wider period still counts only training days');
  assert.deepEqual(dayView(b,'1',off[0]).map(r=>[r.name,r.type]),[['가','결석'],['나','출석'],['다','결석']],'the day view of a non-training day still shows its records');
+});
+
+test('real classes: recognized records on non-training days (before the course, today 10/20, a future weekend) stay out of evidence and disease and are listed apart',()=>{
+ // 사용자 2026-10-20: 인정 출결은 교육일에만. 실제 반의 교육일 아닌 날 인정 기록은 증빙·질병 인정에 넣지 않고 offDayRecords로 따로 알립니다.
+ const off=[L('2026-10-20','가','인정출석',{reason:'병원 진료'}),L('2026-11-08','다','인정출석',{reason:'면접'}),L('2026-11-01','가','결석')];
+ const b=decodeBundle({...RAW,ledger:[...RAW.ledger,...off]}),before=studentStats(decodeBundle(RAW),{cls:'1'}),after=studentStats(b,{cls:'1'});
+ assert.deepEqual(evidenceRows(after),evidenceRows(before));
+ assert.deepEqual(after.map(x=>[x.days,x.rate,x.counts,x.disease]),before.map(x=>[x.days,x.rate,x.counts,x.disease]));
+ assert.deepEqual(offDayRecords(b).map(r=>[r.cls,r.name,r.date,r.type,r.state]),[['1','가','2026-10-20','인정출석','미제출'],['1','다','2026-11-08','인정출석','미제출']],'absences are not recognized records; future days are listed too');
+ assert.deepEqual(offDayRecords(b,{from:'2026-10-28',to:'2026-11-05'}),[],'the period filter applies');
+ assert.deepEqual(offDayRecords(b,{cls:'2'}),[]);
+ assert.deepEqual(classDays(b,'1'),RAW.days);
+});
+
+test('test class 17: every date with a ledger record counts as a training day (before the course too), shown when picked or with withTest, never in official totals',()=>{
+ // 17반 테스트반(cohort test, 사용자 결정 2026-10-20): 개강 전에도 시험할 수 있게 그 반 원장 기록이 있는 날은 모두 교육일입니다.
+ const T=(date,name,type,o={})=>L(date,name,type,{cls:'17',...o});
+ const raw={...RAW,roster:[...RAW.roster,['17','테스트가','재학',''],['17','테스트나','재학','']],
+  ledger:[...RAW.ledger,T('2026-10-20','테스트가','인정출석',{reason:'병원 진료'}),T('2026-10-18','테스트가','인정조퇴',{reason:'병결',outT:'15:00'}),T('2026-10-19','테스트가','인정출석',{reason:'병원(치과)'}),T('2026-10-21','테스트가','인정지각',{reason:'병원',inT:'10:00'}),
+   T('2026-10-20','테스트나','결석'),T('2026-10-25','테스트나','인정출석',{reason:'취업박람회'}),T('2026-11-20','테스트나','인정출석',{reason:'면접'})]};
+ const b=decodeBundle(raw);
+ assert.deepEqual(classDays(b,'17'),['2026-10-18','2026-10-19','2026-10-20','2026-10-21','2026-10-25','2026-11-03','2026-11-04','2026-11-05','2026-11-06','2026-11-20']);
+ const t=studentStats(b,{cls:'17'}),ga=t.find(x=>x.name==='테스트가'),na=t.find(x=>x.name==='테스트나');
+ assert.deepEqual([ga.days,ga.absent],[8,0],'10/18·19·20·21·25 and 11/3·4·5 up to today 11/5');
+ assert.deepEqual([na.days,na.absent,Math.round(na.rate)],[8,1,88],'a classmate without a record that day is present');
+ assert.deepEqual(evidenceRows(t).map(e=>[e.name,e.date,e.state]),[['테스트가','2026-10-18','미제출'],['테스트가','2026-10-19','미제출'],['테스트가','2026-10-20','미제출'],['테스트가','2026-10-21','미제출'],['테스트나','2026-10-25','미제출']],'the 11/20 record is after today');
+ assert.deepEqual(diseaseReport(t).rows.map(r=>[r.cls,r.name,r.count,r.level]),[['17','테스트가',4,'주의']]);
+ assert.deepEqual(extraEvidenceRows(b,{cls:'17'}).map(r=>[r.name,r.date]),[['테스트나','2026-10-25']]);
+ // 전체(공식): 테스트반 없음 · withTest: 목록에 함께
+ const all=studentStats(b,{}),withTest=studentStats(b,{withTest:true});
+ assert.equal(all.some(x=>x.cls==='17'),false);
+ assert.deepEqual(all.map(x=>[x.name,x.days,x.rate,x.evidence,x.disease]),studentStats(decodeBundle(RAW),{}).map(x=>[x.name,x.days,x.rate,x.evidence,x.disease]),'real classes are unchanged');
+ assert.deepEqual(evidenceRows(withTest).filter(e=>e.cls==='17').length,5);
+ assert.deepEqual(diseaseReport(all).rows,[]);assert.deepEqual(diseaseReport(withTest).rows.map(r=>r.name),['테스트가']);
+ assert.deepEqual(extraEvidenceRows(b,{}),[]);assert.deepEqual(extraEvidenceRows(b,{withTest:true}).map(r=>r.cls),['17']);
+ assert.deepEqual(offDayRecords(b),[],'test-class days are training days, never off-day records');
 });
 
 test('disease counts follow the ledger and differences with CheckHere hospital memos are listed for review',()=>{
