@@ -22,22 +22,21 @@ import {PRIVACY_NEEDS_RELAY,UNMASK_ON_APPLY,deleteLeaves,holdKey,needsUnmaskOnAp
 import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhere-sync.mjs';
 import {RULES,seconds} from './checkhere/rules.mjs';
 // 사유 드롭다운(사용자 요청 2026-10-20): 분류 → 세부(인적성·자격증은 종류)로 표준 글, 직접 입력도 됨. 취업박람회 인정 출결은 추가 증빙(기업면접 확인서) 배지·거르기·알림.
-import {subOptions,splitReason,composeReason,tidyReason,typeWarning,reasonChecks,reasonPick,reasonOptions,STANDARD,OTHER,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
+import {tidyReason,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
+import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText,OFFDAY_RECOGNIZED_NOTE} from './reason-pick.mjs'; // 사유 칸·경고는 담임 출결판과 같은 공용 도우미(2026-10-20)
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
-import {isIsoDate,BASE_RULE,isTestClass} from './cohort.mjs';
+import {isIsoDate,BASE_RULE} from './cohort.mjs';
 
 const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치'],['extra','추가 증빙']]; // 추가 증빙: 취업박람회 인정 출결 중 증빙 「확인」 전
 const extraOpen=r=>{const x=extraEvidence(r?.rec);return !!x&&!x.done;};
-// 사유 글의 분류(안내용): 표준 글이 아니면 '기타'
-const pickOf=text=>{const t=String(text||''),s=splitReason(t);return {cat:s.cat||(t.trim()?OTHER:''),sub:s.sub};};
 const EVIDENCE=[['','자동 (인정이면 미제출)'],['미제출','미제출'],['확인','확인'],['반려','반려'],['해당없음','해당없음']];
 const TIMES=['inT','outT','oa','ob'],ALL={inT:'x',outT:'x',oa:'x',ob:'x'};
 const COLUMNS=['times','entryMemo','exitMemo'],PARTS=['msg','mark','status','prop','memo','memoedit']; // 직접 요청 줄의 세 칸, 따로 채우는 행 부분
 // 출결대조 메모 빠른 칩: 맨 위 '수기출석 공통메모 사항'(이 목록만 고치면 됨), 그 아래 증빙
 const HANDWRITTEN_MEMOS=['수기출석 사인 미비','수기출석 미제출','수기출석 확인 완료','수기출석 시간 미기재','수기출석 서명 상이'],MEMO_PICKS=['증빙 미제출','증빙 보완 필요','증빙 확인 완료'],MEMO_MAX=100;
 const ANY_DAY='__any'; // 「다른 날짜…」 칸 값
-export const OFFDAY_RECOGNIZED_NOTE='교육일이 아닌 날의 인정 출결은 통계·증빙에 들지 않습니다'; // 사용자 2026-10-20 '애초에 교육일 날만 인정출결이 되는거 아닌지?': 막지 않고 행에 경고
+export {OFFDAY_RECOGNIZED_NOTE}; // 사용자 2026-10-20 '애초에 교육일 날만 인정출결이 되는거 아닌지?': 막지 않고 행에 경고(글은 reason-pick.mjs)
 // 날짜 모양 확인: 실제 있는 날(YYYY-MM-DD)이고 연도가 1900~2999(키보드로 연도를 치는 중간 값 0002-…·0202-…는 넘김). 기간 제한이 아닙니다.
 const typedDay=d=>isIsoDate(d)&&d>='1900-01-01'&&d<='2999-12-31';
 const koreaNow=()=>{const s=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Seoul'});return {date:s.slice(0,10),seconds:+s.slice(11,13)*3600+ +s.slice(14,16)*60};};
@@ -140,16 +139,10 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 분류·세부(인적성·자격증 종류) 드롭다운. 세부가 없는 분류(기타)는 하나만.
  // 사유 칸(사용자 추가 지시 2026-10-20): 칸 자체가 드롭다운(지금까지 쓴 사유). 인적성·자격증은 바로 옆에 종류 드롭다운(자격증 X 종류는 인정 출결에서 막음)(기타면 종류 직접 입력), 목록에 없으면 '기타' → 직접 입력 칸.
  // 출석 기본 행(기록 없음)은 사유를 저장하지 않아 드롭다운을 잠급니다. customOpen: '기타'를 고른 학생(빈 글이어도 직접 입력 칸을 둠).
- function pickHtml(row,v,n,noReason){
-  const s=reasonPick(v.reason,{custom:customOpen.has(row.name)}),need=recognizedType(v.type)?'사유 (필수)':'사유',off='출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)';
-  return `<select class="b2-rmain" data-inline="rmain" aria-label="${n} 사유" ${noReason?`disabled title="${off}"`:`title="${esc(v.reason||need)}"`}>${reasonOptions(s.main,{type:v.type,blank:noReason?'사유 없음':need})}</select>`
-   +(s.kind?`<select class="b2-rsub" data-inline="rsub" aria-label="${n} ${s.kind} 종류" title="${s.kind} 종류">${subOptions(s.kind,s.apt,{type:v.type,cls})}</select>`:'')
-   +(s.kind&&s.input?`<input class="b2-reason" data-inline="rapt" data-kind="${esc(s.kind)}" maxlength="40" value="${esc(s.custom)}" aria-label="${n} ${s.kind} 종류 직접 입력" placeholder="종류 직접 입력">`:'')
-   +(s.main===OTHER?`<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(v.reason)}" aria-label="${n} 사유 직접 입력" placeholder="${need} 직접 입력" title="${esc(v.reason)}">`:'');
- }
+ function pickHtml(row,v,n,noReason){return reasonPickHtml({reason:v.reason,type:v.type,cls,name:row.name,custom:customOpen.has(row.name),locked:noReason});}
  // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님,
  // 교육일이 아닌 날의 인정 출결(막지 않음, 17반 테스트반은 모든 날을 교육일로 보므로 없음)
- function pickNote(row){const v=valuesOf(row),w=typeWarning(v.type,pickOf(v.reason).cat),off=String(v.type||'').startsWith('인정')&&offDay(date)&&!isTestClass(cls);return `${off?`<span class="b2-xnote" data-offday-note>${OFFDAY_RECOGNIZED_NOTE}</span>`:''}${isJobFair(v.reason)&&!extraEvidence(row.rec)?`<span class="b2-xnote" title="취업박람회는 박람회 참가만으로는 인정되지 않습니다">추가 증빙 필요 · ${EXTRA_DOC}${recognizedType(v.type)?'':' (인정 출결일 때)'}</span>`:''}${w?`<span class="b2-sub">${esc(w)}</span>`:''}${reasonChecks(v.type,v.reason,{cls}).map(c=>`<span class="${c.level==='error'?'b2-err':'b2-xnote'}" style="display:block" data-reason-check="${c.level}">${esc(c.text)}</span>`).join('')}`;}
+ function pickNote(row){const v=valuesOf(row);return reasonNotesHtml({type:v.type,reason:v.reason,cls,offDay:offDay(date),rec:row.rec});}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`;
@@ -423,11 +416,10 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 사유 드롭다운에서 고르기(초안만, 저장은 모아서): 표준 글은 그대로, 인적성은 옆 종류 칸으로, '기타'는 직접 입력 칸으로(표준 글이던 칸은 비움, 직접 쓴 글은 그대로).
  // 인적성 종류 기타는 '인적성()'로 두고 종류 직접 입력 칸에 씁니다(저장 때 빈 괄호는 지움).
  function pickReason(name,which,value){
-  const row=rowOf(name);if(!row)return;const cur=valuesOf(row).reason||'';let text;
-  if(which==='rmain'){if(value===OTHER){customOpen.add(name);text=STANDARD.has(tidyReason(cur))||reasonPick(cur).kind?'':cur;}else{customOpen.delete(name);text=value;}}
-  else{const k=reasonPick(cur).kind||'인적성';text=value===OTHER?`${k}()`:composeReason(k,value);} // 종류 분류: 인적성·자격증
-  setDraft(name,{reason:text});paint(name,{force:true});paintBulk();
-  focusField(name,which==='rmain'?(reasonPick(value).kind?'rsub':value===OTHER?'reason':'rmain'):value===OTHER?'rapt':'rsub');
+  const row=rowOf(name);if(!row)return;const p=pickReasonText(valuesOf(row).reason,which,value);
+  if(p.custom===true)customOpen.add(name);else if(p.custom===false)customOpen.delete(name);
+  setDraft(name,{reason:p.text});paint(name,{force:true});paintBulk();
+  focusField(name,p.focus);
  }
  // 증빙 드롭다운(초안만, 저장은 모아서): 반려면 옆에 반려 사유 칸을 열어 그 칸으로, 아니면 칸을 닫습니다(적어 둔 반려 사유는 초안에 남지만 반려가 아니면 저장하지 않음).
  function setEvidence(name,ev){setDraft(name,{ev});paint(name,{force:true});paintBulk();focusField(name,ev==='반려'?'evr':'ev');}
@@ -578,7 +570,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const t=e.target,k=t.dataset?.inline,name=t.closest?.('tbody[data-student]')?.dataset.student;
   if(t.hasAttribute?.('data-memo-input')){memoUi.text=t.value;return;} // 메모 직접 입력은 초안이 아님
   if(k==='rmain'||k==='rsub'||k==='ev')return; // 드롭다운은 change에서
-  if(k==='rapt'&&name){if(bulk)return;setDraft(name,{reason:`${t.dataset.kind||'인적성'}(${t.value})`});syncPick(name);paintMsg(name);paintBulk();return;} // 인적성·자격증 종류 직접 입력
+  if(k==='rapt'&&name){if(bulk)return;setDraft(name,{reason:kindInputText(t.dataset.kind,t.value)});syncPick(name);paintMsg(name);paintBulk();return;} // 인적성·자격증 종류 직접 입력
   if(k&&k!=='type'&&name){if(bulk)return;setDraft(name,{[k]:t.value});if(k==='reason'){customOpen.add(name);t.title=t.value;syncPick(name);}if(k==='evr')t.title=t.value||'반려 사유 (필수)';paintMsg(name);paintBulk();return;}
  });
  host.addEventListener('change',e=>{

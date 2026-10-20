@@ -131,8 +131,8 @@ test('깨진 문서·읽기 실패: 기본 목록으로 돌아가고 경고(관�
  await page('/teacher.html',async p=>{
   await p.waitForFunction(()=>window.load);
   const r=await p.evaluate(()=>window.load);assert.equal(r.from,'default');assert.equal(r.warning,'사유 목록 설정을 읽지 못해 기본 목록을 씁니다');assert.equal(r.firstWarning,true);
-  await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await p.waitForSelector('#rc');
-  assert.ok((await p.locator('#rc option').allTextContents()).includes('면접'),'default list');
+  await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await p.waitForSelector('#rp [data-inline="rmain"]');
+  assert.ok((await p.locator('#rp [data-inline="rmain"] option').allTextContents()).includes('면접'),'default list');
  },{fail:true});
 });
 
@@ -145,14 +145,15 @@ test('담임 출결판은 저장된 사유 목록을 따릅니다: 숨긴 분류
  d.kinds['자격증'].items.find(i=>i.value==='전기기사').rules.mfg='X';
  await page('/teacher.html',async p=>{
   await p.waitForFunction(()=>window.load);assert.deepEqual(await p.evaluate(()=>[window.load.from,window.load.warning,window.load.rev]),['saved','',7]);
-  await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await p.waitForSelector('#rc');
-  const cats=await p.locator('#rc option').allTextContents();
-  assert.equal(cats[1],'훈련기관 행사');assert.ok(!cats.includes('면접'),'hidden');assert.ok(cats.includes('(인정 안 됨) 공가(관공서·법원)'));
+  const main=p.locator('#rp [data-inline="rmain"]'),sub=p.locator('#rp [data-inline="rsub"]'),free=p.locator('#rp [data-inline="reason"]');
+  await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await main.waitFor();
+  const groups=await main.locator('optgroup').evaluateAll(g=>g.map(x=>x.label));
+  assert.equal(groups[0],'훈련기관 행사');assert.ok(!groups.includes('면접'),'hidden');assert.ok(groups.includes('(인정 안 됨) 공가(관공서·법원)'));
   // 저장된 '면접'(숨긴 분류)은 기타 + 글 그대로
-  assert.equal(await p.locator('#rc').inputValue(),'기타');assert.equal(await p.locator('#r').inputValue(),'면접');
-  await p.locator('#rc').selectOption('훈련기관');assert.equal(await p.locator('#r').inputValue(),'훈련기관(행사)');
+  assert.equal(await main.inputValue(),'기타');assert.equal(await free.inputValue(),'면접');
+  await main.selectOption('훈련기관(행사)');assert.equal(await main.inputValue(),'훈련기관(행사)');assert.equal(await p.locator('#mm').textContent(),'(인정출석)훈련기관(행사)_담임:김지아');
   // 2반 제조지능화: 전기기사를 X로 바꾼 목록 → 인정출석에서 막힘
-  await p.locator('#rc').selectOption('자격증');assert.equal(await p.locator('#rs option[value="전기기사"]').isDisabled(),true);
-  await p.locator('#rc').selectOption('공가');assert.match(await p.locator('#rn').innerText(),/공가\(관공서·법원\)은 보통 인정 사유가 아닙니다/);
+  await main.selectOption('자격증');assert.equal(await sub.locator('option[value="전기기사"]').isDisabled(),true);
+  await main.selectOption('공가(법원 출석)');assert.match(await p.locator('#rn').innerText(),/공가\(관공서·법원\)은 보통 인정 사유가 아닙니다/);
  },{docs:{'settings/reasonCatalog':{rev:7,updatedBy:'hint.kpc@gmail.com',updatedAt:'ts',catalog:d}}});
 });
