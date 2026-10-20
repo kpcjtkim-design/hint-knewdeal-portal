@@ -46,15 +46,16 @@ export function readStudent(s){
     entryKind:period[0]?period[0].type:null,entryEventId:hasId(period[0]),exitEventId:hasId(complete[0]),enterEventId:hasId(enter[0])};
 }
 // 그날 화면 데이터에서 이 학생(이름+전화 키)이 정확히 한 명이고 의심스러운 점이 없을 때만 돌려줍니다. 아니면 null(삭제 잠김).
-export function dayStudent(json,key){
+// keyOf(이름, 전화): 학생 키 공식(기본 이름+전화). 2기 명단 키를 쓰는 학생은 연결 프로그램이 명단을 먼저 보는 공식을 넘깁니다(collector.keyFor).
+export function dayStudent(json,key,keyOf=studentKey){
   const list=json?.data?.eventResultList;if(!Array.isArray(list)||!key)return null;
-  const found=list.map(readStudent).filter(d=>d.phone.length>=9&&studentKey(d.name,d.phone)===key);
+  const found=list.map(readStudent).filter(d=>d.phone.length>=9&&keyOf(d.name,d.phone)===key);
   return found.length===1&&!found[0].problems.length?found[0]:null;
 }
 // 그날 화면 데이터에서 이름+전화 키가 이 학생인 항목(원본)이 정확히 하나면 그것(순번으로 맞추지 못한 원문 줄용), 아니면 null.
-export function entryByKey(json,key){
+export function entryByKey(json,key,keyOf=studentKey){
   const list=json?.data?.eventResultList;if(!Array.isArray(list)||!key)return null;
-  const found=list.filter(s=>{const d=readStudent(s);return d.phone.length>=9&&studentKey(d.name,d.phone)===key;});
+  const found=list.filter(s=>{const d=readStudent(s);return d.phone.length>=9&&keyOf(d.name,d.phone)===key;});
   return found.length===1?found[0]:null;
 }
 // Rows come from the visible table. A row is read from page data only when the

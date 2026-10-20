@@ -21,3 +21,8 @@ BETA_ATTENDANCE.md
 *.rules
 .firebaserc
 firebase.json
+# 2기 연결 프로그램 PC 전용(처음 설치 화면·명단). checkhere/cohort-bridge.mjs는 배포에 남김
+checkhere/setup.html
+checkhere/setup-ui.mjs
+checkhere/setup.mjs
+checkhere/roster.mjs

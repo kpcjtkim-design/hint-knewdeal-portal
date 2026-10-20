@@ -148,23 +148,29 @@ test('checkhereIdentities: the CheckHere roster link is admin-only and shaped',(
  assert.equal(can('create','checkhereIdentities/3',{auth:ADMIN,next:doc('4')}),false);assert.equal(can('delete','checkhereIdentities/3',{auth:ADMIN,data:doc('3')}),false);
 });
 
-test('notifications: created for allowed recipients only, read by the recipient or admins, recipient marks read only',()=>{
- const note=(o={})=>({to:ADMIN.email,from:T3.email,kind:'voc',text:'가상 알림',classId:'3',read:false,createdAt:TIME,...o});
+test('notifications (notify.mjs shape): teachers notify admins or their own class, recipients and admins read, readers only add themselves to readBy',()=>{
+ const note=(o={})=>Object.fromEntries(Object.entries({kind:'민원',title:'3반 민원 접수',body:'가상 알림',cls:'3',link:'#b2vocs?cls=3',to:[ADMIN.email,ADMIN2.email],toRole:'admin',from:T3.email,readBy:[T3.email],createdAt:TIME,...o}).filter(([,v])=>v!==undefined));// undefined = 그 칸 없음
  assert.equal(can('create','notifications/n1',{auth:T3,next:note()}),true,'담임 → 운영자');
- assert.equal(can('create','notifications/n1',{auth:T3,next:note({to:OPS_ADMIN.email})}),true,'등록된 운영자');
- assert.equal(can('create','notifications/n1',{auth:T3,next:note({to:T4.email})}),false,'담임 → 다른 담임 안 됨');
- assert.equal(can('create','notifications/n1',{auth:T3,next:note({from:ADMIN.email})}),false,'보낸 사람 위장');
- assert.equal(can('create','notifications/n1',{auth:T3,next:note({classId:'4'})}),false,'다른 반 이름으로');
- assert.equal(can('create','notifications/n1',{auth:STRANGER,next:note({from:STRANGER.email,classId:undefined})}),false,'등록 안 된 계정');
- assert.equal(can('create','notifications/n1',{auth:ADMIN,next:note({to:T4.email,from:ADMIN.email,classId:'4'})}),true,'운영자 → 등록된 담임');
- assert.equal(can('create','notifications/n1',{auth:ADMIN,next:note({to:'nobody@example.com',from:ADMIN.email})}),false,'등록 안 된 받는 사람');
- assert.equal(can('create','notifications/n1',{auth:T3,next:note({text:'x'.repeat(501)})}),false);
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({toRole:undefined,to:[T4.email]})}),false,'담임 → 다른 담임(운영자·자기 반 표시 없음) 안 됨');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({from:ADMIN.email,readBy:[ADMIN.email]})}),false,'보낸 사람 위장');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({readBy:[]})}),false,'readBy는 보낸 사람 하나');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({cls:'4'})}),false,'다른 반 이름으로');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({toClass:'4'})}),false,'다른 반 담임에게');
+ assert.equal(can('create','notifications/n1',{auth:STRANGER,next:note({from:STRANGER.email,readBy:[STRANGER.email]})}),false,'등록 안 된 계정');
+ assert.equal(can('create','notifications/n1',{auth:ADMIN,next:note({to:[],toRole:undefined,toClass:'4',cls:'4',from:ADMIN.email,readBy:[ADMIN.email],kind:'서류발급'})}),true,'운영자 → 4반 담임');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'기타'})}),false,'정해진 종류만');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({body:'x'.repeat(161)})}),false);
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({to:Array.from({length:11},(_,i)=>`a${i}@example.com`)})}),false,'받는 사람 10명까지');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({text:'옛 칸'})}),false,'정해진 칸만');
  const stored=note();
  assert.equal(can('get','notifications/n1',{auth:ADMIN,data:stored}),true);assert.equal(can('get','notifications/n1',{auth:T4,data:stored}),false);
- assert.equal(can('get','notifications/n1',{auth:T4,data:note({to:T4.email,from:ADMIN.email})}),true,'받는 사람');
- assert.equal(can('update','notifications/n1',{auth:ADMIN,data:stored,next:{...stored,read:true,readAt:TIME}}),true,'받는 사람이 읽음 표시');
- assert.equal(can('update','notifications/n1',{auth:ADMIN,data:stored,next:{...stored,text:'바꿈'}}),false);
- assert.equal(can('update','notifications/n1',{auth:T3,data:stored,next:{...stored,read:true,readAt:TIME}}),false,'보낸 사람은 못 바꿈');
+ const toFour=note({to:[],toRole:undefined,toClass:'4',cls:'4',from:ADMIN.email,readBy:[ADMIN.email]});
+ assert.equal(can('get','notifications/n1',{auth:T4,data:toFour}),true,'그 반 담임');assert.equal(can('get','notifications/n1',{auth:T3,data:toFour}),false);
+ assert.equal(can('update','notifications/n1',{auth:ADMIN,data:stored,next:{...stored,readBy:[T3.email,ADMIN.email]}}),true,'받는 사람이 읽음 표시');
+ assert.equal(can('update','notifications/n1',{auth:ADMIN,data:stored,next:{...stored,readBy:[T3.email,ADMIN2.email]}}),false,'다른 사람 이름으로 읽음 안 됨');
+ assert.equal(can('update','notifications/n1',{auth:ADMIN,data:stored,next:{...stored,body:'바꿈'}}),false);
+ assert.equal(can('update','notifications/n1',{auth:T4,data:toFour,next:{...toFour,readBy:[ADMIN.email,T4.email]}}),true,'반 담임 읽음');
+ assert.equal(can('update','notifications/n1',{auth:T3,data:toFour,next:{...toFour,readBy:[ADMIN.email,T3.email]}}),false,'받는 사람이 아니면 못 바꿈');
  assert.equal(can('delete','notifications/n1',{auth:ADMIN,data:stored}),false);
 });
 

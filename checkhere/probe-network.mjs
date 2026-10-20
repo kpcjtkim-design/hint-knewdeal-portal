@@ -8,6 +8,7 @@ import {createInterface} from 'node:readline/promises';
 import {CheckHereCollector} from './collector.mjs';
 import {urlTemplate,schemaOf,matchRecords,verdict,networkSummary,summarize,mappingEvidence} from './probe-core.mjs';
 import {studentKey} from './identity.mjs';
+import {CLASS_IDS,classOk,validIso} from './cohort-bridge.mjs';
 const here=dirname(fileURLToPath(import.meta.url));
 export const PROBE_VERSION='20261013.2';
 // A response body can stay open forever (streams, requests cut off by a navigation).
@@ -86,7 +87,7 @@ function parseArgs(argv){
 async function main(){
   const log=console.log,args=parseArgs(process.argv.slice(2));
   const rl=createInterface({input:process.stdin,output:process.stdout});
-  let classId=args.classId||(await rl.question('진단할 반 번호(1~17) [기본 2]: ')).trim()||'2';
+  let classId=args.classId||(await rl.question(`진단할 반 번호(1~${CLASS_IDS.length}) [기본 1]: `)).trim()||'1';
   const pasted=args.url??(await rl.question('체크히어 출결상세 화면 주소가 있으면 붙여 넣으세요 (없으면 Enter, 자동으로 찾습니다): ')).trim();
   const known=pasted?checkHereDayUrl(pasted):null;
   if(pasted&&!known)throw Error('체크히어 출결상세 화면 주소(https://check.ihereapp.com/history/lecture/modify?...)를 붙여 넣어 주세요.');
@@ -94,8 +95,8 @@ async function main(){
   let modal=args.modal;
   if(modal===undefined)modal=!/^n/i.test((await rl.question('기존 방식(학생별 수정창)도 같이 재서 비교할까요? 몇 분 걸립니다 [Y/n]: ')).trim());
   rl.close();
-  if(!/^(?:[1-9]|1[0-7])$/.test(classId))throw Error('반 번호는 1~17 사이로 입력해 주세요.');
-  if(!/^202\d-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date)))throw Error('날짜는 2026-09-14 형식으로 입력해 주세요.');
+  if(!classOk(classId))throw Error(`반 번호는 1~${CLASS_IDS.length} 사이로 입력해 주세요.`);
+  if(!validIso(date))throw Error('날짜는 2026-10-28 형식(2026·2027년)으로 입력해 주세요.');
   const dataDir=join(here,'data'),collector=new CheckHereCollector(dataDir);
   log('전용 크롬을 엽니다. (검수 프로그램과 같은 로그인 세션을 씁니다)');
   try{await collector.connect();}

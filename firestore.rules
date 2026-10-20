@@ -122,24 +122,34 @@ service cloud.firestore {
         && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
-    // 알림: 로그인한 사람이 허용된 받는 사람에게만 만듭니다(담임 → 운영자, 운영자 → 등록된 계정). 받는 사람·운영자만 읽고, 받는 사람은 읽음 표시만 바꿉니다.
-    function adminEmail(e){return bootstrapEmail(e) || (exists(/databases/$(database)/documents/users/$(e)) && get(/databases/$(database)/documents/users/$(e)).data.get('role','')=='ADMIN');}
-    function allowedRecipient(to){return to is string && to.size()<=200 && (adminEmail(to) || (isAdmin() && exists(/databases/$(database)/documents/users/$(to))));}
+    // 알림(notify.mjs·notify-core.mjs notificationDoc, 사용자 요청 2026-10-19): {kind,title,body,cls,link,to:[이메일 ≤10],toRole?:'admin',toClass?:'N',from,createdAt,readBy:[이메일]}.
+    // 받는 사람: to에 든 이메일, toRole 'admin'이면 운영자, toClass면 그 반 담임. 운영자는 모두 읽음. 담임은 운영자에게(toRole admin) 또는 자기 반으로만 보냅니다.
+    // 읽음 표시는 readBy에 내 이메일 하나만 더합니다(arrayUnion). 지우기는 없음.
+    function notifyRecipient(d){return email() in d.get('to',[]) || (d.get('toRole','')=='admin' && isAdmin()) || ('toClass' in d && ownsClass(d.toClass));}
+    function validNotification(d){
+      return d.keys().hasOnly(['kind','title','body','cls','link','to','toRole','toClass','from','createdAt','readBy'])
+        && d.kind in ['서류발급','민원','출결대조 메모']
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 80
+        && d.body is string && d.body.size() <= 160
+        && d.cls is string && (d.cls == '' || validClass(d.cls))
+        && d.link is string && d.link.size() <= 200
+        && d.to is list && d.to.size() <= 10
+        && d.from == email() && d.readBy is list && d.readBy.size() == 1 && email() in d.readBy
+        && (!('toRole' in d) || d.toRole == 'admin')
+        && (!('toClass' in d) || validClass(d.toClass))
+        && (d.to.size() > 0 || 'toRole' in d || 'toClass' in d)
+        && d.createdAt == request.time;
+    }
     match /notifications/{notificationId}{
-      allow read: if signedIn() && (resource.data.to == email() || isAdmin());
-      allow create: if signedIn() && (isAdmin() || isTeacher())
-        && request.resource.data.keys().hasOnly(['to','from','kind','text','link','classId','read','createdAt'])
-        && allowedRecipient(request.resource.data.to)
-        && request.resource.data.from == email()
-        && request.resource.data.kind is string && request.resource.data.kind.size() > 0 && request.resource.data.kind.size() <= 40
-        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
-        && (!('link' in request.resource.data) || (request.resource.data.link is string && request.resource.data.link.size() <= 500))
-        && (!('classId' in request.resource.data) || isAdmin() || ownsClass(request.resource.data.classId))
-        && request.resource.data.get('read',false) == false
-        && request.resource.data.createdAt == request.time;
-      allow update: if signedIn() && resource.data.to == email()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read','readAt'])
-        && request.resource.data.read == true && request.resource.data.readAt == request.time;
+      allow read: if signedIn() && (isAdmin() || notifyRecipient(resource.data));
+      allow create: if signedIn() && (isAdmin() || isTeacher()) && validNotification(request.resource.data)
+        && (isAdmin() || ((request.resource.data.cls == '' || ownsClass(request.resource.data.cls))
+          && ('toRole' in request.resource.data || 'toClass' in request.resource.data)
+          && (!('toClass' in request.resource.data) || ownsClass(request.resource.data.toClass))));
+      allow update: if signedIn() && (isAdmin() || notifyRecipient(resource.data))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+        && request.resource.data.readBy is list && request.resource.data.readBy.size() == resource.data.readBy.size() + 1
+        && request.resource.data.readBy.hasAll(resource.data.readBy) && email() in request.resource.data.readBy;
       allow delete: if false;
     }
     // Timetable data is isolated from attendance and class settings.

@@ -29,7 +29,7 @@ function fakeStore(list){
   return {docs,rejected,get watched(){return watched;},store:{watchQueue(){watched++;return()=>{};},saveRecords:async()=>{},approve:fail('approve'),reject:fail('reject')}};
 }
 function relayFor(bridge,store,clock,{inWindow=()=>false,log}={}){
-  return createLiveRelay({bridge:bridge.client,store,now:()=>clock.now,sleep:()=>Promise.resolve(),pollMs:1,inWindow,classIds:['2','3'],...(log?{log}:{})});
+  return createLiveRelay({bridge:bridge.client,store,now:()=>clock.now,sleep:()=>Promise.resolve(),pollMs:1,inWindow,classIds:['2','3'],random:()=>0,...(log?{log}:{})});
 }
 const edit=()=>({id:'live-masked-000000001',...buildLiveRequest(rec,{entry:'09:20',exit:'18:00',entryMemo:'지각_담임:가상담임(09:20)',exitMemo:''},'버스 지연'),status:'pending',createdBy:'admin@example.com',createdAt:{seconds:1}});
 const approvedEdit=()=>{const r={...edit(),id:'live-approved-0000001',status:'approved',approvedBy:APPROVER};r.approval=prepareApproval(r,rec);return r;};
@@ -62,15 +62,16 @@ test('masked errors are only classified (no attempts, no rejection): unmask-rela
   assert.equal(maskedFailure(Error('해당 반·날짜를 먼저 수집하고 학생 이름을 확인해 주세요.')),false);
   assert.deepEqual(['MASKED_CONFLICT: x','MASKED_GUARD: x','MASKED_AMBIGUOUS: x'].map(m=>[maskedFailure(Error(m)),stuckFailure(Error(m))]),[[false,true],[false,true],[false,false]]);
 });
-test('a mixed view stops the 17-class round after the first class; a one-class masked failure does not',async()=>{
+// 시간 계획은 고정 무작위(0): 반마다 지금부터 1분 간격. 모든 반에 걸리는 가림(섞인 화면·해제 창 사용 중)은 그 반을 남겨 두고 1분 쉽니다.
+test('a mixed view pauses the hourly round at the first class; a one-class masked failure does not',async()=>{
   const clock={now:new Date('2026-12-16T01:00:00Z')},b=fakeBridge(),s=fakeStore([]);
-  const relay=createLiveRelay({bridge:b.client,store:s.store,user:{email:APPROVER,getIdToken:async()=>'t'},now:()=>clock.now,sleep:()=>Promise.resolve(),pollMs:1,inWindow:()=>true,classIds:['2','3','4']});
+  const relay=createLiveRelay({bridge:b.client,store:s.store,user:{email:APPROVER,getIdToken:async()=>'t'},now:()=>clock.now,sleep:()=>Promise.resolve(),pollMs:1,inWindow:()=>true,classIds:['2','3','4'],random:()=>0});
   await relay.start({loop:false});
   b.syncJob={status:'failed',message:'MASKED_MIXED: 체크히어 화면의 가림 상태가 섞여 있어 이 날 수집을 멈췄습니다.'};
   assert.equal(await relay.step(),'idle','the round stops');assert.equal(b.calls.filter(c=>c==='sync').length,1);
   clock.now=new Date(clock.now.getTime()+61000);
   b.syncJob={status:'failed',message:'MASKED_ALIGN: 가린 화면의 표와 화면 데이터 순번이 맞지 않아 이 날 수집을 멈췄습니다.'};
-  assert.equal(await relay.step(),'sync');assert.equal(await relay.step(),'sync','one class failing does not stop the others');
+  assert.equal(await relay.step(),'sync');clock.now=new Date(clock.now.getTime()+60000);assert.equal(await relay.step(),'sync','one class failing does not stop the others');
   assert.equal(b.calls.filter(c=>c==='sync').length,3);
   // 사람이 연결 프로그램 탭에서 해제 창을 쓰는 중이면 모든 반이 같으므로 한 바퀴를 멈춥니다(화면을 옮기지 않음)
   clock.now=new Date(clock.now.getTime()+3600000);
@@ -85,7 +86,7 @@ test('a link conflict in one class is a warning and the round goes on; an ambigu
   b.syncJob={status:'failed',message:'MASKED_CONFLICT: 체크히어 학생 번호 연결이 예전과 달라 멈췄습니다. 수집 PC 연결 프로그램 화면에서 「연결 충돌 정리」를 누른 뒤 다시 수집해 주세요'};
   assert.equal(await relay.step(),'sync','the other classes still refresh');
   b.syncJob={status:'failed',message:'MASKED_AMBIGUOUS: 같은 반에 첫 글자·끝 4자리가 같은 학생이 있어 반영하지 않습니다. 체크히어에서 직접 고쳐 주세요'};
-  assert.equal(await relay.step(),'sync');
+  clock.now=new Date(clock.now.getTime()+60000);assert.equal(await relay.step(),'sync');
   assert.deepEqual(logs.filter(l=>/MASKED_/.test(l.text)).map(l=>[l.text.match(/MASKED_[A-Z]+/)[0],l.level]),[['MASKED_CONFLICT','warn'],['MASKED_AMBIGUOUS','error']]);
   assert.match(relay.status().lastError,/MASKED_AMBIGUOUS/);assert.equal(relay.status().needsUnmask,0,'a conflict is not fixed by an unmask');
   assert.deepEqual(s.rejected,[]);assert.equal(s.docs.get('live-masked-000000001').status,'pending');assert.deepEqual([...new Set(b.calls)],['sync']);

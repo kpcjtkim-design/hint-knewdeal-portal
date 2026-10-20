@@ -3,7 +3,9 @@ set -u
 
 BRIDGE_ROOT="$(cd "$(dirname "$0")" && pwd -P)"
 cd "$BRIDGE_ROOT" || exit 1
-BRIDGE_URL="http://127.0.0.1:8765"
+# 2기 연결 프로그램: 포트 8766, 이 폴더의 data. 1기 연결 프로그램(8765)은 건드리지 않습니다.
+BRIDGE_PORT=8766
+BRIDGE_URL="http://127.0.0.1:$BRIDGE_PORT"
 LOG_FILE="$BRIDGE_ROOT/bridge.log"
 ERR_FILE="$BRIDGE_ROOT/bridge-error.log"
 
@@ -66,8 +68,8 @@ if ! "$NODE_BIN" -e "import('playwright').then(()=>process.exit(0)).catch(()=>pr
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 "$NPM_BIN" install --no-audit --no-fund || fail "의존성 설치에 실패했습니다. 인터넷 연결과 npm 상태를 확인해 주세요."
 fi
 
-EXPECTED_BUILD="$(sed -n "s/.*build:'\([^']*\)'.*/\1/p" "$BRIDGE_ROOT/server.mjs" | head -n 1)"
-LISTENER_PID="$(lsof -nP -tiTCP:8765 -sTCP:LISTEN 2>/dev/null | head -n 1)"
+EXPECTED_BUILD="$(sed -n "s/^export const BUILD='\([^']*\)'.*/\1/p" "$BRIDGE_ROOT/server.mjs" | head -n 1)"
+LISTENER_PID="$(lsof -nP -tiTCP:$BRIDGE_PORT -sTCP:LISTEN 2>/dev/null | head -n 1)"
 BRIDGE_RUNNING=0
 
 if [ -n "$LISTENER_PID" ]; then
@@ -84,7 +86,7 @@ if [ -n "$LISTENER_PID" ]; then
         sleep 2
         ;;
       *)
-        fail "8765 포트를 다른 프로그램이 사용 중입니다. 해당 프로그램을 종료한 뒤 다시 실행해 주세요."
+        fail "$BRIDGE_PORT 포트를 다른 프로그램이 사용 중입니다. 해당 프로그램을 종료한 뒤 다시 실행해 주세요."
         ;;
     esac
   fi

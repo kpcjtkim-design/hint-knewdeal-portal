@@ -1,9 +1,11 @@
 // 체크히어 학생 번호(attendeeId) ↔ 이 PC의 학생 키(studentKey) 연결. 연결 프로그램 SQLite에만 둡니다(Firestore에 올리지 않음).
 // 이름·끝 4자리는 여기에 복사하지 않고, 늘 저장된 원문 기록(records)에서 꺼냅니다.
-// source: 'plain-read'(원문 화면에서 확인) | 'stored-match'(저장된 기록으로 이음 — 원문 읽기로 확인되기 전에는 읽기 전용, 쓰기 안 됨).
+// source: 'plain-read'(원문 화면에서 확인) | 'stored-match'(저장된 기록으로 이음 — 원문 읽기로 확인되기 전에는 읽기 전용, 쓰기 안 됨)
+//   | 'roster'(2기 명단으로 이음)·'roster-manual'(이 PC 화면에서 사람이 고름) — 둘 다 원문 읽기로 확인되기 전에는 읽기 전용(roster.mjs).
 import {hasMask} from './masking.mjs';
 const real=r=>r&&r.source==='live'&&typeof r.studentKey==='string'&&r.studentKey&&!hasMask(r.studentKey)&&typeof r.name==='string'&&r.name.trim()&&!hasMask(r.name)&&/^\d{4}$/.test(String(r.phoneLast4||''));
-export function createLinkStore(db,{records=()=>[]}={}){
+// roster: 2기 명단 저장소(roster.mjs createRosterStore). 있으면 그 반 명단 학생도 이름·끝 4자리를 꺼낼 학생(identities)에 들어갑니다.
+export function createLinkStore(db,{records=()=>[],roster=null}={}){
   db.exec(`CREATE TABLE IF NOT EXISTS attendee_links(classId TEXT NOT NULL, attendeeId TEXT NOT NULL, studentKey TEXT NOT NULL, source TEXT NOT NULL, linkedAt TEXT NOT NULL, lastSeen TEXT, PRIMARY KEY(classId,attendeeId));
     CREATE UNIQUE INDEX IF NOT EXISTS attendee_link_student ON attendee_links(classId,studentKey);
     CREATE TABLE IF NOT EXISTS plain_days(classId TEXT NOT NULL, date TEXT NOT NULL, keys TEXT NOT NULL, savedAt TEXT NOT NULL, PRIMARY KEY(classId,date));
@@ -19,7 +21,8 @@ export function createLinkStore(db,{records=()=>[]}={}){
     day:db.prepare('INSERT INTO plain_days(classId,date,keys,savedAt) VALUES(?,?,?,?) ON CONFLICT(classId,date) DO UPDATE SET keys=excluded.keys,savedAt=excluded.savedAt'),
     lastDay:db.prepare('SELECT date,keys FROM plain_days WHERE classId=? ORDER BY date DESC LIMIT 1'),
     days:db.prepare('SELECT COUNT(*) n FROM plain_days'),
-    count:db.prepare("SELECT COUNT(*) n, SUM(source='stored-match') pending FROM attendee_links"),
+    count:db.prepare("SELECT COUNT(*) n, SUM(source<>'plain-read') pending FROM attendee_links"),
+    byClass:db.prepare('SELECT attendeeId,studentKey,source FROM attendee_links WHERE classId=?'),
     conflict:db.prepare('INSERT INTO link_conflicts(classId,attendeeId,studentKey,at) VALUES(?,?,?,?) ON CONFLICT(classId,attendeeId) DO UPDATE SET studentKey=excluded.studentKey,at=excluded.at'),
     unconflict:db.prepare('DELETE FROM link_conflicts WHERE classId=? AND attendeeId=?'),
     conflicts:db.prepare('SELECT classId,attendeeId,studentKey FROM link_conflicts'),
@@ -41,9 +44,12 @@ export function createLinkStore(db,{records=()=>[]}={}){
     link:(classId,attendeeId)=>q.byAttendee.get(String(classId),String(attendeeId))||null,
     attendee:(classId,studentKey)=>q.byStudent.get(String(classId),String(studentKey))||null,
     // 이 반 학생 키 → 마지막 원문 이름·끝 4자리(가린 글자가 든 기록은 쓰지 않음)
-    identities(classId){
+    // withRoster:false — 저장된 원문 기록만(명단을 다시 불러올 때 키를 맞추려고).
+    identities(classId,{withRoster=true}={}){
       const out=new Map();
       for(const r of records())if(String(r.classId)===String(classId)&&real(r)){const old=out.get(r.studentKey);if(!old||String(r.date)>=old.date)out.set(r.studentKey,{name:r.name.trim(),phoneLast4:r.phoneLast4,date:String(r.date)});}
+      // 2기 명단 학생: 저장된 기록이 아직 없는 학생만(같은 이름·끝 4자리 기록이 있으면 그 기록 쪽)
+      if(roster&&withRoster){const sig=new Set([...out.values()].map(v=>v.name+'|'+v.phoneLast4));for(const [k,v] of roster.identities(classId))if(!out.has(k)&&!sig.has(v.name+'|'+v.phoneLast4))out.set(k,v);}
       return out;
     },
     record:id=>records().find(r=>r.id===id)||null,
@@ -56,6 +62,15 @@ export function createLinkStore(db,{records=()=>[]}={}){
       classId=String(classId);if(store.link(classId,attendeeId)||store.attendee(classId,studentKey))return false;
       q.insert.run(classId,String(attendeeId),String(studentKey),'stored-match',now(),null);return true;
     },
+    // 명단으로 잇기(읽기 전용, source 'roster'|'roster-manual'). 이미 그 번호나 그 학생의 연결이 있으면 하지 않습니다.
+    rosterLink(classId,attendeeId,studentKey,source='roster'){
+      classId=String(classId);if(!['roster','roster-manual'].includes(source)||store.link(classId,attendeeId)||store.attendee(classId,studentKey))return false;
+      q.insert.run(classId,String(attendeeId),String(studentKey),source,now(),null);return true;
+    },
+    // 명단을 다시 불러온 뒤: 새 명단에 없는 학생으로 이은 명단 연결(원문 확인 전)은 지웁니다.
+    dropRosterLinks(classId,keep){let n=0;for(const l of q.byClass.all(String(classId)))if(['roster','roster-manual'].includes(l.source)&&!keep.has(l.studentKey)){q.remove.run(String(classId),l.attendeeId);n++;}return n;},
+    // 이 반 연결 목록(이 PC 화면용, 학생 번호는 밖으로 보내지 않음)
+    classLinks:classId=>q.byClass.all(String(classId)),
     // 원문 화면에서 배운 연결. 'stored-match'와 다르면 원문 쪽이 맞습니다(고침). 'plain-read'끼리 다르면 옛 연결을 두고 충돌로 셉니다(그 학생은 건너뜀).
     learn(classId,date,pairs){
       classId=String(classId);const skipped=new Set();

@@ -4,15 +4,15 @@ param([string]$ClassId = '', [string]$Date1 = '', [string]$Date2 = '', [string]$
 # The report has shapes, counts and yes/no answers: no names, phones, memos, times or tokens.
 $ErrorActionPreference = 'Stop'
 # Ask first: Start.ps1 opens a Chrome window that would take the keyboard focus.
-if (-not $ClassId) { $ClassId = Read-Host 'Class number 1-17 [Enter = 2]'; if (-not $ClassId) { $ClassId = '2' } }
+if (-not $ClassId) { $ClassId = Read-Host 'Class number 1-16 [Enter = 1]'; if (-not $ClassId) { $ClassId = '1' } }
 if (-not $Date1 -and -not $Url) { $Date1 = Read-Host 'First date YYYY-MM-DD [Enter = today]' }
 if (-not $Date2) { $Date2 = Read-Host 'Second date YYYY-MM-DD [Enter = previous class day]' }
 # Start.ps1 restarts an idle bridge of another build (the connection key changes) and refuses while a job runs.
 & (Join-Path $PSScriptRoot 'Start.ps1')
-$base = 'http://127.0.0.1:8765'
+$base = 'http://127.0.0.1:8766'
 $session = $null
 for ($i = 0; $i -lt 30 -and -not $session; $i++) { try { $session = Invoke-RestMethod -Uri "$base/api/session" -TimeoutSec 3 } catch { Start-Sleep -Seconds 1 } }
-if (-not $session) { throw 'Bridge is not reachable at 127.0.0.1:8765.' }
+if (-not $session) { throw 'Bridge is not reachable at 127.0.0.1:8766.' }
 if ($session.capabilities -notcontains 'api-probe-v1') {
   $startCmd = Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cmd' | Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match '-File "%~dp0Start\.ps1"' } | Select-Object -First 1
   throw ('An older bridge (build ' + $session.build + ') is still running and was not restarted. Run "' + $startCmd.Name + '" when no collection or apply is running, or restart the PC, then run this again.')

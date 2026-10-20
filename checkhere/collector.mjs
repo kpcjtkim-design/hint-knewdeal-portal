@@ -7,6 +7,9 @@ import {planFromPageData,dayStudent,readStudent,marksOf,entryByKey,DELETE_MARKS}
 import {MASKED,MIN_WRITE_SECONDS,rowKind,detectView,alignRows,alignBySeq,attendeeOf,resolveMasked,linkPairs,sharedSigKeys,nameFits,shownPrefix,last4Of,maskedMemo} from './masking.mjs';
 import {headerState,UNMASK} from './unmask.mjs';
 import {buildBody,sendEvent,requestError,eventOf,privacyHook,privacyHeaders} from './event-request.mjs';
+import {COHORT,CLASS_IDS,BRIDGE_PORT,lectureTag} from './cohort-bridge.mjs';
+import {matchRoster} from './roster.mjs';
+import {randomBytes} from 'node:crypto';
 const settle=(promise,ms)=>{let t;return Promise.race([promise,new Promise(r=>{t=setTimeout(()=>r(null),ms);})]).finally(()=>clearTimeout(t));};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const between=([lo,hi]=[0,0])=>lo+Math.random()*Math.max(0,hi-lo);
@@ -38,13 +41,24 @@ export function loadPlaywright(){
   try{return require('playwright');}catch{return require(join(homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));}
 }
 const HOME='https://check.ihereapp.com/history/lecture';
-const CLASS2='A66812D9-3028-4E8E-BA35-B09CD29B9BDB';
+// ---- 2기 반 → 체크히어 강의 찾기 ----
+// 이름 규칙(cohort-bridge lectureNameRule, 예: '[3반]')에 맞는 2기 강의 줄을 강의 목록에서 찾습니다. 1기 강의가 같은 규칙으로 남아 있어도
+// 날짜가 둘 이상 보이고 모두 2기 시작 전이면(예: 2026.07.27 ~ 2026.10.22) 고르지 않습니다. 규칙으로 못 찾거나 여럿이면 사람이 이 PC 화면(/setup)에서 직접 연결합니다.
+export const lectureLabel=t=>String(t??'').replace(/\s+/g,' ').replace(/\s*보기\s*$/,'').trim();
+const datesIn=t=>[...String(t??'').matchAll(/(20\d{2})[-.]\s?(\d{1,2})[-.]\s?(\d{1,2})/g)].map(m=>`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`).sort();
+export const oldLectureRow=t=>{const d=datesIn(t);return d.length>=2&&d.at(-1)<COHORT.period.start;};
+export const ruleMatches=(t,classId)=>String(t??'').includes(lectureTag(classId))&&!oldLectureRow(t);
+export const ruleClass=t=>CLASS_IDS.find(c=>ruleMatches(t,c))||null;
+// 그 날이 줄에 보이는 기간(날짜 둘 이상) 안인지. 알 수 없으면 null.
+export const coversDate=(t,date)=>{const d=datesIn(t);return d.length>=2?d[0]<=date&&date<=d.at(-1):null;};
+export const SETUP_HINT=`수집 PC 연결 프로그램 화면(127.0.0.1:${BRIDGE_PORT}/setup)의 「반→강의 연결」에서 직접 연결해 주세요.`;
+const escapeRe=s=>String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+// 설정으로 정한 반 → 강의(cohort.json checkhere.lectureLinks {"반": "강의 목록 줄에 든 글"}): 이름 규칙보다 먼저, 이 PC에서 사람이 고른 연결보다는 나중입니다.
+export const presetLecture=classId=>{const v=COHORT.checkhere?.lectureLinks?.[String(classId)];return typeof v==='string'&&v.trim()?v.trim():null;};
+// 강의 화면 주소(/history/lecture/{강의 번호})의 강의 번호
+const lectureIdOf=u=>{try{return /^\/history\/lecture\/([A-Za-z0-9][\w-]{0,79})$/.exec(new URL(u).pathname)?.[1]||null;}catch{return null;}};
 // 학생 번호가 둘 다 있으면 같아야 합니다(옛 build 저장본처럼 번호가 없으면 지금처럼 id·키·이름으로만 봄 — 옮겨 쓰기 없음).
 export const sameTableRow=(old,row)=>!!old&&!!row?.tableSignature&&old.source==='live'&&old.readState==='complete'&&old.id===row.id&&old.studentKey===row.studentKey&&old.name===row.name&&old.tableSignature===row.tableSignature&&(!old.attendeeId||!row.attendeeId||old.attendeeId===row.attendeeId);
-const SCHEDULES={
- '2026-08-27':'6D96EB21-FF3B-4B0F-A2B5-C7AE448BEF09','2026-08-28':'95AEBDCC-1636-4D70-929A-F145E831DE97',
- '2026-08-31':'29A17CA5-27EB-4EF5-AAFC-366488BA2F70','2026-09-01':'E9897B32-14C7-48B9-925C-39FB949F1E9A',
- '2026-09-02':'30225A67-2191-4028-AED0-F674D97B5D0E','2026-09-03':'5872F188-21FE-4781-9A7D-13D2F208822F','2026-09-04':'EC306A74-D30D-4298-861A-49E4E9351DE2'};
 export const dayUrl=(academyId,lectureId,scheduleId,date)=>`${HOME}/modify?tab=STUDENT&academyId=${encodeURIComponent(academyId)}&lectureId=${encodeURIComponent(lectureId)}&scheduleId=${encodeURIComponent(scheduleId)}&scheduleDate=${date}`;
 // 강의 화면이 받은 일정 목록 JSON → {dates: 날짜 → 일정 번호, academyId}. 모양을 다 알지 못하므로 날짜 하나와 번호(scheduleId, 없으면 id) 하나가 같이 있는
 // 항목만 씁니다. 같은 날짜에 번호가 둘이면 그 날은 버립니다(그날은 지금처럼 '보기'로 찾음).
@@ -66,7 +80,9 @@ export class CheckHereCollector{
   // links: 연결 프로그램이 넣는 학생 번호 연결 저장소(links.mjs). 없으면 가린 화면의 학생은 모두 '연결 안 됨'입니다.
   // dayGapMs: 수집에서 날과 날 사이 쉬는 시간(1~2초, 사람이 화면을 하나씩 여는 간격). sendGapMs: 순차 요청 사이(0.5~1초). 시험만 줄여 씁니다.
   // legacyNoMasking: 시험 전용(가림 기능이 없는 옛 가짜 화면). 운영은 늘 false: 머리말을 읽지 못하면(none) 해제 상태를 모르는 것이라 쓰지 않습니다(K4, privacyState 'unknown'과 같음).
-  constructor(dataDir,{page=null,links=null,dayGapMs=[1000,2000],sendGapMs=[500,1000],legacyNoMasking=false}={}){this.dataDir=dataDir;this.page=page;this.links=links;this.legacyNoMasking=legacyNoMasking;this.context=null;this.urls=new Map();this.lectureUrls=new Map();this.cancelled=false;this.view=null;this.header=null;this.responses=new Map();this.responseSeq=0;this.unlinkedByClass=new Map();this.missing=[];this.guardBroken=false;this.dayGapMs=dayGapMs;this.sendGapMs=sendGapMs;this.lastDayAt=0;this.lastSendAt=0;this.scanning=null;this.scheduleSeen=[];this.recording=false;}
+  // roster: 2기 명단 저장소(roster.mjs, 연결 프로그램이 넣음). lectureLinks: 사람이 /setup에서 고른 반 → {label, url, lectureId}(연결 프로그램 SQLite에서 채움).
+  // rosterReport: 반마다 마지막으로 읽은 날의 명단 맞춤 결과(이 PC 메모리에만, /setup 화면용 — 학생 번호는 화면에 보내지 않고 짧은 표로만).
+  constructor(dataDir,{page=null,links=null,roster=null,dayGapMs=[1000,2000],sendGapMs=[500,1000],legacyNoMasking=false}={}){this.dataDir=dataDir;this.page=page;this.links=links;this.roster=roster;this.lectureLinks=new Map();this.rosterReport=new Map();this.legacyNoMasking=legacyNoMasking;this.context=null;this.urls=new Map();this.lectureUrls=new Map();this.cancelled=false;this.view=null;this.header=null;this.responses=new Map();this.responseSeq=0;this.unlinkedByClass=new Map();this.missing=[];this.guardBroken=false;this.dayGapMs=dayGapMs;this.sendGapMs=sendGapMs;this.lastDayAt=0;this.lastSendAt=0;this.scanning=null;this.scheduleSeen=[];this.recording=false;}
   // 쓰는 중(saving)·형식 기록 중(recording)의 저장 확인창(정해진 문구)만 받고, 그 밖의 창(연장·종료 등)은 모두 닫습니다.
   async onDialog(d){if(acceptsDialog(this.saving||this.recording,d.type(),d.message()))await d.accept();else await d.dismiss();}
   async connect(){
@@ -151,17 +167,60 @@ export class CheckHereCollector{
       if(!changed)return null;
     }throw new Error('조회 페이지 수가 너무 많습니다.');
   }
+  // 사람이 연결한 강의(/setup)가 먼저, 다음은 기억한 주소, 설정의 반→강의(presetLecture), 없으면 이름 규칙으로 강의 목록에서 찾습니다(찾지 못한 글은 '강의를 찾지 못했습니다' — 중계는 그날 건너뜀).
   async openLecture(classId){
-    if(this.page&&!this.page.isClosed())await this.notUnmasking();
-    this.watch();this.scanning=String(classId);this.scheduleSeen=this.scheduleSeen.filter(h=>h.classId!==this.scanning);
-    const lecture=this.lectureUrls.get(String(classId));
+    classId=String(classId);if(this.page&&!this.page.isClosed())await this.notUnmasking();
+    this.watch();this.scanning=classId;this.scheduleSeen=this.scheduleSeen.filter(h=>h.classId!==this.scanning);
+    const lecture=this.lectureLinks.get(classId)?.url||this.lectureUrls.get(classId);
     if(lecture){await this.page.goto(lecture);await this.requireLogin();return;}
     await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
-    const row=await this.findPagedRow(t=>t.includes(`[${classId}반]`));if(!row)throw new Error(`${classId}반 강의를 찾지 못했습니다.`);
+    const preset=presetLecture(classId),test=preset?t=>String(t??'').includes(preset)&&!oldLectureRow(t):t=>ruleMatches(t,classId),what=preset?'설정한 강의 글':`이름 규칙 ${lectureTag(classId)}`;
+    let row;try{row=await this.findPagedRow(test);}catch(e){if(/여러 개/.test(e.message))throw new Error(`${classId}반 ${what}에 맞는 체크히어 강의가 여러 개입니다. ${SETUP_HINT}`);throw e;}
+    if(!row)throw new Error(`${classId}반 강의를 찾지 못했습니다(${what}). ${SETUP_HINT}`);
+    const label=lectureLabel(await row.textContent().catch(()=>''));
     await row.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname!==new URL(HOME).pathname);
     const observed=new URL(this.page.url());if(observed.origin!==new URL(HOME).origin||!observed.pathname.startsWith('/history/lecture/'))throw new Error('반별 강의 주소를 확인하지 못했습니다.');
     this.lectureUrls.set(String(classId),observed.href);
+    if(preset)this.lectureLinks.set(classId,{label,url:observed.href,lectureId:lectureIdOf(observed.href),source:'config'});
   }
+  // 이 PC 화면(/setup)용: 체크히어 강의 목록의 모든 쪽을 한 번씩 읽어 줄 글만 돌려줍니다('보기'는 누르지 않음, 강의 이름·기간 글만).
+  // date를 주면 그 날이 줄의 기간 안인지(covers)도 붙입니다. classId: 이름 규칙에 맞는 반, old: 1기로 보이는 줄.
+  async listLectures({date=null}={}){
+    if(this.page&&!this.page.isClosed())await this.notUnmasking();
+    await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
+    const found=new Map(),visited=new Set();let complete=false;
+    for(let attempt=0;attempt<100;attempt++){
+      await this.page.getByRole('button',{name:'보기',exact:true}).first().waitFor({state:'visible',timeout:15000});
+      const rows=await this.page.getByRole('row').evaluateAll(trs=>trs.map(tr=>({text:tr.textContent||'',view:[...tr.querySelectorAll('button')].some(b=>b.textContent.trim()==='보기')})));
+      const signature=rows.map(r=>r.text).join('|');if(visited.has(signature))break;visited.add(signature);
+      for(const r of rows){if(!r.view)continue;const label=lectureLabel(r.text);if(label)found.set(label,(found.get(label)||0)+1);}
+      const next=(await this.numericPages()).find(n=>!this.pageNumbers.has(n));if(!next){complete=true;break;}
+      this.pageNumbers.add(next);await this.page.getByRole('button',{name:next,exact:true}).click();
+      await this.page.waitForFunction(previous=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='보기')&&[...document.querySelectorAll('tr')].map(r=>r.textContent).join('|')!==previous,signature,{timeout:15000});
+    }
+    return {complete,lectures:[...found].map(([label,count])=>({label,count,classId:ruleClass(label),old:oldLectureRow(label),...(date?{covers:coversDate(label,date)}:{})}))};
+  }
+  // 사람이 고른 강의(목록 줄 글)를 열어 그 반의 강의로 연결합니다. 그 반의 옛 주소(이름 규칙으로 찾은 강의·날짜 주소)는 버립니다. 결과 {label, url, lectureId}.
+  async linkLecture(classId,label){
+    classId=String(classId);label=lectureLabel(label);if(!label)throw new Error('연결할 체크히어 강의를 골라 주세요.');
+    if(this.page&&!this.page.isClosed())await this.notUnmasking();
+    await this.page.goto(HOME);await this.requireLogin();this.pageNumbers=new Set(['1']);
+    const row=await this.findPagedRow(t=>lectureLabel(t)===label);
+    if(!row)throw new Error('고른 체크히어 강의를 목록에서 다시 찾지 못했습니다. 강의 목록을 다시 읽어 주세요.');
+    this.watch();this.scanning=classId;this.scheduleSeen=this.scheduleSeen.filter(h=>h.classId!==classId);
+    await row.getByRole('button',{name:'보기',exact:true}).click();await this.page.waitForURL(u=>u.pathname!==new URL(HOME).pathname);
+    const observed=new URL(this.page.url());if(observed.origin!==new URL(HOME).origin||!observed.pathname.startsWith('/history/lecture/'))throw new Error('고른 강의 주소를 확인하지 못했습니다.');
+    // 강의 화면이 받은 일정 목록 요청의 강의 번호(없으면 주소의 lectureId): 날짜 화면이 이 강의 것인지 볼 때 씁니다.
+    await this.page.getByRole('button',{name:'보기',exact:true}).first().waitFor({state:'visible',timeout:15000}).catch(()=>{});
+    const lectureId=this.scheduleSeen.find(h=>h.classId===classId)?.lectureId||lectureIdOf(observed.href)||observed.searchParams.get('lectureId')||null;
+    this.forgetClass(classId);const link={label,url:observed.href,lectureId,source:'manual'};this.lectureLinks.set(classId,link);this.lectureUrls.set(classId,observed.href);
+    await this.learnSchedules(classId).catch(()=>0);this.scanning=null;return link;
+  }
+  // 반의 강의 주소·날짜 주소를 잊습니다(사람이 연결을 바꾸거나 풀 때). 다음 수집이 다시 찾습니다.
+  forgetClass(classId){classId=String(classId);this.lectureUrls.delete(classId);for(const k of [...this.urls.keys()])if(k.startsWith(classId+'|'))this.urls.delete(k);}
+  unlinkLecture(classId){this.lectureLinks.delete(String(classId));this.forgetClass(classId);}
+  // 원문 줄의 학생 키: 2기 명단에 이름·끝 4자리가 똑같은 학생이 한 명이면 그 명단 키(가린 화면에서 명단으로 이은 기록과 같은 기록 id), 아니면 이름+전화 키.
+  keyFor(classId,name,phone){const digits=String(phone??'').replace(/\D/g,'');return this.roster?.keyFor?.(classId,String(name??'').trim(),digits.slice(-4))||studentKey(name,digits);}
   // One pass over the class's schedule pages: which dates have a lecture at all.
   // `complete` is false when pages could not all be visited, so callers never
   // treat an unseen date as "no lecture" on partial evidence.
@@ -198,7 +257,6 @@ export class CheckHereCollector{
   }
   async discover(classId,date){
     const key=`${classId}|${date}`;if(this.urls.has(key))return this.urls.get(key);
-    if(String(classId)==='2'&&SCHEDULES[date]){const url=dayUrl('ACADEMY-HNGV',CLASS2,SCHEDULES[date],date);this.urls.set(key,url);return url;}
     await this.openLecture(classId);
     // 강의 목록이 그려진 뒤(일정 목록 응답을 받은 뒤) 그 응답으로 이 날 주소를 알면 '보기'를 누르지 않습니다.
     await this.page.getByRole('button',{name:'보기',exact:true}).first().waitFor({state:'visible',timeout:15000});
@@ -227,12 +285,16 @@ export class CheckHereCollector{
     if(suppliedUrl||beforeDiscovery===this.page.url()||this.page.url()!==url)await this.page.goto(url);
     await this.requireLogin();await this.page.getByRole('table').nth(1).waitFor({state:'visible'});
     // Keep the attendance data the page loads for this day (read-only). 화면을 열 때 받는 isRealTime/false를 씁니다(Cowork 2026-10-15).
-    const scheduleId=u.searchParams.get('scheduleId');this.dayData=null;this.day=null;this.view=null;this.missing=[];this.skippedKeys=null;this.skippedRows=[];this.ambiguousKeys=null;
+    const scheduleId=u.searchParams.get('scheduleId');this.dayData=null;this.day=null;this.view=null;this.missing=[];this.skippedKeys=null;this.skippedRows=[];this.ambiguousKeys=null;this.dayRows=null;
     await this.showRealTime();
     await this.page.getByRole('table').nth(0).getByRole('row').nth(2).getByRole('cell').nth(2).waitFor({state:'visible',timeout:15000});
     await this.tableSettled();
-    const title=await this.page.getByText(new RegExp(`\\[${classId}반\\].*${date}.*출석부`)).innerText();
-    if(!title.includes(`[${classId}반]`)||!title.includes(date))throw new Error('반·날짜 확인에 실패했습니다.');
+    // 이름 규칙 반은 제목에 반 표시(예: '[3반]')가, 사람이 연결한 반(설정의 반→강의 포함)은 그 강의 번호(주소)가 같아야 합니다. 그런 반도 제목에 다른 반 표시가 있으면 멈춥니다.
+    const manual=this.lectureLinks.get(String(classId))||(presetLecture(classId)?{source:'config',lectureId:null}:null),tag=lectureTag(classId),dayLecture=u.searchParams.get('lectureId');
+    if(manual?.lectureId&&dayLecture&&dayLecture!==manual.lectureId)throw new Error('반·날짜 확인에 실패했습니다(연결한 강의와 다른 강의 화면).');
+    const title=await this.page.getByText(new RegExp(`${manual?'':escapeRe(tag)+'.*'}${date}.*출석부`)).innerText();
+    const other=CLASS_IDS.some(c=>c!==String(classId)&&title.includes(lectureTag(c)));
+    if(!manual&&!title.includes(tag)||manual&&other||!title.includes(date))throw new Error('반·날짜 확인에 실패했습니다.');
     // 담임 이름에 가린 글자가 있으면 메모(…_담임:)에 쓰지 않게 이 반의 마지막 원문 담임(없으면 빈 값)으로 바꿉니다(검토 2).
     let teacher=/\(([^()]*)\)\s*\|/.exec(title)?.[1]||'';if(teacher.includes('*'))teacher=this.links?.teacher?.(classId)||'';
     this.day={classId:String(classId),date,url,teacher};
@@ -278,23 +340,25 @@ export class CheckHereCollector{
     if(view==='masked')return this.maskedRecords(shown,record);
     // 원문 화면: 화면 데이터와 표 순번(=sequence)을 줄마다 먼저 맞추고, 맞춘 줄은 체크히어 학생 번호를 붙입니다(학생 맞춤의 1차 키).
     // 전화가 다 보이지 않는 줄은 그날을 멈추지 않고(예전 「전화번호 표시가 필요합니다」), 이미 배운 학생 번호 연결로만 찾습니다. 없으면 그 학생만 연결 안 됨.
-    const {classId,date}=this.day,entries=alignBySeq(shown,this.dayData?.data?.eventResultList),seen=new Set(),rows=[],viaLink=new Set();let odd=0;
+    const {classId,date}=this.day,entries=alignBySeq(shown,this.dayData?.data?.eventResultList),seen=new Set(),rows=[],viaLink=new Set(),oddRows=[];let odd=0;
     shown.forEach((s,i)=>{
       const attendeeId=attendeeOf(entries?.[i]);let who;
-      if(s.kind!=='plain'){who=this.linkedWho(classId,attendeeId,s);if(!who){odd++;return;}viaLink.add(i);}
-      else{const phone=String(s.phone).replace(/\D/g,'');who={name:s.name,studentKey:studentKey(s.name,phone),phoneLast4:phone.slice(-4)};}
+      if(s.kind!=='plain'){who=this.linkedWho(classId,attendeeId,s);if(!who){odd++;oddRows.push({name:String(s.name??'').trim(),phoneLast4:last4Of(s.phone),studentKey:'',attendeeId,odd:true});return;}viaLink.add(i);}
+      else{const phone=String(s.phone).replace(/\D/g,'');who={name:s.name,studentKey:this.keyFor(classId,s.name,phone),phoneLast4:phone.slice(-4)};}
       if(seen.has(who.studentKey))throw new Error('중복된 학생 식별정보가 있습니다.');seen.add(who.studentKey);
       rows.push(record(i,{...who,attendeeId}));
     });
     this.dayReport.unlinked=odd;
+    // 그날 원문 표의 학생(처음 설치 확인 setup.mjs용, 이 PC 메모리에만): 이름·끝 4자리·학생 키·학생 번호, 전화가 다 보이지 않은 줄(odd)·연결 충돌(conflict) 표시.
+    const dayRows=skip=>({classId:String(classId),date,view:'plain',rows:[...rows.map(r=>({name:r.name,phoneLast4:r.phoneLast4,studentKey:r.studentKey,attendeeId:r.attendeeId||null,...(skip?.has(r.studentKey)?{conflict:true}:{})})),...oddRows]});
     // 화면 데이터와 맞추지 못한 날: 읽기는 표로만 하고 연결은 배우지 않습니다(학생 번호 없음).
-    if(!entries){if(odd&&(header==='unmasked'||this.unlinkedByClass.has(classId)))this.noteUnlinked(classId,date,odd);return rows;}
+    if(!entries){this.dayRows={...dayRows(),rows:dayRows().rows.map(r=>({...r,attendeeId:null}))};if(odd&&(header==='unmasked'||this.unlinkedByClass.has(classId)))this.noteUnlinked(classId,date,odd);this.rosterReport.delete(classId);return rows;}
     const at=r=>r.rowIndex-2;
     this.aligned={data:this.dayData,byId:new Map(rows.filter(r=>entries[at(r)]).map(r=>[r.id,{entry:entries[at(r)],seq:String(shown[at(r)].seq).trim()}]))};
     // 연결 충돌(같은 학생 번호에 다른 학생 키)인 학생은 이 날 내내 건너뜁니다(같은 날 두 번째 기록이 생기지 않게, 검토 11).
-    if(!learn||!this.links?.learn)return rows.filter(r=>!this.skippedKeys?.has(r.studentKey));
+    if(!learn||!this.links?.learn){this.dayRows=dayRows(this.skippedKeys);return rows.filter(r=>!this.skippedKeys?.has(r.studentKey));}
     // 배우는 것은 원문 줄(이름+전화)만입니다. 연결로 찾은 줄은 이미 연결돼 있습니다.
-    const pairs=linkPairs(rows,rows.map(r=>viaLink.has(at(r))?null:entries[at(r)]),studentKey),{skipped}=this.links.learn(classId,date,pairs);this.skippedKeys=skipped;
+    const pairs=linkPairs(rows,rows.map(r=>viaLink.has(at(r))?null:entries[at(r)]),(n,p)=>this.keyFor(classId,n,p)),{skipped}=this.links.learn(classId,date,pairs);this.skippedKeys=skipped;
     // 같은 첫 글자·끝 4자리 학생(원문 화면 데이터로도 가리지 못함)은 해제해도 연결되지 않으므로 쓰기를 따로 알립니다(MASKED_AMBIGUOUS).
     this.ambiguousKeys=sharedSigKeys(rows);
     // 연결 충돌로 건너뛴 학생(이 PC 메모리에만, 요청을 '먼저 수집' 대신 연결 충돌로 알리려고)
@@ -302,7 +366,7 @@ export class CheckHereCollector{
     this.links.seen?.(classId,date,rows.map(r=>r.attendeeId).filter(Boolean));this.links.plainDay?.(classId,date,rows.map(r=>r.studentKey));
     const kept=rows.filter(r=>!skipped.has(r.studentKey)),learned=new Set([...pairs.map(p=>p.studentKey),...rows.filter(r=>viaLink.has(at(r))).map(r=>r.studentKey)]);
     if(header==='unmasked'||this.unlinkedByClass.has(classId))this.noteUnlinked(classId,date,rows.filter(r=>!learned.has(r.studentKey)||skipped.has(r.studentKey)).length+odd);
-    this.dayReport.conflicts=skipped.size;
+    this.dayReport.conflicts=skipped.size;this.noteRoster(classId,date,shown,entries);this.dayRows=dayRows(skipped);
     return kept;
   }
   // 원문 화면의 전화가 다 보이지 않는 줄: 순번으로 맞춘 학생 번호가 이미 연결돼 있고, 저장된 원문 이름·끝 4자리(보이면)가 맞을 때만 그 학생입니다.
@@ -317,6 +381,8 @@ export class CheckHereCollector{
   maskedRecords(shown,record){
     const list=this.dayData?.data?.eventResultList;if(!Array.isArray(list))throw new Error(MASKED.NODATA);
     const entries=alignRows(shown,list),{classId,date}=this.day;
+    // 2기 명단: 아직 연결 안 된 가린 줄을 명단 학생과 먼저 잇습니다(읽기 전용 연결 — 원문 읽기로 확인되기 전에는 쓰지 않음).
+    this.rosterMatch(classId,shown,entries);
     const found=resolveMasked({classId,date,rows:shown,entries,links:this.links,identities:this.links?.identities?.(classId)||new Map(),lastPlain:this.links?.lastPlain?.(classId)||null});
     this.links?.seen?.(classId,date,found.filter(f=>f.attendeeId).map(f=>f.attendeeId));
     const seen=new Set(),rows=[],byId=new Map();let unlinked=0,mismatch=0;this.missing=[];
@@ -326,8 +392,22 @@ export class CheckHereCollector{
       const r=record(i,who);byId.set(r.id,{entry:entries[i],seq:String(shown[i].seq).trim(),attendeeId:who.attendeeId,source:who.source});rows.push(r);
     });
     this.aligned={data:this.dayData,byId};this.noteUnlinked(classId,date,unlinked+mismatch);
-    this.dayReport={view:'masked',unlinked,mismatch,conflicts:0,unread:0};
+    this.dayReport={view:'masked',unlinked,mismatch,conflicts:0,unread:0};this.noteRoster(classId,date,shown,entries);this.dayRows={classId:String(classId),date,view:'masked',rows:[]};
     return rows;
+  }
+  // 가린 줄 → 명단 학생(roster.mjs matchRoster: 앞부분+끝 4자리가 명단에서 한 명, 첫 글자+끝 4자리가 명단·그날 표에서 하나, 그 학생이 다른 번호와 이어지지 않음)
+  rosterMatch(classId,shown,entries){
+    const roster=this.roster?.entries?.(classId)||[];if(!roster.length||!this.links?.rosterLink)return 0;
+    const {pairs}=matchRoster({rows:shown,entries,roster,linked:a=>!!this.links.link(classId,a),taken:k=>!!this.links.attendee(classId,k)});
+    let n=0;for(const p of pairs)if(this.links.rosterLink(classId,p.attendeeId,p.studentKey,'roster'))n++;return n;
+  }
+  // 이 반 명단 맞춤 결과(이 PC 메모리, /setup 화면용): 연결 안 된 줄(보이는 이름·끝 4자리·순번·짧은 표) + 연결되지 않은 명단 학생. 학생 번호는 표 안에만 둡니다.
+  noteRoster(classId,date,shown,entries){
+    const roster=this.roster?.entries?.(classId)||[];if(!roster.length||!this.links?.link){this.rosterReport.delete(String(classId));return;}
+    const linked=a=>!!this.links.link(classId,a),{left}=matchRoster({rows:shown,entries,roster,linked,taken:k=>!!this.links.attendee(classId,k)}),tokens=new Map();
+    const rows=left.map(l=>{const token=randomBytes(6).toString('hex'),s=shown[l.i];tokens.set(token,{attendeeId:l.attendeeId,name:s.name,phone:s.phone});return {token,seq:String(s.seq??'').trim(),shown:String(s.name??'').trim(),last4:last4Of(s.phone),reason:l.reason};});
+    const missing=roster.filter(e=>!this.links.attendee(classId,e.studentKey)).map(e=>({studentKey:e.studentKey,name:e.name,last4:e.last4,dup:e.dup}));
+    this.rosterReport.set(String(classId),{date,view:this.view,at:new Date().toISOString(),rows,missing,tokens,linked:entries?entries.filter(e=>e&&linked(attendeeOf(e))).length:0,total:shown.length});
   }
   // 순번으로 맞춘 항목은 그 맞춤에 쓴 화면 데이터가 지금 것일 때만 씁니다(데이터가 바뀌면 다시 맞춤).
   alignedNow(){return this.aligned&&this.dayData&&this.aligned.data===this.dayData?this.aligned.byId:null;}
@@ -336,7 +416,7 @@ export class CheckHereCollector{
   dayEntry(record){
     const a=this.alignedOf(record);
     if(a){const d=readStudent(a.entry);return d.problems.length?null:{...d,aligned:true};}
-    return this.view==='masked'?null:dayStudent(this.dayData,record.studentKey);
+    return this.view==='masked'?null:dayStudent(this.dayData,record.studentKey,(n,p)=>this.keyFor(record.classId,n,p));
   }
   async locate(record){
     // 가린·섞인 화면에서는 표의 이름·전화로 줄을 고를 수 없고 수정창도 열리지 않습니다(Cowork).
@@ -355,7 +435,7 @@ export class CheckHereCollector{
       // 화면 데이터와 순번으로 맞춘 학생이면 그 줄의 순번도 같아야 합니다(아니면 표 전체를 다시 봄).
       // 학생 번호가 먼저: 그 번호로 맞춘 줄이면 이름·순번이 같을 때 그 줄입니다(전화가 다 보이지 않는 줄도). 아니면 이름+전화 키.
       const a=this.alignedOf(record),byAttendee=!!a&&!!record.attendeeId&&a.entry?.attendeeId===record.attendeeId&&a.seq===candidate?.seq&&candidate?.name===record.name;
-      if(byAttendee||candidate?.phone?.length>=9&&candidate.name===record.name&&studentKey(candidate.name,candidate.phone)===record.studentKey&&(!a||a.seq===candidate.seq)){
+      if(byAttendee||candidate?.phone?.length>=9&&candidate.name===record.name&&this.keyFor(record.classId,candidate.name,candidate.phone)===record.studentKey&&(!a||a.seq===candidate.seq)){
         if(candidate.matches!==1)throw new Error('중복된 학생 식별정보가 있습니다.');return record;
       }
     }
@@ -399,7 +479,7 @@ export class CheckHereCollector{
     // 가린 화면은 이름+전화 키로 찾지 않습니다(화면 데이터가 원문이어도, 검토 13): 맞춘 항목이 없는 학생은 그대로 '일부 수집'.
     if(this.view==='masked')return {entryFor:r=>a?.get(r.id)?.entry,memoOk};
     // 이름+전화 키는 그날 데이터에 그 학생이 정확히 한 명일 때만 씁니다(표의 한 줄만 읽는 쓰기 확인에서도 됨).
-    return {entryFor:r=>a?.get(r.id)?.entry||entryByKey(this.dayData,r.studentKey),memoOk};
+    return {entryFor:r=>a?.get(r.id)?.entry||entryByKey(this.dayData,r.studentKey,(n,p)=>this.keyFor(r.classId,n,p)),memoOk};
   }
   // 가린 메모로 보이는 값(별 2개 이상)은 저장된 같은 메모일 때만 믿습니다(검토 1, Cowork: 지금은 메모를 가리지 않음).
   memoOk(row,d){

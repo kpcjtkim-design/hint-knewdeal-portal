@@ -1,11 +1,11 @@
-param([string]$ClassId = '2', [string]$Date = '2026-09-03', [string]$Url = '')
+param([string]$ClassId = '1', [string]$Date = '2026-10-28', [string]$Url = '')
 # Runs the read-only CheckHere diagnosis inside the running bridge (same logged-in Chrome).
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'Start.ps1')
-$base = 'http://127.0.0.1:8765'
+$base = 'http://127.0.0.1:8766'
 $session = $null
 for ($i = 0; $i -lt 30 -and -not $session; $i++) { try { $session = Invoke-RestMethod -Uri "$base/api/session" -TimeoutSec 3 } catch { Start-Sleep -Seconds 1 } }
-if (-not $session) { throw 'Bridge is not reachable at 127.0.0.1:8765.' }
+if (-not $session) { throw 'Bridge is not reachable at 127.0.0.1:8766.' }
 if ($session.capabilities -notcontains 'probe-v1') { throw 'An older bridge is still running. Close its window and run this again.' }
 $headers = @{ 'x-hint-key' = $session.key }
 $body = @{ classId = $ClassId; date = $Date; url = $Url; modal = $true } | ConvertTo-Json

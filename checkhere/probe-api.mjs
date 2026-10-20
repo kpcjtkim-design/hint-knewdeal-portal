@@ -4,11 +4,13 @@
 // of its own: no session token, no direct CheckHere address, no unmasking.
 // The report keeps statuses, key paths, types, counts and yes/no answers: no names, phone digits,
 // memo text, times, id values or tokens. Nothing is changed in CheckHere or in collected records.
+import {validIso,isHoliday} from './cohort-bridge.mjs';
 export const API_PROBE_VERSION='20261015.2';
 export const API_PROBE_CAPABILITY='api-probe-v1';
 const PAGE_ORIGIN='https://check.ihereapp.com',API_ORIGIN='https://checkhere-admin-api.ihereapp.com',API_PREFIX='/api/v3/';
 const ID=/^[A-Za-z0-9][\w-]{0,79}$/;
-export const validDate=d=>{if(typeof d!=='string'||!/^202\d-\d{2}-\d{2}$/.test(d))return false;const t=Date.parse(d+'T00:00:00Z');return !Number.isNaN(t)&&new Date(t).toISOString().slice(0,10)===d;};
+// 날짜: 2026·2027년의 달력에 있는 날(2기 교육 기간이 해를 넘음, cohort-bridge.validIso).
+export const validDate=validIso;
 // 출결상세 주소 → 반·날짜 번호(검사만 하고 보고서에는 적지 않음).
 export function dayIds(raw){
   let u;try{u=new URL(String(raw||'').trim());}catch{return null;}
@@ -28,8 +30,9 @@ export function endpointOf(raw){
 }
 // 기본 날짜: 오늘(한국 시간, 주말이면 직전 금요일)과 그 앞 평일.
 export const kstDate=(now=new Date())=>now.toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
-export function previousWeekday(d){const t=new Date(d+'T00:00:00Z');do t.setUTCDate(t.getUTCDate()-1);while([0,6].includes(t.getUTCDay()));return t.toISOString().slice(0,10);}
-export function defaultDates(now=new Date()){let d=kstDate(now);if([0,6].includes(new Date(d+'T00:00:00Z').getUTCDay()))d=previousWeekday(d);return {date1:d,date2:previousWeekday(d)};}
+// 앞 교육일 후보: 주말과 2기 휴일(12/25·12/31·1/1)을 건너뜁니다.
+export function previousWeekday(d){const t=new Date(d+'T00:00:00Z');do t.setUTCDate(t.getUTCDate()-1);while([0,6].includes(t.getUTCDay())||isHoliday(t.toISOString().slice(0,10)));return t.toISOString().slice(0,10);}
+export function defaultDates(now=new Date()){let d=kstDate(now);if([0,6].includes(new Date(d+'T00:00:00Z').getUTCDay())||isHoliday(d))d=previousWeekday(d);return {date1:d,date2:previousWeekday(d)};}
 // 화면 가림은 학생 명단 표(collector.tableRecords와 같은 칸: 첫 표, 3번째 칸 성명, 4번째 칸 전화번호)의 개수로 정합니다.
 // 전화번호 칸에 '*'가 있으면 가림, 숫자 9자리 이상이면 원문. 해제 버튼(글자가 똑같은 것)은 참고로만 남깁니다.
 export function maskState({table=false,rows=0,phoneMasked=0,phonePlain=0,nameMasked=0,button=false}={}){

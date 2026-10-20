@@ -14,16 +14,18 @@ import {loadLegacyCheckHereDay} from './checkhere-snapshots.mjs';
 import {within} from './attendance-io.mjs';
 import {ACTIVE,CLASS_IDS,LIVE_STATUS,buildLiveRequest,editorReason,isLiveRequest,koreaClock,requestsFor,stamp} from './checkhere-live-core.mjs';
 import {createBridgeClient,createLiveRelay,relaySignal} from './checkhere-live-relay.mjs';
+// 2기: Firebase 설정·관리자·포트·저장 키는 cohort.mjs(원본 cohort.json) 한 곳에서. 2기 Firebase 설정이 비면 로그인하지 않고 멈춥니다(1기 프로젝트로 새지 않게).
+import {COHORT,ADMINS,BRIDGE_PORT,FIREBASE_MISSING_TEXT,firebaseConfig as cohortFirebase,storageKey} from './cohort.mjs';
 
-const firebaseConfig={apiKey:'AIzaSyBL8YBAPyoGlcVX7T3tjgazncMHjHUY1DE',authDomain:'knewdeal-portal.firebaseapp.com',projectId:'knewdeal-portal',storageBucket:'knewdeal-portal.firebasestorage.app',messagingSenderId:'1054904032053',appId:'1:1054904032053:web:de18246d426776b54bca7c'};
-const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
+const firebaseConfig=cohortFirebase();
+const fb=firebaseConfig?initializeApp(firebaseConfig):null,auth=fb?getAuth(fb):null,db=fb?getFirestore(fb):null,provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
 const $=s=>document.querySelector(s),app=$('#app'),who=$('#who');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let toastTimer;function toast(text,ms=4000){const t=$('#toast');t.textContent=text;t.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.style.display='none';},ms);}
-// 시험은 수집 PC의 실제 연결 프로그램(8765)과 겹치지 않게 다른 포트를 넣습니다(127.0.0.1만 허용).
-const testBridge=String(window.HINT_TEST_BRIDGE||''),BRIDGE=/^http:\/\/127\.0\.0\.1:\d{4,5}$/.test(testBridge)?testBridge:'http://127.0.0.1:8765';
+// 2기 연결 프로그램은 8766(1기 8765와 따로). 시험은 실제 연결 프로그램과 겹치지 않게 다른 포트를 넣습니다(127.0.0.1만 허용).
+const testBridge=String(window.HINT_TEST_BRIDGE||''),BRIDGE=/^http:\/\/127\.0\.0\.1:\d{4,5}$/.test(testBridge)?testBridge:`http://127.0.0.1:${BRIDGE_PORT}`;
 const SIGNAL_MS=60000; // 중계 신호는 작동 중 1분에 한 번
-const BOOTSTRAP=[APPROVER,'kpc.jtkim@gmail.com'];
+const BOOTSTRAP=[...new Set([APPROVER,...ADMINS])];
 const adminCache=new Map();
 async function isAdmin(email){
   const key=String(email||'').toLowerCase();if(!key)return false;if(BOOTSTRAP.includes(key))return true;
@@ -39,7 +41,8 @@ const STATUS_TEXT={...LIVE_STATUS,pending:'승인 대기',approved:'승인됨 ·
 const changeText=c=>Object.entries(c||{}).map(([k,v])=>`${{entry:'입실',exit:'퇴실',entryMemo:'입실 사유',exitMemo:'퇴실 사유'}[k]||k}: ${v===''?(k==='entry'||k==='exit'?'(삭제)':'(비움)'):v}`).join(' · ');
 
 let disposeView=null;
-onAuthStateChanged(auth,async user=>{
+if(!fb)app.innerHTML=`<section><h2>${esc(COHORT.label)} Firebase 설정 필요</h2><p class="error">${esc(FIREBASE_MISSING_TEXT)}</p></section>`;
+else onAuthStateChanged(auth,async user=>{
   disposeView?.();disposeView=null;
   if(!user){
     who.innerHTML='';
@@ -55,7 +58,7 @@ onAuthStateChanged(auth,async user=>{
 async function mountLive(user){
   const relayAllowed=await canEditCheckHere(user).catch(()=>false);
   const today=koreaClock().date;
-  const state={classId:sessionStorageGet('live.class')||'2',date:today,records:[],requests:[],updatedAt:null,legacy:false,error:''};
+  const state={classId:sessionStorageGet(storageKey('live.class'))||CLASS_IDS[0],date:today,records:[],requests:[],updatedAt:null,legacy:false,error:''};
   let unDay=null,unReq=null,previous=new Map();
   app.innerHTML=`
   <section>
@@ -67,14 +70,14 @@ async function mountLive(user){
       </div>
       <span id="fresh" class="muted"></span>
     </div>
-    <p class="note" style="margin:12px 0 0">수정은 <b>요청</b>으로 남습니다. 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 체크히어에 입력하고, 다시 읽어 확인한 값을 이 표에 반영합니다. 수업 중에는 수집 PC 중계가 10분마다 체크히어를 읽어 표를 갱신합니다(중계는 체크히어에 쓰지 않습니다).</p>
+    <p class="note" style="margin:12px 0 0">수정은 <b>요청</b>으로 남습니다. 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 체크히어에 입력하고, 다시 읽어 확인한 값을 이 표에 반영합니다. 수업 중에는 수집 PC 중계가 반마다 한 시간에 한 번(정해지지 않은 시각) 체크히어를 읽어 표를 갱신합니다(중계는 체크히어에 쓰지 않습니다).</p>
   </section>
   <section><div class="table-wrap"><table><thead><tr><th>학생</th><th>실제 입실</th><th>입실(교시)</th><th>퇴실</th><th>외출</th><th>입실 사유</th><th>퇴실 사유</th><th>판정</th><th>처리 상태</th></tr></thead><tbody id="rows"><tr><td colspan="9" class="muted">불러오는 중…</td></tr></tbody></table></div></section>
   <section><h2>이 반·날짜의 수정 기록</h2><div id="reqs" class="muted">없음</div></section>
   ${relayAllowed?relayMarkup():''}
   <dialog id="edit"></dialog>`;
   $('#cls').value=state.classId;$('#date').value=state.date;
-  $('#cls').onchange=()=>{state.classId=$('#cls').value;sessionStorageSet('live.class',state.classId);subscribe();};
+  $('#cls').onchange=()=>{state.classId=$('#cls').value;sessionStorageSet(storageKey('live.class'),state.classId);subscribe();};
   $('#date').onchange=()=>{if($('#date').value){state.date=$('#date').value;subscribe();}};
   $('#todayBtn').onclick=()=>{$('#date').value=state.date=koreaClock().date;subscribe();};
 
@@ -145,9 +148,13 @@ async function mountLive(user){
 }
 
 function relayMarkup(){return `<section id="relay"><h2>수집 PC 중계 <small class="muted">(지정 관리자 전용)</small></h2>
-  <p class="muted">이 PC에서 「체크히어 시작.cmd」를 실행하고 체크히어에 로그인한 뒤, 로컬 화면의 연결 키를 붙여 넣고 시작하세요. 이 탭이 열려 있는 동안 평일 08:50~18:40에는 10분마다 오늘 출결을 읽어 DB에 저장합니다. 중계는 읽기만 하고 체크히어를 고치지 않습니다. 수정 요청은 운영 포털 「반영 요청·승인」에서 관리자가 승인할 때만 반영됩니다.</p>
+  <p class="muted">이 PC에서 「체크히어 시작.cmd」를 실행하고 체크히어에 로그인한 뒤, 로컬 화면의 연결 키를 붙여 넣고 시작하세요. 이 탭이 열려 있는 동안 교육일 08:50~18:40에는 반마다 한 시간에 한 번, 그 시간 안의 무작위 시각(반끼리 1분 넘게 띄움)에 오늘 출결을 읽어 DB에 저장합니다. 「이 반 지금 갱신」은 바로 읽습니다. 중계는 읽기만 하고 체크히어를 고치지 않습니다. 수정 요청은 운영 포털 「반영 요청·승인」에서 관리자가 승인할 때만 반영됩니다.</p>
   <div class="row"><input id="relayKey" type="password" placeholder="연결 키" autocomplete="off" style="min-width:260px"><button class="primary" id="relayStart">중계 시작</button><button id="relayStop" disabled>중계 멈춤</button><button id="relayNow" disabled>이 반 지금 갱신</button></div>
-  <p id="relayStatus" class="muted" style="margin:10px 0 0">꺼져 있음</p><ul class="log" id="relayLog"></ul></section>`;}
+  <p id="relayStatus" class="muted" style="margin:10px 0 0">꺼져 있음</p><ul class="log" id="relayLog"></ul></section>
+  <section id="ids"><h2>${esc(COHORT.label)} 체크히어 학생 번호 등록 <small class="muted">(처음 설치 · 지정 관리자 전용)</small></h2>
+  <p class="muted">수집 PC 연결 프로그램 화면(127.0.0.1:${BRIDGE_PORT}/setup)에서 사람이 마스킹을 해제하고 반마다 교육생 명단과 체크히어 학생 번호를 한 번 확인해 「이 반 확인」을 누른 뒤, 여기서 확인된 반을 ${esc(COHORT.label)} DB(관리자만 보는 checkhereIdentities)에 등록합니다. 이름·전화 끝 4자리·체크히어 학생 번호만 올리고 생년월일·전체 전화번호는 올리지 않습니다. 이 화면에는 반별 수만 보입니다(위 연결 키 필요).</p>
+  <div class="row"><button id="idsLoad">등록 상태 보기</button><button class="primary" id="idsRegister">확인된 반 등록</button></div>
+  <p id="idsNote" class="muted" style="margin:10px 0 0"></p><div id="idsTable"></div></section>`;}
 // Background tabs throttle page timers to about once a minute; worker timers keep
 // job polling responsive while the relay window is not in front.
 function workerSleep(){
@@ -168,7 +175,7 @@ function mountRelay(user,view){
   let relay=null,release=null,beat=null,signalAt=0;const logs=[],sleep=workerSleep();
   // needsUnmask: 사람이 승인한 반영 중 체크히어 가림에 막힌 수(연결 프로그램이 셈). 해제도 다시 반영도 사람이 합니다.
   // privacy: 연결 프로그램이 본 체크히어 탭 해제 상태(작동 중에만, 갱신·1분 신호 때 새로 봄). 가려져도 중계 읽기는 계속합니다.
-  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중 · 읽기 전용</span>':'<span class="chip warn">꺼져 있음</span>'} DB 저장 ${s.saves}회${s.queue?` · 갱신 대기 ${s.queue}건`:''}${s.needsUnmask?` · <span class="chip warn" title="승인한 반영이 체크히어 가림에 막혀 있습니다. 수집 PC 연결 프로그램의 체크히어 창(같은 탭)에서 직접 해제하거나, 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 누르세요. 해제 뒤 운영 포털 「반영 요청·승인」에서 다시 반영합니다. 연장·종료는 체크히어 창에서 직접 누릅니다.">체크히어 해제 필요 ${s.needsUnmask}건</span>`:''}${s.state==='running'&&s.privacy?` · <span class="chip ${s.privacy.writable?'ok':'warn'}">${esc(privacyState(s.privacy).text)}</span>`:''}${s.current?` · 지금: ${esc(s.current)}`:''}${s.lastCycle?` · 마지막 자동 갱신 ${new Date(s.lastCycle.finishedAt).toLocaleTimeString('ko-KR',{hour12:false})}`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
+  const show=s=>{const el=$('#relayStatus');if(el)el.innerHTML=`${s.state==='running'?'<span class="chip ok">작동 중 · 읽기 전용</span>':'<span class="chip warn">꺼져 있음</span>'} DB 저장 ${s.saves}회${s.queue?` · 갱신 대기 ${s.queue}건`:''}${s.needsUnmask?` · <span class="chip warn" title="승인한 반영이 체크히어 가림에 막혀 있습니다. 수집 PC 연결 프로그램의 체크히어 창(같은 탭)에서 직접 해제하거나, 연결 프로그램 화면(127.0.0.1:${BRIDGE_PORT})에서 「마스킹 해제 시작」을 누르세요. 해제 뒤 운영 포털 「반영 요청·승인」에서 다시 반영합니다. 연장·종료는 체크히어 창에서 직접 누릅니다.">체크히어 해제 필요 ${s.needsUnmask}건</span>`:''}${s.state==='running'&&s.privacy?` · <span class="chip ${s.privacy.writable?'ok':'warn'}">${esc(privacyState(s.privacy).text)}</span>`:''}${s.current?` · 지금: ${esc(s.current)}`:''}${s.state==='running'&&s.plan?` · 이번 시간 자동 갱신 ${s.plan.done}/${s.plan.total}개 반${s.plan.nextAt?` · 다음 ${new Date(s.plan.nextAt).toLocaleTimeString('ko-KR',{hour12:false,hour:'2-digit',minute:'2-digit'})}`:''}`:''}${s.lastCycle?` · 지난 시간 ${s.lastCycle.classes}/${s.lastCycle.planned}개 반`:''}${s.lastError?`<br><span class="error">${esc(s.lastError)}</span>`:''}`;};
   const addLog=e=>{logs.unshift(e);logs.length=Math.min(logs.length,40);const el=$('#relayLog');if(el)el.innerHTML=logs.map(x=>`<li class="${x.level}">${new Date(x.at).toLocaleTimeString('ko-KR',{hour12:false})} ${esc(x.text)}</li>`).join('');};
   // 중계 신호(settings/checkhereRelay): /beta2가 중계 작동 여부와 연결 프로그램 능력을 봅니다. 담임도 읽으므로 반·이름·오류 글은 넣지 않습니다(relaySignal).
   // 시작·멈춤은 바로 쓰고, 작동 중에는 상태가 자주 바뀌어도 1분에 한 번만 씁니다(바뀐 내용은 다음 신호에 담김). 쓰기에 실패해도 경고만 남기고 중계는 계속합니다.
@@ -204,8 +211,34 @@ function mountRelay(user,view){
   $('#relayStop').onclick=()=>{const r=relay;beat=null;r?.stop();if(r)void writeSignal(r.status());relay=null;release?.();release=null;$('#relayStart').disabled=false;$('#relayStop').disabled=true;$('#relayNow').disabled=true;$('#relayKey').disabled=false;};
   $('#relayNow').onclick=()=>{const v=view();relay?.syncNow(v.classId,v.date);toast(`${v.classId}반 ${v.date} 갱신을 예약했습니다.`);};
   window.addEventListener('beforeunload',e=>{if(relay){e.preventDefault();e.returnValue='';}});
+  mountIdentities(user);
   // 로그아웃 때는 신호를 쓸 수 없으므로 멈춤 신호 없이 끝냅니다(신호가 3분 넘게 없으면 /beta2가 꺼짐으로 봄).
   return()=>{beat=null;relay?.stop();release?.();};
+}
+// 2기 학생 번호 등록(승인 계정): 연결 프로그램 /api/identities/*에 이 로그인 토큰을 넘기면 연결 프로그램이 이 PC에서 사람이 확인한 목록을 checkhereIdentities/{반}에 씁니다. 이 화면은 수만 봅니다.
+function mountIdentities(user){
+  const client=()=>{const key=$('#relayKey')?.value.trim();if(!key)throw Error('위 중계 칸에 연결 키를 먼저 붙여 넣어 주세요.');return createBridgeClient({base:BRIDGE,key});};
+  const when=v=>v?new Date(v).toLocaleString('ko-KR',{hour12:false,month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+  const LECTURE={manual:'직접 연결',rule:'이름 규칙',config:'설정'},none='<span class="muted">아직</span>';
+  const draw=(classes,note)=>{
+    $('#idsNote').textContent=note||'';
+    $('#idsTable').innerHTML=`<div class="table-wrap" style="margin-top:10px"><table style="min-width:720px"><thead><tr><th>반</th><th>강의 연결</th><th>명단</th><th>원문 확인</th><th>이 PC 확인</th><th>등록</th></tr></thead><tbody>${classes.map(c=>`<tr><td>${esc(c.classId)}반</td><td>${c.lecture?esc(LECTURE[c.lecture]||c.lecture):none}</td><td>${c.roster?.count?`${c.roster.count}명${c.roster.source==='registered'?' (등록 목록)':''}`:none}</td>
+      <td>${c.check?`${esc(c.check.date)} · 맞음 ${c.check.matched} · 명단에 없음 ${c.check.unmatched} · 명단에만 ${c.check.missing} · 겹침 ${c.check.ambiguous}`:none}</td>
+      <td>${c.confirmed?`${c.confirmed.count}명 · ${esc(when(c.confirmed.confirmedAt))}${c.confirmed.stale?' <span class="chip warn">확인 뒤 다시 읽음</span>':''}`:none}</td>
+      <td>${c.confirmed?.registeredAt?`<span class="chip ok">등록 ${c.confirmed.registeredCount}명</span> ${esc(when(c.confirmed.registeredAt))}`:c.registry?`<span class="chip">DB에 ${c.registry.count}명</span>`:c.confirmed?'<span class="chip wait">등록 대기</span>':''}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+  const load=async(text='')=>{const c=client(),reg=await c.api('identities/registry',{idToken:await user.getIdToken()}),s=await c.api('identities/summary');draw(s.classes,`${text}${text?' · ':''}DB 등록 ${reg.classes.length}개 반${reg.imported.length?` · 이 PC 명단으로 가져온 반 ${reg.imported.join('·')}`:''}`);return s;};
+  $('#idsLoad').onclick=async()=>{$('#idsLoad').disabled=true;try{await load();}catch(e){$('#idsNote').textContent=e.message;}finally{$('#idsLoad').disabled=false;}};
+  $('#idsRegister').onclick=async()=>{
+    $('#idsRegister').disabled=true;
+    try{
+      const c=client(),s=await c.api('identities/summary'),ready=s.classes.filter(x=>x.confirmed&&!x.confirmed.registeredAt);
+      if(!ready.length){draw(s.classes,'등록할 반이 없습니다. 수집 PC 연결 프로그램 화면(/setup)에서 반마다 「이 반 확인」을 먼저 눌러 주세요.');return;}
+      if(!confirm(`이 PC에서 확인한 ${ready.length}개 반(${ready.map(x=>x.classId).join('·')}반)의 체크히어 학생 번호를 ${COHORT.label} DB에 등록할까요? 이름·끝 4자리·학생 번호만 올립니다.`))return;
+      const r=await c.api('identities/register',{idToken:await user.getIdToken(),classIds:ready.map(x=>x.classId)}),ok=r.results.filter(x=>x.status==='registered'),bad=r.results.filter(x=>x.status==='failed');
+      await load(`등록 ${ok.length}개 반(${ok.reduce((n,x)=>n+x.count,0)}명)${bad.length?` · 실패 ${bad.map(x=>`${x.classId}반: ${x.message}`).join(' / ')}`:''}`);
+    }catch(e){$('#idsNote').textContent=e.message;}finally{$('#idsRegister').disabled=false;}
+  };
 }
 function sessionStorageGet(k){try{return sessionStorage.getItem(k);}catch{return null;}}
 function sessionStorageSet(k,v){try{sessionStorage.setItem(k,v);}catch{}}

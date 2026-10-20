@@ -159,12 +159,12 @@ test('the write gate (K4) on every path: masked or under 150 s never claims or s
   }finally{await W.close();}
 });
 
-test('/api/status and /api/state carry the privacy line (no names); the bridge announces time-delete-v2 and privacy-state-v1 with build 20261016.2',async()=>{
+test('/api/status and /api/state carry the privacy line (no names); the bridge announces time-delete-v2 and privacy-state-v1 with the 2기 build',async()=>{
   const W=await bridgeWorld(18980,'two-cell-status-');
   try{
-    assert.equal(BUILD,'20261016.2');
+    assert.equal(BUILD,'2기-20261019.1');
     let s=await W.get('status');
-    assert.equal(s.build,'20261016.2');for(const c of [TIME_DELETE_V2_CAPABILITY,PRIVACY_STATE_CAPABILITY])assert.ok(s.capabilities.includes(c),c);
+    assert.equal(s.build,BUILD);for(const c of [TIME_DELETE_V2_CAPABILITY,PRIVACY_STATE_CAPABILITY])assert.ok(s.capabilities.includes(c),c);
     assert.equal(s.privacy.state,'unmasked');assert.equal(s.privacy.writable,true);assert.ok(s.privacy.leftSec>500&&s.privacy.leftSec<=570,String(s.privacy.leftSec));assert.match(s.privacy.text,/^체크히어 해제됨 · 9분 남음 — 수정·삭제 가능$/);
     const state=await W.state();assert.deepEqual(Object.keys(state.privacy).sort(),['leftSec','state','text','writable']);assert.equal(state.privacy.state,'unmasked');
     for(const text of [JSON.stringify(s),JSON.stringify(state.privacy)])for(const v of ['나가상','가상하나','att-','0001'])assert.ok(!text.includes(v),v);

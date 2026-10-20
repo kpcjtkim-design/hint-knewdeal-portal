@@ -5,7 +5,8 @@
 // 할 일: 이 글은 중계 기록·반영 결과에 그대로 보이므로 어디서 무엇을 하면 되는지까지 적습니다.
 // 해제는 사람이 합니다(2026-10-16 결정): 연결 프로그램이 연 체크히어 창(같은 탭, 새 탭은 다시 가려짐)에서 직접, 또는 연결 프로그램 화면에서 사람이 누르는 「마스킹 해제 시작」으로.
 import {NEEDS_UNMASK_TEXT} from './rules.mjs';
-const WHERE='연결 프로그램이 연 체크히어 창(같은 탭)에서 마스킹을 해제해 주세요. 직접 하거나 수집 PC의 연결 프로그램 화면(127.0.0.1:8765)에서 「마스킹 해제 시작」을 눌러도 됩니다';
+import {BRIDGE_PORT} from './cohort-bridge.mjs';
+const WHERE=`연결 프로그램이 연 체크히어 창(같은 탭)에서 마스킹을 해제해 주세요. 직접 하거나 수집 PC의 연결 프로그램 화면(127.0.0.1:${BRIDGE_PORT})에서 「마스킹 해제 시작」을 눌러도 됩니다`;
 // 수정·삭제 직전 가림 확인(K4, 2026-10-16)에서 막힐 때의 글: 포털·연결 프로그램이 같은 안내(rules.mjs NEEDS_UNMASK_TEXT)를 보입니다.
 export const MASKED={
   MIXED:'MASKED_MIXED: 체크히어 화면의 가림 상태가 섞여 있어 이 날 수집을 멈췄습니다(해제 시간이 끝나는 중일 수 있음). 해제가 끝나거나 다시 가려진 뒤 다시 수집해 주세요.',
@@ -165,9 +166,11 @@ export const maskedMemo=v=>/\*{2,}/.test(String(v??''));
 // 해제 사유: 기다리는 실제 일로 만듭니다(10자 이상). 할 일이 없으면 null(해제하지 않음).
 // writes: 가림 때문에 기다리는 수정 요청 수, pending: 그중 아직 승인 전(중계가 확인 뒤 승인·반영)인 수, unlinked: 연결 확인할 학생 수.
 // 승인 전 요청을 '승인된'이라고 쓰지 않습니다(사람이 체크히어 기록에 남는 이 글을 미리 보고 누릅니다).
-export function unmaskReason({writes=0,pending=0,unlinked=0}={}){
-  const w=Math.max(0,Number(writes)||0),p=Math.min(w,Math.max(0,Number(pending)||0)),u=Math.max(0,Number(unlinked)||0),parts=[];
+// setup: 2기 처음 설치 모드에서 아직 확인하지 않은 반 수(교육생 명단·체크히어 학생 번호를 원문으로 한 번 확인, setup.mjs).
+export function unmaskReason({writes=0,pending=0,unlinked=0,setup=0}={}){
+  const w=Math.max(0,Number(writes)||0),p=Math.min(w,Math.max(0,Number(pending)||0)),u=Math.max(0,Number(unlinked)||0),s=Math.max(0,Number(setup)||0),parts=[];
   if(w)parts.push(`체크히어 출결 수정 요청 ${w}건 반영${p?`(승인 대기 ${p}건 포함)`:''}`);
   if(u)parts.push(`${w?'':'체크히어 '}학생 연결 확인 ${u}명 수집`);
+  if(s)parts.push(`2기 교육생 명단 확인 ${s}개 반`);
   return parts.length?`${parts.join('·')}(연결 프로그램)`:null;
 }

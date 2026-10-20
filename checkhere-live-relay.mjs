@@ -4,10 +4,12 @@
 // 읽기 전용(사용자 결정 2026-10-16): 수정 요청을 승인·반영·반려하지 않고, 해제를 알아채도 쓰지 않습니다.
 // 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만 합니다(index.html → 연결 프로그램 /api/apply).
 // 체크히어 해제 상태(privacy)는 연결 프로그램이 셉니다. 중계는 그대로 신호에 옮길 뿐 해제·연장·종료를 하지 않습니다.
-import {CLASS_IDS,LIVE_INTERVAL_MS,NO_LECTURE,inLiveWindow,koreaClock} from './checkhere-live-core.mjs';
+import {CLASS_IDS,LIVE_HOUR_MS,LIVE_GAP_MS,LIVE_WINDOW,NO_LECTURE,hourPlan,inLiveWindow,koreaClock,koreaHour} from './checkhere-live-core.mjs';
 import {privacyState} from './checkhere/rules.mjs';
+import {BRIDGE_URL} from './checkhere/cohort-bridge.mjs';
 
-export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(...a)=>fetch(...a)}){
+// 2기 연결 프로그램은 127.0.0.1:8766(1기 8765와 따로 돎).
+export function createBridgeClient({base=BRIDGE_URL,key,fetchImpl=(...a)=>fetch(...a)}){
   async function call(path,body){
     let r;try{r=await fetchImpl(base+'/api/'+path,{method:body?'POST':'GET',headers:{'content-type':'application/json','x-hint-key':key},body:body?JSON.stringify(body):undefined,cache:'no-store'});}
     catch{throw Object.assign(Error('수집 PC 연결 프로그램에 연결하지 못했습니다.'),{code:'BRIDGE_OFFLINE'});}
@@ -19,7 +21,8 @@ export function createBridgeClient({base='http://127.0.0.1:8765',key,fetchImpl=(
 }
 
 // 중계 신호(settings/checkhereRelay)에 쓸 내용. 담임도 읽는 문서라 status.current(반·학생 이름)와 lastError 글은 넣지 않습니다.
-const SIGNAL_NAME=/^[\w.-]{1,80}$/,PRIVACY_STATES=['masked','unmasked','unknown'];
+// 능력 이름은 영문·숫자·_.-만(이름 같은 글이 섞이지 않게), build는 정해진 모양만('20261016.2', 2기 '2기-20261019.1').
+const SIGNAL_NAME=/^[\w.-]{1,80}$/,BUILD_NAME=/^(?:[1-9]기-)?\d{8}\.\d{1,3}$/,PRIVACY_STATES=['masked','unmasked','unknown'];
 // 연결 프로그램 /api/state의 privacy(없으면 옛 build의 masking 머리말·남은 시간으로 같은 기준 계산) → 상태·남은 초·쓸 수 있는지만(글·이름 없음).
 export function bridgePrivacy(s){
   const p=s?.privacy&&typeof s.privacy==='object'?s.privacy:s?.masking&&typeof s.masking==='object'?privacyState(s.masking):null;
@@ -32,7 +35,7 @@ export function relaySignal(status,{capabilities=status?.capabilities,build=stat
     // 능력은 마지막으로 닿은 연결 프로그램의 목록입니다. 닿지 않아도(bridgeOk false) 비우지 않습니다: /beta2는 마지막 신호의 능력으로 v1·v2를 정하므로(2026-10-16)
     // 빈 목록을 쓰면 옛(v1) 연결 프로그램이 꺼진 동안 '모름 → v2'로 바뀝니다. 연결 프로그램은 올라가기만 하고, 반영 때 승인 화면·연결 프로그램이 다시 확인합니다.
     capabilities:[...new Set((Array.isArray(capabilities)?capabilities:[]).filter(c=>typeof c==='string'&&SIGNAL_NAME.test(c)))],
-    build:typeof build==='string'&&SIGNAL_NAME.test(build)?build:null,lastErrorAt:Number.isFinite(s.lastErrorAt)?s.lastErrorAt:null,by:typeof by==='string'&&by?by:null,
+    build:typeof build==='string'&&BUILD_NAME.test(build)?build:null,lastErrorAt:Number.isFinite(s.lastErrorAt)?s.lastErrorAt:null,by:typeof by==='string'&&by?by:null,
     // 체크히어 가림 때문에 연결 프로그램에서 기다리는 쓰기 수(이름 없음, 연결 프로그램이 셈). 0이면 넣지 않습니다(신호 모양은 그대로).
     ...(unmask?{needsUnmask:unmask}:{}),
     // 체크히어 해제 상태(연결 프로그램에 닿을 때만): {state, leftSec, writable}. /beta2가 도구줄·확인창에 '반영할 때 해제 필요'를 보입니다.
@@ -54,10 +57,13 @@ const maskedEveryClass=e=>/\bMASKED_(?:MIXED|UNMASKING)|전화번호 표시가 �
 // 가림 때문에 연결 프로그램에서 기다리는 쓰기 수(사람이 승인한 반영이 가림에 막힌 것, masking.waitingWrites).
 // 해제된 탭이면 0입니다: 그 뒤 반영은 사람이 운영 포털에서 다시 누릅니다(중계는 깨어나 쓰지 않음).
 const unmaskCount=m=>m&&m.header!=='unmasked'?Math.max(0,Math.floor(Number(m.waitingWrites)||0)):0;
-export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,intervalMs=LIVE_INTERVAL_MS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow}){
+// 자동 갱신은 시간마다 새로 뽑는 계획(hourPlan)을 따릅니다: 반마다 한 시간에 한 번, 무작위 시각·순서, 서로 gapMs(1분) 넘게. 늦어진 반이 몰려도 1분씩 띄워 읽습니다.
+// window: 계획을 세울 창(교육일 08:50~18:40), inWindow(now): 읽기 직전 창 확인, random: 0~1 함수(시험은 고정값). 수동 갱신(이 반 지금 갱신)은 창·계획과 상관없이 먼저 합니다.
+export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow,window=LIVE_WINDOW,random=Math.random,gapMs=LIVE_GAP_MS}){
   const mirror=new Map(),saved=new Map(),noLecture=new Map(),manual=[];
-  let cursor=null,capabilities=[],cycle=null,nextCycleAt=0,running=false,wake=null,listeners=new Set();
-  const status={state:'stopped',lastCycle:null,lastError:null,lastErrorAt:null,saves:0,queue:0,current:null,capabilities:[],build:null,bridgeBusy:false,bridgeOk:null,needsUnmask:0,privacy:null};
+  // plan: 이번 시간 계획 {key, date, slots:[{classId, at, done}]}, pauseUntil: 로그인·연결·가림 문제로 자동 갱신을 쉬는 때, lastAutoAt: 마지막 자동 읽기(체크히어에 간 것)
+  let cursor=null,capabilities=[],plan=null,pauseUntil=0,lastAutoAt=0,running=false,wake=null,listeners=new Set();
+  const status={state:'stopped',lastCycle:null,plan:null,lastError:null,lastErrorAt:null,saves:0,queue:0,current:null,capabilities:[],build:null,bridgeBusy:false,bridgeOk:null,needsUnmask:0,privacy:null};
   const emit=()=>{status.queue=manual.length;for(const f of listeners)f({...status});};
   const note=(text,level='info')=>{log({at:now().toISOString(),level,text});if(level==='error'){status.lastError=text;status.lastErrorAt=now().getTime();}emit();};
   const failNote=e=>note(e.message,maskedFailure(e)||stuckFailure(e)?'warn':'error');
@@ -92,7 +98,7 @@ export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),slee
     for(const r of rows)saved.set(r.id,recKey(r));status.saves++;return rows.length;
   }
   async function syncClass(classId,date){
-    if(noLecture.get(date)?.has(classId))return 'skip';
+    if(noLecture.get(date)?.has(classId))return 'known-none';
     const before=await refresh();if(before.busy)return 'busy';
     let job;
     try{job=await bridge.api('sync',{classId,dates:[date],mode:'incremental'});}
@@ -105,33 +111,42 @@ export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),slee
     return 'done';
   }
 
-  // 요청은 보지 않습니다: 수동 갱신(이 반 지금 갱신) → 평일 10분 자동 갱신 순서로 읽기만 합니다.
+  // 이번 시간 계획(수만, 이름 없음): 시(HH)·계획한 반 수·끝낸 수·다음 자동 갱신 시각
+  const planStatus=()=>plan?{hour:plan.key.slice(11),total:plan.slots.length,done:plan.slots.filter(s=>s.done).length,nextAt:Number.isFinite(nextAuto())?new Date(nextAuto()).toISOString():null}:null;
+  // 다음 자동 읽기를 할 수 있는 때(남은 반의 시각, 마지막 읽기+1분, 쉬는 때 중 늦은 것)
+  const nextAuto=()=>Math.min(...(plan?.slots||[]).filter(s=>!s.done).map(s=>Math.max(s.at,lastAutoAt+gapMs,pauseUntil)));
+  // 시간이 바뀌면(또는 처음) 그 시간 계획을 새로 뽑습니다. 끝내지 못한 지난 시간의 반은 새 계획에 다시 들어갑니다.
+  function planHour(){
+    const h=koreaHour(now());if(plan?.key===h.key)return;
+    if(plan?.slots.length)status.lastCycle={date:plan.date,hour:plan.key.slice(11),finishedAt:now().toISOString(),classes:plan.slots.filter(s=>s.done).length,planned:plan.slots.length};
+    plan=hourPlan({now:now(),classIds,window,random,gapMs});plan.slots=plan.slots.map(s=>({...s,done:false}));
+  }
+  const fatal=e=>e.code==='BRIDGE_OFFLINE'||e.code==='BRIDGE_KEY'||/LOGIN_REQUIRED/.test(e.message)||maskedEveryClass(e);
+  // 요청은 보지 않습니다: 수동 갱신(이 반 지금 갱신) → 시간마다 무작위 시각의 자동 갱신(반마다 한 번) 순서로 읽기만 합니다.
   async function step(){
     if(manual.length){const {classId,date}=manual.shift();emit();try{await syncClass(classId,date);}catch(e){failNote(e);}return 'sync';}
-    const t=now().getTime();
-    if(!cycle&&t>=nextCycleAt&&inWindow(now()))cycle={date:today(),startedAt:t,todo:[...classIds],done:0};
-    if(cycle){
-      const classId=cycle.todo[0];status.current=`${classId}반 자동 갱신`;emit();
-      let result;try{result=await syncClass(classId,cycle.date);}
-      catch(e){
-        result='error';failNote(e);
-        // Logged out or bridge closed: stop this round instead of failing 17 times. 섞인 화면·옛 build의 가림 오류도 모든 반에 걸리므로 멈춥니다.
-        if(e.code==='BRIDGE_OFFLINE'||e.code==='BRIDGE_KEY'||/LOGIN_REQUIRED/.test(e.message)||maskedEveryClass(e)){cycle=null;nextCycleAt=t+retryMs;status.current=null;emit();return 'idle';}
-      }
-      finally{status.current=null;}
-      if(result==='busy'){emit();return 'busy';}
-      cycle.todo.shift();cycle.done++;
-      if(!cycle.todo.length){status.lastCycle={date:cycle.date,finishedAt:now().toISOString(),classes:cycle.done};nextCycleAt=cycle.startedAt+intervalMs;cycle=null;}
-      emit();return 'sync';
+    planHour();status.plan=planStatus();
+    const t=now().getTime(),slot=plan.slots.find(s=>!s.done&&s.at<=t);
+    if(!slot||t<pauseUntil||t<lastAutoAt+gapMs||!inWindow(now()))return 'idle';
+    // 1분 간격은 읽기를 시작한 때부터 잽니다(읽는 데 걸린 시간만큼 다음 반이 밀리지 않게).
+    status.current=`${slot.classId}반 자동 갱신`;emit();const started=t;
+    let result;try{result=await syncClass(slot.classId,plan.date);}
+    catch(e){
+      result='error';failNote(e);
+      // 로그아웃·연결 프로그램 꺼짐·섞인 화면(모든 반에 걸림): 그 반을 남겨 두고 retryMs 뒤에 다시 합니다(반마다 실패를 쌓지 않음).
+      if(fatal(e)){pauseUntil=t+retryMs;status.current=null;status.plan=planStatus();emit();return 'idle';}
     }
-    return 'idle';
+    finally{status.current=null;}
+    if(result==='busy'){emit();return 'busy';}
+    slot.done=true;if(result!=='known-none')lastAutoAt=started;
+    status.plan=planStatus();emit();return 'sync';
   }
   async function loop(){
     while(running){
       let did;try{did=await step();}catch(e){did='idle';note(e.message,'error');}
       if(!running)break;
       if(did==='idle'||did==='busy'){
-        const t=now().getTime(),soon=Math.min(...[nextCycleAt].filter(x=>x>t).map(x=>x-t),did==='busy'?5000:60000);
+        const t=now().getTime(),h=koreaHour(now()),soon=Math.min(nextAuto()-t,h.start+LIVE_HOUR_MS-t,did==='busy'?5000:60000);
         await new Promise(r=>{wake=r;sleep(Math.max(1000,soon)).then(r);});wake=null;
       }
     }
@@ -154,6 +169,6 @@ export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),slee
     // A manual refresh also retries a class marked 'no lecture' earlier today.
     syncNow(classId,date=today()){noLecture.get(date)?.delete(String(classId));manual.push({classId:String(classId),date});emit();wake?.();},
     step,
-    _debug:{mirror,saved,noLecture,get nextCycleAt(){return nextCycleAt;},set nextCycleAt(v){nextCycleAt=v;}},
+    _debug:{mirror,saved,noLecture,get plan(){return plan;},get pauseUntil(){return pauseUntil;}},
   };
 }

@@ -8,7 +8,7 @@ import {studentKey,recordId,version} from '../identity.mjs';
 import {APPROVER,prepareApproval,requestMatchesRecord} from '../approval-core.mjs';
 import {ATTEND_DELETE} from '../rules.mjs';
 import {createCurrentSaver,mergeCurrentRecords} from '../../checkhere-current-core.mjs';
-import {LIVE_MARK,baseTag,buildLiveRequest,editorReason,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
+import {CLASS_IDS,LIVE_HOUR_MS,LIVE_MARK,baseTag,buildLiveRequest,editorReason,hourPlan,inLiveWindow,isLiveRequest,koreaClock,requestsFor,tagOf} from '../../checkhere-live-core.mjs';
 import {createBridgeClient,createLiveRelay,relaySignal} from '../../checkhere-live-relay.mjs';
 import {deletionGate} from '../../beta2-checkhere-core.mjs';
 
@@ -18,6 +18,8 @@ test('Korean clock, live window and request tags',()=>{
   assert.equal(inLiveWindow(new Date('2026-12-14T00:30:00Z')),true);
   assert.equal(inLiveWindow(new Date('2026-12-14T10:00:00Z')),false,'19:00 KST');
   assert.equal(inLiveWindow(new Date('2026-12-13T00:30:00Z')),false,'Sunday');
+  // 2기 교육일만: 개강 전·휴일·끝난 뒤는 창 밖, 1월(해를 넘김)은 창 안
+  for(const [s,v] of [['2026-10-27T00:30:00Z',false],['2026-10-28T00:30:00Z',true],['2026-12-25T00:30:00Z',false],['2026-12-31T00:30:00Z',false],['2027-01-01T00:30:00Z',false],['2027-01-04T00:30:00Z',true],['2027-01-22T09:40:00Z',true],['2027-01-25T00:30:00Z',false]])assert.equal(inLiveWindow(new Date(s)),v,s);
   const r={id:'x',entry:'09:00:00',entryMemo:'',exit:null};
   assert.equal(baseTag(r,['entryMemo','entry']),baseTag(r,['entry','entryMemo']));
   assert.notEqual(baseTag(r,['entry']),baseTag({...r,entry:'09:01:00'},['entry']));
@@ -142,7 +144,7 @@ async function harness(w,port,opts={},{capabilities,addCapabilities=[]}={}){
   const client=createBridgeClient({base:`http://127.0.0.1:${port}`,key:app.key,fetchImpl:(u,o)=>fetch(u,{...o,headers:{...o.headers,connection:'close'}})});
   // calls: 중계가 부른 연결 프로그램 작업 이름(읽기 전용이면 'sync'뿐). 시험의 사람 승인(approveByPerson)은 client를 바로 써서 세지 않습니다.
   const calls=[],bridge={state:async c=>{const s=await client.state(c);return addCapabilities.length?{...s,capabilities:[...new Set([...(s.capabilities||[]),...addCapabilities])]}:s;},api:(name,body)=>{calls.push(name);return client.api(name,body);}};
-  const relay=createLiveRelay({bridge,store:w.store,log:e=>logs.push(e.text),now:()=>clock,sleep:()=>new Promise(r=>setTimeout(r,2)),pollMs:2,inWindow:()=>true,...opts});
+  const relay=createLiveRelay({bridge,store:w.store,log:e=>logs.push(e.text),now:()=>clock,sleep:()=>new Promise(r=>setTimeout(r,2)),pollMs:2,inWindow:()=>true,random:()=>0,...opts});
   await relay.start({loop:false});
   return {app,relay,logs,calls,client,advance(ms){clock=new Date(clock.getTime()+ms);},close:()=>{relay.stop();app.close();}};
 }
@@ -153,22 +155,73 @@ async function approveByPerson(w,h,id,record){
   for(let i=0;i<1000;i++){const job=((await h.client.state()).jobs||[]).find(j=>j.id===id);if(job&&job.status!=='running'&&job.cloudSaved!==undefined)return job;await new Promise(r=>setTimeout(r,10));}
   throw Error('반영 결과 대기 시간 초과');
 }
-test('10-minute cycle saves a class once, skips unchanged students, re-reads only changed ones and drops classes without a lecture',async()=>{
+// 자동 갱신(사용자 결정 2026-10-19): 반마다 한 시간에 한 번, 그 시간 안의 무작위 시각(무작위 순서, 1분 넘게 떨어짐). 시험은 random을 고정(0)해 지금부터 1분 간격으로 둡니다.
+test('hourly plan: each class once per hour at its own time 1 minute apart; unchanged students skipped, changed ones re-read, classes without a lecture dropped',async()=>{
   const w=world(),h=await harness(w,18791,{classIds:['2','3']});
   try{
     assert(h.relay.status().capabilities.includes('incremental-sync-v1'),'the real bridge capabilities show in the status');
-    // 5b: /api/state가 build를 알립니다(옛 연결 프로그램이면 없음).
-    const build=h.relay.status().build;assert.ok(build===null||/^\d{8}\.\d+$/.test(build),`build ${build}`);
+    // 5b: /api/state가 build를 알립니다(옛 연결 프로그램이면 없음, 2기는 '2기-' 붙음).
+    const build=h.relay.status().build;assert.ok(build===null||/^(?:2기-)?\d{8}\.\d+$/.test(build),`build ${build}`);
     assert.equal(await h.relay.step(),'sync');assert.equal(w.day('2').length,2);assert.deepEqual(w.reads,[],'read from page data, no editor');
-    assert.equal(await h.relay.step(),'sync');assert.match(h.logs.join('\n'),/3반: 오늘 강의가 없어/);
-    assert.equal(await h.relay.step(),'idle','waits for the next 10-minute round');
-    h.advance(10*60*1000);w.reads.length=0;const commits=w.commits;
-    await h.relay.step();await h.relay.step();
+    assert.equal(await h.relay.step(),'idle','the next class waits for its own time (1 minute later)');
+    h.advance(60*1000);assert.equal(await h.relay.step(),'sync');assert.match(h.logs.join('\n'),/3반: 오늘 강의가 없어/);
+    assert.deepEqual(h.relay.status().plan,{hour:'09',total:2,done:2,nextAt:null},'counts only');
+    h.advance(10*60*1000);assert.equal(await h.relay.step(),'idle','each class once per hour');
+    h.advance(20*60*1000);w.reads.length=0;const commits=w.commits,syncs=h.calls.length;
+    assert.equal(await h.relay.step(),'sync','a new plan for the next hour');h.advance(60*1000);await h.relay.step();
+    assert.equal(h.calls.length,syncs+1,'a class without a lecture today is not looked up again');
     assert.deepEqual(w.reads,[],'nothing changed: no editor opened');assert.equal(w.commits,commits,'and no DB write');
+    const last=h.relay.status().lastCycle;assert.deepEqual([last.date,last.hour,last.classes],[DATE,'09',2]);
     [...w.truth.values()].find(t=>t.name==='가상둘').exit='17:30:00';
-    h.advance(10*60*1000);await h.relay.step();
+    h.advance(60*60*1000);await h.relay.step();
     assert.deepEqual(w.reads,[],'the changed student is read from page data too');assert.equal(w.day('2').find(r=>r.name==='가상둘').exit,'17:30:00');assert.equal(w.commits,commits+1);
   }finally{h.close();}
+});
+// 시간 계획(가짜 시계·고정 무작위): 16개 반이 한 번씩, 시간 안, 1분 넘게 떨어짐. 첫 시간 일부·08:50~09:00·18:40까지·교육일 밖.
+test('hourPlan: 16 classes once each inside the hour, random order, at least a minute apart; partial hours, the 08:50-18:40 window and training days only',()=>{
+  const at=s=>new Date(s),KST=t=>new Date(t).toLocaleTimeString('sv-SE',{timeZone:'Asia/Seoul'});
+  let seed=7;const random=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
+  for(let hour=9;hour<=17;hour++){
+    const now=at(`2026-11-02T${String(hour-9).padStart(2,'0')}:00:00Z`),p=hourPlan({now,random});
+    assert.equal(p.slots.length,16,`${hour}시`);assert.deepEqual([...p.slots.map(s=>s.classId)].sort((a,b)=>a-b),CLASS_IDS,'every class once');
+    assert.ok(p.slots.every((s,i)=>i===0||s.at-p.slots[i-1].at>=60000),'at least a minute apart');
+    assert.ok(p.slots.every(s=>s.at>=now.getTime()&&s.at<now.getTime()+LIVE_HOUR_MS),'inside the hour');
+    assert.equal(p.key,`2026-11-02 ${String(hour).padStart(2,'0')}`);
+  }
+  const orders=new Set([9,10,11].map(h=>hourPlan({now:at(`2026-11-02T${String(h-9).padStart(2,'0')}:00:00Z`),random}).slots.map(s=>s.classId).join(',')));
+  assert.equal(orders.size,3,'a new random order every hour');
+  // 중계를 10:25에 켜면 그 시간 남은 35분 안에 16개 반을 모두 둡니다(1분 간격이 들어감).
+  const late=hourPlan({now:at('2026-11-02T01:25:00Z'),random});assert.equal(late.slots.length,16);assert.ok(late.slots[0].at>=Date.parse('2026-11-02T01:25:00Z')&&KST(late.slots.at(-1).at)<'11:00:00');
+  // 10:55에 켜면 남은 5분에 들어가는 5개 반만(나머지는 11시 계획), 08:30에 켜면 08:50~09:00의 10개 반만.
+  assert.equal(hourPlan({now:at('2026-11-02T01:55:00Z'),random}).slots.length,5);
+  const early=hourPlan({now:at('2026-11-01T23:30:00Z'),random});assert.equal(early.slots.length,10);assert.ok(early.slots.every(s=>KST(s.at)>='08:50:00'&&KST(s.at)<'09:00:00'));
+  // 18시는 18:40까지, 19시는 없음. 주말·휴일(12/25)·개강 전(10/27)·끝난 뒤(1/25)는 빈 계획.
+  assert.ok(hourPlan({now:at('2026-11-02T09:00:00Z'),random}).slots.every(s=>KST(s.at)<='18:40:59'));
+  for(const s of ['2026-11-02T10:00:00Z','2026-11-01T01:00:00Z','2026-12-25T01:00:00Z','2026-10-27T01:00:00Z','2027-01-25T01:00:00Z'])assert.equal(hourPlan({now:at(s),random}).slots.length,0,s);
+  assert.equal(hourPlan({now:at('2027-01-04T01:00:00Z'),random}).slots.length,16,'a January training day');
+  // random 0: 반 순서 그대로, 지금부터 1분 간격(다른 시험이 씀)
+  assert.deepEqual(hourPlan({now:at('2026-11-02T01:30:00Z'),classIds:['2','3'],random:()=>0}).slots,[{classId:'2',at:Date.parse('2026-11-02T01:30:00Z')},{classId:'3',at:Date.parse('2026-11-02T01:31:00Z')}]);
+});
+// 가짜 시계로 한 시간을 돌려 봅니다: 반마다 한 번, 정해진 시각에만, 1분 안에 둘을 읽지 않음. 「이 반 지금 갱신」은 바로. 다음 시간은 새 계획.
+test('the relay follows the hourly plan with a fake clock: one sync per class per hour, never two within a minute, manual refresh first',async()=>{
+  let clock=new Date('2026-11-02T01:00:00Z'),seed=11,n=0;const random=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
+  const synced=[],bridge={state:async()=>({capabilities:['incremental-sync-v1'],build:'2기-20261019.1',busy:null,records:[],cursor:'c',jobs:synced.map(s=>({id:s.id,status:'complete',count:0,errors:0,message:'0건 수집'}))}),
+    api:async(name,body)=>{assert.equal(name,'sync');const id='job-'+ ++n;synced.push({id,classId:body.classId,at:clock.getTime(),date:body.dates[0]});return {id};}};
+  const relay=createLiveRelay({bridge,store:{saveRecords:async()=>{}},now:()=>clock,sleep:()=>Promise.resolve(),pollMs:1,random});
+  await relay.start({loop:false});
+  for(let t=0;t<60*60;t+=10){clock=new Date(Date.parse('2026-11-02T01:00:00Z')+t*1000);await relay.step();}
+  assert.equal(synced.length,16);assert.deepEqual([...new Set(synced.map(s=>s.classId))].sort((a,b)=>a-b),CLASS_IDS);
+  assert.ok(synced.every((s,i)=>i===0||s.at-synced[i-1].at>=60000),'never two within a minute');assert.ok(synced.every(s=>s.date==='2026-11-02'));
+  const plan=relay._debug.plan;assert.ok(plan.slots.every(s=>s.done));assert.ok(synced.every(s=>s.at>=plan.slots.find(x=>x.classId===s.classId).at),'not before its time');
+  // 다음 시간: 시작하자마자 「이 반 지금 갱신」은 바로 읽고, 자동 갱신은 그 반도 그 시간 계획대로 한 번 더 읽습니다.
+  clock=new Date('2026-11-02T02:00:00Z');relay.syncNow('5');assert.equal(await relay.step(),'sync');assert.equal(synced.at(-1).classId,'5');
+  for(let t=0;t<60*60;t+=10){clock=new Date(Date.parse('2026-11-02T02:00:00Z')+t*1000);await relay.step();}
+  assert.equal(synced.length,1+16+16,'the manual one does not take a class out of the hour');
+  // 수동 갱신은 1분 간격과 상관없이 차례로 바로
+  clock=new Date('2026-11-02T03:00:00Z');relay.syncNow('1');relay.syncNow('2');await relay.step();await relay.step();assert.equal(synced.slice(-2).map(s=>s.classId).join(),'1,2','manual refreshes run back to back');
+  // 창 밖(19시)·주말에는 자동 갱신 없음
+  const before=synced.length;for(const s of ['2026-11-02T10:00:00Z','2026-11-02T10:30:00Z','2026-11-07T01:00:00Z','2026-11-07T01:30:00Z']){clock=new Date(s);await relay.step();}
+  assert.equal(synced.length,before);relay.stop();
 });
 // 읽기 전용 중계(사용자 결정 2026-10-16): 어떤 요청도 승인·반영·반려하지 않고, 수집(sync) 말고는 연결 프로그램 작업을 부르지 않습니다.
 test('the relay never approves, applies or rejects: every request stays as it was and CheckHere is only read',async()=>{

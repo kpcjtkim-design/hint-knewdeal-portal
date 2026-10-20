@@ -17,7 +17,7 @@ import {readRequestRecord} from '../request-record.mjs';
 import {DELETE_MARKS} from '../day-data.mjs';
 import {createCurrentSaver} from '../../checkhere-current-core.mjs';
 
-const DAY0='2026-12-15',DAY='2026-12-16',DAY2='2026-12-17';
+const DAY0='2026-11-03',DAY='2026-11-04',DAY2='2026-11-05';
 const iso=(d,t)=>`${d}T${t}`;
 const ev=(d,type,t,eventId,memo=null)=>({eventId,userId:'u-'+type,time:iso(d,t),baseTime:iso(d,type==='COMPLETE'?'18:00:00':'09:00:00'),timeIndex:0,type,isRecognized:false,status:'NORMAL',memoByAdmin:memo,updatedAt:null});
 // 가상 학생(이름·번호 모두 가짜). sequence는 이름 순서와 다르게 둡니다(표는 이름순, 데이터는 순번순).
@@ -154,7 +154,7 @@ test('view detection, remaining time, name fit and alignment follow the Cowork s
   for(const r of [unmaskReason({writes:1,pending:1}),unmaskReason({writes:2,pending:5})])assert.ok(!r.includes('승인된'),r);
   for(const m of Object.values(MASKED)){assert.ok(isMaskedError(m));for(const n of NAMES)assert.ok(!m.includes(n),'messages carry no names or digits');}
   // 글에 할 일과 장소가 있습니다. 해제로 풀리지 않는 것은 해제 대기로 세지 않습니다.
-  for(const m of [MASKED.WRITE,MASKED.UNLINKED,MASKED.READ])assert.match(m,/127\.0\.0\.1:8765.*「마스킹 해제 시작」/);
+  for(const m of [MASKED.WRITE,MASKED.UNLINKED,MASKED.READ])assert.match(m,/127\.0\.0\.1:8766.*「마스킹 해제 시작」/);
   assert.match(MASKED.NODATA,/잠시 뒤 다시 수집/);assert.match(MASKED.MIXED,/다시 수집/);assert.match(MASKED.ALIGN,/담당자/);
   assert.deepEqual([MASKED.WRITE,MASKED.TIME,MASKED.UNLINKED,MASKED.AMBIGUOUS,MASKED.CONFLICT,MASKED.GUARD,MASKED.UNMASKING].map(waitsForUnmask),[true,true,true,false,false,false,true]);
   assert.deepEqual([MASKED.AMBIGUOUS,MASKED.CONFLICT,MASKED.GUARD,MASKED.UNLINKED].map(m=>[maskedFailure(Error(m)),stuckFailure(Error(m))]),[[false,false],[false,true],[false,true],[true,false]],'the relay counts an ambiguous pair, waits on a conflict without counting it, and only unmask-related errors are needs-unmask');
@@ -218,7 +218,7 @@ test('unlinked and duplicate-signature students are skipped and counted; a depar
     // 지난 원문 수집: 10/13에는 나간 학생이 있고, 마지막 원문 수집일(10/14)에는 없습니다.
     stored.push(...(await collect(reader,'2',DAY0)).records,...(await collect(reader,'2',DAY)).records);
     assert.equal(stored.filter(r=>r.name==='마가상').length,1);
-    const links=store(stored);assert.deepEqual([links.lastPlain('2').date,links.lastPlain('2').keys.size],[DAY,4],'the last plain day is 12/16 with four students');
+    const links=store(stored);assert.deepEqual([links.lastPlain('2').date,links.lastPlain('2').keys.size],[DAY,4],'the last plain day is 11/04 with four students');
     assert.equal(reader.responses.size,1,'only the day just opened keeps its page data (older days, with plain names, are dropped)');
     s.w.mode='masked';const c=collector(s,links);
     const day=await collect(c,'2',DAY2);
@@ -303,6 +303,8 @@ async function bridgeOn(s,port,prefix,options={}){
   await new Promise(r=>app.server.listen(port,'127.0.0.1',r));
   const headers={'x-hint-key':app.key,'content-type':'application/json',connection:'close'},base=`http://127.0.0.1:${port}/api/`;
   const post=async(path,body={},extra={})=>{const r=await fetch(base+path,{method:'POST',headers:{...headers,...extra},body:JSON.stringify(body)});return {code:r.status,body:await r.json()};};
+  // 새 data라 2기 처음 설치 모드가 켜집니다. 이 시험들은 해제 사유를 쓰기·학생 연결로만 보므로 사람이 끈 것으로 둡니다.
+  await post('setup/mode',{on:false});
   const state=async()=>(await fetch(base+'state?delta=1',{headers})).json();
   const done=async id=>{for(let i=0;i<400;i++){const j=(await state()).jobs.find(x=>x.id===id||(!id&&x.learn));if(j&&j.status!=='running')return j;await new Promise(r=>setTimeout(r,50));}throw Error('작업이 끝나지 않았습니다.');};
   return {app,post,state,done};

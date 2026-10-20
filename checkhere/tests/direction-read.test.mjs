@@ -15,7 +15,7 @@ import {outward} from '../day-data.mjs';
 import {fakeSite,roster,urlOf} from './checkhere-fake.mjs';
 
 // 2반 9/1~9/4는 collector.mjs에 주소가 고정돼 있어 다른 날짜를 씁니다.
-const D1='2026-10-05',D2='2026-10-06',D3='2026-10-07';
+const D1='2026-11-02',D2='2026-11-03',D3='2026-11-04';
 const NEW={attendeeId:'att-ra',name:'라새로',phone:'01000000004',eventList:[]};
 mkdirSync(join(import.meta.dirname,'../test-results'),{recursive:true});
 const store=records=>createLinkStore(new DatabaseSync(':memory:'),{records:()=>records});
@@ -50,7 +50,7 @@ test('page alignment is by sequence first; an odd row alone is left out, a plain
   assert.equal(sameTableRow({...r,attendeeId:'att-2'},{...r,attendeeId:'att-1'}),false,'two different attendee numbers are not the same row');
   assert.deepEqual(outward({records:[{...r,attendeeId:'att-1'}],nested:{attendeeId:'x',keep:1}}),{records:[r],nested:{keep:1}});
   // 일정 목록 JSON: 같은 날짜에 번호가 둘이면 그 날은 버림, 학원 번호는 하나일 때만
-  const got=schedulesOf({data:[{scheduleId:'S1',scheduleDate:D1,academyId:'A'},{scheduleId:'S2',timeStart:D2+'T09:00:00',academyId:'A'},{scheduleId:'S3',scheduleDate:D3},{scheduleId:'S4',scheduleDate:D3},{id:'L9',name:'강의'},{scheduleId:'../x',scheduleDate:'2026-10-08'}]});
+  const got=schedulesOf({data:[{scheduleId:'S1',scheduleDate:D1,academyId:'A'},{scheduleId:'S2',timeStart:D2+'T09:00:00',academyId:'A'},{scheduleId:'S3',scheduleDate:D3},{scheduleId:'S4',scheduleDate:D3},{id:'L9',name:'강의'},{scheduleId:'../x',scheduleDate:'2026-11-05'}]});
   assert.deepEqual([...got.dates],[[D1,'S1'],[D2,'S2']]);assert.equal(got.academyId,'A');
 });
 
