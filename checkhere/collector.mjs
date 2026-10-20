@@ -7,7 +7,7 @@ import {planFromPageData,dayStudent,readStudent,marksOf,entryByKey,DELETE_MARKS}
 import {MASKED,MIN_WRITE_SECONDS,rowKind,detectView,alignRows,alignBySeq,attendeeOf,resolveMasked,linkPairs,sharedSigKeys,nameFits,shownPrefix,last4Of,maskedMemo} from './masking.mjs';
 import {headerState,UNMASK} from './unmask.mjs';
 import {buildBody,sendEvent,requestError,eventOf,privacyHook,privacyHeaders} from './event-request.mjs';
-import {COHORT,CLASS_IDS,BRIDGE_PORT,lectureTag} from './cohort-bridge.mjs';
+import {COHORT,CLASS_IDS,REAL_CLASS_IDS,BRIDGE_PORT,lectureTag} from './cohort-bridge.mjs';
 import {matchRoster} from './roster.mjs';
 import {randomBytes} from 'node:crypto';
 const settle=(promise,ms)=>{let t;return Promise.race([promise,new Promise(r=>{t=setTimeout(()=>r(null),ms);})]).finally(()=>clearTimeout(t));};
@@ -48,7 +48,8 @@ export const lectureLabel=t=>String(t??'').replace(/\s+/g,' ').replace(/\s*보�
 const datesIn=t=>[...String(t??'').matchAll(/(20\d{2})[-.]\s?(\d{1,2})[-.]\s?(\d{1,2})/g)].map(m=>`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`).sort();
 export const oldLectureRow=t=>{const d=datesIn(t);return d.length>=2&&d.at(-1)<COHORT.period.start;};
 export const ruleMatches=(t,classId)=>String(t??'').includes(lectureTag(classId))&&!oldLectureRow(t);
-export const ruleClass=t=>CLASS_IDS.find(c=>ruleMatches(t,c))||null;
+// 이름 규칙 자동 연결은 공식 반만(시험용 테스트반은 사람이 강의를 직접 연결할 때만)
+export const ruleClass=t=>REAL_CLASS_IDS.find(c=>ruleMatches(t,c))||null;
 // 그 날이 줄에 보이는 기간(날짜 둘 이상) 안인지. 알 수 없으면 null.
 export const coversDate=(t,date)=>{const d=datesIn(t);return d.length>=2?d[0]<=date&&date<=d.at(-1):null;};
 export const SETUP_HINT=`수집 PC 연결 프로그램 화면(127.0.0.1:${BRIDGE_PORT}/setup)의 「반→강의 연결」에서 직접 연결해 주세요.`;

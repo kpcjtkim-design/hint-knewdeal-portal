@@ -4,7 +4,7 @@
 // 읽기 전용(사용자 결정 2026-10-16): 수정 요청을 승인·반영·반려하지 않고, 해제를 알아채도 쓰지 않습니다.
 // 체크히어 쓰기는 사람이 운영 포털 「반영 요청·승인」에서 승인할 때만 합니다(index.html → 연결 프로그램 /api/apply).
 // 체크히어 해제 상태(privacy)는 연결 프로그램이 셉니다. 중계는 그대로 신호에 옮길 뿐 해제·연장·종료를 하지 않습니다.
-import {CLASS_IDS,LIVE_HOUR_MS,LIVE_GAP_MS,LIVE_WINDOW,NO_LECTURE,hourPlan,inLiveWindow,koreaClock,koreaHour} from './checkhere-live-core.mjs';
+import {RELAY_CLASS_IDS,LIVE_HOUR_MS,LIVE_GAP_MS,LIVE_WINDOW,NO_LECTURE,hourPlan,inLiveWindow,koreaClock,koreaHour} from './checkhere-live-core.mjs';
 import {privacyState} from './checkhere/rules.mjs';
 import {BRIDGE_URL} from './checkhere/cohort-bridge.mjs';
 
@@ -59,7 +59,7 @@ const maskedEveryClass=e=>/\bMASKED_(?:MIXED|UNMASKING)|전화번호 표시가 �
 const unmaskCount=m=>m&&m.header!=='unmasked'?Math.max(0,Math.floor(Number(m.waitingWrites)||0)):0;
 // 자동 갱신은 시간마다 새로 뽑는 계획(hourPlan)을 따릅니다: 반마다 한 시간에 한 번, 무작위 시각·순서, 서로 gapMs(1분) 넘게. 늦어진 반이 몰려도 1분씩 띄워 읽습니다.
 // window: 계획을 세울 창(교육일 08:50~18:40), inWindow(now): 읽기 직전 창 확인, random: 0~1 함수(시험은 고정값). 수동 갱신(이 반 지금 갱신)은 창·계획과 상관없이 먼저 합니다.
-export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=CLASS_IDS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow,window=LIVE_WINDOW,random=Math.random,gapMs=LIVE_GAP_MS}){
+export function createLiveRelay({bridge,store,log=()=>{},now=()=>new Date(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),classIds=RELAY_CLASS_IDS,pollMs=1500,jobTimeoutMs=10*60*1000,retryMs=60000,inWindow=inLiveWindow,window=LIVE_WINDOW,random=Math.random,gapMs=LIVE_GAP_MS}){
   const mirror=new Map(),saved=new Map(),noLecture=new Map(),manual=[];
   // plan: 이번 시간 계획 {key, date, slots:[{classId, at, done}]}, pauseUntil: 로그인·연결·가림 문제로 자동 갱신을 쉬는 때, lastAutoAt: 마지막 자동 읽기(체크히어에 간 것)
   let cursor=null,capabilities=[],plan=null,pauseUntil=0,lastAutoAt=0,running=false,wake=null,listeners=new Set();

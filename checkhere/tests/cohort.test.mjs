@@ -15,22 +15,40 @@ test('cohort.mjs carries an exact copy of cohort.json, and the api reader agrees
 });
 
 test('16 classes in the user region order with official names and capacity 30 (class 4: 31)',()=>{
- assert.equal(C.CLASS_COUNT,16);assert.deepEqual([...C.CLASS_IDS],Array.from({length:16},(_,i)=>String(i+1)));
- assert.deepEqual(C.CLASSES.map(c=>c.name),NAMES);
- assert.deepEqual(C.CLASSES.map(c=>c.official),NAMES.map(n=>'[현대자동차그룹 HINT] '+n));
- assert.deepEqual(C.CLASSES.map(c=>c.region),['서울','서울','충청','충청','충청','대경','대경','대경','동남','동남','동남','동남','동남','호남','호남','호남']);
- assert.deepEqual([...new Set(C.CLASSES.map(c=>c.course))],['모빌리티 AI','제조지능화']);
- assert.deepEqual(C.CLASSES.filter(c=>c.course==='모빌리티 AI').map(c=>c.id),['1','3','6','7','9','10','14']);
- assert.deepEqual(C.CLASSES.map(c=>c.capacity),C.CLASS_IDS.map(id=>id==='4'?31:30));
- assert.equal(C.classLabel('12'),'12반 · 제조지능화 · 아르피나C');assert.equal(C.classLabel('17'),'17반');
+ assert.equal(C.REAL_CLASS_COUNT,16);assert.deepEqual([...C.REAL_CLASS_IDS],Array.from({length:16},(_,i)=>String(i+1)));
+ assert.deepEqual(C.REAL_CLASSES.map(c=>c.name),NAMES);
+ assert.deepEqual(C.REAL_CLASSES.map(c=>c.official),NAMES.map(n=>'[현대자동차그룹 HINT] '+n));
+ assert.deepEqual(C.REAL_CLASSES.map(c=>c.region),['서울','서울','충청','충청','충청','대경','대경','대경','동남','동남','동남','동남','동남','호남','호남','호남']);
+ assert.deepEqual([...new Set(C.REAL_CLASSES.map(c=>c.course))],['모빌리티 AI','제조지능화']);
+ assert.deepEqual(C.REAL_CLASSES.filter(c=>c.course==='모빌리티 AI').map(c=>c.id),['1','3','6','7','9','10','14']);
+ assert.deepEqual(C.REAL_CLASSES.map(c=>c.capacity),C.REAL_CLASS_IDS.map(id=>id==='4'?31:30));
+ assert.equal(C.classLabel('12'),'12반 · 제조지능화 · 아르피나C');assert.equal(C.classLabel('17'),'17반 · 테스트반 (시험용)');assert.equal(C.classLabel('18'),'18반');
  // 반 구분어는 서로 겹치지 않아야 명단 '반배정' 문구에서 한 반만 고릅니다.
- for(const a of C.CLASSES)assert.equal(C.CLASSES.filter(b=>b.official.includes(a.rosterKey)).length,1,a.rosterKey);
+ for(const a of C.REAL_CLASSES)assert.equal(C.REAL_CLASSES.filter(b=>b.official.includes(a.rosterKey)).length,1,a.rosterKey);
 });
 
-test('class id pattern accepts 1..16 only',()=>{
- assert.equal(C.classIdPattern(),'(?:[1-9]|1[0-6])');
+test('17반 시험용 테스트반: 화면에는 보이고(allClasses), 공식 결과(realClasses·통계 합계·HRD·자동 수집)에서는 빠짐',async()=>{
+ assert.equal(C.CLASS_COUNT,17);assert.equal(C.REAL_CLASS_COUNT,16);
+ assert.deepEqual(C.allClasses().map(c=>c.id),C.CLASS_IDS);assert.deepEqual(C.realClasses().map(c=>c.id),C.CLASS_IDS.filter(id=>id!=='17'));
+ const t=C.classInfo('17');assert.deepEqual([t.test,t.name,t.official,t.capacity],[true,'테스트반 (시험용)','',10]);
+ assert.equal(C.isTestClass('17'),true);assert.equal(C.isTestClass(17),true);assert.equal(C.isTestClass('16'),false);assert.equal(C.isTestClass('18'),false);
+ assert.ok(C.CLASSES.filter(c=>c.id!=='17').every(c=>c.test===false));
+ assert.deepEqual(C.withoutTestClasses([{id:'1'},{id:'17'},'17','2']).map(x=>x.id??x),['1','2']);
+ assert.deepEqual(N.REAL_CLASS_IDS,C.REAL_CLASS_IDS);assert.deepEqual(N.CLASS_IDS,C.CLASS_IDS);
+ // 출결 통계 합계: 반을 고르지 않으면 테스트반 학생은 빠지고, 17반을 고르면 그 반만
+ const {studentStats}=await import('../../beta2-core.mjs');
+ const bundle={today:'2026-10-29',days:['2026-10-28','2026-10-29'],roster:[{cls:'1',name:'가상1',status:'재학'},{cls:'17',name:'가상시험',status:'재학'}],ledger:[]};
+ assert.deepEqual(studentStats(bundle,{}).map(s=>s.cls),['1']);assert.deepEqual(studentStats(bundle,{cls:'17'}).map(s=>s.cls),['17']);
+ // 체크히어 자동 수집(중계 한 시간 계획)·HRD 반배정은 공식 반만
+ const live=await import('../../checkhere-live-core.mjs'),upload=await import('../../attendance-upload-core.mjs');
+ assert.deepEqual(live.RELAY_CLASS_IDS,C.REAL_CLASS_IDS);assert.ok(live.CLASS_IDS.includes('17'),'실시간 화면에서 직접 고를 수는 있음');
+ assert.equal(upload.ASSIGNMENT_KEYS['17'],undefined);
+});
+
+test('class id pattern accepts 1..17 (17 = 시험용 테스트반) only',()=>{
+ assert.equal(C.classIdPattern(),'(?:[1-9]|1[0-7])');
  for(const id of C.CLASS_IDS)assert.ok(C.CLASS_ID_RE.test(id)&&C.isClassId(id)&&N.isClassId(id));
- for(const bad of ['0','17','18','01','1 ','',' 1','10a'])assert.ok(!C.CLASS_ID_RE.test(bad)&&!C.isClassId(bad),bad);
+ for(const bad of ['0','18','19','01','1 ','',' 1','10a'])assert.ok(!C.CLASS_ID_RE.test(bad)&&!C.isClassId(bad),bad);
 });
 
 test('60 training days: weekdays 2026-10-28..2027-01-22 minus 12/25, 12/31, 1/1',()=>{
@@ -106,7 +124,7 @@ test('admin time overrides per date/class: all-class then class entries, invalid
  assert.equal(C.ruleFor('2027-01-14','16',[{date:'2027-01-14',classIds:['16'],start:'09:20'}]).start,'09:20');
  // 항목 검사(나중 관리자 화면이 저장 전에 씀)
  assert.deepEqual(C.ruleOverrideProblems({date:'2026-11-05',start:'09:30'}),[]);
- assert.ok(C.ruleOverrideProblems({date:'2026-10-27'}).length,'교육 기간 밖');assert.ok(C.ruleOverrideProblems({date:'2027-01-04',classIds:['17']}).length,'반 번호');
+ assert.ok(C.ruleOverrideProblems({date:'2026-10-27'}).length,'교육 기간 밖');assert.ok(C.ruleOverrideProblems({date:'2027-01-04',classIds:['18']}).length,'반 번호');
  assert.ok(C.ruleOverrideProblems({date:'2027-01-04',entryGrace:-1}).length);assert.ok(C.ruleOverrideProblems([]).length);
  assert.deepEqual(C.ruleOverrideProblems({date:'2027-01-04',classIds:['16'],excursion:true}),[],'1월 날짜·16반');
  assert.deepEqual(C.ruleProblems(C.BASE_RULE),[]);assert.deepEqual(C.ruleProblems(C.EXCURSION_RULE),[]);

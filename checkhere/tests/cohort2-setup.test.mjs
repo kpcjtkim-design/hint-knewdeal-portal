@@ -12,20 +12,21 @@ import {buildReport,reportView,reportCounts,confirmList,pairRow,cleanStudents,ex
 import {createApprovalCloud} from '../cloud-approval.mjs';
 import {unmaskReason} from '../masking.mjs';
 import {studentKey,recordId,version} from '../identity.mjs';
-import {CLASS_IDS,BRIDGE_PORT,validIso,classOk,FIREBASE_MISSING,firebaseReady} from '../cohort-bridge.mjs';
+import {CLASS_IDS,REAL_CLASS_IDS,activeClassIds,BRIDGE_PORT,validIso,classOk,FIREBASE_MISSING,firebaseReady} from '../cohort-bridge.mjs';
 import {fakeSite,roster as fakeRoster} from './checkhere-fake.mjs';
 
 const D='2026-10-28',NAMES=['가상하나','가상둘','가상셋','가상넷','가상다섯','가상여섯','01011110001'];
 mkdirSync(join(import.meta.dirname,'../test-results'),{recursive:true});
 const dir=p=>mkdtempSync(join(import.meta.dirname,'../test-results/'+p));
-test('2기 값: 16개 반, 포트 8766, 2026·2027 날짜, build',()=>{
-  assert.deepEqual(CLASS_IDS,Array.from({length:16},(_,i)=>String(i+1)));assert.equal(classOk('16'),true);assert.equal(classOk('17'),false);
+test('2기 값: 16개 반 + 17반 시험용 테스트반, 포트 8766, 2026·2027 날짜, build',()=>{
+  assert.deepEqual(CLASS_IDS,Array.from({length:17},(_,i)=>String(i+1)));assert.deepEqual(REAL_CLASS_IDS,CLASS_IDS.slice(0,16));assert.equal(classOk('16'),true);assert.equal(classOk('17'),true);assert.equal(classOk('18'),false);
+  assert.deepEqual(activeClassIds(),REAL_CLASS_IDS,'테스트반은 강의를 직접 연결하기 전에는 처음 설치·전체 수집에서 빠짐');assert.deepEqual(activeClassIds(c=>c==='17'),CLASS_IDS);
   assert.equal(BRIDGE_PORT,8766);assert.match(BUILD,/^2기-\d{8}\.\d+$/);
   assert.equal(validIso('2027-01-22'),true);assert.equal(validIso('2028-01-03'),false);assert.equal(validIso('2026-02-30'),false);
   assert.match(OLD_DATA(3),/2026-10-28.*새 폴더/);
 });
 test('명단: 칸·머리말·반 이름·생년월일(선택), 오류는 줄 번호만',()=>{
-  assert.deepEqual([classFrom('3'),classFrom('3반'),classFrom('후인원A'),classFrom('_서울대'),classFrom('서울대'),classFrom('[현대자동차그룹 HINT] 대전(유성구)_제조지능화_후인원B'),classFrom('17'),classFrom('1기 2반')],['3','3','3','1','1','4',null,null]);
+  assert.deepEqual([classFrom('3'),classFrom('3반'),classFrom('후인원A'),classFrom('_서울대'),classFrom('서울대'),classFrom('[현대자동차그룹 HINT] 대전(유성구)_제조지능화_후인원B'),classFrom('18'),classFrom('1기 2반')],['3','3','3','1','1','4',null,null]);
   assert.deepEqual([birthOf(''),birthOf('1999-03-02'),birthOf('1999.3.2'),birthOf('19990302'),birthOf('990302'),birthOf('020101'),birthOf('1999-02-30'),birthOf('가나')],['','1999-03-02','1999-03-02','1999-03-02','1999-03-02','2002-01-01',null,null]);
   const head=parseRoster('반,이름,연락처,생년월일\n3,가상하나,010-1111-0001,1999-03-02\n3,가상둘,0002,\n후인원A,가상셋,0003,990302');
   assert.deepEqual(head.errors,[]);assert.deepEqual(head.rows.map(r=>[r.classId,r.name,r.last4,r.birth,!!r.phoneKey]),[['3','가상하나','0001','1999-03-02',true],['3','가상둘','0002','',false],['3','가상셋','0003','1999-03-02',false]]);
@@ -40,7 +41,7 @@ test('명단: 칸·머리말·반 이름·생년월일(선택), 오류는 줄 �
 test('강의 찾기: [N반] 규칙, 1기 기간 줄은 고르지 않음, 설정한 반→강의 없음(기본)',()=>{
   assert.equal(ruleMatches('[3반] 대전 모빌리티 2026.10.28 ~ 2027.01.22','3'),true);assert.equal(ruleMatches('[13반] 어딘가','3'),false);assert.equal(ruleMatches('[1반] 서울','11'),false);
   assert.equal(oldLectureRow('[2반] 가상 2026.07.27 ~ 2026.10.22'),true);assert.equal(ruleMatches('[2반] 가상 2026.07.27 ~ 2026.10.22','2'),false,'a 1기 lecture with the same tag is skipped');
-  assert.equal(ruleClass('[16반] 광주 2026-10-28 ~ 2027-01-22'),'16');assert.equal(ruleClass('[17반] 1기'),null);
+  assert.equal(ruleClass('[16반] 광주 2026-10-28 ~ 2027-01-22'),'16');assert.equal(ruleClass('[17반] 1기'),null,'테스트반은 이름 규칙으로 자동 연결하지 않음');assert.equal(ruleClass('[18반] 1기'),null);
   assert.equal(lectureLabel('  [2반]  가상   보기 '),'[2반] 가상');assert.equal(presetLecture('3'),null);
 });
 test('처음 설치 확인 결과: 맞음·명단에 없음·명단에만·겹침, 사람이 고른 짝, 확인 목록은 이름·끝 4자리·학생 번호만',()=>{
@@ -189,7 +190,7 @@ test('등록 REST: checkhereIdentities/{반}에 이름·끝 4자리·학생 번�
   assert.ok(!JSON.stringify(write).includes('1999-03-02'),'no birthdate');
   assert.deepEqual((await cloud.listIdentities('t')).map(d=>[d.classId,d.students.length]),[['3',2]]);
   tamper=true;await assert.rejects(cloud.putIdentities('t','4',students,'x'),/다시 읽은 목록/);tamper=false;
-  await assert.rejects(cloud.putIdentities('t','17',students,'x'),/반을 확인/);
+  await assert.rejects(cloud.putIdentities('t','18',students,'x'),/반을 확인/);
   deny=true;await assert.rejects(cloud.putIdentities('t','3',students,'x'),/IDENTITIES_RULES/);
 });
 // ---- 가짜 체크히어(브라우저): 이름 규칙·1기 강의 건너뛰기·직접 연결, 가린 화면의 명단 맞춤과 사람이 고르는 연결, 해제 뒤 반별 확인 ----

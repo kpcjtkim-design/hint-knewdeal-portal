@@ -2,7 +2,7 @@
 import {studentStats,evidenceRows,diseaseReport,dropoutRows,recognizedType} from './beta2-core.mjs';
 import {EVIDENCE_PERIODS} from './attendance-evidence-core.mjs';
 import {esc,md,badge,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
-import {DISEASE,COMPLETION_RATE as PASS} from './cohort.mjs';
+import {DISEASE,COMPLETION_RATE as PASS,withoutTestClasses} from './cohort.mjs';
 
 export const STATUS_TABS=[['stats','출결 통계'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락·수료']];
 const pct=v=>v===null?'-':`${v.toFixed(1)}%`;
@@ -42,7 +42,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
    current={csv:[['반','이름','교육일','유형','서류 상태','반려 사유'],...rows.map(r=>[r.cls,r.name,r.date,r.type,r.state,r.evr])],copy:lines.join('\n')};
   }
   if(view==='disease'){
-   const ids=cls==='all'?classes.map(c=>String(c.id)):[cls];
+   const ids=cls==='all'?withoutTestClasses(classes).map(c=>String(c.id)):[cls];// 전체는 테스트반 뺌
    if(checkhereFor!==ids.join(',')){body.innerHTML=loading('체크히어 질병 메모 기록과 대조하는 중…');checkhereFor=ids.join(',');checkhere=await client.checkhereDisease(ids);if(!life.alive())return;}
    const report=diseaseReport(list,checkhere||{}),missing=ids.filter(id=>!checkhere?.[id]);
    body.innerHTML=`<div class="b2-note" style="margin:12px 14px 0">출결원장의 인정 기록 중 사유가 병원·병결·병가·진료 등인 날을 셉니다. ${DISEASE.warn}회 주의 · ${DISEASE.max}회 기준 · ${DISEASE.max+1}회부터 초과. 체크히어 '인정○○ + 병원' 메모와 날짜가 다르면 아래 '확인 필요'에 따로 보여 줍니다.</div>`

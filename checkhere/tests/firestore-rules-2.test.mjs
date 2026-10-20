@@ -93,16 +93,16 @@ test('teachers see only their own classes (primary and temporary), admins write 
   assert.equal(can('get',path,{auth:T3,data:{classId:path.split('/')[1]}}),ok,path);
  for(const path of ['classes/3/checkhereCurrent/2026-11-05','classes/3/checkhereSnapshots/s','timetableBetaDrafts/3','checkhereProposalDrafts/d','checkhereProposalSources/s','checkhereIdentities/3'])assert.equal(can('get',path,{auth:T3,data:{}}),false,path);
  assert.equal(can('update','classes/16',{auth:ADMIN,data:{},next:{urgentActive:true}}),true);
- assert.equal(can('update','classes/17',{auth:ADMIN,data:{},next:{urgentActive:true}}),false,'반 17은 없음');
+ assert.equal(can('update','classes/18',{auth:ADMIN,data:{},next:{urgentActive:true}}),false,'반 18은 없음');assert.equal(can('update','classes/17',{auth:ADMIN,data:{},next:{urgentActive:true}}),true,'17반은 시험용 테스트반');
  assert.equal(can('update','classes/3',{auth:T3,data:{},next:{urgentActive:true}}),false,'담임은 반 문서를 못 씀');
  assert.equal(can('delete','classes/3',{auth:ADMIN,data:{}}),false);
  const att=(cid,o={})=>({classId:cid,version:'v',asOf:'2027-01-04',latestDate:'2027-01-04',latestEntered:true,dates:[],students:[],fingerprint:'f',syncedAt:'s',updatedBy:ADMIN.email,updatedAt:TIME,...o});
- assert.equal(can('create','attendanceBetaSummaries/16',{auth:ADMIN,next:att('16')}),true);assert.equal(can('create','attendanceBetaSummaries/17',{auth:ADMIN,next:att('17')}),false);
+ assert.equal(can('create','attendanceBetaSummaries/16',{auth:ADMIN,next:att('16')}),true);assert.equal(can('create','attendanceBetaSummaries/18',{auth:ADMIN,next:att('18')}),false);
 });
 
 test('checkhereCurrent: administrators, classes 1..16 and 2026-10-28..2027-01-22 only (January 2027 included)',()=>{
  const cur=(cid,date)=>({classId:cid,date,records:[],jobId:'j',updatedBy:ADMIN.email,updatedAt:TIME});
- for(const [cid,date,ok] of [['3','2026-10-28',true],['16','2027-01-22',true],['1','2027-01-04',true],['3','2026-10-27',false],['3','2027-01-23',false],['17','2026-11-05',false],['3','2026-09-03',false],['3','2028-01-04',false]])
+ for(const [cid,date,ok] of [['3','2026-10-28',true],['16','2027-01-22',true],['1','2027-01-04',true],['3','2026-10-27',false],['3','2027-01-23',false],['18','2026-11-05',false],['3','2026-09-03',false],['3','2028-01-04',false]])
   assert.equal(can('create',`classes/${cid}/checkhereCurrent/${date}`,{auth:ADMIN,next:cur(cid,date)}),ok,cid+' '+date);
  assert.equal(can('create','classes/3/checkhereCurrent/2026-11-05',{auth:T3,next:{...cur('3','2026-11-05'),updatedBy:T3.email}}),false);
  assert.equal(can('create','classes/3/checkhereCurrent/2026-11-05',{auth:ADMIN,next:{...cur('3','2026-11-05'),extra:1}}),false);
@@ -118,7 +118,7 @@ test('checkhereRequests: own-class teacher requests inside the 2기 period, admi
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({status:'approved'})}),false);
  assert.equal(can('create','checkhereRequests/r1',{auth:T3,next:REQ({changes:{exit:''},deleteTimes:['exit']})}),false,'담임은 시간 삭제 못 함');
  assert.equal(can('create','checkhereRequests/r1',{auth:ADMIN,next:REQ({classId:'16',createdBy:ADMIN.email,changes:{exit:'',exitMemo:''},deleteTimes:['exit']})}),true);
- assert.equal(can('create','checkhereRequests/r1',{auth:ADMIN,next:REQ({classId:'17',createdBy:ADMIN.email})}),false);
+ assert.equal(can('create','checkhereRequests/r1',{auth:ADMIN,next:REQ({classId:'18',createdBy:ADMIN.email})}),false);
  assert.equal(can('create','checkhereRequests/r1',{auth:ADMIN,next:REQ({createdBy:ADMIN.email,changes:{exit:''}})}),false,'deleteTimes 없는 빈 시간');
  // 읽기: 관리자 전부, 담임은 자기가 만든 자기 반 요청만
  assert.equal(can('get','checkhereRequests/r1',{auth:T3,data:REQ()}),true);assert.equal(can('get','checkhereRequests/r1',{auth:T4,data:REQ()}),false);
@@ -144,7 +144,7 @@ test('checkhereIdentities: the CheckHere roster link is admin-only and shaped',(
  const doc=(cid,o={})=>({classId:cid,students:[{name:'가상학생',last4:'1234',attendeeId:'att-1',updatedAt:'2026-11-05T09:00:00Z'}],updatedBy:ADMIN.email,updatedAt:TIME,...o});
  assert.equal(can('create','checkhereIdentities/3',{auth:ADMIN,next:doc('3')}),true);assert.equal(can('get','checkhereIdentities/3',{auth:ADMIN2,data:doc('3')}),true);
  assert.equal(can('get','checkhereIdentities/3',{auth:T3,data:doc('3')}),false);assert.equal(can('create','checkhereIdentities/3',{auth:T3,next:{...doc('3'),updatedBy:T3.email}}),false);
- assert.equal(can('create','checkhereIdentities/17',{auth:ADMIN,next:doc('17')}),false);assert.equal(can('create','checkhereIdentities/3',{auth:ADMIN,next:doc('3',{phone:'010'})}),false,'정해진 칸만');
+ assert.equal(can('create','checkhereIdentities/18',{auth:ADMIN,next:doc('18')}),false);assert.equal(can('create','checkhereIdentities/3',{auth:ADMIN,next:doc('3',{phone:'010'})}),false,'정해진 칸만');
  assert.equal(can('create','checkhereIdentities/3',{auth:ADMIN,next:doc('4')}),false);assert.equal(can('delete','checkhereIdentities/3',{auth:ADMIN,data:doc('3')}),false);
 });
 
@@ -175,11 +175,11 @@ test('notifications (notify.mjs shape): teachers notify admins or their own clas
 });
 
 test('rules ranges, admins and approver are the same values as cohort.json; time-delete helpers match the design text',()=>{
- assert.ok(src.includes(`c.matches('${C.classIdPattern().replace('(?:','(')}')`),'반 정규식 = cohort');assert.equal(C.classIdPattern(),'(?:[1-9]|1[0-6])');
+ assert.ok(src.includes(`c.matches('${C.classIdPattern().replace('(?:','(')}')`),'반 정규식 = cohort');assert.equal(C.classIdPattern(),'(?:[1-9]|1[0-7])','16개 반 + 17반 시험용 테스트반');
  assert.ok(src.includes(`d.matches('202[67]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') && d>='${C.COURSE_START}' && d<='${C.COURSE_END}'`),'기간 = cohort');
  assert.ok(src.includes(`function bootstrapEmail(e){return ${C.ADMINS.map(a=>`e=='${a}'`).join('||')};}`),'관리자 = cohort');
  assert.ok(src.includes(`email()=='${C.APPROVER}'`),'승인자 = cohort');
- assert.ok(!/1\[0-7\]|2026-07-27|2026-10-22|'2026-\[0-9\]/.test(src),'1기 반·기간 없음');
+ assert.ok(!/2026-07-27|2026-10-22|'2026-\[0-9\]/.test(src),'1기 기간 없음');assert.equal(src.match(/(?<!\d)\[1-9\]\|1\[0-\d\]/g).join(),'[1-9]|1[0-7]','반 정규식은 validClass 한 곳(17 = 시험용 테스트반)');
  const plan=readFileSync(new URL('../../docs/beta2-instant-edit-plan.md',import.meta.url),'utf8').replace(/\r\n/g,'\n'),from=plan.indexOf('function hhmmss(');
  const spec=plan.slice(from,plan.indexOf('```',from)).trim().split('\n').map(s=>s.trim());
  for(const line of spec)assert.ok(src.split('\n').some(l=>l.trim()===line),line.slice(0,40));

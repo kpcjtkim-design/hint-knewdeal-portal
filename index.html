@@ -55,7 +55,7 @@ async function ensureDriveAccessToken(force=false){
   return token;
 }
 // 2기 16개 반(지역 순서 서울→충청→대경→동남→호남). course·venue 외에 area·official(공식 과정명)·capacity가 함께 옵니다.
-const CLASSES=COHORT_CLASSES.map(({id,region,area,course,venue,capacity,official})=>({id,region,area,course,venue,capacity,official}));
+const CLASSES=COHORT_CLASSES.map(({id,region,area,course,venue,capacity,official,test})=>({id,region,area,course,venue,capacity,official,test}));// test: 17반 시험용 테스트반(화면에는 보이고 합계·내려받기·일괄 작업에서는 빠짐)
 const classOption=(c,selected)=>`<option value="${c.id}" ${c.id===String(selected)?'selected':''}>${esc(classLabel(c.id))}</option>`;
 const EMPTY={manualAttendance:'',photos:'',monitoring:'',recognition:'',textbook:'',forms:'',topDrive:'',documentRequest:''};
 const DEFAULTS={notice:`***** 매일 입력 + 필수 업로드 항목 *****\n<HINT ${COHORT.label} 운영팀>\n\n매일 각 반별\n가. 출결 입력(포털 출결판)\n나. 수기출석본 업로드\n다. 교육사진 업로드\n라. 운영일지 업로드(학생 인터뷰)\n마. 출결인정자료(결석, 지각, 조퇴, 외출 발생시) 업로드\n\n꼭 입력 부탁드립니다.\n\n국민취업지원제도 등 서류는 포털 '서류발급'에서 신청해 주세요.`,courseTextbooks:{},officialForms:'',documentRequest:'',helpText:'링크 오류나 권한 문제가 있으면 운영팀에 문의해 주세요.'};
@@ -215,7 +215,7 @@ async function adminView(user,p,tab='b2home',selected='1',workContext=null){let 
 async function beta2Admin(user,p,tab,selected,context){return mountAdminModule('/beta2-admin.mjs?v=20261020-m1','mountBeta2Admin',{db,user,classes:CLASSES,tab,selected,context,open:(next,ctx={})=>adminView(user,p,next,ctx.classId||selected,ctx)},{wide:tab==='b2ledger'});}
 
 async function surveysAdmin(user,p,workContext=null){return mountAdminModule('/survey-view.mjs?v=20260922-work1','mountSurveys',{db,user,classes:CLASSES,initialClassId:workContext?.classId});}
-async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261019-t2','mountTimetableAdmin',{db,user,classes:CLASSES},{wide:true});}
+async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261019-t2','mountTimetableAdmin',{db,user,classes:CLASSES.filter(c=>!c.test)},{wide:true});}
 async function attachTeacherTimetable(parent,user,c){
  const hero=parent.querySelector('.hero'),alive=()=>parent.isConnected&&parent.querySelector('.hero')===hero;
  try{const mod=await import('/teacher-workspace.mjs?v=20261020-m1');if(!alive())return;const work=await mod.mountTeacherWorkspace(parent,{db,user,classInfo:c,preview:parent.id==='adminBody'});if(!alive())disposePageWork(work);else if(parent.id==='adminBody')adminWork=work;else teacherWork=work;}catch(e){if(alive()){const note=document.createElement('p');note.textContent='담임 요약을 불러오지 못했습니다. '+e.message;parent.append(note);}}

@@ -1,4 +1,4 @@
-import {CLASSES} from './cohort.mjs';
+import {REAL_CLASSES as CLASSES} from './cohort.mjs';// HRD 업로드 반배정은 공식 반만(시험용 테스트반 뺌)
 import {surveyBaseName} from './survey-identity.mjs';
 // HRD 출결 업로드 양식 (sheet1, 모든 칸 텍스트).
 export const UPLOAD_HEADERS=['훈련과정ID','훈련과정회차','훈련생성명','생년월일성별','훈련일자','입실시간','퇴실시간','외출시작시간','외출종료시간'];

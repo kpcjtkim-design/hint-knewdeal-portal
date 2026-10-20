@@ -70,7 +70,7 @@ test('loadDayTimes asks once per class and day, shares one request, retries a fa
  assert.equal(ruleOn('2026-11-13',{classId:'2'}).start,'09:00');
  const n=calls.length;t+=30000;await loadDayTimes(client,'2','2026-11-13',{now});assert.equal(calls.length,n,'no retry within a minute');
  fail=false;t+=31000;assert.equal(await loadDayTimes(client,'2','2026-11-13',{now}),true);assert.equal(dayRule('2','2026-11-13').start,'10:00');
- for(const [c,d] of [['17','2026-11-13'],['0','2026-11-13'],['1','11/13'],['1','']])assert.equal(await loadDayTimes(client,c,d,{now}),false);
+ for(const [c,d] of [['18','2026-11-13'],['0','2026-11-13'],['1','11/13'],['1','']])assert.equal(await loadDayTimes(client,c,d,{now}),false);
  assert.equal(await loadDayTimes(null,'1','2026-11-14'),false);
  assert.equal(calls.length,n+1,'bad class or date never reaches the sheet');
  forgetDayTimes();
@@ -81,7 +81,7 @@ test('module-time input is checked before it is sent: HH:mm inside 08:00~20:00, 
  assert.equal(checkModuleTime(ok),'');
  assert.equal(checkModuleTime(ok,{existing:true}),'시간을 고칠 때는 사유를 적어 주세요. (예: HRD 확정 전 임시)');
  assert.equal(checkModuleTime({...ok,reason:'HRD 확정 전 임시'},{existing:true}),'');
- const cases=[[{date:''},'날짜를 골라 주세요.'],[{date:'2026-10-20'},'2기 교육 기간(10/28~1/22) 안의 날짜를 골라 주세요.'],[{cls:'17'},'반을 골라 주세요.'],[{module:' '},'모듈 이름을 적어 주세요.'],
+ const cases=[[{date:''},'날짜를 골라 주세요.'],[{date:'2026-10-20'},'2기 교육 기간(10/28~1/22) 안의 날짜를 골라 주세요.'],[{cls:'18'},'반을 골라 주세요.'],[{module:' '},'모듈 이름을 적어 주세요.'],
   [{module:'가'.repeat(61)},'모듈 이름은 60자 이하로 적어 주세요.'],[{start:'열시'},'시작·끝 시간은 10:00처럼 넣어 주세요.'],[{end:''},'시작·끝 시간은 10:00처럼 넣어 주세요.'],[{start:'07:30'},'교육시간은 08:00~20:00 안에서 정해 주세요.'],
   [{end:'20:30'},'교육시간은 08:00~20:00 안에서 정해 주세요.'],[{start:'17:00',end:'10:00'},'끝 시간이 시작보다 늦어야 합니다.'],[{start:'10:00',end:'10:00'},'끝 시간이 시작보다 늦어야 합니다.'],[{part:'가'.repeat(61)},'구간은 60자 이하로 적어 주세요.'],[{reason:'가'.repeat(201)},'사유는 200자 이하로 적어 주세요.']];
  for(const [change,text] of cases)assert.equal(checkModuleTime({...ok,...change}),text,JSON.stringify(change));
@@ -135,7 +135,7 @@ test('administrators reach every new action with the verified e-mail; class numb
  await call({action:'b2LedgerMemo',args:[{cls:'4',name:'가상',date:'2026-11-13',memo:'수기 확인'}]});assert.deepEqual([calls.at(-1).action,calls.at(-1).role],['b2LedgerMemo','ADMIN']);
  await call({action:'b2LedgerMemos',args:[{}]});assert.deepEqual(calls.at(-1).args,[{}]);
  const before=calls.length;
- for(const [action,arg] of [['b2DayTimes',{date:'2026-11-13'}],['b2ModuleTimeSave',{...save,cls:'17'}],['b2RosterStatus',{name:'가'}],['b2LedgerMemo',{cls:'0'}],['b2ModuleTimes',{cls:'99'}]]){
+ for(const [action,arg] of [['b2DayTimes',{date:'2026-11-13'}],['b2ModuleTimeSave',{...save,cls:'18'}],['b2RosterStatus',{name:'가'}],['b2LedgerMemo',{cls:'0'}],['b2ModuleTimes',{cls:'99'}]]){
   res=await call({action,args:[arg]});assert.deepEqual([res.statusCode,res.body.code],[400,'BAD_CLASS'],action);
  }
  assert.equal(calls.length,before,'bad class numbers never reach the sheet');

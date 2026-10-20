@@ -9,6 +9,7 @@ const DATA={
     "excursions: 반별 공장견학 날짜(그날만 10:00~17:00 기준). 2기 시간표가 나오면 채웁니다. 날짜·반별 시간 조정은 cohort.mjs ruleFor(날짜, 반, overrides)로 넘깁니다(저장·화면은 다음 단계).",
     "sheets.master: 2기 마스터시트 id(웹은 Apps Script API로만 읽고 씀). sheets.dropout: 2기 중도포기자 시트(아직 없음, 비면 중도포기 화면을 닫음).",
     "site.teacherPortalUrl: 2기 담임 PIN 포털(Apps Script doGet). 데이터 API 주소는 비밀값이라 여기에 두지 않고 Vercel 환경변수 HINT_SHEET_API_URL에만 둡니다.",
+    "classes의 17반(test: true)은 시험용 테스트반입니다. 관리자 화면·담임 미리보기에는 '테스트반 (시험용)'으로 보이지만 HRD 내려받기·출결 통계 합계·홈 전체 집계·체크히어 자동 수집·시간표 일괄 작업에서는 빠집니다(cohort.mjs realClasses).",
     "features: false인 화면은 '11월 중 2기 기준으로 열림'으로 감춥니다(1기 운영총괄을 읽던 화면 등). attendanceReader는 반별 출결 시트 리더(/api/attendance-reader, 2기 출결원장 기준으로 다시 만들 때까지 닫힘)를 부르는 모든 곳의 스위치입니다."
   ],
   "id": "2",
@@ -49,7 +50,8 @@ const DATA={
     {"id": "13", "region": "동남", "area": "울산(북구)", "course": "제조지능화", "venue": "울산", "capacity": 30, "rosterKey": "_울산"},
     {"id": "14", "region": "호남", "area": "광주(북구)", "course": "모빌리티 AI", "venue": "전남대", "capacity": 30, "rosterKey": "전남대"},
     {"id": "15", "region": "호남", "area": "광주(서구)", "course": "제조지능화", "venue": "기아오토랜드A", "capacity": 30, "rosterKey": "기아오토랜드A"},
-    {"id": "16", "region": "호남", "area": "광주(서구)", "course": "제조지능화", "venue": "기아오토랜드B", "capacity": 30, "rosterKey": "기아오토랜드B"}
+    {"id": "16", "region": "호남", "area": "광주(서구)", "course": "제조지능화", "venue": "기아오토랜드B", "capacity": 30, "rosterKey": "기아오토랜드B"},
+    {"id": "17", "region": "테스트", "area": "테스트", "course": "테스트반 (시험용)", "venue": "테스트반", "capacity": 10, "rosterKey": "테스트반", "name": "테스트반 (시험용)", "track": "테스트", "test": true}
   ],
   "checkhere": {"lectureNameRule": "[N반]", "lectureLinks": {}},
   "admins": ["hint.kpc@gmail.com", "kpc.jtkim@gmail.com"],
@@ -87,16 +89,25 @@ export const COHORT=freeze(DATA);
 export const COHORT_ID=COHORT.id,COHORT_LABEL=COHORT.label,COHORT_TITLE=COHORT.title;
 
 // 반: 지역 순서(서울→충청→대경→동남→호남) 그대로 1~16. name은 공식 반 이름, official은 '[현대자동차그룹 HINT] '을 붙인 과정명입니다.
-export const CLASSES=freeze(COHORT.classes.map(c=>({...c,name:`${c.area}_${c.course}_${c.venue}`,official:COHORT.officialPrefix+`${c.area}_${c.course}_${c.venue}`})));
+// 17반(test: true)은 시험용 테스트반(사용자 결정 2026-10-20): 화면에는 '테스트반 (시험용)'으로 보이고, 공식 결과(HRD 내려받기·출결 통계 합계·홈 전체 집계·체크히어 자동 수집·시간표 일괄 작업)에서는 빠집니다.
+// 모든 반은 CLASSES·allClasses(), 공식 반(테스트반 뺌)은 REAL_CLASSES·realClasses()입니다.
+export const TEST_CLASS_LABEL='테스트반 (시험용)';
+export const CLASSES=freeze(COHORT.classes.map(c=>c.test===true?{...c,test:true,name:c.name||TEST_CLASS_LABEL,official:''}:{...c,test:false,name:`${c.area}_${c.course}_${c.venue}`,official:COHORT.officialPrefix+`${c.area}_${c.course}_${c.venue}`}));
+export const REAL_CLASSES=freeze(CLASSES.filter(c=>!c.test));
+export const REAL_CLASS_IDS=freeze(REAL_CLASSES.map(c=>c.id)),REAL_CLASS_COUNT=REAL_CLASS_IDS.length;
+export const isTestClass=id=>CLASSES.some(c=>c.test&&c.id===String(id??'').trim());
+export const allClasses=()=>CLASSES.map(c=>({...c})),realClasses=()=>REAL_CLASSES.map(c=>({...c}));
+// 화면이 받은 반 목록(index.html CLASSES 등)에서 테스트반만 뺍니다(합계·내려받기·일괄 작업용).
+export const withoutTestClasses=list=>(list||[]).filter(c=>!isTestClass(c?.id??c));
 export const CLASS_IDS=freeze(CLASSES.map(c=>c.id));
 export const CLASS_COUNT=CLASS_IDS.length;
 export const classes=()=>CLASSES.map(c=>({...c}));
 export const classInfo=id=>CLASSES.find(c=>c.id===String(id??'').trim())||null;
 export const isClassId=id=>CLASS_IDS.includes(String(id??''));
-// 반 번호 정규식 조각: 16반이면 '(?:[1-9]|1[0-6])'. Firestore 규칙·연결 프로그램 검사와 같은 모양입니다.
+// 반 번호 정규식 조각: 17반(16반 + 시험용 테스트반)이면 '(?:[1-9]|1[0-7])'. Firestore 규칙·연결 프로그램 검사와 같은 모양입니다.
 export function classIdPattern(n=CLASS_COUNT){if(!(n>=1&&n<=19))throw Error('반 수는 1~19만 지원합니다.');return n<=9?`[1-${n}]`:n===10?'(?:[1-9]|10)':`(?:[1-9]|1[0-${n-10}])`;}
 export const CLASS_ID_RE=new RegExp(`^${classIdPattern()}$`);
-export const classLabel=id=>{const c=classInfo(id);return c?`${c.id}반 · ${c.course} · ${c.venue}`:`${String(id??'')}반`;};
+export const classLabel=id=>{const c=classInfo(id);return c?(c.test?`${c.id}반 · ${TEST_CLASS_LABEL}`:`${c.id}반 · ${c.course} · ${c.venue}`):`${String(id??'')}반`;};
 export const officialName=id=>classInfo(id)?.official||'';
 export const capacityOf=id=>classInfo(id)?.capacity||0;
 export const classesInRegion=region=>CLASSES.filter(c=>c.region===region);

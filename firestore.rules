@@ -1,6 +1,6 @@
 rules_version = '2';
 // HINT 2기 운영포털 Firestore 규칙(2기 전용 Firebase 프로젝트 hint-knewdeal-2). 사용자가 2기 콘솔에 게시합니다.
-// 기본은 막힘(아래에 적힌 경로만 열림). 반 1~16, 날짜 2026-10-28~2027-01-22(cohort.json과 같음, checkhere/tests/firestore-rules-2.test.mjs가 확인).
+// 기본은 막힘(아래에 적힌 경로만 열림). 반 1~17(17반은 시험용 테스트반), 날짜 2026-10-28~2027-01-22(cohort.json과 같음, checkhere/tests/firestore-rules-2.test.mjs가 확인).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn(){return request.auth != null && request.auth.token.email != null && request.auth.token.email_verified == true;}
@@ -13,7 +13,7 @@ service cloud.firestore {
     function isTeacher(){return profileExists()&&profile().get('active',false)==true&&profile().get('role','')=='TEACHER';}
     function checkhereApprover(){return signedIn() && email()=='hint.kpc@gmail.com' && request.auth.token.firebase.sign_in_provider=='google.com';}
     // 2기 반 번호·교육 기간
-    function validClass(c){return c is string && c.matches('([1-9]|1[0-6])');}
+    function validClass(c){return c is string && c.matches('([1-9]|1[0-7])');}
     function courseDate(d){return d is string && d.matches('202[67]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') && d>='2026-10-28' && d<='2027-01-22';}
     // 담임은 자기 반만: users/{email}의 기본담당(primaryClassId·classId)과 임시담당(tempClassIds·classIds)
     function ownsClass(classId){

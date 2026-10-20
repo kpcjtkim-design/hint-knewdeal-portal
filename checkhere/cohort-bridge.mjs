@@ -1,9 +1,11 @@
 // 2기 기수 설정(연결 프로그램·중계 공용): 원본은 루트 cohort.json, 함수는 루트 cohort.mjs(브라우저·Node 공용). 여기는 연결 프로그램이 쓰는 이름만 이어 줍니다.
 // 1기 값은 cohort1 브랜치에만 있습니다. 2기 Firebase 설정(cohort.json firebase의 apiKey·appId)이 비면 승인·반영·명단 등록(Firestore)은 FIREBASE_MISSING으로 멈추고, 수집·이 PC 화면은 됩니다.
-import {isClassId,classInfo,COURSE_START,COURSE_END,COHORT_DATE_RE,isIsoDate} from '../cohort.mjs';
-export {COHORT,CLASSES,CLASS_IDS,BRIDGE_PORT,BRIDGE_URL,LECTURE_NAME_RULE,lectureTag,HOLIDAYS,COURSE_START,COURSE_END,inPeriod,isHoliday,isTrainingDay,trainingDays,isoFromMonthDay,firebaseReady,FIREBASE_KEY,FIREBASE_PROJECT,APPROVER} from '../cohort.mjs';
+import {isClassId,classInfo,COURSE_START,COURSE_END,COHORT_DATE_RE,isIsoDate,CLASS_IDS as CLASS_IDS_ALL,isTestClass as isTest} from '../cohort.mjs';
+export {COHORT,CLASSES,CLASS_IDS,REAL_CLASS_IDS,isTestClass,BRIDGE_PORT,BRIDGE_URL,LECTURE_NAME_RULE,lectureTag,HOLIDAYS,COURSE_START,COURSE_END,inPeriod,isHoliday,isTrainingDay,trainingDays,isoFromMonthDay,firebaseReady,FIREBASE_KEY,FIREBASE_PROJECT,APPROVER} from '../cohort.mjs';
 // 반: '1'~'16'만. classOf(반) → {id, name(지역(구)_과정_장소), official, venue, capacity, rosterKey …} 또는 null.
 export const classOk=v=>isClassId(String(v??''));
+// 17반(test)은 시험용 테스트반: 체크히어 강의가 없어 처음 설치·자동 수집·전체 수집에서는 빼고, 사람이 강의를 직접 연결했을 때만 넣습니다.
+export const activeClassIds=(linked=()=>false)=>CLASS_IDS_ALL.filter(c=>!isTest(c)||!!linked(c));
 export const classOf=v=>classInfo(v);
 export const PERIOD_TEXT=`${COURSE_START}~${COURSE_END}`;
 // 날짜: 2026·2027년(교육 기간이 해를 넘음)의 달력에 있는 날. 기간 안인지는 inPeriod로 따로 봅니다.

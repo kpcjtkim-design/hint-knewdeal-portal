@@ -2,7 +2,7 @@
 // 2기는 운영총괄 동기화가 없어 '운영총괄과 다름' 충돌 표시·동기화 상태 글이 없습니다. 출결 시간 기준은 그날 기준(beta2-daytimes.mjs, 마스터시트 현장교육 일정) → 없으면 cohort.mjs ruleFor(공장견학 날 10:00~17:00).
 import {seconds} from './checkhere/rules.mjs';
 import {surveyBaseName} from './survey-identity.mjs';
-import {ruleFor,DISEASE,COMPLETION_RATE,COURSE_START,COURSE_END,isIsoDate,mdLabel} from './cohort.mjs';
+import {ruleFor,DISEASE,COMPLETION_RATE,COURSE_START,COURSE_END,isIsoDate,mdLabel,isTestClass} from './cohort.mjs';
 import {ruleOn,SOURCE_SHEET} from './beta2-daytimes.mjs';
 
 export const B2_TYPES=['출석','지각','조퇴','외출','결석','인정출석','인정지각','인정조퇴','인정외출'];
@@ -50,7 +50,8 @@ export function dayCounts(rows){
 // 학생별 기간 통계: 교육일 중 재학일만 세고, 출석률은 마스터시트와 같이 (재학 교육일 - 결석) / 재학 교육일
 export function studentStats(bundle,{cls=null,from='',to=bundle.today}={},index=ledgerIndex(bundle)){
  const days=courseDays(bundle,{from,to});
- return bundle.roster.filter(p=>!cls||p.cls===String(cls)).map(p=>{
+ // 전체(cls 없음) 합계·집계에서는 시험용 테스트반(cohort test)을 뺍니다. 테스트반을 골라 보면 그 반만 보입니다.
+ return bundle.roster.filter(p=>cls?p.cls===String(cls):!isTestClass(p.cls)).map(p=>{
   const counts={},evidence=[],disease=[];let enrolled=0;
   for(const d of days){
    const rec=index.get(ledgerKey(p.cls,p.name,d));

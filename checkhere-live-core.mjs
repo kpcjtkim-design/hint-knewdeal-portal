@@ -3,7 +3,7 @@
 // auto-approved, and tagged with the values the editor saw.
 import {cleanRequest,memoDefaultTimes} from './checkhere/approval-core.mjs';
 import {assertChangeAllowed,normalizeTime} from './checkhere/rules.mjs';
-import {CLASS_IDS as COHORT_CLASS_IDS,isTrainingDay} from './checkhere/cohort-bridge.mjs';
+import {CLASS_IDS as COHORT_CLASS_IDS,REAL_CLASS_IDS,isTrainingDay} from './checkhere/cohort-bridge.mjs';
 
 export const LIVE_MARK='[실시간 베타]';
 export const LIVE_FIELDS=['entry','exit','entryMemo','exitMemo'];
@@ -14,6 +14,8 @@ export const LIVE_HOUR_MS=60*60*1000,LIVE_GAP_MS=60*1000;
 export const LIVE_WINDOW={weekdays:[1,2,3,4,5],start:'08:50',end:'18:40',trainingDay:isTrainingDay};
 // 2기 16개 반(cohort-bridge)
 export const CLASS_IDS=[...COHORT_CLASS_IDS];
+// 한 시간마다 자동 수집하는 반: 공식 반만(시험용 테스트반은 체크히어 강의가 없음)
+export const RELAY_CLASS_IDS=[...REAL_CLASS_IDS];
 export const ACTIVE=['pending','approved','applying'];
 
 export function koreaClock(now=new Date()){
@@ -28,7 +30,7 @@ export const koreaHour=(now=new Date())=>{const t=now.getTime(),start=Math.floor
 // 한 시간의 자동 갱신 계획: from(지금, 중계를 켠 때) 뒤 그 시간 끝까지 중 창(교육일 08:50~18:40) 안에서, 반마다 한 시각(무작위 순서), 시각끼리 gapMs 넘게.
 // 남은 시간이 모자라면(첫 시간 일부·08:50~09:00) 들어가는 만큼의 반만 무작위로 고릅니다(나머지는 다음 시간 계획에 들어감). 창 밖·교육일이 아니면 빈 계획.
 // random: 0~1 함수(시험은 고정값). 결과 {key, date, slots:[{classId, at(ms)}]}(시각 순).
-export function hourPlan({now=new Date(),classIds=CLASS_IDS,window=LIVE_WINDOW,random=Math.random,gapMs=LIVE_GAP_MS}={}){
+export function hourPlan({now=new Date(),classIds=RELAY_CLASS_IDS,window=LIVE_WINDOW,random=Math.random,gapMs=LIVE_GAP_MS}={}){
   const h=koreaHour(now),k=koreaClock(now),plan={key:h.key,date:k.date,slots:[]};
   if(!window.weekdays.includes(k.weekday)||!(window.trainingDay||isTrainingDay)(k.date))return plan;
   const at=hm=>Date.parse(`${k.date}T${hm}:00+09:00`),a=Math.max(h.start,at(window.start),now.getTime()),b=Math.min(h.start+LIVE_HOUR_MS,at(window.end)+60000);

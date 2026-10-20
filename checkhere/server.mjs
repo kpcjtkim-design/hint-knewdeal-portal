@@ -20,7 +20,7 @@ import {writeFileSync} from 'node:fs';
 import {createLinkStore} from './links.mjs';
 import {MASKED,MIN_CLAIM_SECONDS,hasMask,waitsForUnmask,unmaskReason} from './masking.mjs';
 import {startUnmask,enterCode,cancelUnmask} from './unmask.mjs';
-import {COHORT,CLASSES,CLASS_IDS,HOLIDAYS,LECTURE_NAME_RULE,BRIDGE_PORT,PERIOD_TEXT,classOk,validIso,inPeriod,lectureTag,trainingDays,firebaseReady} from './cohort-bridge.mjs';
+import {COHORT,CLASSES,CLASS_IDS,activeClassIds,HOLIDAYS,LECTURE_NAME_RULE,BRIDGE_PORT,PERIOD_TEXT,classOk,validIso,inPeriod,lectureTag,trainingDays,firebaseReady} from './cohort-bridge.mjs';
 import {createRosterStore,parseRoster,rosterKeys,manualFits} from './roster.mjs';
 import {createSetupStore,buildReport,reportView,reportCounts,confirmList,pairRow,unpairRow,exportText,SETUP_TEXT,ATTENDEE_ID} from './setup.mjs';
 const here=dirname(fileURLToPath(import.meta.url)),root=dirname(here);
@@ -136,15 +136,19 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=BRID
   // ---- 2기 처음 설치 모드(setup.mjs): 이 data에 강의 연결·학생 연결·확인 목록이 하나도 없으면 켭니다. 사람이 /setup에서 끄거나 16개 반이 모두 등록되면 꺼집니다 ----
   const setup=createSetupStore(db);
   if(setup.mode()===null)setup.setMode(!links.counts().links&&!db.prepare('SELECT 1 FROM lecture_links LIMIT 1').get()&&!db.prepare("SELECT 1 FROM places WHERE key LIKE 'lecture|%' LIMIT 1").get()&&!setup.confirmedAll().length);
-  const allRegistered=()=>CLASS_IDS.every(c=>!!setup.confirmed(c)?.registeredAt);
+  // 시험용 테스트반(cohort test)은 체크히어 강의가 없어 사람이 강의를 직접 연결했을 때만 처음 설치·전체 확인·전체 등록에 넣습니다.
+  const linkedByHand=c=>!!adapter.lectureLinks?.get?.(c)||!!db.prepare('SELECT 1 FROM lecture_links WHERE classId=?').get(String(c));
+  const ACTIVE=()=>activeClassIds(linkedByHand);
+  const allRegistered=()=>ACTIVE().every(c=>!!setup.confirmed(c)?.registeredAt);
   const setupOn=()=>setup.mode()===true&&!allRegistered();
   // 아직 확인하지 않은 반 수(해제 사유에 씀, 설치 모드일 때만)
-  const setupLeft=()=>setupOn()?CLASS_IDS.filter(c=>!setup.confirmed(c)).length:0;
+  const setupLeft=()=>setupOn()?ACTIVE().filter(c=>!setup.confirmed(c)).length:0;
   const lectureOf=c=>{const link=adapter.lectureLinks?.get?.(c)||null,preset=presetLecture(c);return link?{mode:link.source==='config'?'config':'manual',label:link.label,checked:!!link.lectureId}:adapter.lectureUrls?.has?.(c)?{mode:'rule'}:preset?{mode:'config',label:preset}:null;};
   // 반마다 확인 요약(수만, 이름 없음): 운영포털 실시간 화면의 등록 표와 이 PC 화면이 함께 씁니다.
   const setupSummary=()=>{
     const counts=roster.counts(),registry=new Map(setup.registry().map(r=>[r.classId,r]));
-    return CLASSES.map(c=>{
+    const active=new Set(ACTIVE());
+    return CLASSES.filter(c=>active.has(c.id)).map(c=>{
       const rep=setup.report(c.id),conf=setup.confirmed(c.id),reg=registry.get(c.id);
       return {classId:c.id,lecture:lectureOf(c.id)?.mode||null,roster:{count:counts[c.id]?.count||0,source:counts[c.id]?.source||null},
         check:rep?{date:rep.date,at:rep.at,...reportCounts(rep,roster.entries(c.id))}:null,
@@ -160,7 +164,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=BRID
       cohort:{label:COHORT.label,period:{start:COHORT.period.start,end:COHORT.period.end},holidays:HOLIDAYS,trainingDays:trainingDays().length,port,build:BUILD,lectureNameRule:LECTURE_NAME_RULE,firebaseReady:firebaseReady()},
       privacy:privacyState(m),masking:{header:m.header,remaining:m.remaining,reasonPreview:m.reasonPreview,unmasking:m.unmasking},
       jobs:[...jobs.values()].filter(j=>j.kind==='setup-check').slice(-3).reverse(),
-      classes:CLASSES.map(c=>{
+      classes:CLASSES.filter(c=>summary.has(c.id)).map(c=>{
         const s=summary.get(c.id),lecture=lectureOf(c.id),rep=setup.report(c.id),masked=adapter.rosterReport?.get?.(c.id)||null,cl=links.classLinks(c.id);
         return {...s,name:c.name,capacity:c.capacity,tag:lectureTag(c.id),lecture:lecture?{...lecture,linkedAt:linkedAt.get(c.id)||null}:null,
           links:{total:cl.length,plain:cl.filter(l=>l.source==='plain-read').length,roster:cl.filter(l=>String(l.source).startsWith('roster')).length},
@@ -540,7 +544,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=BRID
             }
             return send(res,200,{classes:list.map(d=>({classId:d.classId,count:d.students.length,updatedAt:d.updatedAt})),imported});
           }
-          const wanted=Array.isArray(input.classIds)&&input.classIds.length?input.classIds.map(String).filter(classOk):CLASS_IDS,results=[];
+          const wanted=Array.isArray(input.classIds)&&input.classIds.length?input.classIds.map(String).filter(classOk):ACTIVE(),results=[];
           for(const classId of wanted){
             const conf=setup.confirmed(classId);
             if(!conf){results.push({classId,status:'not-confirmed'});continue;}
@@ -560,7 +564,7 @@ export function createBridge({dataDir=join(here,'data'),collector=null,port=BRID
           // 반별 확인(사람이 해제한 동안): 고른 반들(없으면 아직 확인하지 않은 반)의 그날을 원문으로 한 번씩 읽습니다.
           if(url.pathname==='/api/setup/check'){
             if(busy||connecting)return send(res,409,{error:'진행 중인 작업이 있습니다. 끝난 뒤 다시 눌러 주세요.'});
-            const date=String(input.date||''),wanted=Array.isArray(input.classIds)&&input.classIds.length?[...new Set(input.classIds.map(String))]:CLASS_IDS.filter(c=>!setup.confirmed(c));
+            const date=String(input.date||''),wanted=Array.isArray(input.classIds)&&input.classIds.length?[...new Set(input.classIds.map(String))]:ACTIVE().filter(c=>!setup.confirmed(c));
             if(!validIso(date)||!collectable(date))throw Error(`날짜(2기 교육 기간 ${PERIOD_TEXT})를 확인해 주세요.`);
             if(!wanted.length||wanted.some(c=>!classOk(c)))throw Error('확인할 반을 골라 주세요.');
             const claim='start:'+randomUUID();busy=claim;

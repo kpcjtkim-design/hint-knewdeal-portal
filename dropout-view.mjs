@@ -1,4 +1,4 @@
-import {CLASS_COUNT,feature,FEATURE_LATER_TEXT} from './cohort.mjs';
+import {REAL_CLASS_COUNT as CLASS_COUNT,feature,FEATURE_LATER_TEXT} from './cohort.mjs';// 중도포기자 시트의 반별 탭은 공식 반 수(테스트반 없음)
 import {DROPOUT_SHEET_ID,DROPOUT_TAB,OPERATIONS_SHEET_ID,MAX_TOTAL_ABSENCE,readDropoutRows,classTabs,classAttendance,evaluateAll,verdictLabel,documentStatus,oxValue,parseContractCell,contractCellValue,CONTRACT_ITEMS,isPersonal,writeDropoutCell,verdictPlan,writeVerdictCells,AUTO_MARK} from './dropout-core.mjs';
 import {koreaToday,quoteSheet} from './attendance-beta-core.mjs';
 const GOOGLE='https://sheets.googleapis.com/v4/spreadsheets/';
