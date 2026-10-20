@@ -14,12 +14,16 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 // 담임의 b2DropoutSave는 '신청'만(사용자 2026-10-20 "담임 화면의 중도탈락은 보다 간단히 '신청' 개념임. 완벽한 시트 업무처리는 우리 관리자가 해야함"):
 // 새 줄 만들기(자기 반·담임 칸만, b2Args)와 자기가 신청하고 아직 관리자 확인 전인 줄 지우기(신청 취소, 먼저 그 반 목록을 읽어 teacherCancelError로 확인)만. 있는 줄 고치기는 거절합니다.
 const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
- 'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany','b2Schedule','b2ScheduleSave']);
+ 'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany','b2Schedule','b2ScheduleSave',
+ 'b2Officers','b2OfficerSave','b2OfficerEnd']);
 const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭에서 신청, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
 const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave']);
 // 중도탈락 탭에서 담임이 신청할 때 정하는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
 export const TEACHER_DROPOUT_FIELDS=['name','kind','reason','startDate','lastDate','note'];
+// 반 임원(반장·부반장·총무·앰버서더, 2026-10-20, 시트 '반 임원' 탭 이력 + 반정보 Q·R·S·V 현재): 담임(자기 반)과 관리자 모두 지정·교체(보궐)·끝내기를 합니다(ADMIN_ACTIONS 아님).
+// 담임은 반 번호를 무엇을 보내든 자기 반으로 바뀌고, 보내는 칸은 아래 것만 지나갑니다.
+export const OFFICER_FIELDS=['role','name','kind','start','reason','note'];
 // 담임 열림: cohort.json teacherAccess(개강 전 false). index.html 담임 로그인도 같은 값을 봅니다.
 export const ACCESS={teacher:cohort.TEACHER_ACCESS};
 // 담임 화면에 그대로 보이므로 오류는 한국어 문장으로 돌려줍니다.
@@ -105,6 +109,14 @@ export function b2Args(user,action,rest){
    }
    if(p.row!==undefined||p.was!==undefined)throw new Error('DROPOUT_REQUEST_ONLY');
    const q={cls:own(p.cls)};for(const k of TEACHER_DROPOUT_FIELDS)if(p[k]!==undefined)q[k]=p[k];
+   return [q];
+  }
+  // 반 임원: 목록은 담임이면 늘 자기 반(관리자는 고른 반이나 전체). 지정·교체·끝내기는 반 번호를 서버에서 확인해 붙이고 정해진 칸과 was(그사이 바뀜 확인)만 보냅니다.
+  if(action==='b2Officers'){const c=p.cls;return [admin&&(c===undefined||c===''||c==='all')?{}:{cls:own(c)}];}
+  if(action==='b2OfficerSave'||action==='b2OfficerEnd'){
+   const q={cls:own(p.cls)};for(const k of action==='b2OfficerEnd'?['role','end','reason']:OFFICER_FIELDS)if(p[k]!==undefined&&p[k]!==null)q[k]=String(p[k]);
+   if(p.was&&typeof p.was==='object')q.was={name:String(p.was.name??'')};
+   if(!q.role)throw new Error('BAD_REQUEST');
    return [q];
   }
   // 여러 명 상태(관리자만): 줄마다 반 번호를 확인합니다.

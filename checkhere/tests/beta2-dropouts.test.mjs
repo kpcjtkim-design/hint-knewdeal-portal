@@ -283,7 +283,7 @@ async function site(t,run,{email=ADMIN_EMAIL,page:path='/',clock='2026-12-10T10:
 }
 const openScreen=async page=>{
  await page.getByRole('button',{name:'출결',exact:true}).click();
- assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','반 현황','출결 현황','교육생 상태','중도탈락·수료','내려받기','체크히어 수집']);
+ assert.deepEqual(await page.locator('.admin-tabs .tab').allInnerTexts(),['출결대조','반 현황','출결 현황','교육생 상태','중도탈락·수료','반 임원','내려받기','체크히어 수집']);
  await page.getByRole('button',{name:'중도탈락·수료',exact:true}).click();
  await page.getByRole('heading',{name:'중도탈락·수료'}).waitFor();await page.locator('tr[data-row]').first().waitFor();
 };

@@ -17,7 +17,7 @@ export const TEACHER_TABS=[['today','오늘 할 일'],['attendance','출결'],['
 export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
 // 머리말 아래 한 줄 안내: 이 화면에서 무엇을 하는지(서류 발급·민원은 모듈 머리말 대신 이 줄이 설명합니다)
 const HINTS={dropout:'중도탈락·조기취업을 신청하고 처리 상태와 수료 여부를 확인합니다. 판정·서류·수료 처리는 운영팀이 합니다.',notify:'운영팀이 보낸 알림(서류 발급·민원 답글 등)을 봅니다. 누르면 그 화면으로 갑니다.',today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
- documents:'교육생에게 필요한 출석부·확인서를 신청합니다. 신청하면 운영팀에 바로 알림이 가고, 처리 상황은 아래 목록에서 봅니다.',voc:'수업·시설·출결 등 운영팀에 알릴 일을 접수하고 답글을 주고받습니다. 운영팀이 답하면 위에 알림이 뜹니다.',surveys:'교육생 만족도 설문 결과를 봅니다.',timetable:'우리 반 전체 시간표를 봅니다.',materials:'강의자료를 열어 봅니다.',links:'자주 쓰는 폴더·양식 바로가기입니다.',info:'반장·부반장·총무와 교육생 명부(중도탈락·조기취업)를 관리합니다.'};
+ documents:'교육생에게 필요한 출석부·확인서를 신청합니다. 신청하면 운영팀에 바로 알림이 가고, 처리 상황은 아래 목록에서 봅니다.',voc:'수업·시설·출결 등 운영팀에 알릴 일을 접수하고 답글을 주고받습니다. 운영팀이 답하면 위에 알림이 뜹니다.',surveys:'교육생 만족도 설문 결과를 봅니다.',timetable:'우리 반 전체 시간표를 봅니다.',materials:'강의자료를 열어 봅니다.',links:'자주 쓰는 폴더·양식 바로가기입니다.',info:'반장·부반장·총무·앰버서더(교체는 보궐로 기록)와 교육생 명부(중도탈락·조기취업)를 관리합니다.'};
 // 알림함(머리글 종): 탭 줄에는 없는 칸
 const NOTIFY_TAB=['notify','알림'];
 const BETA_PANES=new Set(['board','reason']),STATUS_VIEWS=new Set(['stats','evidence','disease']);
@@ -52,7 +52,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  const links=document.createElement('div');for(const e of following)if(![tasks,taskHead,notice,noticeHead].includes(e))links.append(e);
  panel('documents').innerHTML='<div data-slot="documents" id="t2Docs"></div>';
  for(const [k,subs] of Object.entries(TEACHER_SUBS))panel(k).innerHTML=subs.map(([s])=>`<div data-sub="${s}" hidden></div>`).join('');
- panel('info').innerHTML='<div data-slot="info"></div>';panel('notify').innerHTML='<div data-slot="notify"></div>';
+ panel('info').innerHTML='<div data-slot="officers"></div><div data-slot="info"></div>'; // 반 임원(beta2-officers.mjs, 2026-10-20) 위, teacher-beta.js 명부 아래panel('notify').innerHTML='<div data-slot="notify"></div>';
  wrap.querySelector('[data-sub="links"]').append(links);
 
  const works=[],loaded=new Set(),tries={};let main='',sub='',beta=null,betaWait=null,status=null,statusWait=null,disposed=false;
@@ -73,7 +73,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261020-st1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261020-of1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -95,6 +95,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   documents:['./beta2-docs.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
   dropout:['./beta2-dropouts.mjs?v=20261020-dr1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
   voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
+  officers:['./beta2-officers.mjs?v=20261020-of1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
   notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab);void go(tm,ts||'',{push:true});}})]
  };
  async function load(key,slot){
@@ -130,6 +131,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   if(!alive())return;
   [main,sub]=teacherRoute(m,s);paint();remember(push);
   const slot=slotOf(main,sub);slot.querySelector(':scope>.t2-fail')?.remove();
+  if(main==='info')void load('officers',panel('info').querySelector('[data-slot="officers"]'));
   try{
    if(betaTab())await showBeta(slot);
    else if(STATUS_VIEWS.has(sub))await showStatus(slot);

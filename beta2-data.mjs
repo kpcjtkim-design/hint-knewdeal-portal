@@ -4,8 +4,8 @@
 import {decodeBundle,ledgerKey} from './beta2-core.mjs';
 import {readAttendanceSummary} from './attendance-derived-store.mjs';
 
-const bundles=new Map(),schedules=new Map();
-export function forgetBeta2Cache(){bundles.clear();schedules.clear();}
+const bundles=new Map(),schedules=new Map(),officerLists=new Map();
+export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();}
 // 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
 // 민원·이슈 알림(beta2-admin.mjs·담임 화면)은 다른 화면이 방금 확인한 값을 그대로 써서 Apps Script 호출을 늘리지 않습니다.
 const revListeners=new Set();let lastRev={at:0,value:null};
@@ -52,6 +52,17 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   finally{schedules.clear();}
   return {count,changed,rev};
  }
+ // 반 임원(마스터시트 '반 임원' 탭 + 반정보 현재 임원, b2Officers {cls?}): 변경 번호(rev)가 같으면 다시 읽지 않습니다. 담임은 Vercel이 자기 반으로 고정합니다.
+ // 지정·교체(b2OfficerSave)·끝내기(b2OfficerEnd)는 담임(자기 반)·관리자 모두. 쓰고 나면 들고 있던 목록을 버립니다(실패해도: 그사이 바뀐 경우 새로 읽게).
+ async function officers(p={},{fresh=false,maxAge=20000}={}){
+  const q=p.cls&&p.cls!=='all'?{cls:String(p.cls)}:{},key=q.cls||'all',hit=officerLists.get(key);
+  if(hit&&!fresh){
+   if(Date.now()-hit.at<maxAge)return hit.data;
+   const r=await rev();if(r.rev===hit.data.rev){hit.at=Date.now();return hit.data;}
+  }
+  const data=await call('b2Officers',q);officerLists.set(key,{at:Date.now(),data});return data;
+ }
+ const officerWrite=async(action,p)=>{try{return await call(action,p);}finally{officerLists.clear();}};
  // 저장 결과를 들고 있는 묶음에 반영합니다(다시 읽지 않음).
  function patch(row,res){
   for(const {bundle:b} of bundles.values()){
@@ -83,7 +94,9 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   return ()=>{stopped=true;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  }
  return {
-  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,
+  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,officers,
+  officerSave:p=>officerWrite('b2OfficerSave',p),
+  officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),
   docs:p=>call('b2Docs',p||{}),
   docCreate:p=>call('b2DocCreate',p),

@@ -149,6 +149,12 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
   busy='';picked.clear();batchNote=fails.length?`${fails.length}건은 하지 못했습니다.\n${fails.join('\n')}`:'';
   toast(on?`${n}건 관리자 확인을 저장했습니다.`:`${n}건 확인을 풀었습니다.`);
   await refresh();
+  if(on&&n)void officerHint(list);
+ }
+ // 반 임원(반장·부반장·총무·앰버서더)이 중도탈락·조기취업으로 확인되면 보궐 필요를 알립니다(시트 b2Officers needs, 출결 › 반 임원에서 후임 지정, 2026-10-20).
+ async function officerHint(list){
+  try{const o=await client.officers?.({},{fresh:true}),hit=(o?.needs||[]).filter(x=>list.some(r=>String(r.cls)===String(x.cls)&&r.name===x.name));
+   if(hit.length&&life.alive())toast(`반 임원 보궐 필요: ${hit.map(x=>`${classLabel(x.cls)} ${x.role} ${x.name}`).join(', ')} · 출결 › 반 임원에서 후임을 지정해 주세요.`);}catch{}
  }
  // 수료 처리·수료 취소(명부 상태 여러 명, b2RosterStatusMany). 반마다 나눠 보냅니다.
  async function setCompleted(list,on){

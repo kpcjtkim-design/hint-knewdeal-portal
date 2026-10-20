@@ -201,15 +201,15 @@ export function mountTeacherBeta(el, OPT) {
   }
 
   function vInfo(){
-    const d=S.d,o=d.officer||{};
+    const d=S.d;
     // 2026-10-19: 제목·안내를 짧게, 줄마다 저장 단추를 누르기 쉬운 크기로(.ghost), 명부가 비면 한 줄 안내
-    let h='<div class="card"><div class="sec">반 임원</div><div class="form"><label>반장<input class="in" id="o_l" value="'+esc(o.leader)+'"></label><label>부반장<input class="in" id="o_s" value="'+esc(o.sub)+'"></label><label>총무<input class="in" id="o_t" value="'+esc(o.treasurer)+'"></label><label class="wide">비고 (임원 변경 등)<input class="in" id="o_n" value="'+esc(o.note)+'"></label><button class="btn" id="o_save">임원 저장</button></div></div>';
+    // 반 임원(반장·부반장·총무·앰버서더, 최초·보궐 이력)은 2026-10-20부터 우리 반 탭 맨 위의 beta2-officers.mjs(b2OfficerSave)가 다룹니다. 예전 portalSaveOfficer 칸은 뺐습니다.
+    let h='';
     // 교육생 명부는 보기만(사용자 2026-10-20): 중도탈락·조기취업은 출결 › 중도탈락 탭(beta2-dropouts.mjs, 시트 중도탈락 탭)에서 신청하고 처리는 운영팀이 합니다.
     // 담임이 여기서 상태를 바로 바꾸던 portalSetStatus는 쓰지 않습니다(api/teacher-beta.js가 담임에게는 막음).
     h+='<div class="card"><div class="sec">교육생 명부 ('+d.kids.length+'명)</div><div class="note" style="margin-bottom:8px">중도탈락·조기취업한 학생은 「출결 › 중도탈락」에서 신청해 주세요. 신청하면 상태가 바뀌고 그 날짜 다음 교육일부터 출결판과 총원에서 빠지며, 판정·수료 처리는 운영팀이 합니다.</div>'+(OPT.onTab?'<button class="btn" id="goDropout" style="margin-bottom:10px">중도탈락·조기취업 신청하러 가기 →</button>':'')+'<div style="overflow-x:auto"><table class="list"><thead><tr><th>이름</th><th>상태</th><th>중도탈락·조기취업일</th><th></th></tr></thead><tbody>'+d.kids.map(k=>{const tag=k.status!=='재학'&&k.off?(k.off>d.mainDay?'<span style="color:var(--orange);font-weight:700">예정</span>':'<span style="color:var(--red);font-weight:700">적용</span>'):'';return '<tr><td>'+esc(k.name)+'</td><td>'+esc(k.status||'재학')+'</td><td>'+esc(k.status!=='재학'?k.off:'')+'</td><td>'+tag+'</td></tr>';}).join('')+(d.kids.length?'':'<tr><td colspan="4" class="empty">명부에 교육생이 없습니다. 운영팀에 알려 주세요.</td></tr>')+'</tbody></table></div></div>';
     $('#v').innerHTML=h;
     const gd=$('#goDropout');if(gd)gd.onclick=()=>OPT.onTab('dropout');
-    $('#o_save').onclick=async()=>{try{await run('portalSaveOfficer',S.cls,S.pin,{leader:$('#o_l').value,sub:$('#o_s').value,treasurer:$('#o_t').value,note:$('#o_n').value});toast('저장했습니다');}catch(e){toast(e.message);}};
   }
   login();
   return { reload: () => reload(true), setClass: c => { OPT.cls = c; S.tab = OPT.tab || 'today'; S.sel = null; login(); },
