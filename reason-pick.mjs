@@ -1,7 +1,8 @@
 // 사유 칸 공용 도우미: 관리자 출결대조(beta2-ledger.mjs)와 담임 출결판(teacher-beta.js)이 같은 드롭다운·경고를 씁니다
 // (사용자 2026-10-20 '담임화면에서도 사유 부분 드롭다운은 관리자 화면 급으로 동일하게 해주기. 기본적인 경고 사항도 바로 캐치 가능하게').
 // 목록·판정은 attendance-reason-catalog.mjs(settings/reasonCatalog가 있으면 그 목록)를 그대로 쓰고, 여기서는 칸의 HTML·고른 값 → 저장 글·경고 글만 만듭니다.
-// 칸 모양: 사유 드롭다운 하나(data-inline="rmain") + 종류가 있는 분류는 바로 옆 종류 드롭다운(rsub) + 종류 기타면 종류 직접 입력(rapt, data-kind) + '기타'면 사유 직접 입력(reason).
+// 칸 모양: 사유 드롭다운 하나(data-inline="rmain") + 옆 목록이 있는 분류(인적성·자격증 종류, 세부가 둘 이상인 병원·경조사·공가·예비군·교통·취업활동·개인사정)는
+// 바로 옆 종류 드롭다운(rsub) + 옆 칸 기타면 직접 입력(rapt, data-kind, '분류(글)') + '기타'면 사유 직접 입력(reason).
 import {reasonPick,reasonOptions,subOptions,composeReason,tidyReason,typeWarning,reasonChecks,splitReason,STANDARD,OTHER,isJobFair,extraEvidence,EXTRA_DOC} from './attendance-reason-catalog.mjs';
 import {isTestClass} from './cohort.mjs';
 

@@ -5,6 +5,9 @@
 // Firestore settings/reasonCatalog(관리자 「공지·설정 › 사유 목록」에서 저장)가 있으면 reason-catalog-store.mjs가 읽어 setReasonCatalog로 바꿉니다(모양이 틀리면 기본값 + 경고).
 // 해석기(체크히어 메모 분류 reasonCategoryOf, 질병 판정 isDiseaseText, 기간 비고 periodCategoryOf, 배지 분류 reasonKind)도 같은 데이터의 '찾는 말'로 봅니다.
 // 숨긴 분류·세부는 드롭다운에만 안 보이고 옛 기록 해석에는 그대로 씁니다(그래서 지우기보다 숨기기). 화면 없는 순수 함수 + 드롭다운 <option> 글만 둡니다.
+// 옆 종류 드롭다운 일반화(사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운 시키는게 낫네? 이런거 가능한건 다 그렇게'): 보이는 세부가 둘 이상인 분류는 인적성·자격증처럼
+// 사유 드롭다운에 분류 하나(값 = 분류 키)만 두고 바로 옆 종류 드롭다운에서 세부를 고릅니다. 저장 글은 그대로 세부의 저장 글('병원(치과)'·'부친상'·'교통사정'),
+// 분류만 고르면 분류 키('경조사'), 옆 칸 '기타'는 '분류 키(직접 입력)'. 세부가 하나뿐인 분류(면접·취업박람회)는 사유 드롭다운에 그 글 하나. 데이터 모양은 그대로(cats[].subs = 옆 목록).
 import {classInfo} from './cohort.mjs';
 export const RECOGNIZED=['인정출석','인정지각','인정조퇴','인정외출'],PLAIN=['지각','조퇴','외출','결석'];
 export const OTHER='기타'; // 세부 '기타(직접 입력)' 값
@@ -142,7 +145,8 @@ function compile(data){
   const subs=(c.subs||[]).map(s=>({...s,label:s.label||s.text}));
   // 인정 안 되는 세부(일반건강검진)의 글은 분류 찾는 말에서 뺍니다(그 글 안의 '검진'으로 병원이 되지 않게).
   const blockedWords=subs.filter(s=>s.recognized===false).flatMap(s=>s.words?.length?s.words:[s.text]);
-  return {...c,memo,kind:c.kind||'',extra:c.extra||'',evidence:c.evidence||'',types:c.recognized?[...RECOGNIZED,...PLAIN]:PLAIN,subs,
+  const side=!!c.kind||subs.filter(s=>!s.hidden).length>1; // 옆 종류 드롭다운을 쓰는 분류(종류 목록 또는 보이는 세부 둘 이상)
+  return {...c,memo,kind:c.kind||'',side,extra:c.extra||'',evidence:c.evidence||'',types:c.recognized?[...RECOGNIZED,...PLAIN]:PLAIN,subs,
    ruled:!!c.kind&&(kinds[c.kind]?.items||[]).some(i=>i.rules),except:[...(c.except||[]),...blockedWords]};
  });
  // 찾기 항목: 분류 하나 + 따로 정한 세부(찾는 말·체크히어 분류·인정·질병이 다른 것)
@@ -156,7 +160,7 @@ function compile(data){
   }
  });
  const visible=cats.filter(c=>!c.hidden);
- const standard=new Set(visible.flatMap(c=>c.kind?[c.key]:c.subs.filter(s=>!s.hidden).map(s=>s.text)));
+ const standard=new Set(visible.flatMap(c=>c.kind?[c.key]:[...(c.side?[c.key]:[]),...c.subs.filter(s=>!s.hidden).map(s=>s.text)]));
  const extraCat=cats.find(c=>c.extra)||null;
  return {data,kinds,cats,visible,entries,standard,extraCat,courses:data.courses,courseMap:data.courseMap||{},defaultCourse:data.defaultCourse};
 }
@@ -211,13 +215,15 @@ export function composeReason(key,value='',custom=''){
  if(c.kind){const t=v===OTHER?x:v;return t?`${c.key}(${t})`:c.key;}
  if(v===OTHER)return x?`${c.key}(${x})`:c.key;
  const list=c.subs.filter(s=>!s.hidden);
- return list.some(s=>s.text===v)?v:(list[0]?.text||c.key);
+ if(list.some(s=>s.text===v))return v;
+ return c.side?c.key:(list[0]?.text||c.key); // 옆 목록 분류는 세부를 고르기 전이면 분류 키('경조사')
 }
 // 저장된 글 → 드롭다운 위치 {cat, sub, custom}. 표준 글이 아니면 cat ''(직접 입력, 글은 그대로 고칠 수 있음).
 // 목록에서 빠지거나 숨긴 옛 글('병결', '시험(자격증)')은 직접 입력, 분류는 있지만 세부가 빠진 글('면접(1차)', '예비군(동원훈련)')은 그 분류의 기타.
 export function splitReason(text){
  const s=clean(text);if(!s)return {cat:'',sub:'',custom:''};
  for(const c of C.visible){const hit=c.subs.find(x=>x.text===s&&!x.hidden);if(hit)return {cat:c.key,sub:hit.text,custom:''};}
+ for(const c of C.visible)if(c.side&&!c.kind&&c.key===s)return {cat:c.key,sub:'',custom:''}; // 옆 목록 분류의 키만('경조사')
  const k=kindText(s);
  if(k&&!k.cat.hidden)return kindKnown(k.cat,k.value)?{cat:k.key,sub:k.value,custom:''}:k.value?{cat:k.key,sub:OTHER,custom:k.value}:{cat:k.key,sub:'',custom:''};
  const o=s.match(/^([^()]+?)\s*\(\s*([^()]+?)\s*\)$/),c=o&&catOf(o[1]);
@@ -305,22 +311,35 @@ export function subOptions(key,selected='',{type='',cls=''}={}){
  const lock=anyRecognized(type),col=c.ruled?certColumn(cls):'';
  const list=c.kind?kindItems(c.kind).map(i=>{const rule=i.rules?.[col]||'';return {text:i.value,label:rule==='X'?`${NOT_RECOGNIZED} ${i.label}`:rule==='△'?`${i.label} ${NEEDS_CHECK}`:i.label,off:rule==='X',title:i.note||''};})
   :c.subs.filter(s=>!s.hidden||s.text===selected).map(s=>({text:s.text,label:subRecognized(c,s)?s.label:`${NOT_RECOGNIZED} ${s.label}`,off:!!c.recognized&&s.recognized===false,title:''}));
- return (c.kind?`<option value="" ${selected?'':'selected'}>종류 고르기</option>`:'')+list.map(s=>`<option value="${esc(s.text)}" ${s.text===selected?'selected':''}${lock&&s.off&&s.text!==selected?' disabled':''}${s.title?` title="${esc(s.title)}"`:''}>${esc(s.label)}</option>`).join('')+`<option value="${OTHER}" ${selected===OTHER?'selected':''}>기타 (직접 입력)</option>`;
+ return (c.side?`<option value="" ${selected?'':'selected'}>종류 고르기</option>`:'')+list.map(s=>`<option value="${esc(s.text)}" ${s.text===selected?'selected':''}${lock&&s.off&&s.text!==selected?' disabled':''}${s.title?` title="${esc(s.title)}"`:''}>${esc(s.label)}</option>`).join('')+`<option value="${OTHER}" ${selected===OTHER?'selected':''}>기타 (직접 입력)</option>`;
 }
-// 글 → 출결대조 드롭다운 상태 {main:''|표준 글|종류 분류('인적성'·'자격증')|'기타', kind:옆 종류 드롭다운 분류(''이면 없음), apt:종류 값('', 'HMAT'…, '기타'), input:직접 입력 칸을 보일지, custom:종류 기타 글}.
-// custom=true면 '기타'를 고른 상태를 지킵니다.
+// 글 → 사유 칸 상태 {main:''|표준 글|옆 목록 분류 키|'기타', kind:옆 종류 드롭다운 분류(''이면 없음), apt:옆 칸 값('', 종류 값·세부 저장 글, '기타'), input:직접 입력 칸을 보일지, custom:옆 칸 기타 글}.
+// custom=true면 '기타'를 고른 상태를 지킵니다. 숨긴 세부의 옛 글은 '분류(…)'이면 그 분류 + 옆 칸 기타, 아니면 기타(직접 입력)로 글 그대로.
 export function reasonPick(text,{custom=false}={}){
- const t=clean(text),k=kindText(t);
- if(k&&!k.cat.hidden&&!custom){const known=kindKnown(k.cat,k.value);return known?{main:k.key,kind:k.key,apt:k.value,input:false,custom:''}:k.paren?{main:k.key,kind:k.key,apt:OTHER,input:true,custom:k.value}:{main:k.key,kind:k.key,apt:'',input:false,custom:''};}
- if(C.standard.has(t)&&!custom)return {main:t,kind:'',apt:'',input:false,custom:''};
- return t||custom?{main:OTHER,kind:'',apt:'',input:true,custom:''}:{main:'',kind:'',apt:'',input:false,custom:''};
+ const t=clean(text),none={main:'',kind:'',apt:'',input:false,custom:''},free={main:OTHER,kind:'',apt:'',input:true,custom:''};
+ if(custom)return free;
+ const k=kindText(t);
+ if(k&&!k.cat.hidden){const known=kindKnown(k.cat,k.value);return known?{main:k.key,kind:k.key,apt:k.value,input:false,custom:''}:k.paren?{main:k.key,kind:k.key,apt:OTHER,input:true,custom:k.value}:{main:k.key,kind:k.key,apt:'',input:false,custom:''};}
+ for(const c of C.visible){
+  if(!c.side||c.kind)continue;
+  const hit=c.subs.find(s=>s.text===t&&!s.hidden);if(hit)return {main:c.key,kind:c.key,apt:hit.text,input:false,custom:''};
+  if(t===c.key)return {main:c.key,kind:c.key,apt:'',input:false,custom:''};
+  const m=t.match(/^([^()]+?)\s*\(\s*([^()]*?)\s*\)$/);if(m&&m[1]===c.key)return {main:c.key,kind:c.key,apt:OTHER,input:true,custom:m[2]};
+ }
+ if(C.standard.has(t))return {main:t,kind:'',apt:'',input:false,custom:''};
+ return t?free:none;
 }
-// 출결대조 사유 드롭다운 <option>: 분류(<optgroup>)마다 표준 글, 인정 안 되는 분류·세부는 '(인정 안 됨) 글', 끝에 '기타 (직접 입력)'.
-// 인정 출결이면 막힌 세부(일반건강검진)는 고를 수 없습니다(이미 저장된 값이면 그대로 보임). catalog를 주면 그 목록으로 그립니다(관리자 미리보기).
+// 사유 드롭다운 <option>: 분류마다 하나(옆 목록 분류는 값 = 분류 키, 이름 = 분류 이름 · 세부가 하나뿐이면 값 = 그 저장 글), 인정 안 되는 분류·세부는 '(인정 안 됨) ', 끝에 '기타 (직접 입력)'.
+// 인정 출결이면 막힌 세부(일반건강검진 등)는 옆 칸에서 고를 수 없습니다(세부가 하나뿐인 분류면 여기서 막음, 이미 저장된 값이면 그대로 보임). catalog를 주면 그 목록으로 그립니다(관리자 미리보기).
 export function reasonOptions(main='',{type='',blank='사유 고르기',catalog=null}={}){
  if(catalog)return withReasonCatalog(catalog,()=>reasonOptions(main,{type,blank}));
  const lock=anyRecognized(type);
- return `<option value="" ${main?'':'selected'}>${esc(blank)}</option>`+C.visible.map(c=>{const list=c.kind?[{text:c.key}]:c.subs.filter(s=>!s.hidden);if(!list.length)return '';return `<optgroup label="${esc(shown(c))}">${list.map(s=>{const ok=subRecognized(c,s),off=lock&&!!c.recognized&&s.recognized===false&&s.text!==main;return `<option value="${esc(s.text)}" ${s.text===main?'selected':''}${off?' disabled':''}>${ok?'':`${NOT_RECOGNIZED} `}${esc(s.text)}</option>`;}).join('')}</optgroup>`;}).join('')+`<option value="${OTHER}" ${main===OTHER?'selected':''}>기타 (직접 입력)</option>`;
+ return `<option value="" ${main?'':'selected'}>${esc(blank)}</option>`+C.visible.map(c=>{
+  if(c.side)return `<option value="${esc(c.key)}" ${c.key===main?'selected':''}>${esc(shown(c))}</option>`;
+  const s=c.subs.find(x=>!x.hidden);if(!s)return '';
+  const ok=subRecognized(c,s),off=lock&&!!c.recognized&&s.recognized===false&&s.text!==main;
+  return `<option value="${esc(s.text)}" ${s.text===main?'selected':''}${off?' disabled':''}>${ok?'':`${NOT_RECOGNIZED} `}${esc(c.label)}</option>`;
+ }).join('')+`<option value="${OTHER}" ${main===OTHER?'selected':''}>기타 (직접 입력)</option>`;
 }
 // 인정 출결인데 인정 분류가 아니면(교통·개인사정·취업활동) 짧은 안내
 export const typeWarning=(type,key)=>{const c=catOf(key);return c&&recognizedType(type)&&!c.recognized?`${c.label}은 보통 인정 사유가 아닙니다`:'';};

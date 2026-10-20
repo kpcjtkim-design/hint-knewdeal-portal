@@ -78,7 +78,8 @@ test('teacher 사유 = 관리자와 같은 드롭다운 하나: 인적성은 바
   assert.equal(await main(p).inputValue(),'인적성');assert.equal(await sub(p).inputValue(),'HMAT');assert.equal(await free(p).count(),0);
   assert.equal(await main(p).getAttribute('aria-label'),'고다원 사유');assert.equal(await sub(p).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(p).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
-  assert.deepEqual(await main(p).locator('optgroup').evaluateAll(g=>g.map(x=>x.label)),['병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정']);
+  // 사유 드롭다운은 분류마다 하나(세부가 둘 이상이면 옆 종류 드롭다운, 사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운')
+  assert.deepEqual(await main(p).locator('option').allTextContents(),['사유 (필수)','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);
   const a=await main(p).boundingBox(),b=await sub(p).boundingBox();assert.equal(Math.round(a.y),Math.round(b.y),'the type box sits right beside');assert.ok(b.x>a.x);
   assert.equal(await mm.textContent(),'(인정출석)인적성(HMAT)_담임:김지아');
   // 종류를 바꾸면 메모 추천이 바로 바뀌고 0.7초 뒤 저장
@@ -88,22 +89,26 @@ test('teacher 사유 = 관리자와 같은 드롭다운 하나: 인적성은 바
   await sub(p).selectOption('기타');assert.equal(await shadowFocus(p),'rapt');
   await p.keyboard.type('DCAT');assert.equal(await mm.textContent(),'(인정출석)인적성(DCAT)_담임:김지아');await p.keyboard.press('Enter');
   assert.equal((await saved(p,posts,2)).r,'인적성(DCAT)');assert.equal(await sub(p).inputValue(),'기타');assert.equal(await apt(p).inputValue(),'DCAT');
-  // 표준 글 하나를 고르면 옆 칸이 사라짐
-  await main(p).selectOption('병원(치과)');assert.equal(await sub(p).count(),0);assert.equal(await mm.textContent(),'(인정출석)병원(치과)_담임:김지아');
+  // 병원·질병 → 옆 종류(병원 진료가 먼저) → 치과
+  await main(p).selectOption('병원');assert.equal(await sub(p).inputValue(),'병원');assert.equal(await shadowFocus(p),'rsub');assert.equal(await sub(p).getAttribute('aria-label'),'고다원 병원 종류');
+  await sub(p).selectOption('병원(치과)');assert.equal(await mm.textContent(),'(인정출석)병원(치과)_담임:김지아');
   assert.equal((await saved(p,posts,3)).r,'병원(치과)');
+  // 세부가 하나뿐인 분류(면접)는 옆 칸 없음
+  await main(p).selectOption('면접');assert.equal(await sub(p).count(),0);
+  assert.equal((await saved(p,posts,4)).r,'면접');
   // 기타 → 직접 입력 칸(표준 글이던 칸은 비움, 고르기만으로는 저장 안 함), 쓰고 Enter
   await main(p).selectOption('기타');assert.equal(await free(p).inputValue(),'');assert.equal(await shadowFocus(p),'reason');
   await p.keyboard.type('가족 돌봄');await p.keyboard.press('Enter');
-  assert.equal((await saved(p,posts,4)).r,'가족 돌봄');assert.equal(saves(posts).length,4,'picking 기타 alone saved nothing');assert.equal(await main(p).inputValue(),'기타');
+  assert.equal((await saved(p,posts,5)).r,'가족 돌봄');assert.equal(saves(posts).length,5,'picking 기타 alone saved nothing');assert.equal(await main(p).inputValue(),'기타');
   // 빠른 사유는 목록 값으로 드롭다운을 맞추고, 인정 출결에 인정 분류가 아니면 바로 안내
-  await p.locator('[data-q="교통사정"]').click();assert.equal(await main(p).inputValue(),'교통사정');assert.equal(await free(p).count(),0);
+  await p.locator('[data-q="교통사정"]').click();assert.equal(await main(p).inputValue(),'교통');assert.equal(await sub(p).inputValue(),'교통사정');assert.equal(await free(p).count(),0);
   assert.match(await p.locator('#rn').innerText(),/교통은 보통 인정 사유가 아닙니다/);
-  assert.equal((await saved(p,posts,5)).r,'교통사정');
+  assert.equal((await saved(p,posts,6)).r,'교통사정');
   // 해당없음 = 사유 비우기 → 인정 출결은 사유가 필요하다는 경고가 바로
   await p.locator('[data-q="해당없음"]').click();assert.equal(await main(p).inputValue(),'');
   assert.equal(await p.locator('#rn [data-reason-check="required"]').textContent(),'인정 출결은 사유가 필요합니다');
   assert.equal(await mm.textContent(),'(인정출석)사유_담임:김지아');
-  assert.equal((await saved(p,posts,6)).r,'');
+  assert.equal((await saved(p,posts,7)).r,'');
   assert.ok(!(await p.locator('[data-q]').allTextContents()).includes('병결'),'quick reasons no longer offer 병결');
   assert.equal(await p.evaluate(()=>window.notes.length),0,'no extra-evidence notice for other reasons');
  });
@@ -213,11 +218,9 @@ test('출결대조 사유 칸 = 드롭다운 하나(240px): 지금까지 쓴 사
   assert.equal(await main(go).inputValue(),'인적성');assert.equal(await sub(go).inputValue(),'HMAT');assert.equal(await free(go).count(),0);
   assert.equal(await sub(go).getAttribute('aria-label'),'고다원 인적성 종류');
   assert.deepEqual(await sub(go).locator('option').allTextContents(),['종류 고르기','HMAT(현대차그룹)','GSAT(삼성)','SKCT(SK)','LG Way Fit','CJ CAT','L-TAB(롯데)','PAT(포스코)','KT','NCS(공기업)','AI역량검사','기타 (직접 입력)']);
-  const groups=await main(go).locator('optgroup').evaluateAll(g=>g.map(x=>x.label));
-  assert.deepEqual(groups,['병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정']);
-  const values=await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value));
-  for(const v of ['병결','면접(최종)','시험(자격증)','취업박람회(현장 면접)'])assert.ok(!values.includes(v),`${v} is no longer listed`);
-  for(const v of ['병원','병원(치과)','병원(진료 위한 검사)','일반건강검진','면접','인적성','취업박람회','예비군','민방위','자격증','조모상','공가(법원 출석)','교통사정','개인일정','기타'])assert.ok(values.includes(v),v);
+  // 사유 드롭다운은 분류마다 하나(세부가 둘 이상인 분류는 옆 종류 드롭다운, 사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운')
+  assert.deepEqual(await main(go).locator('option').allTextContents(),['사유 (필수)','병원·질병','면접','인적성','취업박람회','예비군·민방위','자격증 시험','경조사','공가(관공서·법원)','(인정 안 됨) 교통','(인정 안 됨) 취업활동','(인정 안 됨) 개인사정','기타 (직접 입력)']);assert.equal(await main(go).locator('optgroup').count(),0);
+  assert.deepEqual(await main(go).locator('option').evaluateAll(o=>o.map(x=>x.value)),['','병원','면접','인적성','취업박람회','예비군','자격증','경조사','공가','교통','취업활동','개인사정','기타']);
   // 240px 안, 종류 드롭다운은 같은 줄 바로 옆
   const box=await go.locator('.b2-rpick').boundingBox(),a=await main(go).boundingBox(),b=await sub(go).boundingBox();
   assert.ok(box.width<=240.5,`width ${box.width}`);assert.equal(Math.round(a.y),Math.round(b.y));assert.ok(b.x>a.x);
@@ -336,12 +339,15 @@ test('출결대조 자격증: 옆 종류 드롭다운, X(어학시험·지게차
   // 사유 칸 240px 안에 사유 + 종류, 그 옆 증빙 드롭다운(110px)
   const box=await go.locator('.b2-rpick').boundingBox(),evb=await go.locator('select[data-inline="ev"]').boundingBox();
   assert.ok(box.width<=240.5,`width ${box.width}`);assert.ok(Math.abs(evb.width-110)<1,`ev ${evb.width}`);assert.ok(evb.x>=box.x+box.width-1);
-  // 옛 '병원(검진)'은 기타(직접 입력)로 보이고 '검진 종류 확인 필요' 주의
-  assert.equal(await main(dong).inputValue(),'기타');assert.match(await dong.locator('[data-reason-check="warn"]').textContent(),/^검진 종류 확인 필요/);
-  // 새 기록: 인정출석 → 자격증 → 종류 칸(포커스), X는 막힘, △는 '(관련성 확인 필요)'과 주의 배지
+  // 옛 '병원(검진)'은 병원·질병 + 옆 칸 기타(검진)로 보이고 '검진 종류 확인 필요' 주의
+  assert.equal(await main(dong).inputValue(),'병원');assert.equal(await sub(dong).inputValue(),'기타');assert.equal(await dong.locator('input[data-inline="rapt"]').inputValue(),'검진');
+  assert.match(await dong.locator('[data-reason-check="warn"]').textContent(),/^검진 종류 확인 필요/);
+  // 새 기록: 인정출석 → 병원·질병 → 옆 칸에서 일반건강검진은 막힘(세부 단위)
   await park.locator('[data-inline="type"]').selectOption('인정출석');
-  assert.equal(await main(park).locator('option[value="일반건강검진"]').isDisabled(),true,'일반건강검진 cannot be picked for 인정 출결');
-  assert.equal(await main(park).locator('option[value="일반건강검진"]').textContent(),'(인정 안 됨) 일반건강검진');
+  await main(park).selectOption('병원');assert.equal(await sub(park).evaluate(e=>e===document.activeElement),true,'the type box takes focus');
+  assert.equal(await sub(park).locator('option[value="일반건강검진"]').isDisabled(),true,'일반건강검진 cannot be picked for 인정 출결');
+  assert.equal(await sub(park).locator('option[value="일반건강검진"]').textContent(),'(인정 안 됨) 일반건강검진');
+  // 자격증 → 종류 칸(포커스), X는 막힘, △는 '(관련성 확인 필요)'과 주의 배지
   await main(park).selectOption('자격증');
   assert.equal(await sub(park).evaluate(e=>e===document.activeElement),true,'the type box takes focus');
   assert.equal(await sub(park).locator('option[value="어학시험"]').isDisabled(),true);assert.equal(await sub(park).locator('option[value="어학시험"]').textContent(),'(인정 안 됨) 어학시험(토익, 오픽 등)');
@@ -378,13 +384,48 @@ test('담임 사유 자격증: 사유 드롭다운 자격증 → 바로 옆 종�
   assert.equal(await p.locator('#rn [data-reason-check="warn"]').textContent(),'정보처리기사 · 관련성 확인 필요(임베디드AI 과정)');
   // 자격증을 다시 고르면 옆 종류 칸으로 초점
   await main(p).selectOption('면접');await main(p).selectOption('자격증');assert.equal(await shadowFocus(p),'rsub');
-  // 일반건강검진은 인정 출결에서 막힘, 직접 쓰면 빨간 경고
-  assert.equal(await main(p).locator('option[value="일반건강검진"]').isDisabled(),true);assert.equal(await main(p).locator('option[value="일반건강검진"]').textContent(),'(인정 안 됨) 일반건강검진');
+  // 일반건강검진은 인정 출결에서 옆 칸에서 막힘(세부 단위), 직접 쓰면 빨간 경고
+  await main(p).selectOption('병원');assert.equal(await sub(p).locator('option[value="일반건강검진"]').isDisabled(),true);assert.equal(await sub(p).locator('option[value="일반건강검진"]').textContent(),'(인정 안 됨) 일반건강검진');
+  assert.equal(await sub(p).locator('option[value="병원(진료 위한 검사)"]').textContent(),'진료 위한 검사');
   await main(p).selectOption('기타');await free(p).fill('일반건강검진');
   assert.equal(await p.locator('#rn [data-reason-check="error"]').textContent(),'(인정 안 됨) 일반건강검진 · 진료 위한 검사만 인정됩니다');
   assert.equal(await p.locator('#rn [data-reason-check="error"]').evaluate(e=>e.classList.contains('b2-err')),true,'red');
   // 결석이면 막지 않음
-  await p.locator('[data-t="결석"]').click();await p.waitForTimeout(300);
-  assert.equal(await main(p).locator('option[value="일반건강검진"]').isDisabled(),false);assert.equal(await p.locator('[data-reason-check]').count(),0);
+  await p.locator('[data-t="결석"]').click();await p.waitForTimeout(300);assert.equal(await p.locator('[data-reason-check]').count(),0);
+  await main(p).selectOption('병원');assert.equal(await sub(p).locator('option[value="일반건강검진"]').isDisabled(),false);
  },{portal});
+});
+
+// 옆 종류 드롭다운 일반화(사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운 시키는게 낫네? 이런거 가능한건 다 그렇게 해줘. 담임화면에도 똑같이 반영')
+test('경조사·공가·예비군·교통·취업활동·개인사정도 분류 하나 + 옆 종류(담임 출결판·출결대조 같음): 저장 글은 그대로(부친상·공가(투표)), 기타는 분류(직접 입력)',async()=>{
+ const portal={...PORTAL,recs:{...PORTAL.recs,'고다원|2026-11-05':{type:'인정출석',inT:'',outT:'',oa:'',ob:'',r:'부친상',ev:'',evr:''}}};
+ await page('/teacher.html',async(p,posts)=>{
+  const {main,sub,apt}=T;
+  await p.locator('select[data-n="고다원"][data-d="2026-11-05"]').focus();await main(p).waitFor();
+  assert.equal(await main(p).inputValue(),'경조사');assert.equal(await sub(p).inputValue(),'부친상');assert.equal(await sub(p).getAttribute('aria-label'),'고다원 경조사 종류');
+  assert.deepEqual(await sub(p).locator('option').allTextContents(),['종류 고르기','부친상','모친상','조부상','조모상','외조부상','외조모상','본인 결혼','형제자매 결혼','배우자 출산','기타 (직접 입력)']);
+  assert.equal(await p.locator('#mm').textContent(),'(인정출석)부친상_담임:김지아');
+  await sub(p).selectOption('경조사(본인 결혼)');assert.equal(await p.locator('#mm').textContent(),'(인정출석)경조사(본인 결혼)_담임:김지아');
+  assert.equal((await saved(p,posts,1)).r,'경조사(본인 결혼)');
+  await sub(p).selectOption('기타');assert.equal(await shadowFocus(p),'rapt');await p.keyboard.type('조카 결혼');await p.keyboard.press('Enter');
+  assert.equal((await saved(p,posts,2)).r,'경조사(조카 결혼)');assert.equal(await sub(p).inputValue(),'기타');
+  await main(p).selectOption('공가');assert.equal(await sub(p).inputValue(),'');assert.equal(await shadowFocus(p),'rsub');
+  await sub(p).selectOption('공가(투표)');assert.equal((await saved(p,posts,3)).r,'공가(투표)');
+  await main(p).selectOption('예비군');assert.deepEqual(await sub(p).locator('option').allTextContents(),['종류 고르기','예비군 훈련','민방위 교육','기타 (직접 입력)']);
+  await sub(p).selectOption('민방위');assert.equal((await saved(p,posts,4)).r,'민방위');
+  // 인정 안 되는 분류도 옆 칸, 고르는 즉시 안내
+  await main(p).selectOption('취업활동');assert.match(await p.locator('#rn').innerText(),/취업활동은 보통 인정 사유가 아닙니다/);
+  await sub(p).selectOption('취업활동(채용설명회)');assert.equal(await sub(p).locator('option:checked').textContent(),'(인정 안 됨) 채용설명회');
+  assert.equal((await saved(p,posts,5)).r,'취업활동(채용설명회)');
+ },{portal});
+ await page('/ledger.html',async(p,posts)=>{
+  const go=p.locator('tbody[data-student="고다원"] tr[data-name]'),main=go.locator('select[data-inline="rmain"]'),sub=go.locator('select[data-inline="rsub"]');
+  await main.waitFor();
+  assert.equal(await main.inputValue(),'공가');assert.equal(await sub.inputValue(),'공가(법원 출석)');
+  await main.selectOption('경조사');assert.equal(await sub.evaluate(e=>e===document.activeElement),true);assert.equal(await sub.inputValue(),'');
+  await sub.selectOption('모친상');assert.equal(await p.locator('#b2SaveAll').textContent(),'변경 1건 저장');
+  await p.locator('#b2SaveAll').click();await p.locator('#b2BulkNote').getByText('1건 저장',{exact:true}).waitFor();
+  assert.deepEqual(posts.filter(b=>b.action==='b2Save').map(b=>[b.args[0].name,b.args[0].reason]),[['고다원','모친상']]);
+  assert.equal(await main.inputValue(),'경조사');assert.equal(await sub.inputValue(),'모친상');
+ },{ledger:{...LEDGER,ledger:[L('2026-11-05','1','고다원','인정출석',{reason:'공가(법원 출석)',sig:'sig-고다원'})]}});
 });

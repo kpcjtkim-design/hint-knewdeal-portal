@@ -2,9 +2,12 @@
 // 출결대조·담임 화면의 사유 드롭다운과 해석기(체크히어 메모 분류·질병 판정·기간 비고)가 쓰는 목록(settings/reasonCatalog)을 고칩니다.
 // 분류: 추가·이름 바꾸기·순서·숨기기, 인정 여부·질병 포함·추가 증빙·증빙 안내·체크히어 분류·찾는 말. 세부: 추가·이름·인정·숨기기(저장 글은 새로 넣은 것만 고침).
 // 종류(인적성·자격증): 추가·이름·과정별 O/△/X·비고·숨기기. 지우기 대신 숨기기(옛 기록 해석 때문에 목록에 남김).
+// 옆 종류 드롭다운(사용자 2026-10-20 '경조사 등도 그냥 옆으로 드롭다운'): 보이는 세부가 둘 이상인 분류는 출결 화면에서 분류 하나 + 옆 종류 드롭다운(세부 목록)으로 보입니다.
+// 세부 목록이 곧 그 분류의 옆 드롭다운 목록이라 데이터 모양은 그대로이고, 옛 저장본도 그대로 읽힙니다. 미리보기는 출결대조·담임 화면과 같은 공용 칸(reason-pick.mjs).
 // 미리보기(출결대조 드롭다운 모양), 저장(rev 확인 트랜잭션, 저장한 사람·시각), 기본값으로 되돌리기(저장해야 적용), 저장하지 않은 변경은 떠날 때 확인.
 import {esc,toast,loading,lifecycle} from './beta2-ui.mjs';
 import {DEFAULT_REASON_CATALOG,cloneCatalog,validateReasonCatalog,withReasonCatalog,reasonOptions,subOptions,reasonPick,reasonChecks,RULES,OTHER,NOT_RECOGNIZED} from './attendance-reason-catalog.mjs';
+import {pickReasonText} from './reason-pick.mjs';
 import {readReasonCatalogDoc,saveReasonCatalog} from './reason-catalog-store.mjs';
 
 const STYLE=`.b2r .b2r-grid{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:14px;align-items:start}
@@ -54,7 +57,9 @@ export async function mount(host,{db,user}){
    <div class="b2r-add"><input type="text" id="rcNewCat" maxlength="20" placeholder="새 분류 이름" aria-label="새 분류 이름"><button class="b2-btn small" id="rcAddCat">분류 추가</button></div></div>`;
  }
  function subsHtml(c){
-  return `<table class="b2-table"><thead><tr><th>저장 글</th><th>세부 이름</th><th>인정</th><th>숨기기</th></tr></thead><tbody>${c.subs.map((s,i)=>`<tr data-sub="${i}">
+  const side=c.subs.filter(s=>!s.hidden).length>1;
+  return `<div class="b2-tiny b2-muted" id="rcSideNote">${side?`출결 화면에서 사유 드롭다운에는 '${esc(c.label)}' 하나, 바로 옆 종류 드롭다운에 아래 세부(숨긴 것 빼고)가 보입니다. 저장 글은 세부의 저장 글, 분류만 고르면 '${esc(c.key)}', 옆 칸 기타는 '${esc(c.key)}(직접 입력)'.`:`세부가 하나뿐이라 사유 드롭다운에 그 글 하나로 보입니다. 세부를 둘 이상 두면 옆 종류 드롭다운이 생깁니다.`}</div>
+   <table class="b2-table"><thead><tr><th>저장 글</th><th>세부 이름</th><th>인정</th><th>숨기기</th></tr></thead><tbody>${c.subs.map((s,i)=>`<tr data-sub="${i}">
    <td>${fresh.has('s:'+s.text)?`<input type="text" data-s="text" data-i="${i}" value="${esc(s.text)}" maxlength="60" aria-label="저장 글">`:`<b>${esc(s.text)}</b>`}</td>
    <td><input type="text" data-s="label" data-i="${i}" value="${esc(s.label||'')}" maxlength="60" aria-label="${esc(s.text)} 세부 이름"></td>
    <td><input type="checkbox" data-scb="recognized" data-i="${i}" ${s.recognized!==false?'checked':''} ${c.recognized?'':'disabled title="분류가 인정 사유가 아닙니다"'} aria-label="${esc(s.text)} 인정"></td>
@@ -88,11 +93,11 @@ export async function mount(host,{db,user}){
  function previewHtml(){
   const errs=errors();
   const html=withReasonCatalog(errs.length?DEFAULT_REASON_CATALOG:draft,()=>{
-   const s=reasonPick(pv.main),cls=COURSE_CLASS[pv.course]||'1',text=s.kind?(pv.sub&&pv.sub!==OTHER?`${s.kind}(${pv.sub})`:s.kind):pv.main===OTHER?'':pv.main;
+   const s=reasonPick(pv.main),cls=COURSE_CLASS[pv.course]||'1',text=s.kind?(pv.sub&&pv.sub!==OTHER?pickReasonText(pv.main,'rsub',pv.sub).text:s.kind):pv.main===OTHER?'':pv.main;
    const checks=reasonChecks(pv.type,text,{cls});
    return `<select id="rcPvMain" aria-label="미리보기 사유">${reasonOptions(pv.main,{type:pv.type,blank:'사유 고르기'})}</select>${s.kind?`<select id="rcPvSub" aria-label="미리보기 종류">${subOptions(s.kind,pv.sub,{type:pv.type,cls})}</select>`:''}${checks.map(c=>`<span class="${c.level==='error'?'b2-err':'b2-xnote'}">${esc(c.text)}</span>`).join('')}`;
   });
-  return `<section class="b2-card" style="margin-top:12px"><div class="b2-toolbar"><b>미리보기 (출결대조 드롭다운)</b><label class="b2-field">유형<select id="rcPvType">${['인정출석','인정지각','결석','지각'].map(t=>`<option ${t===pv.type?'selected':''}>${t}</option>`).join('')}</select></label>
+  return `<section class="b2-card" style="margin-top:12px"><div class="b2-toolbar"><b>미리보기 (출결대조·담임 출결판 드롭다운)</b><label class="b2-field">유형<select id="rcPvType">${['인정출석','인정지각','결석','지각'].map(t=>`<option ${t===pv.type?'selected':''}>${t}</option>`).join('')}</select></label>
    <label class="b2-field">과정 기준<select id="rcPvCourse">${draft.courses.map(c=>`<option value="${esc(c.key)}" ${c.key===pv.course?'selected':''}>${esc(c.label)}</option>`).join('')}</select></label></div>
    <div class="b2r-pv" id="rcPreview">${errs.length?'<span class="b2-err">목록에 고칠 곳이 있어 기본 목록으로 보여 줍니다</span>':''}${html}</div></section>`;
  }
