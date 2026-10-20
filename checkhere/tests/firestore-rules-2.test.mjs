@@ -169,6 +169,9 @@ test('notifications (notify.mjs shape): teachers notify admins or their own clas
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'추가 증빙',toClass:'5',cls:'5'})}),true,'임시담당반도');
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'추가 증빙',toClass:'4'})}),false,'다른 반 담임에게는 안 됨');
  assert.equal(can('create','notifications/n1',{auth:ADMIN,next:note({kind:'추가 증빙',toClass:'4',cls:'4',from:ADMIN.email,readBy:[ADMIN.email]})}),true,'운영자 추가 증빙');
+ // 중도탈락(beta2-dropouts.mjs): 담임 등록 → 운영자, 다른 반 이름으로는 안 됨
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'중도탈락',link:'#b2dropouts?cls=3'})}),true,'담임 중도탈락 → 운영자');
+ assert.equal(can('create','notifications/n1',{auth:T3,next:note({kind:'중도탈락',cls:'4'})}),false,'다른 반 중도탈락');
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({body:'x'.repeat(161)})}),false);
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({to:Array.from({length:11},(_,i)=>`a${i}@example.com`)})}),false,'받는 사람 10명까지');
  assert.equal(can('create','notifications/n1',{auth:T3,next:note({text:'옛 칸'})}),false,'정해진 칸만');

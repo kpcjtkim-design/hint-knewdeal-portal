@@ -13,9 +13,9 @@ const LATER={'timetable-today':'timetable',timetable:'timetable',materials:'mate
 const LATER_TEXT='11월 중에 열립니다. 준비되면 운영팀이 안내합니다.';
 
 export const TEACHER_TABS=[['today','오늘 할 일'],['attendance','출결'],['documents','서류 발급'],['feedback','민원·설문'],['schedule','시간표·자료'],['info','우리 반']];
-export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
+export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
 // 머리말 아래 한 줄 안내: 이 화면에서 무엇을 하는지(서류 발급·민원은 모듈 머리말 대신 이 줄이 설명합니다)
-const HINTS={notify:'운영팀이 보낸 알림(서류 발급·민원 답글 등)을 봅니다. 누르면 그 화면으로 갑니다.',today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
+const HINTS={dropout:'중도탈락·조기취업한 교육생을 등록합니다. 운영팀이 확인하면 명부 상태가 바뀝니다(우리 반 명부는 보기만).',notify:'운영팀이 보낸 알림(서류 발급·민원 답글 등)을 봅니다. 누르면 그 화면으로 갑니다.',today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
  documents:'교육생에게 필요한 출석부·확인서를 신청합니다. 신청하면 운영팀에 바로 알림이 가고, 처리 상황은 아래 목록에서 봅니다.',voc:'수업·시설·출결 등 운영팀에 알릴 일을 접수하고 답글을 주고받습니다. 운영팀이 답하면 위에 알림이 뜹니다.',surveys:'교육생 만족도 설문 결과를 봅니다.',timetable:'우리 반 전체 시간표를 봅니다.',materials:'강의자료를 열어 봅니다.',links:'자주 쓰는 폴더·양식 바로가기입니다.',info:'반장·부반장·총무와 교육생 명부(중도탈락·조기취업)를 관리합니다.'};
 // 알림함(머리글 종): 탭 줄에는 없는 칸
 const NOTIFY_TAB=['notify','알림'];
@@ -70,7 +70,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=import(fresh('./teacher-beta.js?v=20261020-f2','beta')).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board')void go('attendance','board',{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=import(fresh('./teacher-beta.js?v=20261020-f3','beta')).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -90,6 +90,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   materials:['./lecture-materials.mjs',(m,slot)=>m.mountLectureMaterials(slot,{db,user,classes:[classInfo],teacherClass:classInfo,readOnly:true})],
   surveys:['./survey-view.mjs',(m,slot)=>m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo})],
   documents:['./beta2-docs.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
+  dropout:['./beta2-dropouts.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,hideHead:true})], // 중도탈락·조기취업 등록(시트 중도탈락 탭, 운영팀 확인 뒤 명부 상태)
   voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
   notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab);void go(tm,ts||'',{push:true});}})]
  };

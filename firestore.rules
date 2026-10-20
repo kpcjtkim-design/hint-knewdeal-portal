@@ -129,7 +129,7 @@ service cloud.firestore {
     function notifyRecipient(d){return email() in d.get('to',[]) || (d.get('toRole','')=='admin' && isAdmin()) || ('toClass' in d && ownsClass(d.toClass));}
     function validNotification(d){
       return d.keys().hasOnly(['kind','title','body','cls','link','to','toRole','toClass','from','createdAt','readBy'])
-        && d.kind in ['서류발급','민원','출결대조 메모','추가 증빙']
+        && d.kind in ['서류발급','민원','출결대조 메모','추가 증빙','중도탈락']
         && d.title is string && d.title.size() > 0 && d.title.size() <= 80
         && d.body is string && d.body.size() <= 160
         && d.cls is string && (d.cls == '' || validClass(d.cls))

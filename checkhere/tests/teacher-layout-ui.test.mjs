@@ -6,7 +6,7 @@ import {openPortal} from './teacher-fixture.mjs';
 // 2026-10-19 사용자 보고: 출결 탭을 눌렀다가 다른 탭을 누르면 출결 하위 탭이 그대로 보이던 버그(.b2-tabs의 display:flex가 hidden을 이김).
 const KEYS=['today','attendance','documents','feedback','schedule','info'];
 const TABS=['오늘 할 일','출결','서류 발급','민원·설문','시간표·자료','우리 반'];
-const SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
+const SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
 // 지금 화면에 보이는 것: 고른 큰 탭, 보이는 하위 탭 글자·고른 하위 탭, 보이는 큰 탭 화면·하위 칸, 주소
 const state=page=>page.evaluate(()=>{const v=e=>e.checkVisibility();return {
  main:[...document.querySelectorAll('[data-main][aria-selected="true"]')].map(b=>b.dataset.main),
@@ -144,5 +144,27 @@ test('loading problems are said in plain words with a retry button',async()=>{
   await page.locator('[data-panel="documents"]').getByRole('button',{name:'신청하기'}).waitFor();
   assert.equal(await page.getByText('이 화면을 불러오지 못했습니다').count(),0);
  },{api:b=>b.action==='portalData'&&failData?{status:502,body:{ok:false,error:'마스터시트 응답이 늦습니다.'}}:null,files:p=>p==='/beta2-docs.mjs'&&failDocs?{status:404}:null});
+ assert.deepEqual(errors,[]);
+});
+
+test('출결 › 중도탈락 tab opens the dropout registration for the own class, and 우리 반 roster is view-only with a link there (사용자 2026-10-20)',async()=>{
+ let posts=[];
+ const errors=await openPortal(async page=>{
+  await pick(page,'attendance','dropout');await same(page,'attendance','dropout','출결 › 중도탈락');
+  assert.equal((await state(page)).hash,'#t/attendance/dropout');
+  const slot=page.locator('[data-panel="attendance"] [data-sub="dropout"]');
+  await slot.locator('.b2d').waitFor();
+  assert.equal(await page.locator('#t2Head h2').innerText(),'중도탈락');
+  for(let i=0;i<50&&!posts.some(b=>b.action==='b2Dropouts');i++)await page.waitForTimeout(100);
+  assert.ok(posts.some(b=>b.action==='b2Dropouts'),'reads the dropout tab');
+  // 우리 반: 명부는 보기만(상태 고르기·저장 없음), 등록 단추는 중도탈락 탭으로
+  await pick(page,'info');
+  const go=page.locator('[data-panel="info"] #goDropout');await go.waitFor();
+  assert.equal(await page.locator('[data-panel="info"] select[id^="ks"]').count(),0,'no status select');
+  assert.equal(await page.locator('[data-panel="info"] [data-k]').count(),0,'no save button');
+  await go.click();await page.waitForFunction(()=>location.hash==='#t/attendance/dropout');
+  await same(page,'attendance','dropout','등록 단추 → 출결 › 중도탈락');
+  assert.ok(!posts.some(b=>b.action==='portalSetStatus'));
+ },{api:b=>{posts.push(b);return null;}});
  assert.deepEqual(errors,[]);
 });
