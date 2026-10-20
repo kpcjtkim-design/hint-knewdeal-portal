@@ -28,7 +28,8 @@ const CH_DAYS={'classes/1/checkhereCurrent/2026-11-05':{records:[
 const SDK_STUB=`
 window.sdkWrites=[];window.sdkLoads=(window.sdkLoads||0)+1;window.docStore=window.docStore||{};
 const snap=(data)=>({exists:()=>data!==undefined,data:()=>data,metadata:{fromCache:false,hasPendingWrites:false}});
-export const getFirestore=()=>({}),doc=(db,...p)=>({path:p.join('/')}),collection=(db,...p)=>({path:p.join('/')}),query=(c)=>c,where=()=>({}),orderBy=()=>({}),limit=()=>({}),documentId=()=>'id',serverTimestamp=()=>'ts';
+// doc: 실제 Firestore처럼 빈 구간을 빼고 세어 홀수 구간이면 던집니다(빈 날짜로 classes/반/checkhereCurrent가 되던 일, 2026-10-20).
+export const getFirestore=()=>({}),doc=(db,...p)=>{const n=p.join('/').split('/').filter(Boolean).length;if(n%2)throw Error('Invalid document reference. Document references must have an even number of segments, but '+p.join('/')+' has '+n+'.');return {path:p.join('/')};},collection=(db,...p)=>({path:p.join('/')}),query=(c)=>c,where=()=>({}),orderBy=()=>({}),limit=()=>({}),documentId=()=>'id',serverTimestamp=()=>'ts';
 export const getDoc=async ref=>snap(ref.path==='users/teacher@test.kr'?{role:'TEACHER',active:true,primaryClassId:'1'}:ref.path==='classes/1'?{course:'과정1',region:'수도권',coreLinks:{}}:undefined);
 export const getDocFromServer=async ref=>snap((window.CH_DAYS||${JSON.stringify(CH_DAYS)})[ref.path]);
 export const getDocs=async()=>({docs:[],size:0}),getDocsFromServer=async()=>({docs:[],size:0,metadata:{}});
@@ -283,6 +284,25 @@ test('today\'s live CheckHere subscription keeps updating after the master sheet
   assert.equal(await page.evaluate(p=>window.snapCbs.filter(x=>x.path===p).length,`classes/1/checkhereCurrent/${today}`),0,'the previous day is unsubscribed');
   await page.locator('tr[data-name="김동진"]').getByText('09:25',{exact:true}).waitFor();
  },{clock:'2026-11-06T10:00:00+09:00',api:body=>body.action==='b2Bundle'?{ok:true,data:live}:null});
+});
+
+test('before the course starts (no past training day) 출결대조 picks today instead of an empty date and never builds a CheckHere document path without a date',async()=>{
+ // 2026-10-20: 개강(10-28) 전에는 오늘까지의 교육일이 없어 날짜가 비고, classes/반/checkhereCurrent 문서 주소가 깨져 모든 반이 '불러오지 못해'를 띄웠습니다.
+ const today='2026-10-20',early={...BUNDLE,today,ledger:[]};
+ await beta(async page=>{
+  await page.getByRole('heading',{name:'2기 홈'}).waitFor();
+  await page.locator('.b2-class').first().click();
+  await page.getByRole('heading',{name:'출결대조'}).waitFor();
+  await page.locator('tr[data-name="고다원"]').waitFor();
+  assert.equal(await page.locator('#b2Date').inputValue(),today);
+  await page.waitForFunction(p=>(window.snapCbs||[]).some(x=>x.path===p),`classes/1/checkhereCurrent/${today}`);
+  assert.equal(await page.evaluate(()=>(window.snapCbs||[]).filter(x=>/checkhereCurrent\/?$/.test(x.path)).length),0);
+  assert.equal(await page.getByText(/불러오지 못해/).count(),0);
+  await page.locator('#b2Class').selectOption('2');
+  await page.locator('tr[data-name="이경수"]').waitFor();
+  assert.equal(await page.locator('#b2Date').inputValue(),today);
+  assert.equal(await page.getByText(/불러오지 못해/).count(),0);
+ },{clock:'2026-10-20T10:00:00+09:00',api:body=>body.action==='b2Bundle'?{ok:true,data:early}:null});
 });
 
 /* ---------- 행 안 편집 → 체크히어 자동 반영 (설계 docs/beta2-instant-edit-plan.md 5장·9장 beta2-ui (1)~(14), 사용자 결정 2026-10-14) ----------

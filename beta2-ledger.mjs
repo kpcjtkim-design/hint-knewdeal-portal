@@ -294,15 +294,17 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(full)return renderRows();
   names.forEach(paintStatus);
  }
- function pickDate(b){const days=b.days.filter(d=>d<=b.today).reverse();return date&&days.includes(date)?date:days[0]||'';}
+ // 지난 교육일이 없으면(개강 전) 오늘을 고릅니다. 빈 날짜면 체크히어 문서 주소가 깨져 반을 못 불러왔습니다(2026-10-20).
+ function pickDate(b){const days=b.days.filter(d=>d<=b.today).reverse();return date&&days.includes(date)?date:days[0]||b.today||'';}
  function dateOptions(){
-  const days=bundle.days.filter(d=>d<=bundle.today).reverse();
+  const days=bundle.days.filter(d=>d<=bundle.today).reverse();if(date&&!days.includes(date))days.unshift(date); // 개강 전 오늘처럼 목록에 없는 날
   $('#b2Date').innerHTML=days.map(d=>`<option value="${d}" ${d===date?'selected':''}>${md(d)}${d===bundle.today?' · 오늘':''}</option>`).join('');
  }
  // 모든 날짜에서 저장본을 먼저 읽고(옛 저장본 대체 포함) 그날 문서를 구독해 갱신합니다. 구독은 반·날짜가 바뀔 때만 새로 겁니다.
  // 같은 반·날짜를 다시 읽을 때(새로고침)는 새 기록이 올 때까지 지금 기록을 지우지 않습니다(그사이 '기록 없음'으로 계산하지 않게).
  async function loadCheckHere(){
   const n=++chSeq,c=cls,d=date;unwatch?.();unwatch=null;if(recordsDay!==`${c}|${d}`){records=[];recordsNote='';recordsDay=`${c}|${d}`;}live='체크히어 확인 중';renderRows();
+  if(!d){live='';recordsNote='날짜 없음';renderRows();return;} // 날짜가 없으면 체크히어를 읽거나 구독하지 않음(2026-10-20)
   void import('./beta2-daytimes.mjs').then(m=>m.loadDayTimes(client,c,d)).then(ch=>{if(ch&&n===chSeq&&life.alive())renderRows();},()=>{}); // 그날 교육시간 기준(현장교육 일정, 견학일 지각 10:10·조퇴 16:50)을 반·날짜마다 한 번 읽어 대조 판정에 씀(beta2-daytimes.mjs, 2026-10-19)
   try{
    identities=await loadCheckHereIdentities(db,c,students()).catch(()=>[]);if(n!==chSeq||!life.alive())return;
