@@ -1,455 +1,323 @@
 {
-  "version": "20260911-curriculum-1",
-  "sources": [],
+  "version": "20261014-cohort2",
+  "sources": [
+    {
+      "title": "261014_K-뉴딜_아카데미_2기 일정표_직무기초.xlsx"
+    },
+    {
+      "title": "261007_K-뉴딜_아카데미_2기 일정표.xlsx"
+    }
+  ],
   "courses": {
+    "모빌리티 AI": [
+      "자동차공학 개론",
+      "모빌리티 SW 개론 및 프로세스",
+      "자동차 전장시스템 이해",
+      "C 프로그래밍",
+      "임베디드 시스템의 이해",
+      "MCU 프로그래밍",
+      "실시간 운영체제 기반 전자제어기 프로그래밍",
+      "직무특화 컨퍼런스 1",
+      "자동차 통신 시스템",
+      "AI를 위한 Python",
+      "직무특화 컨퍼런스 2",
+      "임베디드 리눅스 시스템",
+      "딥러닝 기반 영상인식",
+      "프로젝트"
+    ],
     "제조지능화": [
+      "자동차공학 개론",
       "생산시스템 및 제조공학",
-      "[실습] 3D CAD기반 설계 실습",
+      "직무특화 컨퍼런스 1",
       "제품설계 및 생산자동화",
-      "AI기반 제조데이터 분석 입문 - Python/통계",
+      "[실습] 3D CAD기반 설계 실습",
+      "AI기반 제조데이터 분석 입문",
       "품질경영 개요 및 품질 관리",
       "품질관리 기법 및 신뢰성 분석 기초",
+      "직무특화 컨퍼런스 2",
       "품질문제 해결 실습",
       "제조 장비 건전성 관리 입문",
       "제조 장비 건전성 시스템 구축 및 운영",
+      "제조 장비 건전성 관리 시스템 설계 실습",
       "스마트팩토리 주요 기술",
       "AI기반 스마트팩토리 설계 및 운영 기술",
-      "AI기반 스마트팩토리 설계 및 운영 실습",
-      "장비 건전성 관리 시스템 설계 실습"
-    ],
-    "임베디드 AI(SW)": [
-      "모빌리티 SW 개론 및 프로세스",
-      "자동차 전장시스템 이해",
-      "C 프로그래밍",
-      "AI를 위한 Python",
-      "임베디드 시스템의 이해",
-      "임베디드 시스템 인터페이스 회로",
-      "MCU 프로그래밍",
-      "자동차 통신 시스템",
-      "임베디드 리눅스 시스템",
-      "실시간 운영체제 기반 전자제어기 프로그래밍",
-      "SW 보안 및 OTA",
-      "딥러닝 기반 영상인식",
-      "임베디드 AI 구현 및 최적화"
-    ],
-    "임베디드 AI(HW)": [
-      "자동차 전장시스템 이해",
-      "모빌리티 SW 개론 및 프로세스",
-      "C 프로그래밍",
-      "임베디드 시스템의 이해",
-      "MCU 프로그래밍",
-      "자동차 통신 시스템",
-      "실시간 운영체제 기반 전자제어기 프로그래밍",
-      "Matlab+Simulink",
-      "전자제어기를 위한 모델 기반 제어",
-      "SW 테스팅",
-      "MBD 활용 임베디드 AI 구현 및 최적화",
-      "임베디드 시스템 인터페이스 회로",
-      "AI를 위한 Python"
+      "AI기반 스마트팩토리 설계 및 운영 실습"
     ]
   },
   "facilities": [
     {
       "classId": "1",
+      "factory": "화성공장",
+      "factoryDates": [
+        "2026-11-13"
+      ],
       "disassembly": "천안GLC",
-      "factory": "화성공장"
+      "disassemblyDates": [
+        "2026-12-07"
+      ],
+      "venue": "서울(관악구) 서울대",
+      "address": "서울대학교 현대 · 기아 차세대자동차 연구관",
+      "places": {
+        "1014": "서울대학교",
+        "1007": "서울대학교 현대 · 기아 차세대자동차 연구관"
+      }
     },
     {
       "classId": "2",
+      "factory": "화성공장",
+      "factoryDates": [
+        "2026-11-13"
+      ],
       "disassembly": "천안GLC",
-      "factory": "화성공장"
+      "disassemblyDates": [
+        "2026-12-08"
+      ],
+      "venue": "서울(성동구) 한양대",
+      "address": "한양대학교 정몽구 미래자동차연구센터",
+      "places": {
+        "1014": "한양대학교",
+        "1007": "한양대학교 정몽구 미래자동차연구센터"
+      }
     },
     {
       "classId": "3",
-      "disassembly": "오산공장",
-      "factory": "아산공장"
+      "factory": "아산공장",
+      "factoryDates": [
+        "2026-11-20"
+      ],
+      "disassembly": "선문대",
+      "disassemblyDates": [
+        "2026-11-17"
+      ],
+      "venue": "대전(유성구) 후인원A",
+      "address": "대전 유성구 온천로 20,동국제강 연수원 후인원 4F",
+      "places": {
+        "1014": "후인원 1",
+        "1007": "대전 유성구 온천로 20,동국제강 연수원 후인원 4F"
+      }
     },
     {
       "classId": "4",
-      "disassembly": "오산공장",
-      "factory": "아산공장"
+      "factory": "아산공장",
+      "factoryDates": [
+        "2026-11-13"
+      ],
+      "disassembly": "선문대",
+      "disassemblyDates": [
+        "2026-11-23"
+      ],
+      "venue": "대전(유성구) 후인원B",
+      "address": "대전 유성구 온천로 20,동국제강 연수원 후인원 4F",
+      "places": {
+        "1014": "후인원 2",
+        "1007": "대전 유성구 온천로 20,동국제강 연수원 후인원 4F"
+      }
     },
     {
       "classId": "5",
-      "disassembly": "오산공장",
-      "factory": "아산공장"
+      "factory": "아산공장",
+      "factoryDates": [
+        "2026-11-27"
+      ],
+      "disassembly": "선문대",
+      "disassemblyDates": [
+        "2026-11-24"
+      ],
+      "venue": "청주(청원구) 청주",
+      "address": "충북 청주시 흥덕구 가로수로 1251,충북대 G-테크벤처센터 3F",
+      "places": {
+        "1014": "청주",
+        "1007": "충북 청주시 흥덕구 가로수로 1251,충북대 G-테크벤처센터 3F"
+      }
     },
     {
       "classId": "6",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "울산공장",
+      "factoryDates": [
+        "2026-11-27"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-11-26"
+      ],
+      "venue": "대구(동구) KPC대구지부",
+      "address": "대구 동구 동대구로 489,대구무역회관 17F",
+      "places": {
+        "1014": "대구 생산성본부",
+        "1007": "대구 동구 동대구로 489,대구무역회관 17F"
+      }
     },
     {
       "classId": "7",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "울산공장",
+      "factoryDates": [
+        "2026-11-20"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-11-25"
+      ],
+      "venue": "대구(중구) 마이크로웨이브A",
+      "address": "대구 중구 태평로 160,마이크로웨이브 대구본점 7F",
+      "places": {
+        "1014": "마이크로웨이브 1",
+        "1007": "대구 중구 태평로 160,마이크로웨이브 대구본점 7F"
+      }
     },
     {
       "classId": "8",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "울산공장",
+      "factoryDates": [
+        "2026-11-27"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-11-30"
+      ],
+      "venue": "대구(중구) 마이크로웨이브B",
+      "address": "대구 중구 태평로 160,마이크로웨이브 대구본점 7F",
+      "places": {
+        "1014": "마이크로웨이브 2",
+        "1007": "대구 중구 태평로 160,마이크로웨이브 대구본점 7F"
+      }
     },
     {
       "classId": "9",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "울산공장",
+      "factoryDates": [
+        "2026-11-13"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-11-24"
+      ],
+      "venue": "부산(금정구) 부산대",
+      "address": "부산 금정구 부산대학로63번길 2,NC백화점 부산대점 7F",
+      "places": {
+        "1014": "부산대",
+        "1007": "부산 금정구 부산대학로63번길 2,NC백화점 부산대점 7F"
+      }
     },
     {
       "classId": "10",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "울산공장",
+      "factoryDates": [
+        "2026-11-13"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-11-23"
+      ],
+      "venue": "부산(해운대구) 아르피나A",
+      "address": "부산 해운대구 해운대해변로 35,아르피나(부산도시공사) 8F",
+      "places": {
+        "1014": "아르피나 1",
+        "1007": "부산 해운대구 해운대해변로 35,아르피나(부산도시공사) 8F"
+      }
     },
     {
       "classId": "11",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "공장견학 이론만(견학 일정 없음)",
+      "factoryDates": [
+        "2026-11-13"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-12-08"
+      ],
+      "venue": "부산(해운대구) 아르피나B",
+      "address": "부산 해운대구 해운대해변로 35,아르피나(부산도시공사) 1~2F",
+      "places": {
+        "1014": "아르피나2",
+        "1007": "부산 해운대구 해운대해변로 35,아르피나(부산도시공사) 1~2F"
+      }
     },
     {
       "classId": "12",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "공장견학 이론만(견학 일정 없음)",
+      "factoryDates": [
+        "2026-11-13"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-12-09"
+      ],
+      "venue": "부산(해운대구) 아르피나C",
+      "address": "부산 해운대구 해운대해변로 35,아르피나(부산도시공사) 1~2F",
+      "places": {
+        "1014": "아르피나 3",
+        "1007": "부산 해운대구 해운대해변로 35,아르피나(부산도시공사) 1~2F"
+      }
     },
     {
       "classId": "13",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "울산공장",
+      "factoryDates": [
+        "2026-12-03"
+      ],
+      "disassembly": "울산",
+      "disassemblyDates": [
+        "2026-12-10"
+      ],
+      "venue": "울산(북구) 울산",
+      "address": "울산 북구 염포로 700,현대자동차 울산공장",
+      "places": {
+        "1014": "울산공장",
+        "1007": "울산 북구 염포로 700,현대자동차 울산공장"
+      }
     },
     {
       "classId": "14",
-      "disassembly": "울산공장",
-      "factory": "울산공장"
+      "factory": "광주공장",
+      "factoryDates": [
+        "2026-12-04"
+      ],
+      "disassembly": "폴리텍대",
+      "disassemblyDates": [
+        "2026-12-16"
+      ],
+      "venue": "광주(북구) 전남대",
+      "address": "광주 북구 용봉로 77,전남대학교 진리관",
+      "places": {
+        "1014": "전남대학",
+        "1007": "광주 북구 용봉로 77,전남대학교 진리관"
+      }
     },
     {
       "classId": "15",
-      "disassembly": "폴리텍대학교",
-      "factory": "광주공장"
+      "factory": "광주공장",
+      "factoryDates": [
+        "2026-12-04"
+      ],
+      "disassembly": "폴리텍대",
+      "disassemblyDates": [
+        "2026-12-14"
+      ],
+      "venue": "광주(서구) 기아오토랜드A",
+      "address": "광주 서구 화운로 277,기아오토랜드 광주공장",
+      "places": {
+        "1014": "광주공장 1",
+        "1007": "광주 서구 화운로 277,기아오토랜드 광주공장"
+      }
     },
     {
       "classId": "16",
-      "disassembly": "폴리텍대학교",
-      "factory": "광주공장"
-    },
-    {
-      "classId": "17",
-      "disassembly": "폴리텍대학교",
-      "factory": "광주공장"
-    }
-  ],
-  "patches": [
-    {
-      "id": "lecture-2",
-      "before": {
-        "course": "임베디드 AI(HW)",
-        "module": "실차체험",
-        "title": "실차체험(천안GLC)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "천안GLC · 분해조립",
-        "venue": "천안GLC"
-      }
-    },
-    {
-      "id": "lecture-13",
-      "before": {
-        "course": "임베디드 AI(HW)",
-        "module": "공장견학",
-        "title": "화성공장(견학+이론)"
-      },
-      "after": {
-        "title": "화성공장 · 견학·이론",
-        "venue": "화성공장"
-      }
-    },
-    {
-      "id": "lecture-25",
-      "before": {
-        "course": "임베디드 AI(HW)",
-        "module": "실차체험",
-        "title": "실차체험(울산)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "울산공장 · 분해조립",
-        "venue": "울산공장"
-      }
-    },
-    {
-      "id": "lecture-26",
-      "before": {
-        "course": "임베디드 AI(HW)",
-        "module": "공장견학",
-        "title": "울산공장(견학+이론)"
-      },
-      "after": {
-        "title": "울산공장 · 견학·이론",
-        "venue": "울산공장"
-      }
-    },
-    {
-      "id": "lecture-30",
-      "before": {
-        "course": "제조지능화",
-        "module": "실차체험",
-        "title": "실차체험(천안GLC)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "천안GLC · 분해조립",
-        "venue": "천안GLC"
-      }
-    },
-    {
-      "id": "lecture-37",
-      "before": {
-        "course": "제조지능화",
-        "module": "직무특화",
-        "title": "AI기반 제조데이터 분석 입문"
-      },
-      "after": {
-        "title": "AI기반 제조데이터 분석 입문 - Python/통계"
-      }
-    },
-    {
-      "id": "lecture-39",
-      "before": {
-        "course": "제조지능화",
-        "module": "공장견학",
-        "title": "화성공장(견학+이론)"
-      },
-      "after": {
-        "title": "화성공장 · 견학·이론",
-        "venue": "화성공장"
-      }
-    },
-    {
-      "id": "lecture-45",
-      "before": {
-        "course": "제조지능화",
-        "module": "직무특화",
-        "title": "제조 장비 건전성 관리 시스템 설계 실습"
-      },
-      "after": {
-        "title": "장비 건전성 관리 시스템 설계 실습"
-      }
-    },
-    {
-      "id": "lecture-49",
-      "before": {
-        "course": "제조지능화",
-        "module": "직무특화",
-        "title": "AI 기반 스마트팩토리 설계 및 운영 실습"
-      },
-      "after": {
-        "title": "AI기반 스마트팩토리 설계 및 운영 실습"
-      }
-    },
-    {
-      "id": "lecture-53",
-      "before": {
-        "course": "제조지능화",
-        "module": "실차체험",
-        "title": "실차체험(오산)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "오산공장 · 분해조립",
-        "venue": "오산공장"
-      }
-    },
-    {
-      "id": "lecture-54",
-      "before": {
-        "course": "제조지능화",
-        "module": "공장견학",
-        "title": "아산공장(견학+이론)"
-      },
-      "after": {
-        "title": "아산공장 · 견학·이론",
-        "venue": "아산공장"
-      }
-    },
-    {
-      "id": "lecture-55",
-      "before": {
-        "course": "제조지능화",
-        "module": "공장견학",
-        "title": "울산공장(견학+이론)"
-      },
-      "after": {
-        "title": "울산공장 · 견학·이론",
-        "venue": "울산공장"
-      }
-    },
-    {
-      "id": "lecture-56",
-      "before": {
-        "course": "제조지능화",
-        "module": "실차체험",
-        "title": "실차체험(울산)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "울산공장 · 분해조립",
-        "venue": "울산공장"
-      }
-    },
-    {
-      "id": "lecture-57",
-      "before": {
-        "course": "제조지능화",
-        "module": "실차체험",
-        "title": "실차체험(폴리텍대)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "폴리텍대학교 · 분해조립",
-        "venue": "폴리텍대학교"
-      }
-    },
-    {
-      "id": "lecture-58",
-      "before": {
-        "course": "제조지능화",
-        "module": "공장견학",
-        "title": "광주공장(견학+이론)"
-      },
-      "after": {
-        "title": "광주공장 · 견학·이론",
-        "venue": "광주공장"
-      }
-    },
-    {
-      "id": "lecture-70",
-      "before": {
-        "course": "임베디드 AI(SW)",
-        "module": "실차체험",
-        "title": "실차체험(오산)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "오산공장 · 분해조립",
-        "venue": "오산공장"
-      }
-    },
-    {
-      "id": "lecture-72",
-      "before": {
-        "course": "임베디드 AI(SW)",
-        "module": "공장견학",
-        "title": "아산공장(견학+이론)"
-      },
-      "after": {
-        "title": "아산공장 · 견학·이론",
-        "venue": "아산공장"
-      }
-    },
-    {
-      "id": "lecture-85",
-      "before": {
-        "course": "임베디드 AI(SW)",
-        "module": "실차체험",
-        "title": "실차체험(울산)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "울산공장 · 분해조립",
-        "venue": "울산공장"
-      }
-    },
-    {
-      "id": "lecture-86",
-      "before": {
-        "course": "임베디드 AI(SW)",
-        "module": "공장견학",
-        "title": "울산공장(견학+이론)"
-      },
-      "after": {
-        "title": "울산공장 · 견학·이론",
-        "venue": "울산공장"
-      }
-    },
-    {
-      "id": "lecture-87",
-      "before": {
-        "course": "임베디드 AI(SW)",
-        "module": "실차체험",
-        "title": "실차체험(폴리텍대)"
-      },
-      "after": {
-        "module": "분해조립",
-        "title": "폴리텍대학교 · 분해조립",
-        "venue": "폴리텍대학교"
-      }
-    },
-    {
-      "id": "lecture-88",
-      "before": {
-        "course": "임베디드 AI(SW)",
-        "module": "공장견학",
-        "title": "광주공장(견학+이론)"
-      },
-      "after": {
-        "title": "광주공장 · 견학·이론",
-        "venue": "광주공장"
+      "factory": "광주공장",
+      "factoryDates": [
+        "2026-12-11"
+      ],
+      "disassembly": "폴리텍대",
+      "disassemblyDates": [
+        "2026-12-15"
+      ],
+      "venue": "광주(서구) 기아오토랜드B",
+      "address": "광주 서구 화운로 277,기아오토랜드 광주공장",
+      "places": {
+        "1014": "광주공장2",
+        "1007": "광주 서구 화운로 277,기아오토랜드 광주공장"
       }
     }
   ],
-  "additions": [
-    {
-      "id": "sheet-hw-python-20260911",
-      "course": "임베디드 AI(HW)",
-      "module": "직무특화",
-      "title": "AI를 위한 Python",
-      "days": null
-    },
-    {
-      "id": "sheet-facility-1-20260911",
-      "course": "임베디드 AI(HW)",
-      "module": "공장견학",
-      "title": "아산공장 · 견학·이론",
-      "venue": "아산공장",
-      "days": 1
-    },
-    {
-      "id": "sheet-facility-2-20260911",
-      "course": "임베디드 AI(HW)",
-      "module": "공장견학",
-      "title": "광주공장 · 견학·이론",
-      "venue": "광주공장",
-      "days": 1
-    },
-    {
-      "id": "sheet-facility-3-20260911",
-      "course": "임베디드 AI(HW)",
-      "module": "분해조립",
-      "title": "오산공장 · 분해조립",
-      "venue": "오산공장",
-      "days": 1
-    },
-    {
-      "id": "sheet-facility-4-20260911",
-      "course": "임베디드 AI(HW)",
-      "module": "분해조립",
-      "title": "폴리텍대학교 · 분해조립",
-      "venue": "폴리텍대학교",
-      "days": 1
-    },
-    {
-      "id": "sheet-facility-5-20260911",
-      "course": "임베디드 AI(SW)",
-      "module": "공장견학",
-      "title": "화성공장 · 견학·이론",
-      "venue": "화성공장",
-      "days": 1
-    },
-    {
-      "id": "sheet-facility-6-20260911",
-      "course": "임베디드 AI(SW)",
-      "module": "분해조립",
-      "title": "천안GLC · 분해조립",
-      "venue": "천안GLC",
-      "days": 1
-    }
-  ]
+  "patches": [],
+  "additions": []
 }

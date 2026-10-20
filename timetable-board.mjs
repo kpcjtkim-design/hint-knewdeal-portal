@@ -1,5 +1,8 @@
-import {weekDays,monthDays,sortEntries,validateEntry,todayKST,lectureEndDays} from './timetable-core.mjs';
+import {weekDays,monthDays,sortEntries,validateEntry,todayKST,startDate,lectureEndDays} from './timetable-core.mjs';
 import {hideWeekend} from './timetable-tools.mjs';
+import {weekNo,holidayName,inPeriod} from './cohort.mjs';
+// 주간 머리에 기수 주차(cohort.json weekBase 월요일부터 7일씩, 10/28이 1주차)와 기수 휴일 이름을 붙입니다.
+const weekLabel=days=>days.some(inPeriod)?` · ${weekNo(days.find(inPeriod))}주차`:'';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const weekday=d=>new Intl.DateTimeFormat('ko-KR',{timeZone:'UTC',weekday:'short'}).format(new Date(d+'T12:00:00Z'));
 export function moveLesson(entries,id,date,swapId=null){
@@ -22,7 +25,7 @@ export function moveLesson(entries,id,date,swapId=null){
  return sortEntries(entries.map(e=>changed.get(e.id)||e));
 }
 export function createTimetableBoard({root,classes,data,lesson,instructors,status,onMove,onError,warning=()=>'',progress=()=>'',weekend=()=>false,preview=()=>new Set()}){
- let current={view:'week',date:todayKST(),shown:classes},drag=null,ignoreClickUntil=0,previewKey='';
+ let current={view:'week',date:startDate(),shown:classes},drag=null,ignoreClickUntil=0,previewKey='';
  const heads=days=>days.map(d=>`<div class="grid-head">${weekday(d)}</div>`).join('');
  const columns=(n,min)=>`grid-template-columns:repeat(${n},minmax(${min}px,1fr));min-width:${n*min}px`;
  function cells(cid,days,{month='',hideOutside=false}={}){
@@ -38,7 +41,7 @@ export function createTimetableBoard({root,classes,data,lesson,instructors,statu
  }
  function html(options){
   current={...current,...options};const {shown,view,date}=current;
-  if(view==='week'){const days=hideWeekend(weekDays(date),shown.flatMap(c=>data(c.id).entries||[]),weekend());return `<div class="schedule-scroll"><div class="admin-grid" style="grid-template-columns:125px repeat(${days.length},minmax(160px,1fr));min-width:${125+days.length*160}px"><div class="grid-head">반 / 교육일</div>${days.map(d=>`<div class="grid-head">${d.slice(5).replace('-','/')} (${weekday(d)})${d===todayKST()?' · 오늘':''}</div>`).join('')}${shown.map(c=>`<div class="class-label"><b>${c.id}반</b><div class="muted">${esc(c.course)}<br>${esc(c.venue||'')}</div><div class="board-progress">${esc(progress(c.id))}</div><div class="board-status">${status(c.id)}</div></div>${cells(c.id,days)}`).join('')}</div></div>`;}
+  if(view==='week'){const days=hideWeekend(weekDays(date),shown.flatMap(c=>data(c.id).entries||[]),weekend());return `<div class="schedule-scroll"><div class="admin-grid" style="grid-template-columns:125px repeat(${days.length},minmax(160px,1fr));min-width:${125+days.length*160}px"><div class="grid-head">반 / 교육일${weekLabel(days)}</div>${days.map(d=>`<div class="grid-head">${d.slice(5).replace('-','/')} (${weekday(d)})${d===todayKST()?' · 오늘':''}${holidayName(d)?' · '+esc(holidayName(d)):''}</div>`).join('')}${shown.map(c=>`<div class="class-label"><b>${c.id}반</b><div class="muted">${esc(c.course)}<br>${esc(c.venue||'')}</div><div class="board-progress">${esc(progress(c.id))}</div><div class="board-status">${status(c.id)}</div></div>${cells(c.id,days)}`).join('')}</div></div>`;}
   return shown.map((c,i)=>`<details class="calendar-class" data-calendar-class="${c.id}" ${shown.length===1||i===0?'open':''}><summary><b>${c.id}반 · ${esc(c.course)}</b><span>${status(c.id)} · ${esc(progress(c.id))} · 전체 ${(data(c.id).entries||[]).length}개 일정</span></summary><div data-calendar-content="${c.id}">${shown.length===1||i===0?calendar(c.id):''}</div></details>`).join('');
  }
  const clearPreview=()=>{previewKey='';root.querySelectorAll('.will-shift,.drop-invalid').forEach(x=>x.classList.remove('will-shift','drop-invalid'));};

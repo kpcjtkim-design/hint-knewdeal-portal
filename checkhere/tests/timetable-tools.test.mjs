@@ -7,15 +7,15 @@ const lesson=(id,date,extra={})=>({id,date,course:'임베디드 AI(HW)',module:'
 
 test('excel update keeps portal-only fields and moves the sheet did not touch',()=>{
  const base=seed.classes['1'].entries,draft=structuredClone(base);
- const a=draft.find(e=>e.date==='2026-10-06'),b=draft.find(e=>e.date==='2026-10-07'&&e.kind!=='holiday'&&e.title==='SW 테스팅'),moved=draft.find(e=>e.date==='2026-10-13');
- a.instructorId='teacher';a.start='09:00';a.end='18:00';a.note='실습실';moved.date='2026-10-16';
- const next=structuredClone(base),na=next.find(e=>e.id===a.id);na.date='2026-10-08';next.find(e=>e.id==='xlsx-1-81').date='2026-10-06';
+ const a=draft.find(e=>e.date==='2026-11-17'),b=draft.find(e=>e.date==='2026-11-18'&&e.kind!=='holiday'&&e.title==='모빌리티 SW 개론 및 프로세스'),moved=draft.find(e=>e.date==='2026-11-24');
+ a.instructorId='teacher';a.start='09:00';a.end='18:00';a.note='실습실';moved.date='2026-11-27';
+ const next=structuredClone(base),na=next.find(e=>e.id===a.id);na.date='2026-11-19';next.find(e=>e.id==='x2-1-2026-11-19').date='2026-11-17';next.find(e=>e.id==='x2-1-2026-11-20').instructorName='새 강사';
  const r=mergeSeed({classId:'1',base,next,draft,version:'20261001'});
  const out=r.entries.find(e=>e.id===a.id);
- assert.equal(out.date,'2026-10-08','sheet date change applies');
+ assert.equal(out.date,'2026-11-19','sheet date change applies');assert.equal(r.entries.find(e=>e.id==='x2-1-2026-11-20').instructorName,'새 강사','workbook instructor name merges like other sheet fields');
  assert.deepEqual([out.instructorId,out.start,out.end,out.note],['teacher','09:00','18:00','실습실'],'admin fields kept');
- assert.equal(r.entries.find(e=>e.id===moved.id).date,'2026-10-16','portal move kept when the sheet did not change that lesson');
- assert.equal(r.entries.length,draft.length);assert.equal(r.changes.length,2);assert(r.changes.every(c=>!c.conflict));
+ assert.equal(r.entries.find(e=>e.id===moved.id).date,'2026-11-27','portal move kept when the sheet did not change that lesson');
+ assert.equal(r.entries.length,draft.length);assert.equal(r.changes.length,3);assert(r.changes.every(c=>!c.conflict));
  assert.equal(r.entries.find(e=>e.id===b.id).date,b.date);
  assert(r.entries.every(e=>e.seedKey),'entries remember their sheet key for the next update');
  assert(!('seedKey' in publishEntries(r.entries,{})[0]),'sheet keys stay out of the teacher copy');

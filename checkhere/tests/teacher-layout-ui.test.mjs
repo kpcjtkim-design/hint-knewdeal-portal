@@ -103,8 +103,11 @@ test('teachers see plain tab names, a "오늘 · 날짜 · 반" header, a today-
    assert.equal(await head.locator('.t2-ctx').innerText(),'오늘 · 10/29(목) · 1반 서울(관악구)_모빌리티 AI_서울대',m);
    assert.ok((await head.locator('.t2-hint').innerText()).length>5,'a one-line hint says what the screen is for: '+m);
   }
+  // 2기 시간표는 열림(cohort features.timetable, feat-timetable2). 아직 닫힌 강의자료는 쉬운 말로 '11월 중에 열립니다'.
+  await pick(page,'schedule','materials');
+  assert.equal(await page.locator('[data-sub="materials"]').innerText(),'11월 중에 열립니다. 준비되면 운영팀이 안내합니다.');
   await pick(page,'schedule','timetable');
-  assert.equal(await page.locator('[data-sub="timetable"]').innerText(),'11월 중에 열립니다. 준비되면 운영팀이 안내합니다.');
+  assert.notEqual(await page.locator('[data-sub="timetable"]').innerText(),'11월 중에 열립니다. 준비되면 운영팀이 안내합니다.');
   for(const text of ['2기 베타','관리자 등록 필요','현장운영 체크리스트','1기','가-3'])assert.equal(await page.getByText(text).count(),0,text);
  });
  assert.deepEqual(errors,[]);

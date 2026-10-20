@@ -42,3 +42,11 @@ test('new lecture without a survey connection explicitly asks for mapping review
  const impact=timetableImpact({classId:'1',before,after:[...before,lesson('x','2026-09-24',1,{title:'새 강의',lectureId:'new'})],catalog});
  assert.deepEqual(impact.unmapped,['새 강의']);assert.match(timetableImpactHtml([impact]),/새 강의: 연결된 설문을 찾지 못했습니다/);
 });
+test('2기: a class without survey events yet (empty catalog) gets no survey-mapping nag',()=>{
+ const impact=timetableImpact({classId:'1',before,after:[...before,lesson('x','2026-09-24',1,{title:'새 강의',lectureId:'new'})],catalog:{events:[]}});
+ assert.deepEqual(impact.unmapped,[]);assert.doesNotMatch(timetableImpactHtml([impact]),/연결된 설문을 찾지 못했습니다/);
+});
+test('2기 holiday shift skips cohort holidays (12/25, 12/31, 1/1) and refuses to shift on one',()=>{
+ const rows=[lesson('p','2026-12-24'),lesson('q','2026-12-30',2)],s=shiftForHoliday(rows,'2026-12-24');
+ assert.deepEqual(s.changes.map(c=>[c.id,c.to]),[['p','2026-12-28'],['q','2027-01-04']]);assert.throws(()=>shiftForHoliday(rows,'2026-12-25'),/이미 휴일/);
+});
