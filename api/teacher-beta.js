@@ -27,6 +27,8 @@ export const TEACHER_DROPOUT_FIELDS=['name','kind','reason','startDate','lastDat
 export const DAY_MEMO_FIELDS=['date','memo','was'];
 // 반 임원(반장·부반장·총무·앰버서더, 2026-10-20, 시트 '반 임원' 탭 이력 + 반정보 Q·R·S·V 현재): 담임(자기 반)과 관리자 모두 지정·교체(보궐)·끝내기를 합니다(ADMIN_ACTIONS 아님).
 // 담임은 반 번호를 무엇을 보내든 자기 반으로 바뀌고, 보내는 칸은 아래 것만 지나갑니다.
+// 앰버서더는 여러 명(10명까지, 2026-10-21): 최초·추가 저장의 was는 지금 앰버서더 이름 배열(그대로 문자열 배열로), 보궐·끝내기는 was:{name}.
+export const OFFICER_WAS_MAX=20;
 export const OFFICER_FIELDS=['role','name','kind','start','reason','note'];
 // 담임 열림: cohort.json teacherAccess(개강 전 false). index.html 담임 로그인도 같은 값을 봅니다.
 export const ACCESS={teacher:cohort.TEACHER_ACCESS};
@@ -121,7 +123,8 @@ export function b2Args(user,action,rest){
   if(action==='b2Officers'){const c=p.cls;return [admin&&(c===undefined||c===''||c==='all')?{}:{cls:own(c)}];}
   if(action==='b2OfficerSave'||action==='b2OfficerEnd'){
    const q={cls:own(p.cls)};for(const k of action==='b2OfficerEnd'?['role','end','reason']:OFFICER_FIELDS)if(p[k]!==undefined&&p[k]!==null)q[k]=String(p[k]);
-   if(p.was&&typeof p.was==='object')q.was={name:String(p.was.name??'')};
+   if(Array.isArray(p.was)){if(action==='b2OfficerSave')q.was=p.was.slice(0,OFFICER_WAS_MAX).map(x=>String(x??''));}
+   else if(p.was&&typeof p.was==='object')q.was={name:String(p.was.name??'')};
    if(!q.role)throw new Error('BAD_REQUEST');
    return [q];
   }

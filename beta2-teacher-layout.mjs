@@ -96,7 +96,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   documents:['./beta2-docs.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
   dropout:['./beta2-dropouts.mjs?v=20261020-tt2',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
   voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
-  officers:['./beta2-officers.mjs?v=20261020-of1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
+  officers:['./beta2-officers.mjs?v=20261021-ma1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
   // 공통메모 알림은 출결판으로 가서 그 날짜 공통메모를 판 위에 보입니다(teacher-beta.js showDay).
   notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab,l.params);void go(tm,ts||'',{push:true}).then(()=>{if(ts==='board'&&l.params?.date)beta?.showDay?.(l.params.date);});}})]
  };

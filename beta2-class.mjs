@@ -85,10 +85,12 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
   const s=state('bundle','반 정보를 불러오는 중…');if(s)return card('info','반 정보',s);
   const c=info(),roster=rosterFor(bundle(),cls),count=st=>roster.filter(p=>(p.status||'재학')===st).length;
   const officers=OFFICERS.map(([k,l])=>[l,c.officers?.[k]??c[k]]).filter(([,v])=>String(v??'').trim());
-  // 반 임원(마스터시트 '반 임원' 탭, b2Officers, 2026-10-20): 읽혔으면 네 역할 모두 최초·보궐과 '보궐 필요'를 함께, 아직이면 반정보 값만.
+  // 반 임원(마스터시트 '반 임원' 탭, b2Officers, 2026-10-20): 읽혔으면 네 역할 모두 최초·보궐(앰버서더는 추가도)과 '보궐 필요'를 함께, 아직이면 반정보 값만.
+  // 앰버서더는 여러 명(2026-10-21, 배열): 모두 ', '로 잇습니다. 예전 응답(객체·null)도 받습니다.
   const od=parts.officers?.data,now=od?.current?.[cls],needs=(od?.needs||[]).filter(n=>String(n.cls)===cls);
-  const officerRows=now?(od.roles?.length?od.roles:['반장','부반장','총무','앰버서더']).map(role=>{const o=now[role],need=o&&needs.some(n=>n.role===role&&n.name===o.name);
-   return `<dt>${esc(role)}</dt><dd data-officer="${esc(role)}">${o?`${esc(o.name)} <span class="b2-badge ${o.kind==='보궐'?'t-rec':'e-ok'}">${esc(o.kind||'최초')}</span>${need?' <span class="b2-badge t-absent">보궐 필요</span>':''}`:'<span class="b2-muted">없음</span>'}</dd>`;}).join(''):officers.map(([l,v])=>`<dt>${esc(l)}</dt><dd>${esc(v)}</dd>`).join('');
+  const holders=v=>(Array.isArray(v)?v:v?[v]:[]).filter(o=>o&&o.name),tone={'보궐':'t-rec','추가':'t-late'};
+  const officerRows=now?(od.roles?.length?od.roles:['반장','부반장','총무','앰버서더']).map(role=>{const list=holders(now[role]);
+   return `<dt>${esc(role)}</dt><dd data-officer="${esc(role)}">${list.length?list.map(o=>`<span class="b2c-officer">${esc(o.name)} <span class="b2-badge ${tone[o.kind]||'e-ok'}">${esc(o.kind||'최초')}</span>${needs.some(n=>n.role===role&&n.name===o.name)?' <span class="b2-badge t-absent">보궐 필요</span>':''}</span>`).join(', '):'<span class="b2-muted">없음</span>'}</dd>`;}).join(''):officers.map(([l,v])=>`<dt>${esc(l)}</dt><dd>${esc(v)}</dd>`).join('');
   card('info',`${esc(cls)}반 정보${isTestClass(cls)?' <span class="b2-badge t-na">테스트반</span>':''}`,
    `<dl class="b2c-kv"><dt>지역</dt><dd>${esc(c.region||'-')}${c.area&&c.area!==c.region?` · ${esc(c.area)}`:''}</dd><dt>과정</dt><dd>${esc(c.course||'-')}${c.hrdName?`<span class="b2-sub">${esc(c.hrdName)}</span>`:''}</dd><dt>교육장</dt><dd>${esc(c.venue||'-')}${c.address?`<span class="b2-sub">${esc(c.address)}</span>`:''}</dd><dt>담임</dt><dd data-teacher>${esc(c.teacher||'미등록')}${c.phone?` · ${esc(c.phone)}`:''}</dd>${officerRows}</dl>
    ${nums([['총원',roster.length],['재학',count('재학')],['중도탈락',count('중도탈락'),count('중도탈락')?'bad':''],['조기취업',count('조기취업')],['수료',count('수료')]])}`,
