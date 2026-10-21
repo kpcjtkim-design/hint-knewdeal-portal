@@ -254,8 +254,9 @@ test("'중복' is a saved type: attended (not absent), its own bucket, counted o
  assert.match(sheetWait('유형을 골라 주세요.','중복'),/^시트 업데이트 대기 · 마스터시트가 아직 중복을 받지 않습니다/);assert.equal(sheetWait('유형을 골라 주세요.','지각'),'유형을 골라 주세요.');
 });
 
-// 환산 결석(사용자 결정 2026-10-20 "'수료' 및 단위기간 이수 판정 기준 판정시에는 3회=1일로"): 1기 dropout-core evaluateDropout과 같이 단위기간마다 floor(지·조·외 ÷ 3).
-test('converted absences: 지각·조퇴·외출·중복 3회 = 결석 1일 per unit period (1기 rule), 인정 types and 해당없음 do not count, 출석률 stays plain',()=>{
+// 환산 결석(사용자 결정 2026-10-20 "'수료' 및 단위기간 이수 판정 기준 판정시에는 3회=1일로"): HINT FAQ 공식 답변(2026-10-21)에 따라
+// 전체는 교육 전체 지·조·외를 합쳐 floor(÷ 3), 단위기간(units)은 그 단위기간 것만 floor(÷ 3). 1기 dropout-core evaluateDropout과 같음.
+test('converted absences: 지각·조퇴·외출·중복 3회 = 결석 1일, pooled over the course for the total and per unit period for units; 인정 types and 해당없음 do not count, 출석률 stays plain',()=>{
  assert.equal(PARTIALS_PER_ABSENCE,3);
  const [u1,u2]=UNIT_PERIODS,in1=TRAINING_DAYS.filter(d=>d>=u1.from&&d<=u1.to),in2=TRAINING_DAYS.filter(d=>d>=u2.from&&d<=u2.to);
  const e=(days,type)=>days.map(date=>({date,type}));
@@ -266,12 +267,13 @@ test('converted absences: 지각·조퇴·외출·중복 3회 = 결석 1일 per 
  // 지각·조퇴·외출·중복(1회)을 섞어도 3회 = 1일, 인정지각·인정조퇴·인정외출·인정출석·해당없음은 세지 않음
  const mixed=convertedAbsences([...e(in1.slice(0,1),'지각'),...e(in1.slice(1,2),'조퇴'),...e(in1.slice(2,3),'중복'),...e(in1.slice(3,6),'인정지각'),...e(in1.slice(6,8),'인정외출'),...e(in1.slice(8,9),'인정출석'),...e(in1.slice(9,12),'해당없음')]);
  assert.deepEqual([mixed.absent,mixed.partial,mixed.converted,mixed.total,mixed.units[0].days],[0,3,1,1,9],'해당없음 days leave the unit');
- // 단위기간마다: 1단위 2회 + 2단위 2회 = 4회지만 각 단위기간에서 3회가 안 되어 0일(전체 4 ÷ 3 = 1일이 아님), 1단위 4회 + 2단위 2회 → 1일
+ // 전체는 합쳐서: 1단위 2회 + 2단위 2회 = 4회 → 1일(단위기간마다는 0일 + 0일). 단위기간 값(units)은 그 단위기간 것만, 남은 횟수는 넘기지 않음
  const split=convertedAbsences([...e(in1.slice(0,2),'지각'),...e(in2.slice(0,2),'외출')]);
- assert.deepEqual([split.partial,split.converted,split.total],[4,0,0]);
+ assert.deepEqual([split.partial,split.converted,split.total],[4,1,1]);
+ assert.deepEqual(split.units.map(u=>[u.no,u.partial,u.converted,u.total]),[[1,2,0,0],[2,2,0,0],[3,0,0,0]]);
  const split2=convertedAbsences([...e(in1.slice(0,4),'지각'),...e(in2.slice(0,2),'외출'),...e(in2.slice(2,3),'결석')]);
  assert.deepEqual(split2.units.map(u=>[u.no,u.days,u.absent,u.partial,u.converted,u.total]),[[1,4,0,4,1,1],[2,3,1,2,0,1],[3,0,0,0,0,0]]);
- assert.equal(convertedText(split2),'결석 1일 + 지·조·외 6회(→ 1일) = 환산 결석 2일');
+ assert.equal(convertedText(split2),'결석 1일 + 지·조·외 6회(→ 2일) = 환산 결석 3일','total is 1 + floor(6 ÷ 3), not the unit sum 1 + 1');
  assert.equal(convertedUnitsText(split2),'1단위 4회→1일 · 2단위 2회→0일');
  assert.equal(convertedText(convertedAbsences(e(in1.slice(0,2),'결석'))),'결석 2일','no 지·조·외 → plain');
  // 단위기간 밖(테스트반 개강 전 기록)은 따로 묶음

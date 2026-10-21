@@ -9,7 +9,7 @@
 // 17반 테스트반은 목록에 '테스트반'으로 보이고 위 숫자 상자(공식 합계)에서는 빠집니다.
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle,downloadCsv} from './beta2-ui.mjs';
 import {forgetBeta2Cache,isConflict} from './beta2-data.mjs';
-import {ledgerIndex,studentStats,convertedText,convertedUnitsText,unitText} from './beta2-core.mjs';
+import {ledgerIndex,studentStats,convertedText,convertedUnitsText,unitText,UNITS_TITLE} from './beta2-core.mjs';
 import {DROPOUT_KINDS,DROPOUT_VERDICTS,DROPOUT_DOCS,DOC_FIELDS,DROPOUT_COLUMNS,OUTCOMES,maxOf,dropoutKey,absenceRows,absenceLevel,suggestVerdict,checkDropout,savePayload,formOf,sameForm,completionRows,official,statusBatches,requestPayload,byTeacher,requestState,canCancel,dropoutWas,rosterWas} from './beta2-dropout-core.mjs';
 // 리허설 안전장치(시트 v23, 2026-10-21): 고치기·지우기·신청 취소는 was에 줄 지문(sig)을, 수료 처리는 줄마다 명부 상태(was)를 함께 보냅니다.
 // 그사이 다른 사람이 고쳤으면(CONFLICT) 새로 읽어 새 값을 보이고, 편집 칸의 내 입력은 그대로 남겨 다시 「저장」하게 합니다.
@@ -17,10 +17,10 @@ import {COURSE_START,COURSE_END,isTestClass,UNIT_PERIODS} from './cohort.mjs';
 import {linkFor} from './notify-core.mjs';
 
 const ADMIN_VIEWS=[['list','중도탈락·조기취업'],['absence','결석 한도'],['complete','수료 명단']],TEACHER_VIEWS=[['list','중도탈락 신청'],['complete','수료 확인']];
-// 환산 결석(사용자 결정 2026-10-20 '수료·단위기간 이수 판정은 3회=1일'): 결석 한도와 견주는 수는 total(결석 + 지·조·외 단위기간마다 3회 = 1일, beta2-core convertedAbsences).
+// 환산 결석(사용자 결정 2026-10-20 '수료·단위기간 이수 판정은 3회=1일'): 결석 한도와 견주는 수는 total(결석 + 교육 전체 지·조·외 3회 = 1일, beta2-core convertedAbsences).
 // 칸에는 환산 결석을 크게, 아래에 '결석 n일 + 지·조·외 m회(→ k일) = 환산 결석 x일'과 단위기간 나눔을 작게 보입니다.
-const CONVERT_NOTE='지각·조퇴·외출·중복은 단위기간마다 3회를 결석 1일로 더합니다(1기와 같음, 인정지각·인정조퇴·인정외출 제외).';
-const convSub=c=>c?.partial?`<span class="b2-sub" data-conv title="${esc(convertedUnitsText(c))}">${esc(convertedText(c))}</span>`:'';
+const CONVERT_NOTE='지각·조퇴·외출·중복은 3회를 결석 1일로 더합니다. 수료(결석 한도)는 교육 전체 횟수를 합쳐서, 단위기간 이수는 그 단위기간 횟수만 셉니다(남은 횟수는 다음 단위기간으로 넘기지 않음, 1기와 같음, 인정지각·인정조퇴·인정외출 제외).';
+const convSub=c=>c?.partial?`<span class="b2-sub" data-conv title="${esc(UNITS_TITLE+convertedUnitsText(c))}">${esc(convertedText(c))}</span>`:'';
 // 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석", beta2-core unitCompletion): 결석 한도 탭 단위기간 열 3개·수료 명단 '단위 미이수' 표시·담임 수료 확인 이수 현황.
 // 수료 판정에는 묶지 않습니다(표시만). 칸 글은 상태 배지 + '환산 결석/허용', 자세한 글은 title.
 const UNIT_TONE={'이수':'e-ok','미이수':'t-absent','미이수 확정':'t-absent','진행 중':'t-rec','시작 전':'t-na','해당없음':'t-na'};

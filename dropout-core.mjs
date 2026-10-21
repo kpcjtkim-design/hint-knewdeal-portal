@@ -5,8 +5,8 @@ import {DUP_RULE} from './beta2-core.mjs'; // 중복 하루의 횟수(2기 1회,
 // 중도포기자(교육생) 시트 + 운영총괄 반별 출결로 조기취업 수료 가능 여부를 판정한다.
 // 규칙: 근로개시일 직전 수업일까지 출석해야 하고(미출석=결석), 근로개시일부터 남은 수업일은 결석
 // (사용자 확인 2026-10-21 "취업일 이후 결석이 맞대", 그 전까지는 출석 간주였음).
-// 무단 지각·조퇴·외출은 단위기간별 3회=결석 1일. 단위기간 결석은 수업일 절반 미만,
-// 전체 무단결석은 11일 이하여야 수료 가능.
+// 무단 지각·조퇴·외출은 3회=결석 1일(HINT FAQ 공식 답변, 운영지침 p.35·37·42). 전체 무단결석은 교육 전체 횟수를 합쳐 3회=1일로
+// 세어 11일 이하여야 수료 가능. 단위기간 결석은 그 단위기간 횟수만 세어(남은 1~2회는 다음 단위기간으로 넘기지 않음) 수업일 절반 미만이어야 한다.
 // 2기: 중도포기자 시트는 cohort.json sheets.dropout(아직 없음 → ''), 출결 원본은 2기 마스터시트로 다시 만들 때까지 비어 있습니다(cohort features.dropout).
 export const DROPOUT_SHEET_ID=COHORT_DROPOUT_SHEET_ID;
 export const DROPOUT_TAB='중도포기자(교육생)';
@@ -57,7 +57,7 @@ export function classAttendance(values){
 const partialCount=s=>s.startsWith('중복')?DUP_RULE.partialWeight:PARTIAL[s]||0; // 운영총괄 '중복(지각+외출, …)' 표기도 중복
 const periodOf=d=>PERIODS.find(p=>d>=p.from&&d<=p.to);
 export function evaluateDropout(entry,attendance,today){
- const issues=[],out={...entry,issues,verdict:'확인필요',scheduled:false,periods:[],totalAbsence:null,preStartAbsence:0,postStartAbsence:0,days:[]};
+ const issues=[],out={...entry,issues,verdict:'확인필요',scheduled:false,periods:[],totalAbsence:null,totalAbsent:0,totalPartial:0,totalConverted:0,preStartAbsence:0,postStartAbsence:0,days:[]};
  const last=parseSheetDate(entry.lastText,{prefer:'포기일'}),start=parseSheetDate(entry.startText);
  out.lastDate=last;out.startDate=start;
  if(last)out.scheduled=last>today;
@@ -91,7 +91,9 @@ export function evaluateDropout(entry,attendance,today){
   if(ds.length&&!ok)reasons.push(`${p.id}단위기간 결석 ${total}일 ≥ 수업일 ${ds.length}일의 절반`);
   return {id:p.id,from:p.from,to:p.to,days:ds.length,absent,partial,converted,total,ok};
  });
- out.totalAbsence=out.periods.reduce((n,p)=>n+p.total,0);
+ // 전체 결석은 단위기간 값(total)의 합이 아니다: 결석 합 + floor(교육 전체 지각·조퇴·외출 합 ÷ 3). 단위기간에서 남은 횟수도 여기서는 합쳐 센다.
+ const sum=k=>out.periods.reduce((n,p)=>n+p[k],0);
+ out.totalAbsent=sum('absent');out.totalPartial=sum('partial');out.totalConverted=Math.floor(out.totalPartial/3);out.totalAbsence=out.totalAbsent+out.totalConverted;
  if(out.totalAbsence>MAX_TOTAL_ABSENCE)reasons.push(`전체 무단결석 ${out.totalAbsence}일 > ${MAX_TOTAL_ABSENCE}일`);
  out.reasons=reasons;
  if(unknown.length)return out;
@@ -162,6 +164,7 @@ export async function writeDropoutCell(api,{row,name,field,before,after}){
 // ---- 수료판정 (H: 결석일수(수료가능여부)) ----
 // 단위기간마다 "결석N회(N차)"를 적는다: "결석2회(1차), 결석1회(2차), 결석4회(3차) = 수료가능".
 // 근로개시일부터는 결석이므로(2026-10-21) 근로개시 뒤 단위기간도 모두 적는다(예전 "근로전" 표기는 쓰지 않음).
+// 전체 결석은 지각·조퇴·외출을 교육 전체로 합쳐 3회=1일이라 단위기간 값의 합보다 클 수 있다. 그때만 "전체 결석N회"를 덧붙인다.
 // 포털이 쓴 칸은 끝에 "· 포털자동(M/D)"를 붙여,
 // 비어 있거나 이 표시가 있는 칸만 다시 쓴다. 담당자가 직접 적은 칸은 건드리지 않는다.
 export const AUTO_MARK=/\s*·\s*포털자동\(\d{1,2}\/\d{1,2}\)\s*$/;
@@ -171,6 +174,7 @@ export function verdictText(r){
  const tail=r.verdict+(r.scheduled?'(예정)':'');
  if(!r.periods?.length)return tail;
  const parts=r.periods.filter(p=>p.days).map(p=>`결석${p.total}회(${p.id}차)`);
+ if(parts.length&&r.totalAbsence!=null&&r.totalAbsence!==r.periods.reduce((n,p)=>n+p.total,0))parts.push(`전체 결석${r.totalAbsence}회`);
  return parts.length?`${parts.join(', ')} = ${tail}`:tail;
 }
 export const sheetVerdict=text=>{const s=clean(text).replace(AUTO_MARK,'');return /제적/.test(s)?'제적':/수료/.test(s)?'수료가능':'';};
