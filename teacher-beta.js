@@ -14,7 +14,7 @@
 import {isIsoDate,isTrainingDay} from './cohort.mjs';
 import {tidyReason,STANDARD,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_LABEL} from './attendance-reason-catalog.mjs';
 import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText} from './reason-pick.mjs';
-import {DUP_TYPE,DUP_RULE,dupParts,sheetWait,isSheetBusy,sheetBusyText} from './beta2-core.mjs'; // '중복' 규칙(지각·조퇴·외출 가운데 둘 이상)·시트 업데이트 대기 안내는 관리자 출결대조와 같은 곳
+import {DUP_TYPE,DUP_RULE,dupParts,sheetWait} from './beta2-core.mjs'; // '중복' 규칙(지각·조퇴·외출 가운데 둘 이상)·시트 업데이트 대기 안내는 관리자 출결대조와 같은 곳
 export function mountTeacherBeta(el, OPT) {
   OPT = OPT || {};
   const R = el.shadowRoot || el.attachShadow({ mode: 'open' });
@@ -27,17 +27,17 @@ export function mountTeacherBeta(el, OPT) {
   const CODE={'':['-','k-na'],해당없음:['-','k-none'],[DUP_TYPE]:['중','k-dup'],출석:['출','k-ok'],지각:['지','k-lt'],조퇴:['조','k-lt'],외출:['외','k-lt'],결석:['결','k-ab'],인정출석:['인','k-rc'],인정지각:['인','k-rc'],인정조퇴:['인','k-rc'],인정외출:['인','k-rc']};
   const NEED={지각:'inT',인정지각:'inT',조퇴:'outT',인정조퇴:'outT',외출:'oa',인정외출:'oa'};
   const W='일월화수목금토';
-  let S={cls:null,pin:'',d:null,tab:OPT.tab||'today',sel:null,f:null,timer:null,extra:[],custom:false,dayMemos:null,memoDay:'',drafts:new Map()}; // dayMemos: 반·날짜 공통메모(날짜 → 줄), memoDay: 알림으로 연 날(공통메모 줄), extra: 「다른 날짜」로 연 날(반을 바꾸면 비움), custom: 사유 '기타'(직접 입력)를 고른 상태
+  let S={cls:null,pin:'',d:null,tab:OPT.tab||'today',sel:null,f:null,timer:null,extra:[],custom:false,dayMemos:null,memoDay:''}; // dayMemos: 반·날짜 공통메모(날짜 → 줄), memoDay: 알림으로 연 날(공통메모 줄), extra: 「다른 날짜」로 연 날(반을 바꾸면 비움), custom: 사유 '기타'(직접 입력)를 고른 상태
   const $=s=>R.querySelector(s), app=()=>$('#app');
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const md=s=>{if(!s)return'';const p=String(s).split('-');if(p.length<3)return s;const d=new Date(+p[0],+p[1]-1,+p[2]);return (+p[1])+'/'+(+p[2])+'('+W[d.getDay()]+')';};
   let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),1800);}
-  async function run(fn,...a){const h={'Content-Type':'application/json'};const tk=OPT.getToken?await OPT.getToken():'';if(tk)h.Authorization='Bearer '+tk;const r=await fetch(OPT.endpoint||'/api/teacher-beta',{method:'POST',headers:h,body:JSON.stringify({action:fn,args:a,cls:S.cls})});const j=await r.json().catch(()=>({ok:false,error:'응답 오류'}));if(!j.ok)throw Object.assign(new Error(j.error||'요청 실패'),{code:j.code,attempts:Number(j.attempts)||1,retries:Number(j.retries)||0});return j.data;}
+  async function run(fn,...a){const h={'Content-Type':'application/json'};const tk=OPT.getToken?await OPT.getToken():'';if(tk)h.Authorization='Bearer '+tk;const r=await fetch(OPT.endpoint||'/api/teacher-beta',{method:'POST',headers:h,body:JSON.stringify({action:fn,args:a,cls:S.cls})});const j=await r.json().catch(()=>({ok:false,error:'응답 오류'}));if(!j.ok)throw Object.assign(new Error(j.error||'요청 실패'),{code:j.code});return j.data;}
 
   async function login(){
     // 2026-10-19: 불러오는 중·준비 중·실패를 담임이 알아듣는 말로, 실패하면 「다시 시도」
     app().innerHTML='<div class="card"><div class="sec">출결 정보</div><div class="note">출결 정보를 불러오는 중입니다…</div></div>';
-    S.cls=Number(OPT.cls);S.pin='';S.extra=[];S.dayMemos=null;S.drafts=new Map();
+    S.cls=Number(OPT.cls);S.pin='';S.extra=[];S.dayMemos=null;
     try{S.d=await run('portalData',S.cls,'');render();loadDayMemos();}catch(err){const wait=err.code==='NOT_CONFIGURED';app().innerHTML='<div class="card"><div class="sec">'+(wait?'출결 입력 준비 중':'출결 정보를 불러오지 못했습니다')+'</div><div class="'+(wait?'note':'err')+'">'+esc(err.message)+'</div>'+(wait?'':'<div class="note" style="margin-top:6px">잠시 뒤 「다시 시도」를 눌러 주세요. 계속 안 되면 운영팀에 알려 주세요.</div><button class="btn" id="retry" style="margin-top:10px">다시 시도</button>')+'</div>';const b=$('#retry');if(b)b.onclick=login;}
   }
   async function reload(keep,say){try{S.d=await run('portalData',S.cls,S.pin);if(!keep)S.sel=null;render();loadDayMemos();if(say)toast('새로 불러왔습니다');}catch(e){toast('새로 불러오지 못했습니다 · '+e.message);}}
@@ -90,9 +90,7 @@ export function mountTeacherBeta(el, OPT) {
     return [...new Set([...d.days,...more])].sort().reverse();
   }
   const dayTag=x=>offDay(x)?'교육일 아님':future(x)?'예정':'';
-  function cellVal(n,day){const k=S.d.kids.find(x=>x.name===n);if(k&&k.off&&day>k.off)return null;const dr=S.drafts.get(draftKey(n,day));if(dr)return dr.type;const r=S.d.recs[n+'|'+day];return r?r.type:'';}
-  // 몰려서 저장하지 못한 칸(초안): 반·학생·날짜별로 고친 값을 남겨 출결판·사유 칸에 그대로 보이고 「다시 저장」으로 다시 보냅니다(2026-10-21 부하 시험).
-  const draftKey=(n,day)=>S.cls+'|'+n+'|'+day;
+  function cellVal(n,day){const k=S.d.kids.find(x=>x.name===n);if(k&&k.off&&day>k.off)return null;const r=S.d.recs[n+'|'+day];return r?r.type:'';}
   function vBoard(){
     const d=S.d,days=boardDays();
     // 2026-10-19: 안내는 순서대로 짧게, 맨 앞 칸(기준일)에 '오늘'(한국 날짜가 기준일이 아니면 '기준일') 표시, 학생이 없으면 쉬운 말로
@@ -105,7 +103,7 @@ export function mountTeacherBeta(el, OPT) {
       h+='</tr>';});
     h+='</tbody></table></div><div class="note" style="margin-top:6px">* 표시: 증빙서류를 아직 내지 않았거나 반려된 칸 (운영팀 확인 중)</div></div><div class="panel" id="pn"></div></div>';
     $('#v').innerHTML=h;
-    const pick=(el,keepType)=>{flush();if(!(S.sel&&S.sel.n===el.dataset.n&&S.sel.day===el.dataset.d))S.custom=false;S.sel={n:el.dataset.n,day:el.dataset.d};const r=S.d.recs[S.sel.n+'|'+S.sel.day],dr=S.drafts.get(draftKey(S.sel.n,S.sel.day));S.f=dr?Object.assign({},dr):r?Object.assign({},r):{type:'',inT:'',outT:'',oa:'',ob:'',r:''};R.querySelectorAll('.g select.sel').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');S.memoDay='';paintDayMemo();}; // 공통메모 줄은 고른 칸의 날
+    const pick=(el,keepType)=>{flush();if(!(S.sel&&S.sel.n===el.dataset.n&&S.sel.day===el.dataset.d))S.custom=false;S.sel={n:el.dataset.n,day:el.dataset.d};const r=S.d.recs[S.sel.n+'|'+S.sel.day];S.f=r?Object.assign({},r):{type:'',inT:'',outT:'',oa:'',ob:'',r:''};R.querySelectorAll('.g select.sel').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');S.memoDay='';paintDayMemo();}; // 공통메모 줄은 고른 칸의 날
     // 다른 날짜: 날짜 모양이면 그날 칸을 열고(이미 있으면 그 칸으로) 첫 학생 칸에 초점. 키보드로 치는 동안은 잠깐(0.5초) 기다립니다.
     const any=$('#anyDay');let anyT=0;
     any.onchange=()=>{clearTimeout(anyT);anyT=setTimeout(()=>{const x=any.value;if(!typedDay(x)||!R.contains(any))return;if(!S.extra.includes(x))S.extra.push(x);vBoard();
@@ -187,7 +185,6 @@ export function mountTeacherBeta(el, OPT) {
     // 시간은 담임이 고치지 않으므로 저장된 값(없으면 빈 값)을 그대로 보냅니다. portalSave는 보내지 않은 시간을 ''로 덮어 지우기 때문입니다.
     const keep=before||{};
     try{const res=await run('portalSave',{cls:S.cls,pin:S.pin,name:sel.n,date:sel.day,type:f.type,inT:keep.inT||'',outT:keep.outT||'',oa:keep.oa||'',ob:keep.ob||'',r:f.r});
-      S.drafts.delete(draftKey(sel.n,sel.day)); // 시트가 답했으면(저장·입력 확인 거절 모두) 초안은 끝
       if(!res.ok){st(sheetWait(res.msg,f.type,'다시 골라 주세요'),'err');return;} // 시트가 아직 해당없음·중복을 받지 않으면 '시트 업데이트 대기'
       const key=sel.n+'|'+sel.day;if(!f.type)delete S.d.recs[key];else S.d.recs[key]=Object.assign({ev:'',evr:''},S.d.recs[key]||{},f);
       if(extraEvidenceStarted(before&&{type:before.type,reason:before.r},{type:f.type,reason:f.r}))extraAlert(sel,f);
@@ -197,15 +194,7 @@ export function mountTeacherBeta(el, OPT) {
       const raw=String(res.warn||'').trim(),w=raw.replace(/은 나중에 채워도 됩니다$/,'').split('·').filter(x=>x==='사유').join('·'),warn=/겹친 시간/.test(raw)?raw:w?w+'은 나중에 채워도 됩니다':'';
       if(S.sel===sel)syncNote(); // 저장된 기록 기준 안내(취업박람회 추가 증빙 배지 등)
       if(S.sel===sel)st(warn?'저장했습니다 · '+warn:'저장했습니다',warn?'warn':'ok');
-    }catch(e){
-      // 몰림(다시 시도 뒤에도 잠금 시간 초과·동시 실행 초과·응답 늦음): 고친 값은 초안으로 남기고 「다시 저장」을 보입니다. portalSave는 반·이름·날짜로 덮어쓰기라 다시 저장해도 같은 결과입니다.
-      if(isSheetBusy(e)){S.drafts.set(draftKey(sel.n,sel.day),Object.assign({},f));if(S.sel===sel)busyNote(e);return;}
-      st('저장하지 못했습니다 · '+e.message+' · 다시 골라 주세요','err');
-    }
-  }
-  function busyNote(e){
-    st(sheetBusyText(e.retries)+(e.code==='SHEET_TIMEOUT'?' · 저장됐는지 확인되지 않았습니다':'')+' · 고친 값은 남아 있습니다','err');
-    const s=$('#st');if(!s)return;const b=document.createElement('button');b.className='chip';b.dataset.resave='';b.textContent='다시 저장';b.style.marginLeft='8px';b.onclick=()=>save();s.appendChild(b);
+    }catch(e){st('저장하지 못했습니다 · '+e.message+' · 다시 골라 주세요','err');}
   }
 
   // 취업박람회 추가 증빙 알림(반 담임 + 관리자, notify.mjs '추가 증빙'). 알림을 못 남겨도 저장은 그대로입니다(notify가 작은 안내).
