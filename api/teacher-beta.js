@@ -2,6 +2,7 @@
 // 환경변수(2기 Vercel 프로젝트): HINT_SHEET_API_URL (2기 마스터시트 Apps Script 웹앱 /exec 주소), HINT_SHEET_API_KEY (setApiKey로 만든 값). 이름은 cohort.json sheetApi.
 // 반·관리자·Firebase(2기 전용 프로젝트)·담임 열림은 cohort.json(lib/cohort.cjs)에서 읽습니다. Firebase 설정이 비면 로그인 확인 전에 막습니다.
 import cohort from '../lib/cohort.cjs';
+import {callSheetWithRetry,RETRY_POLICY,busyText} from '../lib/sheet-retry.mjs';
 const {CLASS_IDS,ADMINS,SHEET_API}=cohort;
 const ADMIN=new Set(ADMINS);
 // 시험은 이 값을 바꿔 씁니다(cohort.json firebase가 비어 있어도 시험할 수 있게).
@@ -51,7 +52,8 @@ const FAILURES={
   SHEET_UNAUTHORIZED:[502,'데이터 API 인증에 실패했습니다. 운영자에게 알려 주세요.'],
   SHEET_TIMEOUT:[504,'마스터시트 응답이 늦습니다. 잠시 후 다시 시도해 주세요.'],
   SHEET_BAD_RESPONSE:[502,'마스터시트 응답을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.'],
-  SHEET_UNAVAILABLE:[502,'마스터시트에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.']
+  SHEET_UNAVAILABLE:[502,'마스터시트에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'],
+  SHEET_BUSY:[503,'지금 저장이 몰려 잠시 뒤 다시 저장해 주세요']
 };
 
 const scalar=v=>String(v?.stringValue??v?.integerValue??'');
@@ -146,22 +148,29 @@ export function vocForTeacher(voc,classIds){
  const pick=o=>Object.fromEntries(Object.entries(o||{}).filter(([k])=>classIds.includes(String(k))));
  return {rev:voc.rev,at:voc.at,teacher:pick(voc.teacher),open:pick(voc.open)};
 }
-async function callSheet(action,args,extra={}){
+// Apps Script 호출: 잠깐 몰린 오류(잠금 시간 초과·동시 실행 초과·429·503 등)는 lib/sheet-retry.mjs 규칙대로 다시 시도합니다(2026-10-21 부하 시험).
+// 읽기는 몰림·네트워크·5xx 모두, 다시 써도 같은 쓰기(portalSave·b2Save 등 반·이름·날짜로 덮어쓰기)는 '아직 쓰지 않았음'이 분명한 오류만,
+// 새 줄을 만드는 쓰기(서류 신청·민원 접수·답글·중도탈락 신청·앰버서더 추가)는 Apps Script가 실행되지 않은 오류(동시 실행 초과·429·503)만.
+// 시간 예산은 요청 하나에 55초(handler 시작부터, 인증 확인·신청 취소 확인 읽기 포함, vercel.json maxDuration 60초 안).
+// 시험은 RETRY_HOOKS의 sleep·random·now를 바꿔 기다리지 않고 봅니다.
+export const RETRY_HOOKS={sleep:undefined,random:undefined,now:undefined};
+async function callSheet(action,args,extra={},ctx={}){
   const url=process.env[SHEET_API.urlEnv],key=process.env[SHEET_API.keyEnv];
   if(!url||!key)throw new Error('NOT_CONFIGURED');
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
+  const now=RETRY_HOOKS.now||Date.now;
   try{
-    // Apps Script는 302로 결과 주소를 돌려주므로 redirect를 따라가야 합니다.
-    const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,action,args,...extra}),redirect:'follow',signal:controller.signal});
-    const text=await r.text();let data;
-    try{data=JSON.parse(text);}catch{throw new Error('SHEET_BAD_RESPONSE');}
-    if(data?.ok===false&&data.error==='unauthorized')throw new Error('SHEET_UNAUTHORIZED');
-    return data;
-  }catch(e){if(controller.signal.aborted)throw new Error('SHEET_TIMEOUT');if(e instanceof TypeError)throw new Error('SHEET_UNAVAILABLE');throw e;}
-  finally{clearTimeout(timer);}
+    const r=await callSheetWithRetry({url,key,action,args,extra,deadline:ctx.deadline??now()+RETRY_POLICY.budgetMs,fetchImpl:(...a)=>fetch(...a),now,
+      ...(RETRY_HOOKS.sleep?{sleep:RETRY_HOOKS.sleep}:{}),...(RETRY_HOOKS.random?{random:RETRY_HOOKS.random}:{}),
+      log:x=>console.warn('teacher_beta_retry',JSON.stringify(x))});
+    ctx.attempts=(ctx.attempts||0)+r.attempts;
+    return r.out;
+  }catch(e){ctx.attempts=(ctx.attempts||0)+(e.attempts||0);throw e;}
 }
 export default async function handler(req,res){
   res.setHeader('cache-control','no-store');
+  // ctx: 이 요청의 Apps Script 시간 예산(deadline)과 호출 횟수(attempts, 다시 시도 포함). 응답 머리 x-sheet-attempts, 2번 넘게 불렀으면 본문 attempts.
+  const now=RETRY_HOOKS.now||Date.now,ctx={deadline:now()+RETRY_POLICY.budgetMs,attempts:0};
+  const meta=()=>{if(ctx.attempts)res.setHeader('x-sheet-attempts',String(ctx.attempts));return ctx.attempts>1?{attempts:ctx.attempts}:{};};
   try{
     if(req.method!=='POST')return res.status(405).json({ok:false,error:'POST만 지원합니다.'});
     let body=req.body||{};
@@ -176,26 +185,29 @@ export default async function handler(req,res){
     if(B2_ACTIONS.has(action)){
       const args=b2Args(user,action,rest),who={actor:user.email,role:user.role};
       // 담임 신청 취소: 먼저 그 반 목록을 읽어 자기 신청·확인 전인지 봅니다(읽기가 실패하면 그 오류를 그대로 돌려줌).
-      const check=action==='b2DropoutSave'&&user.role!=='ADMIN'&&args[0].remove?await callSheet('b2Dropouts',[{cls:args[0].was.cls}],who):null;
+      const check=action==='b2DropoutSave'&&user.role!=='ADMIN'&&args[0].remove?await callSheet('b2Dropouts',[{cls:args[0].was.cls}],who,ctx):null;
       if(check&&!check.ok)out=check;
       else{
         const denied=check?teacherCancelError(args[0],check.data?.rows,user.email):'';
         if(denied)throw new Error(denied);
-        out=await callSheet(action,args,who);
+        out=await callSheet(action,args,who,ctx);
       }
     }
     else{
       const cls=resolveClass(user,body,action,rest);
       const args=action==='portalSave'?[{...(rest[0]&&typeof rest[0]==='object'?rest[0]:{}),cls,pin:''}]:[cls,'',...rest.slice(2)];
-      out=await callSheet(action,args);
+      out=await callSheet(action,args,{},ctx);
     }
-    if(!out?.ok&&out?.error==='unknown action')return res.status(400).json({ok:false,code:'SHEET_OUTDATED',error:'마스터시트 데이터 API에 아직 없는 기능입니다. Apps Script를 새 코드로 다시 배포해 주세요.'});
+    if(!out?.ok&&out?.error==='unknown action')return res.status(400).json({...meta(),ok:false,code:'SHEET_OUTDATED',error:'마스터시트 데이터 API에 아직 없는 기능입니다. Apps Script를 새 코드로 다시 배포해 주세요.'});
     // 민원·이슈 알림 건수: 담임에게는 자기 반 건수만 보냅니다.
     if(out?.ok&&user.role!=='ADMIN'&&out.data?.voc)out.data.voc=vocForTeacher(out.data.voc,user.classIds);
-    return res.status(out?.ok?200:400).json(out?.ok?{ok:true,data:out.data}:{ok:false,error:String(out?.error||'요청을 처리하지 못했습니다.')});
+    return res.status(out?.ok?200:400).json({...(out?.ok?{ok:true,data:out.data}:{ok:false,error:String(out?.error||'요청을 처리하지 못했습니다.')}),...meta()});
   }catch(e){
-    const [status,error]=FAILURES[e.message]||[500,'요청을 처리하지 못했습니다.'];
+    const [status,fixed]=FAILURES[e.message]||[500,'요청을 처리하지 못했습니다.'];
     if(!FAILURES[e.message])console.error('teacher_beta',e);
-    return res.status(status).json({ok:false,code:FAILURES[e.message]?e.message:'UNEXPECTED',error});
+    // 다시 시도 뒤에도 몰림: 저장이면 '지금 저장이 몰려 잠시 뒤 다시 저장해 주세요(자동 재시도 n회)', 읽기면 '…다시 시도해 주세요'. retries = 다시 시도한 횟수.
+    const busy=e.message==='SHEET_BUSY',error=busy?busyText(e.retries||0,e.kind!=='read'):fixed;
+    if(e.attempts>1||busy)console.warn('teacher_beta_sheet_failed',JSON.stringify({code:e.message,attempts:e.attempts,failure:e.failure,detail:e.detail}));
+    return res.status(status).json({ok:false,code:FAILURES[e.message]?e.message:'UNEXPECTED',error,...meta(),...(e.retries!==undefined?{retries:e.retries}:{})});
   }
 }

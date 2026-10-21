@@ -1,9 +1,11 @@
 // 2기 마스터시트 읽기·쓰기. 브라우저 → /api/teacher-beta(로그인 확인) → Apps Script(2기 마스터시트에 붙은 프로젝트) → 마스터시트.
 // 2기는 운영총괄 동기화가 없어 '가져오기'(b2SyncNow)·'운영총괄 값으로'(b2Release)를 부르지 않습니다.
 // 변경 번호(rev)가 같으면 다시 읽지 않고, 저장한 행은 받은 값으로 바로 고쳐 Vercel·Apps Script 호출을 줄입니다.
-import {decodeBundle,ledgerKey} from './beta2-core.mjs';
+import {decodeBundle,ledgerKey,SHEET_BUSY_CODES,sheetBusyText} from './beta2-core.mjs';
 import {readAttendanceSummary} from './attendance-derived-store.mjs';
 
+// 읽기 기능(응답 늦음이면 저장 안내가 아니라 서버 글 그대로).
+const READS=new Set(['b2Bundle','b2Rev','b2Docs','b2Status','b2Vocs','b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2Dropouts','b2Completions','b2Schedule','b2Officers','b2DayMemos','portalRoster','portalData']);
 const bundles=new Map(),schedules=new Map(),officerLists=new Map(),dayMemoLists=new Map();
 export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();}
 // 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
@@ -17,7 +19,10 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   let res;try{res=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({action,args}),cache:'no-store'});}
   catch{throw Error('마스터시트 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요.');}
   const j=await res.json().catch(()=>({ok:false,error:'마스터시트 응답을 읽지 못했습니다.'}));
-  if(!j.ok){const text=String(j.error||'마스터시트 요청을 처리하지 못했습니다.');throw Object.assign(Error(text.replace(/^CONFLICT:\s*/,'')),{code:j.code||(text.startsWith('CONFLICT')?'CONFLICT':'')});}
+  // 몰림(SHEET_BUSY·SHEET_TIMEOUT, 서버가 다시 시도한 뒤): busy·attempts·retries를 붙입니다. 쓰기 화면(출결대조 등)은 초안을 남기고 이 글을 보입니다.
+  if(!j.ok){const text=String(j.error||'마스터시트 요청을 처리하지 못했습니다.'),code=j.code||(text.startsWith('CONFLICT')?'CONFLICT':''),busy=SHEET_BUSY_CODES.includes(code);
+   const msg=code==='SHEET_TIMEOUT'&&!READS.has(action)?sheetBusyText(j.retries)+' · 저장됐는지 확인되지 않았습니다':text.replace(/^CONFLICT:\s*/,'');
+   throw Object.assign(Error(msg),{code,busy,attempts:Number(j.attempts)||1,retries:Number(j.retries)||0});}
   return j.data;
  }
  async function rev(){
