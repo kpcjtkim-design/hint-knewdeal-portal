@@ -8,9 +8,11 @@
 // 저장하면 Apps Script가 명부 상태(D·E·I)도 함께 바꾸고 그 반 출결판을 다시 그립니다. 지우면 명부가 아직 그 구분이면 재학으로 되돌립니다.
 // 17반 테스트반은 목록에 '테스트반'으로 보이고 위 숫자 상자(공식 합계)에서는 빠집니다.
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle,downloadCsv} from './beta2-ui.mjs';
-import {forgetBeta2Cache} from './beta2-data.mjs';
+import {forgetBeta2Cache,isConflict} from './beta2-data.mjs';
 import {ledgerIndex,studentStats,convertedText,convertedUnitsText,unitText} from './beta2-core.mjs';
-import {DROPOUT_KINDS,DROPOUT_VERDICTS,DROPOUT_DOCS,DOC_FIELDS,DROPOUT_COLUMNS,OUTCOMES,maxOf,dropoutKey,absenceRows,absenceLevel,suggestVerdict,checkDropout,savePayload,formOf,sameForm,completionRows,official,statusBatches,requestPayload,byTeacher,requestState,canCancel} from './beta2-dropout-core.mjs';
+import {DROPOUT_KINDS,DROPOUT_VERDICTS,DROPOUT_DOCS,DOC_FIELDS,DROPOUT_COLUMNS,OUTCOMES,maxOf,dropoutKey,absenceRows,absenceLevel,suggestVerdict,checkDropout,savePayload,formOf,sameForm,completionRows,official,statusBatches,requestPayload,byTeacher,requestState,canCancel,dropoutWas,rosterWas} from './beta2-dropout-core.mjs';
+// 리허설 안전장치(시트 v23, 2026-10-21): 고치기·지우기·신청 취소는 was에 줄 지문(sig)을, 수료 처리는 줄마다 명부 상태(was)를 함께 보냅니다.
+// 그사이 다른 사람이 고쳤으면(CONFLICT) 새로 읽어 새 값을 보이고, 편집 칸의 내 입력은 그대로 남겨 다시 「저장」하게 합니다.
 import {COURSE_START,COURSE_END,isTestClass,UNIT_PERIODS} from './cohort.mjs';
 import {linkFor} from './notify-core.mjs';
 
@@ -132,17 +134,30 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
    toast(`${classLabel(done.cls)} ${done.name} · ${done.kind} ${cur?'고쳤':'등록했'}습니다.`);
    if(wasConfirm===true)confirmNotice(done,done.verdict);
    await refresh();
-  }catch(e){if(!editor)return;editor.saving=false;editor.err=`저장하지 못했습니다: ${e.message}`;if(life.alive())paintEditor();}
+  }catch(e){
+   if(!editor)return;editor.saving=false;
+   if(isConflict(e)&&cur){await conflictReload(editor,'저장');return;}
+   editor.err=`저장하지 못했습니다: ${e.message}`;if(life.alive())paintEditor();
+  }
+ }
+ // 그사이 바뀜: 새로 읽고(그 줄이 남아 있으면) 편집 칸은 내 입력 그대로, 기준(base)은 새 값으로 바꿔 안내합니다.
+ async function conflictReload(ed,what){
+  await refresh();if(!life.alive())return;
+  const now=rowByNum(ed.key);
+  if(!now){editor=null;toast(`그사이 다른 사람이 그 줄을 바꾸거나 지웠습니다 · 새로 읽었습니다`);render();return;}
+  editor=ed;ed.base=formOf(now);ed.saving=false;
+  ed.err=`그사이 다른 사람이 이 줄을 고쳤습니다 · 새 값: ${now.kind||'-'} · 판정 ${now.verdict||'판정 전'} · ${now.confirmed?'관리자 확인':'확인 전'}${now.lastDate?` · 마지막 출석 ${md(now.lastDate)}`:''} · 내 입력은 남겨 두었습니다. 다시 「${what}」을 누르면 내 값으로 ${what==='지우기'?'지웁':'저장합'}니다.`;
+  render();
  }
  async function remove(){
   const cur=editor&&rowByNum(editor.key);if(!cur||editor.saving)return;
   if(!confirm(`${classLabel(cur.cls)} ${cur.name} (${cur.kind}) 줄을 마스터시트 중도탈락 탭에서 지울까요?\n명부 상태가 아직 「${cur.kind}」이면 재학으로 되돌립니다.`))return;
   editor.saving=true;paintEditor();
   try{
-   await client.dropoutSave({row:cur.row,was:{cls:cur.cls,name:cur.name},cls:cur.cls,name:cur.name,remove:true});
+   await client.dropoutSave({row:cur.row,was:dropoutWas(cur),cls:cur.cls,name:cur.name,remove:true});
    editor=null;toast(`${classLabel(cur.cls)} ${cur.name} 줄을 지웠습니다.`);
    await refresh();
-  }catch(e){if(!editor)return;editor.saving=false;editor.err=`지우지 못했습니다: ${e.message}`;if(life.alive())paintEditor();}
+  }catch(e){if(!editor)return;editor.saving=false;if(isConflict(e)){await conflictReload(editor,'지우기');return;}editor.err=`지우지 못했습니다: ${e.message}`;if(life.alive())paintEditor();}
  }
  // 관리자 확인(한 건·여러 건): 판정이 비어 있으면 계산값을 함께 저장합니다. 확인을 풀 때는 판정을 그대로 둡니다.
  function confirmForm(r,on){const f=formOf(r);if(on&&!f.verdict){const sg=suggest(r);f.verdict=sg.verdict;f.basis=f.basis||sg.basis;}f.confirmed=on;return f;}
@@ -156,7 +171,7 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
   const fails=[];let n=0;
   for(const [r,f] of forms){
    try{await client.dropoutSave(savePayload(f,r,{admin:true}));n++;if(on)confirmNotice(f,f.verdict);}
-   catch(e){fails.push(`${classLabel(r.cls)} ${r.name}: ${e.message}`);}
+   catch(e){fails.push(`${classLabel(r.cls)} ${r.name}: ${isConflict(e)?'그사이 다른 사람이 이 줄을 고쳤습니다(새로 읽었습니다 · 확인한 뒤 다시 해 주세요)':e.message}`);}
    if(!life.alive())return;busy=`${on?'확인하는':'확인을 푸는'} 중… ${n+fails.length}/${forms.length}`;render();
   }
   busy='';picked.clear();batchNote=fails.length?`${fails.length}건은 하지 못했습니다.\n${fails.join('\n')}`:'';
@@ -175,9 +190,9 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
   const before=on&&(bundle?.today||'')<COURSE_END?`\n교육 마지막 날(${md(COURSE_END)}) 전입니다.`:'';
   if(!confirm(on?`${list.length}명을 명부에서 「수료」로 바꿀까요?${before}\n상태 변경일은 ${md(COURSE_END)}로 적습니다.`:`${list.length}명의 수료를 취소하고 「재학」으로 되돌릴까요?`))return;
   busy=on?'수료 처리하는 중…':'수료를 취소하는 중…';batchNote='';render();
-  const items=list.map(r=>({cls:r.cls,name:r.name,status:on?'수료':'재학',changed:on?COURSE_END:'',reason:on?'수료':''})),fails=[];let n=0;
+  const items=list.map(r=>({cls:r.cls,name:r.name,status:on?'수료':'재학',changed:on?COURSE_END:'',reason:on?'수료':'',was:rosterWas(r)})),fails=[];let n=0;
   for(const part of statusBatches(items)){
-   try{const res=await client.rosterStatusMany(part);n+=Number(res?.count)||part.length;}catch(e){fails.push(`${classLabel(part[0].cls)} ${part.length}명: ${e.message}`);}
+   try{const res=await client.rosterStatusMany(part);n+=Number(res?.count)||part.length;}catch(e){const m=String(e.message||'');fails.push(`${classLabel(part[0].cls)} ${part.length}명: ${/CONFLICT/.test(m)||isConflict(e)?m.replace(/CONFLICT:\s*/,'')+' (그사이 명부 상태가 바뀌어 이 반은 쓰지 않았습니다 · 새로 읽었습니다)':m}`);}
    if(!life.alive())return;
   }
   busy='';pickedDone.clear();batchNote=fails.length?`하지 못한 것이 있습니다(그 반은 한 명도 바뀌지 않았습니다).\n${fails.join('\n')}`:'';
@@ -398,10 +413,10 @@ async function mountTeacher(host,{client,teacherClass,me='',context,hideHead=fal
   if(!confirm(`${r.name} (${r.kind}) 신청을 취소할까요?\n운영팀이 확인하기 전이라 명부 상태는 그대로입니다.`))return;
   cancelling=r.row;render();
   try{
-   await client.dropoutSave({row:r.row,was:{cls:r.cls,name:r.name},cls:r.cls,name:r.name,remove:true});
+   await client.dropoutSave({row:r.row,was:dropoutWas(r),cls:r.cls,name:r.name,remove:true});
    cancelling=0;toast(`${r.name} 신청을 취소했습니다.`);notice('신청 취소',r);
    await refresh();
-  }catch(e){cancelling=0;toast(`취소하지 못했습니다: ${e.message}`);if(life.alive())render();}
+  }catch(e){cancelling=0;if(isConflict(e)){toast('그사이 운영팀이 이 신청을 고쳤습니다 · 새로 읽었습니다. 확인한 뒤 다시 해 주세요.');await refresh();return;}toast(`취소하지 못했습니다: ${e.message}`);if(life.alive())render();}
  }
  host.addEventListener('click',ev=>{
   const t=ev.target.closest('button');if(!t||t.disabled)return;

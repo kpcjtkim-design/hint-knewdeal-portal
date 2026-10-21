@@ -60,7 +60,7 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
  const card=(k,title,body,links='')=>{const el=grid.querySelector(`[data-section="${k}"]`);if(el)el.innerHTML=`<header><h3>${title}</h3>${links?`<div class="b2c-links">${links}</div>`:''}</header>${body}`;if(el&&k==='day')driveAttach(el);};
  // 드라이브 폴더 바로가기(drive-links.mjs, 사용자 요청 2026-10-21): 출결 카드 맨 아래 작은 한 줄(그 반·고른 날짜, 그날이 든 단위기간 1·2·3). 카드를 다시 그려도 같은 바를 옮겨 붙입니다.
  let drive=null;const driveAttach=el=>{if(!drive)return;el.append(drive.el);drive.set(cls,date);};
- import('./drive-links.mjs?v=20261021-dl1').then(m=>{if(!life.alive())return;drive=m.createDriveBar({client,admin:true});life.on(()=>drive.dispose());const el=grid.querySelector('[data-section="day"]');if(el)driveAttach(el);}).catch(()=>{});
+ import('./drive-links.mjs?v=20261021-rd1').then(m=>{if(!life.alive())return;drive=m.createDriveBar({client,admin:true});life.on(()=>drive.dispose());const el=grid.querySelector('[data-section="day"]');if(el)driveAttach(el);}).catch(()=>{});
  const state=(k,label)=>{const p=parts[k];return !p||p.loading&&!p.data?loading(label):p.error&&!p.data?errorBox(p.error):'';};
 
  // 한 카드의 자료를 읽습니다(늦게 온 이전 반·날짜 결과는 버림). quiet: 다시 읽는 동안 전 값을 그대로 보임.

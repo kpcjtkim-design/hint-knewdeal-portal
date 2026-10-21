@@ -469,11 +469,11 @@ test('관리자: 여러 건 관리자 확인, 결석 한도 12일 판정, 수료
   assert.equal(posts.filter(p=>p.action==='b2RosterStatusMany').length,0);
   await page.getByRole('button',{name:'수료 처리 2'}).click();
   await page.locator('#d2Body tr[data-key="1|이하늘"]',{hasText:'명부 수료'}).waitFor();
-  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatusMany').map(p=>p.args[0].rows),[[{cls:'1',name:'이하늘',status:'수료',changed:'2027-01-22',reason:'수료'},{cls:'1',name:'정민호',status:'수료',changed:'2027-01-22',reason:'수료'}]]);
+  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatusMany').map(p=>p.args[0].rows),[[{cls:'1',name:'이하늘',status:'수료',changed:'2027-01-22',reason:'수료',was:{status:'재학',changed:''}},{cls:'1',name:'정민호',status:'수료',changed:'2027-01-22',reason:'수료',was:{status:'재학',changed:''}}]],'수료 처리 줄마다 화면이 본 명부 상태(was, 시트 v23)');
   // 수료 취소
   await page.locator('[data-pickdone="1|정민호"]').check();await page.getByRole('button',{name:'수료 취소 1'}).click();
   await page.locator('#d2Body tr[data-key="1|정민호"]',{hasText:'수료 예정'}).waitFor();
-  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatusMany').at(-1).args[0].rows,[{cls:'1',name:'정민호',status:'재학',changed:'',reason:''}]);
+  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatusMany').at(-1).args[0].rows,[{cls:'1',name:'정민호',status:'재학',changed:'',reason:'',was:{status:'수료',changed:'2027-01-22'}}]);
  },{sheet});
 });
 

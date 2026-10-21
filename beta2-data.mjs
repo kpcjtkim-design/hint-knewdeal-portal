@@ -3,11 +3,21 @@
 // 변경 번호(rev)가 같으면 다시 읽지 않고, 저장한 행은 받은 값으로 바로 고쳐 Vercel·Apps Script 호출을 줄입니다.
 import {decodeBundle,ledgerKey,SHEET_BUSY_CODES,sheetBusyText} from './beta2-core.mjs';
 import {readAttendanceSummary} from './attendance-derived-store.mjs';
+import {getTestAsOf,onTestAsOf} from './beta2-asof.mjs';
 
 // 읽기 기능(응답 늦음이면 저장 안내가 아니라 서버 글 그대로).
 const READS=new Set(['b2Bundle','b2Rev','b2Docs','b2Status','b2Vocs','b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2Dropouts','b2Completions','b2Schedule','b2Officers','b2DayMemos','portalRoster','portalData']);
 const bundles=new Map(),schedules=new Map(),officerLists=new Map(),dayMemoLists=new Map();
 export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();driveLists.clear();driveCounts.clear();}
+// 시험 기준일을 켜고 끄면 들고 있던 묶음(today가 다름)을 버립니다.
+onTestAsOf(()=>bundles.clear());
+// 새로 만들기(서류발급·민원 접수)에 붙이는 한 번만 표시(시트 v23 clientId: 10분 안에 같은 값이 다시 오면 처음 결과를 repeated:true로 돌려줌 → 다시 보내도 한 건만).
+export function newClientId(){
+ try{if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();}catch{}
+ return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,12);
+}
+// 그사이 바뀜(시트 'CONFLICT: …', code CONFLICT)
+export const isConflict=e=>e?.code==='CONFLICT';
 // 구글 드라이브 폴더 바로가기(2026-10-21, drive-links.mjs): 폴더 목록(b2DriveFolders)은 편집기에서 목록을 다시 만들 때만 바뀌어 반마다 이 세션 동안 한 번(builtAt 기준),
 // 목록이 아직 없으면(rows 없음·done:false) 2분 뒤 다시 묻습니다. 파일 수(b2DriveCount)는 60초 동안 같은 값을 씁니다. 같은 것을 동시에 물으면 한 번만 부릅니다.
 for(const a of ['b2DriveFolders','b2DriveCount'])READS.add(a);
@@ -18,7 +28,9 @@ export const DRIVE_CACHE={notBuiltMs:120000,countMs:60000};
 const revListeners=new Set();let lastRev={at:0,value:null};
 export function onBeta2Rev(fn){revListeners.add(fn);if(lastRev.value)queueMicrotask(()=>{if(revListeners.has(fn))fn(lastRev.value);});return ()=>revListeners.delete(fn);}
 export const lastBeta2Rev=()=>lastRev;
-export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(...a)=>fetch(...a),db=null}={}){
+// admin: 관리자 화면·관리자 담임 미리보기 클라이언트(true면 시험 기준일을 b2Bundle에 붙임). 담임 화면은 false.
+export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(...a)=>fetch(...a),db=null,admin=false}={}){
+ const asOf=()=>admin?getTestAsOf(user):'';
  async function call(action,...args){
   const token=await user.getIdToken();
   let res;try{res=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({action,args}),cache:'no-store'});}
@@ -36,13 +48,16 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   for(const fn of [...revListeners]){try{fn(r);}catch(e){console.warn(e);}}
   return r;
  }
+ // 시험 기준일(관리자만): b2Bundle(cls, {asOf}) → today만 그날, asOf가 붙음. 캐시는 기준일마다 따로(담임 미리보기·관리자 화면이 같은 값을 씀).
  async function bundle(cls='all',{fresh=false,maxAge=20000}={}){
-  const key=String(cls),hit=bundles.get(key)||(key!=='all'?bundles.get('all'):null);
+  const day=asOf(),tag=day?'@'+day:'',key=String(cls),hit=bundles.get(key+tag)||(key!=='all'?bundles.get('all'+tag):null);
   if(hit&&!fresh){
    if(Date.now()-hit.at<maxAge)return hit.bundle;
    const r=await rev();if(r.rev===hit.bundle.rev){hit.at=Date.now();hit.bundle.sync=r.sync;return hit.bundle;}
   }
-  const b=decodeBundle(await call('b2Bundle',key));bundles.set(key,{at:Date.now(),bundle:b});return b;
+  const raw=await (day?call('b2Bundle',key,{asOf:day}):call('b2Bundle',key)),b=decodeBundle(raw);
+  if(day)b.asOf=String(raw?.asOf||day);
+  bundles.set(key+tag,{at:Date.now(),bundle:b});return b;
  }
  // 시간표(마스터시트 교육일정, b2Schedule {cls?, from?, to?}): 묶음처럼 변경 번호(rev)가 같으면 다시 읽지 않습니다. 담임은 Vercel이 자기 반으로 고정합니다.
  async function schedule(p={},{fresh=false,maxAge=20000}={}){
@@ -152,16 +167,17 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   return ()=>{stopped=true;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  }
  return {
-  call,rev,bundle,save,watch,checkhereDisease,queueOn:()=>queueOn,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,
+  call,rev,bundle,save,watch,checkhereDisease,queueOn:()=>queueOn,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,admin,asOf,
   driveFolders,driveCount,
   officerSave:p=>officerWrite('b2OfficerSave',p),
   officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),
   docs:p=>call('b2Docs',p||{}),
-  docCreate:p=>call('b2DocCreate',p),
+  // 새 신청·접수: 화면이 clientId를 주지 않으면 여기서 붙입니다(한 번 누름 = 한 건). repeated:true(같은 clientId를 시트가 이미 받음)도 성공입니다.
+  docCreate:p=>call('b2DocCreate',{clientId:newClientId(),...p}),
   docUpdate:p=>call('b2DocUpdate',p),
   vocs:p=>call('b2Vocs',p||{}),
-  vocCreate:p=>call('b2VocCreate',p),
+  vocCreate:p=>call('b2VocCreate',{clientId:newClientId(),...p}),
   vocReply:p=>call('b2VocReply',p),
   vocSeen:p=>call('b2VocSeen',p),
   roster:cls=>call('portalRoster',Number(cls),''),

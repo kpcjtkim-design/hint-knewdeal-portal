@@ -2,7 +2,7 @@
 // 원본은 마스터시트 명부 D(상태)·E(상태 변경일 = 마지막 출석일)·I(상태 사유), Apps Script b2RosterStatus(관리자만, 그 반 출결판도 다시 그림).
 // 재학이 아니면 마지막 출석일 다음 교육일부터 출결대조·출결 현황·출석률에서 빠집니다(beta2-core enrolledOn). 저장 뒤에는 2기 화면이 들고 있던 묶음을 비우고 다시 읽습니다.
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
-import {forgetBeta2Cache} from './beta2-data.mjs';
+import {forgetBeta2Cache,isConflict} from './beta2-data.mjs';
 import {ROSTER_STATUS,checkRosterStatus} from './beta2-core.mjs';
 
 const VIEWS=[['all','전체'],['in','재학'],['out','재학 아님']];
@@ -13,7 +13,21 @@ const STYLE=`.b2r .b2r-row{display:grid;grid-template-columns:minmax(120px,1fr) 
 const now=s=>s||'재학';
 // 명단 반영 결과 한 줄(시트 v16 b2RebuildBoards boards[]): 'n반 학생 m명, 출결판 r줄(+k줄 늘림)'
 export const boardLine=b=>`${b.cls}반 학생 ${Number(b.students)||0}명, 출결판 ${Number(b.rows)||0}줄(+${Number(b.grown)||0}줄 늘림)`;
-export const REBUILD_CONFIRM='마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 전체는 20초쯤 걸립니다.';
+export const REBUILD_CONFIRM='마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 전체는 반 하나씩 차례로 다시 그려 1분쯤 걸립니다.';
+// 명단 반영 '전체'(2026-10-21 리허설): 시트 b2RebuildBoards는 문서 잠금을 30초까지 잡아, 17반을 한 번에 다시 그리면 그동안 담임·운영 저장이 잠금을 기다리다 시간 초과가 날 수 있습니다.
+// 그래서 '전체'도 반 하나씩 차례로 부르고(한 번에 몇 초), 진행(n/전체)을 보입니다. 못 한 반은 끝에 모아 알립니다.
+export async function rebuildEach(client,ids,{onStep=()=>{},alive=()=>true}={}){
+ const boards=[],fails=[];
+ for(const [i,id] of ids.entries()){
+  if(!alive())break;
+  onStep({i,total:ids.length,cls:id});
+  try{const r=await client.rebuildBoards(String(id));boards.push(...(r?.boards||[]));}
+  catch(e){if(e.code==='SHEET_OUTDATED'||/unknown action|알 수 없는/.test(e.message))throw e;fails.push({cls:String(id),message:e.message});}
+ }
+ return {boards,fails};
+}
+// 교육생 상태 저장의 was: 화면이 본 명부 상태·상태 변경일(시트 v23). 그사이 바뀌었으면 시트가 CONFLICT로 멈춥니다.
+export const rosterStatusWas=p=>({status:String(p?.status||'')||'재학',changed:String(p?.changed||'')});
 
 export async function mount(host,{client,classes,selected,context}){
  const life=lifecycle(host);
@@ -69,11 +83,16 @@ export async function mount(host,{client,classes,selected,context}){
   if(f.status!=='재학'&&!confirm(`${p.cls}반 ${p.name} 학생을 「${f.status}」(으)로 바꿀까요?\n마지막 출석일 ${md(f.changed)} 다음 교육일부터 출결대조·출결 현황·출석률 계산에서 빠집니다.`))return;
   e.saving=true;paintRow(key);
   try{
-   const res=await client.call('b2RosterStatus',{cls:p.cls,name:p.name,...f});
+   const res=await client.call('b2RosterStatus',{cls:p.cls,name:p.name,...f,was:rosterStatusWas(p)});
    edits.delete(key);Object.assign(p,{status:res?.status||f.status,changed:res?.changed??f.changed,reason:f.reason});
    toast(`${p.cls}반 ${p.name} · ${now(p.status)}${p.changed?` (마지막 출석 ${md(p.changed)})`:''} 저장했습니다.`);
    forgetBeta2Cache();render();await load({fresh:true,quiet:true}); // 출결 화면이 들고 있던 묶음(재학 기간 계산)도 새로 읽게
-  }catch(x){e.saving=false;e.err=`저장하지 못했습니다: ${x.message}`;if(life.alive())paintRow(key);}
+  }catch(x){
+   e.saving=false;
+   // 그사이 바뀜: 명부를 새로 읽고(내 입력 edits는 그대로) 지금 값을 알려 줍니다. 다시 「저장」하면 새 값을 기준(was)으로 저장합니다.
+   if(isConflict(x)){forgetBeta2Cache();await load({fresh:true,quiet:true});if(!life.alive())return;const q=person(key);e.err=`그사이 다른 사람이 바꿨습니다 · 지금 값: ${now(q?.status)}${q?.changed&&now(q?.status)!=='재학'?` (마지막 출석 ${md(q.changed)})`:''} · 내 입력은 남겨 두었습니다. 다시 「저장」을 누르면 내 값으로 저장합니다.`;render();return;}
+   e.err=`저장하지 못했습니다: ${x.message}`;if(life.alive())paintRow(key);
+  }
  }
  const edit=(t,key)=>{const p=person(key);if(!p)return null;if(!edits.has(key))edits.set(key,{...valuesOf(p),err:''});const e=edits.get(key);e[t.dataset.e]=t.value;e.err='';return e;};
  host.addEventListener('input',ev=>{const t=ev.target,key=t.closest('[data-key]')?.dataset.key;if(!key||!t.dataset.e||t.dataset.e==='status')return;edit(t,key);
@@ -96,10 +115,12 @@ export async function mount(host,{client,classes,selected,context}){
   const btn=$('#r2Rebuild'),out=$('#r2RebuildOut');
   rebuilding=true;btn.disabled=true;btn.textContent='다시 그리는 중…';out.innerHTML=`<div class="b2-note" style="margin-top:10px">${esc(target)} 출결판을 다시 그리는 중입니다…</div>`;
   try{
-   const r=await client.rebuildBoards(cls);if(!life.alive())return;
-   const lines=(r?.boards||[]).map(boardLine);
-   out.innerHTML=`<div class="b2-note" style="margin-top:10px" data-rebuilt><b>${esc(target)} 출결판을 다시 그렸습니다.</b>${lines.length?`<ul style="margin:6px 0 0;padding-left:18px">${lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>`:''}</div>`;
-   toast(`${target} 출결판을 다시 그렸습니다.`);
+   const ids=cls==='all'?classes.map(c=>String(c.id)):[cls];
+   const {boards,fails}=await rebuildEach(client,ids,{alive:life.alive,onStep:({i,total,cls:c})=>{if(total<2)return;btn.textContent=`다시 그리는 중… ${i+1}/${total}`;out.innerHTML=`<div class="b2-note" style="margin-top:10px" data-rebuild-progress>${esc(target)} 출결판을 반 하나씩 다시 그리는 중입니다 · ${i+1}/${total} (${esc(c)}반)</div>`;}});
+   if(!life.alive())return;
+   const lines=boards.map(boardLine);
+   out.innerHTML=`<div class="b2-note ${fails.length?'warn':''}" style="margin-top:10px" data-rebuilt><b>${esc(target)} 출결판을 다시 그렸습니다${fails.length?` (못 한 반 ${fails.length}개)`:''}.</b>${lines.length?`<ul style="margin:6px 0 0;padding-left:18px">${lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>`:''}${fails.length?`<div class="b2-err" data-rebuild-fails>${fails.map(f=>`${esc(f.cls)}반: ${esc(f.message)}`).join('<br>')}</div>`:''}</div>`;
+   toast(fails.length?`${target} 출결판 · ${fails.length}개 반은 다시 그리지 못했습니다.`:`${target} 출결판을 다시 그렸습니다.`);
    void load({fresh:true,quiet:true});
   }catch(e){
    if(!life.alive())return;

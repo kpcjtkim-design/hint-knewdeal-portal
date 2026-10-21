@@ -4,6 +4,7 @@
 // (줄을 지우면 아래 줄 번호가 당겨지므로 저장마다 다시 읽고, 다시 읽는 동안 다른 저장은 잠급니다).
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {COURSE_START,COURSE_END} from './cohort.mjs';
+import {isConflict} from './beta2-data.mjs';
 import {DAY_DEFAULTS,TIME_RANGE,dayTimesOf,dayText,dayRuleText,checkModuleTime,cleanTime,minutes,hhmmOf,isHHmm,rememberDayTimes,forgetDayTimes,SOURCE_SHEET} from './beta2-daytimes.mjs';
 
 const koreaToday=()=>new Date().toLocaleString('sv-SE',{timeZone:'Asia/Seoul'}).slice(0,10);
@@ -92,13 +93,16 @@ export async function mount(host,{user,classes,client,context}){
   if(from>to){loadErr='시작일이 끝일보다 늦습니다.';data=null;render();return;}
   try{
    const res=await client.call('b2ModuleTimes',{from,to,...(cls==='all'?{}:{cls})});if(n!==seq||!life.alive())return;
-   data={rev:res?.rev||0,defaults:res?.defaults||null,field:res?.field||null,rows:(res?.rows||[]).map(r=>({...r,cls:String(r.cls??''),start:isHHmm(r.start)?r.start:'',end:isHHmm(r.end)?r.end:''}))};loadErr='';
+   data={rev:res?.rev||0,defaults:res?.defaults||null,field:res?.field||null,rows:(res?.rows||[]).map(r=>({...r,cls:String(r.cls??''),start:isHHmm(r.start)?r.start:'',end:isHHmm(r.end)?r.end:'',sheetStart:String(r.start??''),sheetEnd:String(r.end??'')}))};loadErr='';
    const r=editing&&editing!=='new'?rowAt(editing):null;if(editing&&editing!=='new'&&(!r||r.date!==form?.date||r.cls!==form?.cls||r.module!==form?.module)){editing=null;form=null;} // 줄 번호가 다른 줄이 됐으면 닫음
   }catch(e){if(n!==seq||!life.alive())return;if(!quiet)data=null;loadErr=e;if(quiet)say(`다시 읽지 못했습니다: ${e.message}`,'warn');}
   render();
  }
  // 시트는 줄 번호(row)와 함께 그 줄의 원래 날짜·반·모듈(was)이 맞는지 보고, 그사이 다른 줄이 됐으면 '그 줄이 바뀌었습니다. 새로 읽어 주세요.'로 거절합니다(2026-10-20).
- const wasOf=r=>({date:r.date,cls:r.cls,module:r.module});
+ // 리허설 안전장치(시트 v23, 2026-10-21): was에 화면이 본 시작·끝(시트가 준 글자 그대로)도 넣어, 다른 운영자가 그사이 시간을 바꿨으면 'CONFLICT'로 멈춥니다.
+ // 그러면 새로 읽어 새 시간을 보이고, 고치던 내 입력은 편집 칸에 그대로 남겨 다시 「저장」하게 합니다.
+ const wasOf=r=>({date:r.date,cls:r.cls,module:r.module,start:String(r.sheetStart??r.start??''),end:String(r.sheetEnd??r.end??'')});
+ const timeText=r=>isHHmm(r?.start)&&isHHmm(r?.end)?`${r.start}~${r.end}`:'시간 미정';
  const CHANGED_RE=/그 줄이 바뀌었습니다/;
  // 거절이 '그 줄이 바뀜'이면 고치던 값을 닫고 이유를 크게 보인 뒤 시트에서 다시 읽습니다. 아니면 false(부른 쪽이 되돌림).
  async function rowChanged(e,before){
@@ -128,12 +132,25 @@ export async function mount(host,{user,classes,client,context}){
    if(res?.day)rememberDayTimes(res.day);else forgetDayTimes(f.cls,f.date);
    if(life.alive()){const r={...payload,row:res?.row??temp.row,by:user?.email||'',at:'방금',pending:'다시 읽는 중…'};data.rows=data.rows.map(x=>x===temp?r:x);toast(`${md(f.date)} ${f.cls}반 ${f.module} ${f.start}~${f.end} 저장 · 그날 기준 ${res?.day?dayText(res.day):'다시 읽는 중'}`);}
   }catch(e){
+   if(isConflict(e)&&existing){await conflictSave(before,keep);return;}
    if(await rowChanged(e,before))return;
    if(life.alive()){data.rows=before;({editing,form}=keep);formErr=`저장하지 못했습니다: ${e.message}`;}
    busy=false;render();return;
   }
   await reload();
  }
+ // 그사이 다른 운영자가 시간을 바꿈(CONFLICT): 새로 읽고, 같은 줄이 남아 있으면 내 입력을 편집 칸에 그대로 다시 열어 새 값을 알려 줍니다.
+ async function conflictSave(before,keep){
+  if(!life.alive())return;data.rows=before;busy=true;render();
+  try{await load({quiet:true});}finally{busy=false;}
+  const r=keep.editing?rowAt(keep.editing):null;
+  if(r&&r.date===keep.form.date&&r.cls===keep.form.cls&&r.module===keep.form.module){
+   editing=keep.editing;form={...keep.form,row:r.row,was:wasOf(r),dirty:true};
+   formErr=`그사이 다른 사람이 시간을 바꿨습니다 · 새 값: ${timeText(r)}${r.by?` (${r.by}${r.at?' · '+r.at:''})`:''} · 내 입력은 남겨 두었습니다. 다시 「저장」을 누르면 내 값으로 저장합니다.`;say('');
+  }else say('그사이 다른 사람이 이 줄을 바꿨습니다 · 새로 읽었습니다. 확인한 뒤 다시 해 주세요.','err');
+  render();
+ }
+ const conflictNote=()=>say('그사이 다른 사람이 이 줄의 시간을 바꿨습니다 · 새로 읽었습니다. 확인한 뒤 다시 해 주세요.','err');
  // 저장·지움 뒤 시트에서 다시 읽는 동안은 다른 저장·고치기를 잠급니다(지운 줄 아래 번호가 당겨져 옛 번호로 다른 줄을 고치지 않게).
  async function reload(){render();try{await load({quiet:true});}finally{busy=false;if(data)data.rows=data.rows.map(r=>r.pending?{...r,pending:''}:r);render();}} // 못 읽어도 화면 값은 남김(안내는 load가 보임)
  // 지우기: 「현장교육 일정」 탭에서 그 줄을 지웁니다(확인 뒤). 화면에서 먼저 빼고, 못 하면 되돌립니다. 그날 기준은 남은 줄로 다시 정해집니다.
@@ -142,7 +159,7 @@ export async function mount(host,{user,classes,client,context}){
   if(!confirm(`${md(r.date)} ${r.cls}반 「${r.module}${r.part?' · '+r.part:''}」 ${timed(r)?`${r.start}~${r.end}`:'(시간 미정)'} 줄을 마스터시트 현장교육 일정 탭에서 지울까요?\n그날 기준은 남은 줄로 다시 정해집니다(없으면 평소 ${defaults().start}~${defaults().end}).`))return;
   const before=data.rows;data.rows=data.rows.filter(x=>x!==r);busy=true;if(editing===key){editing=null;form=null;}say('');render();
   try{await client.call('b2ModuleTimeSave',{row:r.row,was:wasOf(r),date:r.date,cls:r.cls,module:r.module,remove:true});forgetDayTimes(r.cls,r.date);toast(`${md(r.date)} ${r.cls}반 ${r.module} 줄을 지웠습니다.`);}
-  catch(e){if(await rowChanged(e,before))return;if(life.alive()){data.rows=before;say(`지우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
+  catch(e){if(isConflict(e)){data.rows=before;conflictNote();busy=true;await reload();conflictNote();return;}if(await rowChanged(e,before))return;if(life.alive()){data.rows=before;say(`지우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
   await reload();
  }
  // 시간 비우기: 줄은 남기고 시작·끝을 비워 '시간 미정'으로 되돌립니다(확인 뒤, 시작·끝을 함께 비움). 그날 기준은 남은 줄로 다시 정해집니다.
@@ -152,7 +169,7 @@ export async function mount(host,{user,classes,client,context}){
   const payload={row:r.row,was:wasOf(r),date:r.date,cls:r.cls,module:r.module,start:'',end:'',part:r.part||'',reason:'시간 미정으로 되돌림'};
   const before=data.rows;data.rows=data.rows.map(x=>x===r?{...r,start:'',end:'',pending:'저장 중…'}:x);busy=true;if(editing===key){editing=null;form=null;}say('');render();
   try{const res=await client.call('b2ModuleTimeSave',payload);if(res?.day)rememberDayTimes(res.day);else forgetDayTimes(r.cls,r.date);toast(`${md(r.date)} ${r.cls}반 ${r.module} 시간을 비웠습니다(시간 미정).`);}
-  catch(e){if(await rowChanged(e,before))return;if(life.alive()){data.rows=before;say(`시간을 비우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
+  catch(e){if(isConflict(e)){data.rows=before;conflictNote();busy=true;await reload();conflictNote();return;}if(await rowChanged(e,before))return;if(life.alive()){data.rows=before;say(`시간을 비우지 못했습니다: ${e.message}`,'err');}busy=false;render();return;}
   await reload();
  }
  const paintErr=()=>{const el=host.querySelector(`[data-editor="${CSS.escape(editing||'')}"] [data-err]`);if(el)el.textContent=formErr;else render();};

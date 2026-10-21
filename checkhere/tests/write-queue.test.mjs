@@ -363,3 +363,37 @@ test('safety net: any API request wakes the drain when a pending item is older t
  assert.equal(fs.queue()[0].status,'done');
  await call({action:'b2Rev',args:[]},{email:ADMIN_EMAIL});assert.equal(bg.length,0,'not again within 20 s');
 });
+
+test('rehearsal safeguards (sheet v23): teacher before goes into the queue and b2ApplyQueue, CONFLICT becomes a failed item; a bad before is refused; the direct path passes before and reports conflict',async t=>{
+ const CONFLICT='CONFLICT: 운영팀이 그사이 이 기록을 고쳤습니다. 최신 값을 다시 읽어 주세요.';
+ const {fs,calls}=setup(t,{sheet:({action,args})=>{
+  if(action!=='b2ApplyQueue')return Response.json({ok:true,data:{ok:true}});
+  const items=args[0].items;
+  return Response.json({ok:true,data:{ok:true,rev:20,results:items.map(i=>i.before==='sig-old'?{id:i.id,ok:false,error:CONFLICT}:{id:i.id,ok:true,action:'write',sig:'sig-new-'+i.rec.name})}});
+ }});
+ QUEUE.opts.defer=()=>'test';
+ const res=await call({action:'portalSaveBatch',args:[{items:[item('가상가',{before:'sig-old'}),item('가상나',{before:''}),item('가상다')]}],cls:3});
+ const {ids}=res.body.data;
+ assert.deepEqual(fs.queue().map(d=>[d.name,d.role,d.before]),[['가상가','TEACHER','sig-old'],['가상나','TEACHER',''],['가상다','TEACHER',undefined]],'before kept per item (\'\' = the row did not exist)');
+ await QUEUE.drain();
+ const sent=sheetCalls(calls,'b2ApplyQueue')[0].args[0].items;
+ assert.deepEqual(sent.map(i=>[i.rec.name,i.role,i.before]),[['가상가','TEACHER','sig-old'],['가상나','TEACHER',''],['가상다','TEACHER',undefined]],'teacher items carry before to the sheet');
+ const st=(await call({action:'queueStatus',args:[{ids}],cls:3})).body.data.items;
+ assert.deepEqual(st.map(x=>[x.name,x.status,x.error,x.sig]),[['가상가','failed',CONFLICT,''],['가상나','done','','sig-new-가상나'],['가상다','done','','sig-new-가상다']]);
+ // 모양이 틀린 before는 받지 않음(대기열에 넣지 않음)
+ for(const before of [{x:1},'x'.repeat(65),'a b'])assert.equal((await call({action:'portalSaveBatch',args:[{items:[item('가상라',{before})]}],cls:3})).body.code,'QUEUE_BAD_ITEM');
+ assert.equal((await call({action:'portalSave',args:[{cls:3,...item('가상라',{before:{}})}],cls:3})).body.code,'QUEUE_BAD_ITEM');
+ const one=await call({action:'portalSave',args:[{cls:3,...item('가상라',{before:'sig-1'})}],cls:3});
+ assert.equal(fs.data('writeQueue/'+one.body.data.id).before,'sig-1','single teacher save keeps before too');
+});
+
+test('rehearsal safeguards, direct path (no queue): portalSaveBatch and portalSave send before to the sheet; a sheet conflict comes back as conflict:true',async t=>{
+ const {calls}=setup(t,{key:null,sheet:({action,args})=>action==='portalSave'?Response.json({ok:true,data:args[0].before==='sig-old'?{ok:false,conflict:true,msg:'CONFLICT: 운영팀이 그사이 이 기록을 고쳤습니다.'}:{ok:true}}):Response.json({ok:true,data:{}})});
+ const res=await call({action:'portalSaveBatch',args:[{items:[item('가상가',{before:'sig-old'}),item('가상나')]}],cls:3});
+ assert.deepEqual(res.body.data.results.map(r=>[r.ok,!!r.conflict]),[[false,true],[true,false]]);
+ assert.deepEqual(sheetCalls(calls,'portalSave').map(c=>c.args[0].before),['sig-old',undefined]);
+ const single=await call({action:'portalSave',args:[{cls:3,...item('가상가',{before:'sig-old'})}],cls:3});
+ assert.deepEqual(single.body.data,{ok:false,conflict:true,msg:'CONFLICT: 운영팀이 그사이 이 기록을 고쳤습니다.'});
+ assert.equal(sheetCalls(calls,'portalSave').at(-1).args[0].before,'sig-old');
+ assert.equal((await call({action:'portalSave',args:[{cls:3,...item('가상가',{before:'no spaces allowed'})}],cls:3})).body.code,'BAD_REQUEST');
+});

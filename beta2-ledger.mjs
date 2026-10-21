@@ -97,7 +97,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 드라이브 폴더 바로가기(drive-links.mjs, 사용자 요청 2026-10-21): 도구줄 바로 아래 한 줄(그 반·그날 수기출석·출결인정자료·교육사진, 그날이 든 단위기간 1·2·3)과
  // 학생 증빙 드롭다운 옆 작은 '출결인정자료 폴더'. 따로 불러와 못 불러와도 화면은 그대로입니다. 반·날짜는 dateOptions()가 맞춥니다.
  let drive=null;const driveSlot=document.createElement('div');driveSlot.className='b2-drive-slot';driveSlot.style.cssText='padding:0 14px 8px';$('.b2-toolbar').after(driveSlot);
- import('./drive-links.mjs?v=20261021-dl1').then(m=>{if(!life.alive())return;drive=m.createDriveBar({client,admin:true,onChange:()=>{if(life.alive()&&bundle)renderRows();}});driveSlot.append(drive.el);life.on(()=>drive.dispose());if(bundle)drive.set(cls,date);}).catch(()=>{});
+ import('./drive-links.mjs?v=20261021-rd1').then(m=>{if(!life.alive())return;drive=m.createDriveBar({client,admin:true,onChange:()=>{if(life.alive()&&bundle)renderRows();}});driveSlot.append(drive.el);life.on(()=>drive.dispose());if(bundle)drive.set(cls,date);}).catch(()=>{});
  const students=()=>rows.map(r=>({rowIndex:r.rowIndex,name:r.name}));
  const rowOf=name=>rows.find(r=>r.name===name)||null;
  const recordOf=name=>recordsDay===`${cls}|${date}`?matchSnapshot({name},students(),records,identities).record||null:null; // 다른 반·날짜 기록은 보이지 않음
@@ -261,12 +261,14 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   if(c===cls)for(const name of bodies.keys())paintMemo(name);
  }
  // 메모 저장(빈 글이면 지움). 바로 저장하고 관리자 알림을 남깁니다(알림 실패는 작은 안내만, 메모는 저장된 그대로). 출결 초안·모아 저장과 섞이지 않습니다.
+ // 리허설 안전장치(시트 v23, 2026-10-21): was = 화면이 본 메모 글자(없던 메모는 ''). 다른 운영자가 그사이 메모를 바꿨으면 CONFLICT → 메모를 새로 읽어 새 메모를 보이고,
+ // 내 글은 직접 입력 칸에 남겨 다시 「저장」하게 합니다(다시 저장하면 새로 읽은 메모를 was로 보냄).
  async function saveMemo(name,text){
   const memo=String(text??'').replace(/\s+/g,' ').trim().slice(0,MEMO_MAX),c=cls,d=date,k=memoKey(c,name,d),before=memos.get(k)?.memo||'';
   if(memoUi.busy)return;if(memo===before){memoUi.custom=false;memoUi.err='';paintMemo(name);return;}
   memoUi.busy=name;memoUi.err='';paintMemo(name);
   try{
-   const res=await client.call('b2LedgerMemo',{cls:c,name,date:d,memo});
+   const res=await client.call('b2LedgerMemo',{cls:c,name,date:d,memo,was:before});
    if(memo)memos.set(k,{memo,by:user?.email||''});else memos.delete(k);
    if(bundle&&String(res?.cls??c)===cls&&+res?.rev===+bundle.rev+1)bundle.rev=+res.rev; // 메모만 바뀐 변경 번호로 출결원장을 다시 읽지 않게(그사이 다른 변경이 있었으면 그대로 다시 읽음)
    memoUi.custom=false;memoUi.text='';
@@ -274,7 +276,13 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    if((res?.offDay||res?.future)&&res.notice&&sameDay(`${c}|${d}`))say(res.notice); // 교육일이 아닌 날·아직 오지 않은 날의 메모 안내(시트가 붙임, 막지 않음)
    void notify('출결대조 메모',{audience:'admins',cls:c,title:`출결대조 메모 · ${c}반 ${name}`,body:memo?`${md(d)} ${memo}`:`${md(d)} 메모를 지웠습니다 (전: ${before})`,link:linkFor('b2ledger',{cls:c,date:d})});
    void loadMemos({force:true});
-  }catch(e){memoUi.err=`메모를 저장하지 못했습니다: ${e.message}`;}
+  }catch(e){
+   if(e?.code==='CONFLICT'){
+    memoUi.busy='';await loadMemos({force:true});
+    const now=memos.get(k)?.memo||'';
+    Object.assign(memoUi,{open:name,custom:true,text:memo,err:`그사이 다른 사람이 메모를 바꿨습니다 · 새 메모: ${now||'(없음)'} · 내 글은 칸에 남겨 두었습니다. 다시 「저장」을 누르면 내 글로 바꿉니다.`});
+   }else memoUi.err=`메모를 저장하지 못했습니다: ${e.message}`;
+  }
   finally{memoUi.busy='';if(life.alive()&&sameDay(`${c}|${d}`))paintMemo(name);}
  }
  function openMemo(name){const prev=memoUi.open;Object.assign(memoUi,{open:prev===name?'':name,custom:false,text:'',err:''});if(prev&&prev!==name)paintMemo(prev);paintMemo(name);}

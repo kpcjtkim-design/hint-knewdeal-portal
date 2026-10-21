@@ -1,6 +1,8 @@
 // 2기 베타 민원·이슈(2026-10-16 회의): 담임 접수·답글 ↔ 운영팀 처리함(처리 상태·답글).
 // 마스터시트 민원이슈 탭에 함께 남고, 알림은 포털 화면으로만 합니다(beta2.gs b2Voc*, 메일 없음). teacherClass가 있으면 담임 화면, 없으면 처리함.
-import {onBeta2Rev,lastBeta2Rev} from './beta2-data.mjs';
+import {onBeta2Rev,lastBeta2Rev,newClientId,isConflict} from './beta2-data.mjs';
+// 리허설 안전장치(시트 v23, 2026-10-21): 접수는 clientId(성공하면 새로)를 붙여 두 번 눌러도·다시 보내도 한 건만(repeated:true도 성공, 알림은 처음 한 번만).
+// 처리 상태를 바꿀 때는 화면이 본 상태(wasStatus)를 함께 보내고, 그사이 다른 사람이 상태를 바꿨으면(CONFLICT) 새로 읽어 지금 상태를 보이고 내 답글·상태는 남깁니다(답글만은 그대로 쌓임).
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
@@ -18,7 +20,7 @@ const when=s=>{const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):
 export async function mount(host,{client,classes,selected,context,teacherClass=null,onState=null}){
  const life=lifecycle(host),admin=!teacherClass,side=admin?'운영':'담임';
  let data=null,filter=admin?(context?.classFilter?'open':'wait'):'all',cls=teacherClass?String(teacherClass):context?.classFilter&&context?.classId?String(context.classId):'all',search='',openKey='',busy=false,err='',vocRev=null,creating=!admin;
- const form={cls:teacherClass?String(teacherClass):String(selected||'1'),type:'',detail:''},drafts={};
+ const form={clientId:newClientId(),cls:teacherClass?String(teacherClass):String(selected||'1'),type:'',detail:''},drafts={};
  host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>${admin?'민원·이슈 처리함':'민원·이슈'}</h2><p>${admin?'담임이 접수하거나 답글을 달면 여기와 홈, 화면 오른쪽 아래에 알림이 뜹니다. 답글과 처리 상태는 담임 화면과 마스터시트 민원이슈 탭에 그대로 남습니다.':'운영팀과 민원·이슈를 주고받습니다. 접수하거나 답글을 달면 운영팀에 바로 알림이 가고, 운영팀 답글과 처리 상태를 여기서 확인합니다.'}</p></div>${admin?'<button class="b2-btn" id="v2New">새로 접수</button>':''}</div><div id="v2Form"></div><section class="b2-card"><div class="b2-toolbar" id="v2Tools"></div><div id="v2List" style="padding:0 14px 14px">${loading()}</div></section></div>`;
  const $=s=>host.querySelector(s);
  const draft=key=>drafts[key]||(drafts[key]={text:'',status:'',err:''});
@@ -77,10 +79,10 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
   if(err)return render();
   busy=true;render();
   try{
-   const res=await client.vocCreate({cls:form.cls,type:form.type,detail:form.detail.trim(),side});
-   toast(`접수했습니다 · ${res.id}`);
-   tell({cls:form.cls,id:res.id,title:`민원·이슈 접수 · ${form.cls}반 ${form.type}`,body:form.detail});
-   form.type='';form.detail='';creating=!admin;busy=false;openKey=res.id;took(res.state);await load();
+   const res=await client.vocCreate({clientId:form.clientId,cls:form.cls,type:form.type,detail:form.detail.trim(),side});
+   toast(res?.repeated?`이미 접수되었습니다 · ${res.id}`:`접수했습니다 · ${res.id}`);
+   if(!res?.repeated)tell({cls:form.cls,id:res.id,title:`민원·이슈 접수 · ${form.cls}반 ${form.type}`,body:form.detail});
+   form.type='';form.detail='';form.clientId=newClientId();creating=!admin;busy=false;openKey=res.id;took(res.state);await load();
   }catch(e){busy=false;err=e.message;render();}
  }
  async function send(r){
@@ -88,12 +90,16 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
   if(!text&&!status){d.err='답글을 적거나 처리 상태를 고르세요.';render();return;}
   busy=true;d.err='';render();
   try{
-   const res=await client.vocReply({key:r.key,sig:r.sig,cls:r.cls,text,status,side});
+   const res=await client.vocReply({key:r.key,sig:r.sig,cls:r.cls,text,status,side,...(status?{wasStatus:r.status}:{})});
    delete drafts[r.key];busy=false;if(res.id&&res.id!==r.key)openKey=res.id; // 예전 기록은 이때 번호가 생깁니다
    toast(res.unchanged?'바뀐 것이 없습니다.':'보냈습니다');took(res.state);
    if(!res.unchanged)tell({cls:r.cls,id:res.id||r.key,title:`민원·이슈 ${text?'답글':'처리 상태'} · ${r.cls}반 ${r.type||''}`,body:[status?`[처리 상태 ${status}]`:'',text].filter(Boolean).join(' '),author:r.author});
    await load();
-  }catch(e){busy=false;d.err=e.message;render();}
+  }catch(e){
+   busy=false;
+   if(isConflict(e)){await load();const nr=data?.rows.find(x=>x.key===r.key);d.err=`그사이 다른 사람이 처리 상태를 바꿨습니다 · 지금 상태: ${nr?.status||'확인 안 됨'} · 내 답글·상태는 남겨 두었습니다. 다시 「보내기」를 누르면 보냅니다.`;render();return;}
+   d.err=e.message;render();
+  }
  }
  async function seen(r){
   try{const res=await client.vocSeen({key:r.key,sig:r.sig,cls:r.cls,side:'담임'});r.seen=r.lastAt;took(res.state);if(life.alive())render();}catch{}

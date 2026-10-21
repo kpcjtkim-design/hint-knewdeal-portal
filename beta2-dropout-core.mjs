@@ -102,8 +102,12 @@ export function savePayload(form,cur=null,{admin=true}={}){
  const p={cls:s(form.cls),name:s(form.name),kind:s(form.kind),reason:s(form.reason),startDate:s(form.startDate),lastDate:s(form.lastDate),note:s(form.note)};
  if(admin)Object.assign(p,{verdict:s(form.verdict),basis:s(form.basis),docs:Object.fromEntries(DOC_FIELDS.map(([k])=>[k,s(form.docs?.[k])])),contact:s(form.contact)});
  if(admin&&typeof form.confirmed==='boolean'&&form.confirmed!==!!cur?.confirmed)p.confirm=form.confirmed;
- return cur?{row:cur.row,was:{cls:cur.cls,name:cur.name},...p}:p;
+ return cur?{row:cur.row,was:dropoutWas(cur),...p}:p;
 }
+// 고칠·지울 줄의 was: 반·이름 + 줄 지문(b2Dropouts sig, 시트 v23 2026-10-21). 그사이 다른 사람이 그 줄을 고쳤으면 시트가 CONFLICT로 멈춥니다(sig가 없는 예전 시트는 반·이름만).
+export const dropoutWas=r=>({cls:s(r?.cls),name:s(r?.name),...(s(r?.sig)?{sig:s(r.sig)}:{})});
+// 수료 처리(b2RosterStatusMany) 줄의 was: 화면이 본 명부 상태·상태 변경일(시트 v23). 그사이 바뀌었으면 그 반 묶음 전체를 쓰지 않습니다.
+export const rosterWas=r=>({status:s(r?.status)||'재학',changed:s(r?.changed)});
 // 담임 신청(b2DropoutSave 새 줄). 근로개시일은 조기취업일 때만 보냅니다.
 export function requestPayload(f){
  const kind=s(f?.kind);

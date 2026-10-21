@@ -1,5 +1,6 @@
 // 2기 담임 화면(담임 로그인·관리자 미리보기 공통): 하루 업무 순서대로 6개 탭. 시간표·강의자료·만족도는 cohort.json features가 켜질 때까지 '11월 중에 열립니다'로 감춥니다.
 // 출결판·사유·반 정보는 teacher-beta.js 한 개를 띄워 두고 탭에 따라 옮겨 씁니다(마스터시트 읽기 1번).
+// 관리자 미리보기(preview)는 관리자 클라이언트(admin:true)라 시험 기준일(beta2-asof.mjs)이 묶음에 붙습니다. 실제 담임은 늘 실제 오늘.
 // 2026-10-16 회의: 학습자 평가·현장운영 체크리스트는 없앴고, 민원·이슈는 운영팀과 주고받습니다(beta2-voc.mjs, 운영팀 답글 알림).
 // 2026-10-19 담임 화면 다듬기: 하위 탭 줄은 지금 큰 탭 것만(예전에는 .b2-tabs의 display:flex가 hidden을 이겨 출결 하위 탭이 다른 탭에 남음),
 // 머리말 '오늘 · 날짜 · 반 이름'과 한 줄 안내, 주소 #t/큰탭/하위탭으로 새로고침·뒤로가기·바로 열기, 불러오기 실패는 쉬운 말과 '다시 시도'.
@@ -32,7 +33,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  ensureBeta2Css();
  const hero=parent.querySelector('.hero');if(!hero)return null;
  const following=[];for(let e=hero.nextElementSibling;e;e=e.nextElementSibling)following.push(e);
- const cls=String(classInfo.id),client=createBeta2Client(user,{db}),known=cohortClass(cls),className=`${cls}반 ${known?known.name:classInfo.course||''}`.trim();
+ const cls=String(classInfo.id),client=createBeta2Client(user,{db,admin:preview}),known=cohortClass(cls),className=`${cls}반 ${known?known.name:classInfo.course||''}`.trim();
  // 사유 목록(관리자 「사유 목록」, settings/reasonCatalog): 출결판 사유 드롭다운보다 먼저 읽습니다(못 읽으면 기본 목록 + 경고 한 번).
  const reasons=loadReasonCatalog(db,user).then(r=>{if(r.firstWarning)toast(r.warning);}).catch(()=>{});
  const bar=document.createElement('section');bar.className='teacher-context-bar';hero.before(bar);hero.classList.add('teacher-header-class');bar.append(hero);
@@ -74,7 +75,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261021-dl1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261021-rd1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -86,7 +87,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  let drive=null,driveWait=null,driveDay=seoulToday();
  function teacherDrive(k){
   if(k!=='board'){drive?.el.remove();return;}
-  driveWait||=import('./drive-links.mjs?v=20261021-dl1').then(m=>{if(!alive())return;drive=m.createDriveBar({client,picker:true});works.push(drive);drive.set(cls,driveDay);}).catch(()=>{});
+  driveWait||=import('./drive-links.mjs?v=20261021-rd1').then(m=>{if(!alive())return;drive=m.createDriveBar({client,picker:true});works.push(drive);drive.set(cls,driveDay);}).catch(()=>{});
   void driveWait.then(()=>{if(drive&&alive()&&betaTab()==='board')betaHost.before(drive.el);});
  }
  async function showStatus(slot){
@@ -102,9 +103,9 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   timetable:['./timetable.mjs?v=20261020-tp2',(m,slot)=>m.mountTeacherTimetable(slot,{db,user,classInfo,client,includeSurveys:false})],
   materials:['./lecture-materials.mjs',(m,slot)=>m.mountLectureMaterials(slot,{db,user,classes:[classInfo],teacherClass:classInfo,readOnly:true})],
   surveys:['./survey-view.mjs',(m,slot)=>m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo})],
-  documents:['./beta2-docs.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
-  dropout:['./beta2-dropouts.mjs?v=20261020-tt2',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
-  voc:['./beta2-voc.mjs',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
+  documents:['./beta2-docs.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
+  dropout:['./beta2-dropouts.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
+  voc:['./beta2-voc.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
   officers:['./beta2-officers.mjs?v=20261021-ma1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
   // 공통메모 알림은 출결판으로 가서 그 날짜 공통메모를 판 위에 보입니다(teacher-beta.js showDay).
   notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab,l.params);void go(tm,ts||'',{push:true}).then(()=>{if(ts==='board'&&l.params?.date)beta?.showDay?.(l.params.date);});}})]

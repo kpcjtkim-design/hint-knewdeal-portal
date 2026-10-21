@@ -141,7 +141,7 @@ test('출결대조 memo chips save at once apart from the batch drafts, show nex
   await go.locator('[data-memo-pick="증빙 보완 필요"]').click();
   await go.locator('.b2-memo-tag.has',{hasText:'메모 · 증빙 보완 필요'}).waitFor();
   await toastHas(page,'고다원 · 10/28(수) 출결대조 메모를 저장했습니다.');
-  assert.deepEqual(sent(posts,'b2LedgerMemo'),[{cls:'1',name:'고다원',date:'2026-10-28',memo:'증빙 보완 필요'}]);
+  assert.deepEqual(sent(posts,'b2LedgerMemo'),[{cls:'1',name:'고다원',date:'2026-10-28',memo:'증빙 보완 필요',was:''}],'was = 화면이 본 메모(시트 v23)');
   await page.waitForFunction(()=>window.sdkWrites.some(w=>w[1].startsWith('notifications/')));
   const [n1]=await notes(page);
   assert.deepEqual(n1,{kind:'출결대조 메모',title:'출결대조 메모 · 1반 고다원',body:'10/28(수) 증빙 보완 필요',cls:'1',link:'#b2ledger?cls=1&date=2026-10-28',to:[A2],from:A1,readBy:[A1],toRole:'admin',createdAt:'ts'});
@@ -168,12 +168,12 @@ test('출결대조 memo chips save at once apart from the batch drafts, show nex
   assert.equal(sent(posts,'b2LedgerMemo').length,memoSaves,'appending does not save');
   await input.fill('수기출석 사인 늦게 받음');await input.press('Enter');
   await dong.locator('.b2-memo-tag.has',{hasText:'메모 · 수기출석 사인 늦게 받음'}).waitFor();
-  assert.deepEqual(sent(posts,'b2LedgerMemo').at(-1),{cls:'1',name:'김동진',date:'2026-10-28',memo:'수기출석 사인 늦게 받음'});
+  assert.deepEqual(sent(posts,'b2LedgerMemo').at(-1),{cls:'1',name:'김동진',date:'2026-10-28',memo:'수기출석 사인 늦게 받음',was:'증빙 미제출'});
   assert.equal(await page.locator('#b2SaveAll').innerText(),'변경 1건 저장');
   // 지우기: 빈 메모로 저장(지움)하고 알림도 남깁니다.
   await dong.locator('[data-memo-clear]').click();
   await dong.locator('.b2-memo-tag',{hasText:'+ 메모'}).waitFor();
-  assert.deepEqual(sent(posts,'b2LedgerMemo').at(-1),{cls:'1',name:'김동진',date:'2026-10-28',memo:''});
+  assert.deepEqual(sent(posts,'b2LedgerMemo').at(-1),{cls:'1',name:'김동진',date:'2026-10-28',memo:'',was:'수기출석 사인 늦게 받음'});
   await page.waitForFunction(()=>window.sdkWrites.filter(w=>w[1].startsWith('notifications/')).length===3);
   assert.equal((await notes(page)).at(-1).body,'10/28(수) 메모를 지웠습니다 (전: 수기출석 사인 늦게 받음)');
   // 알림을 못 남겨도 메모는 저장되고 작은 안내만 뜹니다.

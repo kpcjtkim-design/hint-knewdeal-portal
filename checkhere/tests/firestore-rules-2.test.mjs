@@ -237,3 +237,13 @@ test('writeQueue and writeQueueLease are server-only: no browser reads or writes
  }
  assert.match(src,/match \/writeQueue\/\{itemId\}\{\s*allow read, write: if false;/);assert.match(src,/match \/writeQueueLease\/\{leaseId\}\{\s*allow read, write: if false;/);
 });
+
+test('settings/rehearsalLast (운영 리허설 마지막 결과, 2026-10-21): admins read and write it under the existing settings rule; teachers and signed-out users cannot (no rules change needed)',()=>{
+ const doc={summary:{pass:true,scenarios:[]},by:ADMIN.email,updatedAt:TIME};
+ assert.equal(can('get','settings/rehearsalLast',{auth:ADMIN,data:doc}),true);
+ assert.equal(can('create','settings/rehearsalLast',{auth:ADMIN,next:doc}),true);
+ assert.equal(can('update','settings/rehearsalLast',{auth:ADMIN2,data:doc,next:{...doc,by:ADMIN2.email}}),true);
+ assert.equal(can('get','settings/rehearsalLast',{auth:T3,data:doc}),false);
+ assert.equal(can('update','settings/rehearsalLast',{auth:T3,data:doc,next:doc}),false);
+ assert.equal(can('get','settings/rehearsalLast',{data:doc}),false);
+});

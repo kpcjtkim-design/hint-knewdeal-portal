@@ -8,6 +8,10 @@ export const docTypeText=(kinds,other='')=>DOC_KINDS.filter(k=>kinds.includes(k)
 import {esc,md,toast,classOptions,loading,errorBox,lifecycle} from './beta2-ui.mjs';
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
+import {newClientId,isConflict} from './beta2-data.mjs';
+// 리허설 안전장치(시트 v23, 2026-10-21): 새 신청은 clientId(신청 칸을 열 때 하나, 성공하면 새로)를 붙여 두 번 눌러도·다시 보내도 한 건만(repeated:true도 성공).
+// 처리 저장은 화면이 본 값 was{status,memo,link,fixReason}을 함께 보내고, 그사이 다른 운영자가 처리했으면(CONFLICT) 새로 읽어 새 값을 보이고 내 입력은 남겨 다시 저장하게 합니다.
+export const docWas=d=>({status:String(d?.status??''),memo:String(d?.memo??''),link:String(d?.link??''),fixReason:String(d?.fixReason??'')});
 
 const STATE_CLASS={'접수':'t-rec','처리중':'t-late','보완 필요':'t-absent','처리완료':'e-ok','취소':'t-na'};
 const OPEN=['접수','처리중','보완 필요'];
@@ -19,7 +23,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  const life=lifecycle(host),admin=!teacherClass;
  let data=null,bundle=null,filter=admin?'open':'all',cls=teacherClass?String(teacherClass):context?.classFilter&&context?.classId?String(context.classId):'all',search='',openId='',creating=!admin,form=null,busy=false,err='';
  const today=koreaToday();
- const blank=()=>({cls:teacherClass?String(teacherClass):String(selected||'1'),name:'',docTypes:[],docOther:'',qty:1,from:'',to:'',purpose:'',submitTo:'',due:'',delivery:DELIVERY,memo:''});
+ const blank=()=>({clientId:newClientId(),cls:teacherClass?String(teacherClass):String(selected||'1'),name:'',docTypes:[],docOther:'',qty:1,from:'',to:'',purpose:'',submitTo:'',due:'',delivery:DELIVERY,memo:''});
  form=blank();
  host.innerHTML=`<div class="b2"><div class="b2-head"><div><h2>${admin?'서류발급 신청함':'서류발급 신청'}</h2><p>${admin?'신청이 들어오면 포털 알림함으로 바로 알림이 갑니다(메일은 보내지 않음, 사용자 결정 2026-10-20). 처리 상황을 바꾸면 담임 화면과 마스터시트 서류발급 탭에 그대로 보입니다.':'교육생 서류가 필요하면 여기서 신청해 주세요. 신청 즉시 운영팀 알림함에 알림이 가고, 처리 상황을 이 화면에서 확인할 수 있습니다.'}</p></div>${admin?'<button class="b2-btn primary" id="d2New">새 신청 작성</button>':''}</div><div id="d2Form"></div><section class="b2-card"><div class="b2-toolbar" id="d2Tools"></div><div id="d2List" style="padding:0 14px 14px">${loading()}</div></section></div>`;
  const $=s=>host.querySelector(s);
@@ -71,7 +75,8 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
   if(err)return render();
   busy=true;render();
   try{
-   const res=await client.docCreate({cls:form.cls,name:form.name,docType:type,qty:form.qty,period:form.from||form.to?`${form.from||'?'} ~ ${form.to||'?'}`:'',purpose:form.purpose.trim(),submitTo:form.submitTo.trim(),due:form.due,delivery:form.delivery,memo:form.memo.trim()});
+   const res=await client.docCreate({clientId:form.clientId,cls:form.cls,name:form.name,docType:type,qty:form.qty,period:form.from||form.to?`${form.from||'?'} ~ ${form.to||'?'}`:'',purpose:form.purpose.trim(),submitTo:form.submitTo.trim(),due:form.due,delivery:form.delivery,memo:form.memo.trim()});
+   if(res?.repeated){toast(`이미 접수된 신청입니다 · ${res.id}`);form=blank();creating=!admin;busy=false;await load();return;} // 같은 clientId를 시트가 이미 받음(다시 보냄·두 번 누름): 알림은 처음 한 번만
    toast(`신청했습니다 · ${res.id} · 운영팀 알림함에 알렸습니다`);
    // 포털 알림(notify.mjs): 운영 관리자 알림함에 한 건. 못 남겨도 신청은 그대로(작은 안내만).
    void notify('서류발급',{audience:'admins',cls:form.cls,title:`서류발급 신청 · ${form.cls}반 ${form.name}`,body:[`${type} ${form.qty||1}부`,`제출처 ${form.submitTo.trim()}`,form.due?`마감 ${md(form.due)}`:''].filter(Boolean).join(' · '),link:linkFor('b2docs',{cls:form.cls,id:res.id})});
@@ -90,8 +95,18 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
   if(b?.dataset.status&&d){d._status=b.dataset.status;render();return;}
   if(b?.hasAttribute('data-update')&&d){
    busy=true;d._err='';render();
-   try{await client.docUpdate({id:d.id,status:d._status||d.status,memo:d._memo??d.memo,link:(d._link??d.link)||'',fixReason:d._fix??d.fixReason});toast(`${d.id} 처리 상황을 저장했습니다.`);busy=false;await load();}
-   catch(err2){busy=false;d._err=err2.message;render();}
+   const mine={_status:d._status||d.status,_memo:d._memo??d.memo,_link:(d._link??d.link)||'',_fix:d._fix??d.fixReason};
+   try{await client.docUpdate({id:d.id,status:mine._status,memo:mine._memo,link:mine._link,fixReason:mine._fix,was:docWas(d)});toast(`${d.id} 처리 상황을 저장했습니다.`);busy=false;await load();}
+   catch(err2){
+    busy=false;
+    if(isConflict(err2)){ // 새로 읽고 새 값을 보인 뒤 내 입력을 그대로 올려 둡니다(다시 「처리 저장」하면 새 was로 저장)
+     await load();const nd=data?.rows.find(x=>x.id===d.id);
+     if(nd){Object.assign(nd,mine);nd._err=`그사이 다른 사람이 바꿨습니다 · 새 값: 상태 ${nd.status||'접수'}${nd.memo?` · 비고 ${nd.memo}`:''}${nd.handler?` (${nd.handler})`:''} · 내 입력은 남겨 두었습니다. 다시 「처리 저장」을 누르면 내 값으로 저장합니다.`;openId=nd.id;}
+     else toast('그사이 다른 사람이 바꿨습니다 · 그 신청을 다시 찾지 못했습니다');
+     render();return;
+    }
+    d._err=err2.message;render();
+   }
    return;
   }
   if(e.target.closest('[data-doc-edit],a,input,textarea,select'))return;

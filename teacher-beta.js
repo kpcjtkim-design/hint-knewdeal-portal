@@ -27,7 +27,7 @@ export function mountTeacherBeta(el, OPT) {
   const CODE={'':['-','k-na'],해당없음:['-','k-none'],[DUP_TYPE]:['중','k-dup'],출석:['출','k-ok'],지각:['지','k-lt'],조퇴:['조','k-lt'],외출:['외','k-lt'],결석:['결','k-ab'],인정출석:['인','k-rc'],인정지각:['인','k-rc'],인정조퇴:['인','k-rc'],인정외출:['인','k-rc']};
   const NEED={지각:'inT',인정지각:'inT',조퇴:'outT',인정조퇴:'outT',외출:'oa',인정외출:'oa'};
   const W='일월화수목금토';
-  let S={cls:null,pin:'',d:null,tab:OPT.tab||'today',sel:null,f:null,timer:null,extra:[],custom:false,dayMemos:null,memoDay:'',drafts:new Map()}; // dayMemos: 반·날짜 공통메모(날짜 → 줄), memoDay: 알림으로 연 날(공통메모 줄), extra: 「다른 날짜」로 연 날(반을 바꾸면 비움), custom: 사유 '기타'(직접 입력)를 고른 상태
+  let S={cls:null,pin:'',d:null,tab:OPT.tab||'today',sel:null,f:null,timer:null,extra:[],custom:false,dayMemos:null,memoDay:'',drafts:new Map(),sigs:null,sigAt:new Map(),sigLoading:null,sigT:0}; // dayMemos: 반·날짜 공통메모(날짜 → 줄), memoDay: 알림으로 연 날(공통메모 줄), extra: 「다른 날짜」로 연 날(반을 바꾸면 비움), custom: 사유 '기타'(직접 입력)를 고른 상태
   const $=s=>R.querySelector(s), app=()=>$('#app');
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const md=s=>{if(!s)return'';const p=String(s).split('-');if(p.length<3)return s;const d=new Date(+p[0],+p[1]-1,+p[2]);return (+p[1])+'/'+(+p[2])+'('+W[d.getDay()]+')';};
@@ -41,23 +41,68 @@ export function mountTeacherBeta(el, OPT) {
   // buf: 보낼 것(학생|날짜 → {item,before,cls}), wait: 보낸 것(id → {id,key,item,before,cls}), latest: 학생|날짜의 마지막 id, fail: 실패(학생|날짜 → {item,before,cls,error})
   const Q={on:false,buf:new Map(),wait:new Map(),latest:new Map(),fail:new Map(),timer:null,first:0,sending:null,poll:null};
   const qKey=(n,day)=>n+'|'+day;
+  // 행 지문(before, 리허설 안전장치 2026-10-21, 시트 v23): 담임이 본 값과 시트 값이 다르면(운영팀이 그사이 고침) 시트가 'CONFLICT'로 저장하지 않습니다.
+  // 출결판(portalData)에는 지문이 없어 자기 반 묶음(b2Bundle, 시트 캐시)을 한 번 더 읽어 학생|날짜 → sig를 둡니다(기록이 없는 칸은 '').
+  // 출결판 값과 묶음 값(유형·사유)이 다르면 두 번 읽는 사이에 바뀐 것이라 맞지 않는 값(STALE)을 둬 저장하면 CONFLICT → 새 값을 다시 읽습니다.
+  // 지문을 못 읽으면(S.sigs=null) 예전처럼 before 없이 저장합니다. 내 저장이 반영되면 받은 sig로 바꾸고, sig를 모르면(바로 저장 길·지우기) 잠깐 뒤 다시 읽습니다.
+  // 같은 칸은 한 번에 하나만 보냅니다(앞 것이 반영되어 새 sig를 안 뒤 다음 값을 보냄).
+  const STALE='!stale';
+  function sigOf(k,force){if(!S.sigs)return undefined;const v=S.sigs.has(k)?S.sigs.get(k):'';if(v===undefined)return undefined;if(v===STALE)return force?undefined:STALE;return v;}
+  function sigSet(k,v){if(!S.sigs)return;S.sigs.set(k,v);S.sigAt.set(k,Date.now());}
+  function sigLater(){clearTimeout(S.sigT);S.sigT=setTimeout(()=>{if(Q.wait.size||Q.sending)sigLater();else void loadSigs();},1500);}
+  // server: 시트가 준 출결판 값(내 대기 값을 올리기 전). 없으면 지금 출결판.
+  function loadSigs(server){
+    const c=S.cls,t0=Date.now(),base=server||(S.d&&S.d.recs)||{};
+    const job=(async()=>{
+      try{
+        const b=await run('b2Bundle',String(c));if(c!==S.cls)return;
+        const cols=(b&&b.ledgerCols)||[],ix=k=>cols.indexOf(k),iN=ix('name'),iD=ix('date'),iC=ix('cls'),iS=ix('sig'),iT=ix('type'),iR=ix('reason');
+        if(iN<0||iD<0||iS<0||!Array.isArray(b.ledger)){S.sigs=null;return;}
+        const got=new Map();for(const row of b.ledger){if(iC>=0&&String(row[iC])!==String(c))continue;got.set(row[iN]+'|'+row[iD],{sig:String(row[iS]==null?'':row[iS]),type:String(row[iT]==null?'':row[iT]).trim(),reason:String(row[iR]==null?'':row[iR]).trim()});}
+        const recs=base,old=S.sigs,next=new Map(),inFlight=k=>{const id=Q.latest.get(k);return !!id&&Q.wait.has(id);};
+        for(const k of new Set([...got.keys(),...Object.keys(recs)])){
+          if(old&&(inFlight(k)||(!server&&(Q.buf.has(k)||Q.fail.has(k)))||(S.sigAt.get(k)||0)>t0)){if(old.has(k))next.set(k,old.get(k));continue;} // 내 저장 결과가 더 새로움
+          const x=got.get(k),r=recs[k];
+          if(x&&r&&x.type===String(r.type||'').trim()&&x.reason===String(r.r||'').trim())next.set(k,x.sig);
+          else if(x||r)next.set(k,STALE);
+        }
+        S.sigs=next;
+      }catch(e){if(c===S.cls&&!S.sigs)S.sigs=null;}
+    })();
+    S.sigLoading=job.finally(()=>{if(S.sigLoading===wait)S.sigLoading=null;});const wait=S.sigLoading;
+    return S.sigLoading;
+  }
+  const recText=r=>!r||!r.type?'입력 전(기록 없음)':r.type+(r.r?' · '+r.r:'');
   function qState(k){const own=m=>{const v=m.get(k);return v&&v.cls===S.cls;};if(own(Q.fail))return 'fail';const id=Q.latest.get(k);if(own(Q.buf)||(id&&Q.wait.get(id)&&Q.wait.get(id).cls===S.cls))return 'wait';const r=S.d&&S.d.recs[k];return r&&r.pending?'wait':'';}
   // 새로 읽은 출결판 위에 아직 반영되지 않은 내 값(보낸 것 → 보낼 것 → 실패 순)을 다시 올립니다.
+  // 그사이 바뀜(conflict)은 올리지 않습니다: 칸에는 운영팀이 고친 새 값이 보이고, 내 값은 오른쪽 칸에 초안으로 남습니다.
   function qApply(){
     if(!S.d)return;const put=(k,v)=>{if(v.cls!==S.cls)return;const it=v.item;if(!it.type)delete S.d.recs[k];else S.d.recs[k]=Object.assign({ev:'',evr:''},S.d.recs[k]||{},{type:it.type,inT:it.inT,outT:it.outT,oa:it.oa,ob:it.ob,r:it.r});};
-    for(const w of Q.wait.values())if(Q.latest.get(w.key)===w.id)put(w.key,w);for(const [k,v] of Q.buf)put(k,v);for(const [k,v] of Q.fail)put(k,v);
+    for(const w of Q.wait.values())if(Q.latest.get(w.key)===w.id)put(w.key,w);for(const [k,v] of Q.buf)put(k,v);for(const [k,v] of Q.fail)if(!v.conflict)put(k,v);
   }
   function qPaint(){
-    const n=[...new Set([...Q.buf.keys(),...Q.latest.keys(),...Object.keys((S.d&&S.d.recs)||{})])].filter(k=>qState(k)==='wait').length,f=[...Q.fail.values()].filter(v=>v.cls===S.cls).length,b=$('#qb');
-    if(b)b.innerHTML=(n?'<span class="qbadge wait" data-q-wait>반영 대기 '+n+'</span>':'')+(f?'<span class="qbadge fail" data-q-fail>저장 안 됨 '+f+'</span>':'');
-    R.querySelectorAll('.g select[data-n]').forEach(el=>{const s=qState(qKey(el.dataset.n,el.dataset.d));el.classList.toggle('qwait',s==='wait');el.classList.toggle('qfail',s==='fail');});
+    const mine=[...Q.fail.values()].filter(v=>v.cls===S.cls),n=[...new Set([...Q.buf.keys(),...Q.latest.keys(),...Object.keys((S.d&&S.d.recs)||{})])].filter(k=>qState(k)==='wait').length,c=mine.filter(v=>v.conflict).length,f=mine.length-c,b=$('#qb');
+    if(b)b.innerHTML=(n?'<span class="qbadge wait" data-q-wait>반영 대기 '+n+'</span>':'')+(f?'<span class="qbadge fail" data-q-fail>저장 안 됨 '+f+'</span>':'')+(c?'<span class="qbadge fail" data-q-conflicts>운영팀이 그사이 고침 '+c+'</span>':'');
+    R.querySelectorAll('.g select[data-n]').forEach(el=>{const k=qKey(el.dataset.n,el.dataset.d),s=qState(k),x=Q.fail.get(k);el.classList.toggle('qwait',s==='wait');el.classList.toggle('qfail',s==='fail');
+      if(x&&x.conflict&&x.cls===S.cls){el.dataset.conflict='1';el.title=el.dataset.n+' '+md(el.dataset.d)+' · 운영팀이 그사이 고쳤습니다 · 새 값: '+recText(S.d&&S.d.recs[k]);}else if(el.dataset.conflict){delete el.dataset.conflict;el.title=el.dataset.n+' '+md(el.dataset.d);}});
     qPanel();
   }
   function qPanel(){
     const el=$('#qs');if(!el||!S.sel)return;const k=qKey(S.sel.n,S.sel.day),x=Q.fail.get(k),s=qState(k);
-    el.innerHTML=s==='fail'?'<div class="qerr" role="alert">저장되지 않았습니다 · '+esc(x.error)+'<div style="margin-top:6px"><button class="btn sm" id="qretry">다시 저장</button> <button class="ghost" id="qdrop">버리기</button></div></div>':s==='wait'?'<div class="note" data-q-note><span class="qbadge wait">반영 대기</span> 시트에 반영하는 중입니다</div>':'';
-    const a=$('#qretry');if(a)a.onclick=()=>{Q.fail.delete(k);Q.buf.set(k,{item:x.item,before:x.before,cls:x.cls});qLater(300);st('반영 대기 · 다시 보냅니다','wait');qPaint();};
-    const d=$('#qdrop');if(d)d.onclick=()=>{Q.fail.delete(k);qPaint();reload(true);};
+    el.innerHTML=s==='fail'&&x.conflict?'<div class="qerr" role="alert" data-q-conflict>운영팀이 그사이 고쳤습니다 · 새 값: <b data-q-new>'+esc(recText(S.d&&S.d.recs[k]))+'</b><div style="margin-top:4px">내 값(저장 안 됨): <b data-q-mine>'+esc(recText(x.item))+'</b></div><div style="margin-top:6px"><button class="btn sm" id="qretry">내 값으로 다시 저장</button> <button class="ghost" id="qdrop">버리기</button></div></div>'
+      :s==='fail'?'<div class="qerr" role="alert">저장되지 않았습니다 · '+esc(x.error)+'<div style="margin-top:6px"><button class="btn sm" id="qretry">다시 저장</button> <button class="ghost" id="qdrop">버리기</button></div></div>':s==='wait'?'<div class="note" data-q-note><span class="qbadge wait">반영 대기</span> 시트에 반영하는 중입니다</div>':'';
+    // 내 값으로 다시 저장: 새로 읽은 지문(before)으로 다시 보냅니다(두 번 읽는 사이 바뀜 표시(STALE)는 담임이 고른 것이라 before 없이).
+    const a=$('#qretry');if(a)a.onclick=()=>{Q.fail.delete(k);Q.buf.set(k,{item:x.item,before:x.before,cls:x.cls,force:!!x.conflict});if(x.conflict){qApply();if(S.tab==='board')vBoard();}qLater(300);st('반영 대기 · 다시 보냅니다','wait');qPaint();};
+    const d=$('#qdrop');if(d)d.onclick=()=>{Q.fail.delete(k);if(x.conflict){if(S.tab==='board')vBoard();else qPaint();st('내 값을 버렸습니다 · 운영팀이 고친 값 그대로입니다','ok');return;}qPaint();reload(true);};
+  }
+  // 그사이 바뀜: 내 값은 초안(Q.fail conflict)으로 두고, 출결판을 새로 읽어 그 칸에 새 값을 보입니다(여러 칸이 한꺼번에 와도 한 번만 읽음).
+  let conflictT=0;
+  function qConflict(key,v,msg){
+    const nb=Q.buf.get(key);if(nb&&nb.cls===v.cls){Q.buf.delete(key);v=nb;} // 그사이 또 고른 값이 있으면 그것이 내 값
+    Q.fail.set(key,{item:v.item,before:v.before,cls:v.cls,error:String(msg||'').replace(/^CONFLICT:\s*/,'')||'운영팀이 그사이 고쳤습니다',conflict:true});
+    toast('운영팀이 그사이 고쳤습니다: '+v.item.name+' '+md(v.item.date)+' · 새 값을 불러옵니다');
+    if(S.sel&&v.cls===S.cls&&qKey(S.sel.n,S.sel.day)===key)st('운영팀이 그사이 고쳤습니다 · 새 값을 불러오는 중…','err');
+    clearTimeout(conflictT);conflictT=setTimeout(()=>{if(v.cls===S.cls)void reload(true);},200);
   }
   function qLater(ms){if(!Q.first)Q.first=Date.now();clearTimeout(Q.timer);Q.timer=setTimeout(qSend,Math.max(0,Math.min(ms,Q.first+3000-Date.now())));}
   function qSave(sel,f,before){
@@ -68,19 +113,24 @@ export function mountTeacherBeta(el, OPT) {
     const b=R.querySelector('.g select[data-n="'+window.CSS.escape(sel.n)+'"][data-d="'+sel.day+'"]');if(b&&b.value!==f.type){b.value=f.type;paint(b,f.type);}
     qLater(800);if(S.sel===sel)st('반영 대기 · 곧 시트에 저장합니다','wait');qPaint();
   }
-  // 한 번에 하나씩, 같은 반끼리 50건까지 보냅니다(보내는 동안 고른 것은 다음 묶음).
+  // 한 번에 하나씩, 같은 반끼리 50건까지 보냅니다(보내는 동안 고른 것은 다음 묶음). 같은 칸의 앞 저장이 아직 반영 전이면 그 칸은 다음 차례에.
+  const inFlight=k=>{const id=Q.latest.get(k);return !!id&&Q.wait.has(id);};
   async function qSend(){
     clearTimeout(Q.timer);Q.timer=null;
     if(Q.sending||!Q.buf.size)return Q.sending;
-    const cls=Q.buf.values().next().value.cls,batch=[...Q.buf.entries()].filter(([,v])=>v.cls===cls).slice(0,50);
+    const first=[...Q.buf.entries()].find(([k])=>!inFlight(k));if(!first)return null;
+    const cls=first[1].cls,batch=[...Q.buf.entries()].filter(([k,v])=>v.cls===cls&&!inFlight(k)).slice(0,50);
     batch.forEach(([k])=>Q.buf.delete(k));Q.first=Q.buf.size?Date.now():0;
     Q.sending=(async()=>{
       try{
-        const res=await runFor(cls,'portalSaveBatch',{cls,items:batch.map(([,v])=>v.item)});
+        if(S.sigLoading)await S.sigLoading; // 지문을 읽는 중이면 기다렸다가 보냄
+        // before: 보내는 때의 지문(앞 저장이 반영되며 받은 새 sig 포함). 지문을 모르면 빼서 예전처럼.
+        const items=batch.map(([k,v])=>{const b=cls===S.cls?sigOf(k,v.force):undefined;return b===undefined?v.item:Object.assign({},v.item,{before:b});});
+        const res=await runFor(cls,'portalSaveBatch',{cls,items});
         if(res&&res.queued&&Array.isArray(res.ids)){batch.forEach(([k,v],i)=>{const id=res.ids[i];Q.wait.set(id,Object.assign({id,key:k},v));Q.latest.set(k,id);});qPoll(1500);}
-        else batch.forEach(([k,v],i)=>{if(Q.buf.has(k))return;const r=(res&&res.results||[])[i]||{ok:false,msg:'응답 오류'};if(r.ok)qDone(k,v,r.warn);else qFail(k,v,sheetWait(r.msg,v.item.type,'다시 저장해 주세요'));});
+        else batch.forEach(([k,v],i)=>{if(Q.buf.has(k))return;const r=(res&&res.results||[])[i]||{ok:false,msg:'응답 오류'};if(r.ok){qDone(k,v,r.warn);if(cls===S.cls){sigSet(k,undefined);sigLater();}}else if(r.conflict||/^CONFLICT/.test(String(r.msg||'')))qConflict(k,v,r.msg);else qFail(k,v,sheetWait(r.msg,v.item.type,'다시 저장해 주세요'));});
       }catch(e){batch.forEach(([k,v])=>{if(!Q.buf.has(k))qFail(k,v,e.message);});}
-      finally{Q.sending=null;qPaint();if(Q.buf.size)qLater(0);}
+      finally{Q.sending=null;qPaint();if([...Q.buf.keys()].some(k=>!inFlight(k)))qLater(0);}
     })();
     return Q.sending;
   }
@@ -92,10 +142,18 @@ export function mountTeacherBeta(el, OPT) {
       for(const it of (res&&res.items)||[]){
         const w=Q.wait.get(it.id);if(!w||(it.status!=='done'&&it.status!=='failed'))continue;
         Q.wait.delete(it.id);if(Q.latest.get(w.key)!==it.id)continue;Q.latest.delete(w.key);
-        if(it.status==='done')qDone(w.key,w,it.warn);else if(!Q.buf.has(w.key))qFail(w.key,w,it.error||'시트에 반영하지 못했습니다');
+        if(it.status==='done'){qSig(w.key,w,it);qDone(w.key,w,it.warn);}
+        else if(/^CONFLICT/.test(String(it.error||'')))qConflict(w.key,w,it.error);
+        else if(!Q.buf.has(w.key))qFail(w.key,w,it.error||'시트에 반영하지 못했습니다');
       }
     }catch(e){}
-    qPaint();qPoll(2500);
+    qPaint();qPoll(2500);if(Q.buf.size&&!Q.timer&&!Q.sending)qLater(0); // 앞 저장을 기다리던 같은 칸
+  }
+  // 반영된 내 저장의 새 지문: 쓰기는 받은 sig, 바뀐 것 없음은 그대로, 지우기·sig 없음은 잠깐 뒤 묶음에서 다시 읽음(운영팀 메모가 있으면 '출석' 줄로 남기 때문).
+  function qSig(key,w,it){
+    if(w.cls!==S.cls||!S.sigs)return;
+    if(it.action==='none')return;
+    if(it.action==='write'&&it.sig)sigSet(key,String(it.sig));else{sigSet(key,undefined);sigLater();}
   }
   function qDone(key,v,warn){
     const r=S.d&&v.cls===S.cls&&S.d.recs[key];if(r)delete r.pending;
@@ -110,8 +168,8 @@ export function mountTeacherBeta(el, OPT) {
   // 다시 열 때(새로고침 포함): 오늘 실패한 내 항목을 '저장 안 됨'으로 되살립니다(대기 중인 값은 서버가 출결판에 덮어 줌).
   async function qRestore(){
     const c=S.cls;try{const res=await run('queueStatus',{cls:String(c)});if(c!==S.cls)return;let n=0;
-      for(const it of (res&&res.items)||[]){if(!it.mine||it.status!=='failed')continue;const k=qKey(it.name,it.date);if(Q.fail.has(k)||Q.buf.has(k)||Q.latest.has(k))continue;const r=it.rec||{};
-        Q.fail.set(k,{item:{name:it.name,date:it.date,type:r.type||'',inT:r.inT||'',outT:r.outT||'',oa:r.oa||'',ob:r.ob||'',r:r.reason||''},before:null,cls:c,error:it.error||'시트에 반영하지 못했습니다'});n++;}
+      for(const it of (res&&res.items)||[]){if(!it.mine||it.status!=='failed')continue;const k=qKey(it.name,it.date);if(Q.fail.has(k)||Q.buf.has(k)||Q.latest.has(k))continue;const r=it.rec||{},conflict=/^CONFLICT/.test(String(it.error||''));
+        Q.fail.set(k,{item:{name:it.name,date:it.date,type:r.type||'',inT:r.inT||'',outT:r.outT||'',oa:r.oa||'',ob:r.ob||'',r:r.reason||''},before:null,cls:c,error:conflict?String(it.error).replace(/^CONFLICT:\s*/,''):it.error||'시트에 반영하지 못했습니다',...(conflict?{conflict:true}:{})});n++;}
       if(n){qApply();if(S.tab==='board')vBoard();toast('저장되지 않은 칸이 '+n+'개 있습니다 · 빨간 칸을 눌러 다시 저장해 주세요');}
     }catch(e){}
   }
@@ -123,10 +181,10 @@ export function mountTeacherBeta(el, OPT) {
   async function login(){
     // 2026-10-19: 불러오는 중·준비 중·실패를 담임이 알아듣는 말로, 실패하면 「다시 시도」
     app().innerHTML='<div class="card"><div class="sec">출결 정보</div><div class="note">출결 정보를 불러오는 중입니다…</div></div>';
-    S.cls=Number(OPT.cls);S.pin='';S.extra=[];S.dayMemos=null;S.drafts=new Map();
-    try{S.d=await run('portalData',S.cls,'');Q.on=!!S.d.queue;qApply();render();loadDayMemos();if(Q.on)qRestore();}catch(err){const wait=err.code==='NOT_CONFIGURED';app().innerHTML='<div class="card"><div class="sec">'+(wait?'출결 입력 준비 중':'출결 정보를 불러오지 못했습니다')+'</div><div class="'+(wait?'note':'err')+'">'+esc(err.message)+'</div>'+(wait?'':'<div class="note" style="margin-top:6px">잠시 뒤 「다시 시도」를 눌러 주세요. 계속 안 되면 운영팀에 알려 주세요.</div><button class="btn" id="retry" style="margin-top:10px">다시 시도</button>')+'</div>';const b=$('#retry');if(b)b.onclick=login;}
+    S.cls=Number(OPT.cls);S.pin='';S.extra=[];S.dayMemos=null;S.drafts=new Map();S.sigs=null;S.sigAt=new Map();
+    try{S.d=await run('portalData',S.cls,'');Q.on=!!S.d.queue;const server=Object.assign({},S.d.recs);qApply();render();void loadSigs(server);loadDayMemos();if(Q.on)qRestore();}catch(err){const wait=err.code==='NOT_CONFIGURED';app().innerHTML='<div class="card"><div class="sec">'+(wait?'출결 입력 준비 중':'출결 정보를 불러오지 못했습니다')+'</div><div class="'+(wait?'note':'err')+'">'+esc(err.message)+'</div>'+(wait?'':'<div class="note" style="margin-top:6px">잠시 뒤 「다시 시도」를 눌러 주세요. 계속 안 되면 운영팀에 알려 주세요.</div><button class="btn" id="retry" style="margin-top:10px">다시 시도</button>')+'</div>';const b=$('#retry');if(b)b.onclick=login;}
   }
-  async function reload(keep,say){try{S.d=await run('portalData',S.cls,S.pin);Q.on=!!S.d.queue;qApply();if(!keep)S.sel=null;render();loadDayMemos();if(say)toast('새로 불러왔습니다');}catch(e){toast('새로 불러오지 못했습니다 · '+e.message);}}
+  async function reload(keep,say){try{S.d=await run('portalData',S.cls,S.pin);Q.on=!!S.d.queue;const server=Object.assign({},S.d.recs);qApply();if(!keep)S.sel=null;if(S.sel&&!S.timer){const r=S.d.recs[S.sel.n+'|'+S.sel.day],dr=S.drafts.get(draftKey(S.sel.n,S.sel.day));S.f=dr?Object.assign({},dr):r?Object.assign({},r):{type:'',inT:'',outT:'',oa:'',ob:'',r:''};}render();void loadSigs(server);loadDayMemos();if(say)toast('새로 불러왔습니다');}catch(e){toast('새로 불러오지 못했습니다 · '+e.message);}}
   // 반·날짜 공통메모(운영팀이 출결대조에서 남김, 시트 v17 b2DayMemos, 2026-10-20): 출결판 위에 고른 날(알림으로 온 날 → 고른 칸의 날 → 기준일)의 공통메모를 보기만 합니다.
   // 반 전체를 한 번 읽고(새로고침 때 다시) 못 읽으면(시트 v17 배포 전 등) 조용히 보이지 않습니다.
   async function loadDayMemos(){
@@ -273,11 +331,16 @@ export function mountTeacherBeta(el, OPT) {
     if(Q.on)return qSave(sel,f,before); // 대기열: 바로 칸에 보이고 모아 보냄
     st('저장 중…');
     // 시간은 담임이 고치지 않으므로 저장된 값(없으면 빈 값)을 그대로 보냅니다. portalSave는 보내지 않은 시간을 ''로 덮어 지우기 때문입니다.
-    const keep=before||{};
-    try{const res=await run('portalSave',{cls:S.cls,pin:S.pin,name:sel.n,date:sel.day,type:f.type,inT:keep.inT||'',outT:keep.outT||'',oa:keep.oa||'',ob:keep.ob||'',r:f.r});
+    const keep=before||{},key=sel.n+'|'+sel.day;
+    if(S.sigLoading)await S.sigLoading.catch(()=>{});
+    const seen=sigOf(key); // 행 지문(시트 v23): 운영팀이 그사이 고쳤으면 시트가 {ok:false,conflict:true}
+    const item={name:sel.n,date:sel.day,type:f.type,inT:keep.inT||'',outT:keep.outT||'',oa:keep.oa||'',ob:keep.ob||'',r:f.r};
+    try{const res=await run('portalSave',Object.assign({cls:S.cls,pin:S.pin},item,seen===undefined?{}:{before:seen}));
       S.drafts.delete(draftKey(sel.n,sel.day)); // 시트가 답했으면(저장·입력 확인 거절 모두) 초안은 끝
+      if(!res.ok&&(res.conflict||/^CONFLICT/.test(String(res.msg||'')))){qConflict(key,{item,before:before?Object.assign({},before):null,cls:S.cls},res.msg);qPaint();return;}
       if(!res.ok){st(sheetWait(res.msg,f.type,'다시 골라 주세요'),'err');return;} // 시트가 아직 해당없음·중복을 받지 않으면 '시트 업데이트 대기'
-      const key=sel.n+'|'+sel.day;if(!f.type)delete S.d.recs[key];else S.d.recs[key]=Object.assign({ev:'',evr:''},S.d.recs[key]||{},f);
+      sigSet(key,undefined);sigLater(); // 바로 저장 길은 새 지문을 돌려주지 않아 잠깐 뒤 묶음에서 다시 읽음
+      if(!f.type)delete S.d.recs[key];else S.d.recs[key]=Object.assign({ev:'',evr:''},S.d.recs[key]||{},f);
       if(extraEvidenceStarted(before&&{type:before.type,reason:before.r},{type:f.type,reason:f.r}))extraAlert(sel,f);
       const b=R.querySelector('.g select[data-n="'+window.CSS.escape(sel.n)+'"][data-d="'+sel.day+'"]');if(b&&b.value!==f.type){b.value=f.type;paint(b,f.type);}
       // 시트 안내 가운데 시간 칸(입실 시간·퇴실 시간·외출 구간)은 담임이 채우지 않으므로 빼고 사유만 보입니다.

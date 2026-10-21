@@ -74,6 +74,8 @@ async function beta(run,{state=STATE}={}){
 // 포털 알림(index.html #toast). teacher-beta.js 그림자 DOM에도 #toast가 있어 문서의 것만 봅니다.
 const toastHas=(page,text)=>page.waitForFunction(t=>(document.getElementById('toast')?.textContent||'').includes(t),text,{timeout:5000});
 const sent=(posts,action)=>posts.filter(p=>p.action===action).map(p=>p.args[0]);
+// 접수의 clientId(시트 v23 한 번만 표시, 2026-10-21)는 무작위라 모양만 보고 뺍니다.
+const created=(posts,action)=>sent(posts,action).map(({clientId,...rest})=>{assert.match(String(clientId),/^[A-Za-z0-9_-]{8,80}$/);return rest;});
 
 test('the office sees waiting 민원·이슈 on the home card and in a pill on every 2기 screen, opens the 처리함 and answers with a status',async()=>{
  await beta(async(page,posts)=>{
@@ -101,7 +103,7 @@ test('the office sees waiting 민원·이슈 on the home card and in a pill on e
   await page.getByRole('button',{name:'보내기'}).click();
   await toastHas(page,'보냈습니다');
   await page.waitForTimeout(300);
-  assert.deepEqual(sent(posts,'b2VocReply'),[{key:'V261016-001',sig:'',cls:'3',text:'내일 수리 기사가 방문합니다',status:'처리중',side:'운영'}]);
+  assert.deepEqual(sent(posts,'b2VocReply'),[{key:'V261016-001',sig:'',cls:'3',text:'내일 수리 기사가 방문합니다',status:'처리중',side:'운영',wasStatus:'접수'}],'처리 상태를 바꿀 때 화면이 본 상태(wasStatus)도 보냄');
   assert.ok(posts.filter(p=>p.action==='b2Vocs').length>before,'the list is read again');
   // 운영팀이 대신 접수
   await page.getByRole('button',{name:'새로 접수'}).click();
@@ -109,7 +111,7 @@ test('the office sees waiting 민원·이슈 on the home card and in a pill on e
   await page.locator('[data-f="detail"]').fill('가상 전화 접수');
   await page.getByRole('button',{name:'접수하기'}).click();
   await page.waitForTimeout(300);
-  assert.deepEqual(sent(posts,'b2VocCreate'),[{cls:'1',type:'안전',detail:'가상 전화 접수',side:'운영'}]);
+  assert.deepEqual(created(posts,'b2VocCreate'),[{cls:'1',type:'안전',detail:'가상 전화 접수',side:'운영'}]);
  });
 });
 
@@ -150,7 +152,7 @@ test('the teacher screen shows an office-reply bar, files new 민원·이슈 as 
   await page.locator('[data-f="detail"]').fill('가상 교육생 상담 요청');
   await page.getByRole('button',{name:'접수하기'}).click();
   await page.waitForTimeout(300);
-  assert.deepEqual(sent(posts,'b2VocCreate'),[{cls:'1',type:'교육생 고충',detail:'가상 교육생 상담 요청',side:'담임'}]);
+  assert.deepEqual(created(posts,'b2VocCreate'),[{cls:'1',type:'교육생 고충',detail:'가상 교육생 상담 요청',side:'담임'}]);
   await toastHas(page,'접수했습니다 · V261016-003');
  });
 });

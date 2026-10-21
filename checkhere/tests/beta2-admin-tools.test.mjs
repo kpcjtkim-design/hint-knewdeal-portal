@@ -282,7 +282,7 @@ test('교육시간 조정 lists the module rows by day with the day rule, explai
   assert.equal(await rowOf(page,'공장견학').getByRole('button',{name:'지우기'}).isDisabled(),true);
   gate.resolve();
   await page.locator('.b2t-day[data-day="2026-11-20|2"]').getByText('그날 기준 13:00~15:00').waitFor();
-  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:7,was:{date:'2026-11-20',cls:'2',module:'분해조립'},date:'2026-11-20',cls:'2',module:'분해조립',start:'13:00',end:'15:00',part:'오후 실습',reason:'HRD 확정 전 임시'}]);
+  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:7,was:{date:'2026-11-20',cls:'2',module:'분해조립',start:'',end:''},date:'2026-11-20',cls:'2',module:'분해조립',start:'13:00',end:'15:00',part:'오후 실습',reason:'HRD 확정 전 임시'}]);
   await rowOf(page,'분해조립').getByText('hint.kpc@gmail.com · 2026-10-19 11:00').waitFor(); // 시트에서 다시 읽은 값(화면에 먼저 보인 값은 '방금')
   assert.equal(posts.filter(p=>p.action==='b2ModuleTimes').length,2,'read again from the sheet after saving');
   assert.match(await rowOf(page,'분해조립').innerText(),/HRD 확정 전 임시/);
@@ -319,7 +319,7 @@ test('교육시간 조정 adds a 공장견학 day with the default button, rolls
   assert.equal(posts.filter(p=>p.args?.[0]?.remove).length,0);
   await rowOf(page,'견학 업체 일정').getByRole('button',{name:'지우기'}).click();
   await page.locator('.b2t-day[data-day="2026-11-13|1"]').getByText('평소 기준 09:00~18:00').waitFor();
-  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:5,was:{date:'2026-11-13',cls:'1',module:'공장견학'},date:'2026-11-13',cls:'1',module:'공장견학',remove:true}]);
+  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:5,was:{date:'2026-11-13',cls:'1',module:'공장견학',start:'10:00',end:'17:00'},date:'2026-11-13',cls:'1',module:'공장견학',remove:true}]);
   // 줄 번호가 당겨진 뒤에도(시트에서 다시 읽음) 남은 줄을 바른 번호로 고칩니다
   await page.locator('.b2t-row[data-key="r6"]',{hasText:'분해조립'}).waitFor();
   await rowOf(page,'분해조립').getByRole('button',{name:'시간 정하기'}).click();
@@ -342,7 +342,7 @@ test('교육시간 조정 clears a row to 시간 미정 with was, deletes a pref
   assert.equal(posts.filter(p=>p.action==='b2ModuleTimeSave').length,0);
   await rowOf(page,'견학 업체 일정').getByRole('button',{name:'시간 비우기'}).click();
   await page.locator('.b2t-day[data-day="2026-11-13|1"]').getByText('평소 기준 09:00~18:00').waitFor();
-  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:5,was:{date:'2026-11-13',cls:'1',module:'공장견학'},date:'2026-11-13',cls:'1',module:'공장견학',start:'',end:'',part:'',reason:'시간 미정으로 되돌림'}]);
+  assert.deepEqual(posts.filter(p=>p.action==='b2ModuleTimeSave').map(p=>p.args[0]),[{row:5,was:{date:'2026-11-13',cls:'1',module:'공장견학',start:'10:00',end:'17:00'},date:'2026-11-13',cls:'1',module:'공장견학',start:'',end:'',part:'',reason:'시간 미정으로 되돌림'}]);
   await page.locator('.b2t-row[data-key="r5"]').getByText('시간 미정',{exact:true}).waitFor();
   await page.waitForFunction(()=>!document.querySelector('.b2t-row.pending')&&!document.querySelector('[data-del][disabled]'));// 시트에서 다시 읽기가 끝남
   // 그사이 시트에서 6번 줄이 다른 줄이 됨 → 지우기는 거절, 이유를 보이고 시트에서 다시 읽음(화면에 남은 옛 줄은 사라짐)
@@ -354,7 +354,7 @@ test('교육시간 조정 clears a row to 시간 미정 with was, deletes a pref
   await rowOf(page,'다른 모듈').waitFor();
   assert.equal(await rowOf(page,'안전교육').count(),0);
   assert.equal(posts.filter(p=>p.action==='b2ModuleTimes').length,reads+1,'read again once');
-  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:6,was:{date:'2026-11-13',cls:'1',module:'안전교육'},date:'2026-11-13',cls:'1',module:'안전교육',remove:true}]);
+  assert.deepEqual(posts.filter(p=>p.args?.[0]?.remove).map(p=>p.args[0]),[{row:6,was:{date:'2026-11-13',cls:'1',module:'안전교육',start:'',end:''},date:'2026-11-13',cls:'1',module:'안전교육',remove:true}]);
   // 고치기도 같은 확인: 열어 둔 사이 줄이 바뀌면 거절·다시 읽음, 편집 칸은 닫힘
   await rowOf(page,'분해조립').getByRole('button',{name:'시간 정하기'}).click();
   sheet.modules=sheet.modules.map(r=>r.row===7?{...r,date:'2026-11-27'}:r);
@@ -388,7 +388,7 @@ test('교육생 상태 changes a status with the last attendance day after confi
   assert.equal(posts.filter(p=>p.action==='b2RosterStatus').length,0,'cancelled');
   await page.locator('.b2r-row[data-key="1|김동진"]').getByRole('button',{name:'저장'}).click();
   await page.locator('.b2r-row[data-key="1|김동진"]',{hasText:'현재 조기취업'}).waitFor();
-  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatus').map(p=>p.args[0]),[{cls:'1',name:'김동진',status:'조기취업',changed:'2026-11-10',reason:'11/11 입사'}]);
+  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatus').map(p=>p.args[0]),[{cls:'1',name:'김동진',status:'조기취업',changed:'2026-11-10',reason:'11/11 입사',was:{status:'재학',changed:''}}]);
   assert.match(await page.locator('.b2r-row[data-key="1|김동진"]').innerText(),/마지막 출석 11\/10\(화\)[\s\S]*사유: 11\/11 입사/);
   const bundles=posts.filter(p=>p.action==='b2Bundle').map(p=>p.args[0]);assert.equal(bundles.at(-1),'1','read the class again from the sheet after saving');
   assert.match(await page.locator('#toast').innerText(),/1반 김동진 · 조기취업 \(마지막 출석 11\/10\(화\)\) 저장했습니다\./);
@@ -398,7 +398,7 @@ test('교육생 상태 changes a status with the last attendance day after confi
   await page.locator('.b2r-row[data-key="1|한수빈"]').getByRole('button',{name:'저장'}).click();
   await page.locator('.b2r-row[data-key="1|한수빈"]',{hasText:'현재 재학'}).waitFor();
   assert.equal(dialogs.length,before);
-  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatus').at(-1).args[0],{cls:'1',name:'한수빈',status:'재학',changed:'',reason:'개인 사정'});
+  assert.deepEqual(posts.filter(p=>p.action==='b2RosterStatus').at(-1).args[0],{cls:'1',name:'한수빈',status:'재학',changed:'',reason:'개인 사정',was:{status:'중도탈락',changed:'2026-11-02'}});
   assert.deepEqual(sheet.roster.find(r=>r[1]==='한수빈').slice(2,4),['재학','']);
  });
 });
@@ -457,7 +457,7 @@ test('교육생 상태: 명단 반영(출결판 다시 그리기) asks first, lo
   assert.equal(await btn.innerText(),'명단 반영(출결판 다시 그리기)');
   // 취소하면 아무것도 보내지 않음
   page.dialogAnswer.push(false);await btn.click();
-  assert.equal(dialogs.at(-1),'마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 전체는 20초쯤 걸립니다.\n대상: 1반');
+  assert.equal(dialogs.at(-1),'마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 전체는 반 하나씩 차례로 다시 그려 1분쯤 걸립니다.\n대상: 1반');
   assert.equal(posts.filter(p=>p.action==='b2RebuildBoards').length,0);
   // 한 반(지금 1반): 실행 중에는 잠김
   await btn.click();
@@ -473,7 +473,8 @@ test('교육생 상태: 명단 반영(출결판 다시 그리기) asks first, lo
   await page.locator('[data-rebuilt]',{hasText:'전체 반 출결판을 다시 그렸습니다.'}).waitFor();
   assert.match(dialogs.at(-1),/대상: 전체 반$/);
   assert.deepEqual(await page.locator('[data-rebuilt] li').allInnerTexts(),['1반 학생 32명, 출결판 40줄(+5줄 늘림)','2반 학생 30명, 출결판 40줄(+0줄 늘림)']);
-  assert.deepEqual(posts.filter(p=>p.action==='b2RebuildBoards').at(-1).args,[{}]);
+  const each=posts.filter(p=>p.action==='b2RebuildBoards').slice(1).map(p=>p.args[0]);
+  assert.ok(each.length>=16&&each.every((a,i)=>a.cls===String(i+1)),'전체 = 반 하나씩 차례로(잠금을 짧게, 2026-10-21)');
   // 시트가 아직 v15: Vercel이 SHEET_OUTDATED로 돌려줌
   outdated=true;await btn.click();
   await page.locator('[data-rebuilt]',{hasText:'시트 업데이트(v16) 대기'}).waitFor();

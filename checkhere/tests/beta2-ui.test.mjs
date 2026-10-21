@@ -208,7 +208,8 @@ test('the document inbox lists requests and a new request is sent with the selec
   await page.getByRole('button',{name:'신청하기'}).click();
   await page.waitForFunction(()=>!document.querySelector('[data-submit]'));
   const create=posts.find(p=>p.action==='b2DocCreate');
-  assert.deepEqual(create.args,[{cls:'1',name:'김동진',docType:'교육참여확인서 · 수기 출석부 · 기타 양식(국취 출석 확인 양식)',qty:1,period:'2026-10-28 ~ 2026-11-27',purpose:'',submitTo:'국민취업지원제도 운영기관',due:'',delivery:'카카오톡 개별 전송',memo:''}]);
+  const {clientId,...sentDoc}=create.args[0];assert.match(clientId,/^[A-Za-z0-9_-]{8,80}$/,'한 번만 표시 clientId(시트 v23)');
+  assert.deepEqual([sentDoc],[{cls:'1',name:'김동진',docType:'교육참여확인서 · 수기 출석부 · 기타 양식(국취 출석 확인 양식)',qty:1,period:'2026-10-28 ~ 2026-11-27',purpose:'',submitTo:'국민취업지원제도 운영기관',due:'',delivery:'카카오톡 개별 전송',memo:''}]);
  });
 });
 

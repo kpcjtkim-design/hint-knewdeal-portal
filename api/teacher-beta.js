@@ -96,15 +96,42 @@ export function resolveClass(user,body,action,args){
   if(!user.classIds.length)throw new Error('NO_CLASS');
   return Number(user.classIds.includes(requested)?requested:user.classIds[0]);
 }
+// 운영 리허설 안전장치(시트 v23, 2026-10-21): 고치기 요청은 화면이 본 값(was·wasStatus·before)을 함께 보내고 시트가 잠금 안에서 지금 값과 견줘 다르면
+// 'CONFLICT: 그사이 다른 사람이 바꿨습니다. 새로 읽어 주세요.'로 멈춥니다. 보내지 않으면 예전처럼 저장합니다. 여기서는 모양·길이만 보고 정해진 칸만 넘깁니다.
+// 새로 만들기(b2DocCreate·b2VocCreate)의 clientId(8~80자 영문·숫자·-·_): 시트가 10분 안에 같은 clientId를 다시 받으면 처음 결과(repeated:true)를 돌려줍니다.
+// 시험 기준일(asOf, b2Bundle 두 번째 인자 {asOf:'YYYY-MM-DD'}): 관리자만. 담임 요청에서는 빼서 보냅니다(시트도 담임이면 거절).
+export const WAS_FIELDS={b2DocUpdate:['status','memo','link','fixReason'],b2ModuleTimeSave:['date','cls','module','start','end'],b2RosterStatus:['status','changed']};
+export const WAS_MAX=2000,CLIENT_ID=/^[A-Za-z0-9_-]{8,80}$/,AS_OF=/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/,SIG=/^[\w!*-]{0,64}$/;
+const text=(v,max)=>{if(v===null||v===undefined)return '';if(typeof v==='object')throw new Error('BAD_REQUEST');const s=String(v);if(s.length>max)throw new Error('BAD_REQUEST');return s;};
+// was 객체: 정해진 칸만 글자로(없는 칸은 빼서 시트가 그 칸은 견주지 않게). 객체가 아니면 거절, 없으면 undefined.
+export function wasObject(v,keys,max=WAS_MAX){
+  if(v===undefined||v===null)return undefined;
+  if(typeof v!=='object'||Array.isArray(v))throw new Error('BAD_REQUEST');
+  const out={};for(const k of keys)if(v[k]!==undefined)out[k]=text(v[k],max);return out;
+}
+const sigText=v=>{const s=text(v,64);if(!SIG.test(s))throw new Error('BAD_REQUEST');return s;};
 // beta2 요청 인자: 반 번호는 서버에서 정합니다(관리자는 고른 반·전체, 담임은 담당반).
 export function b2Args(user,action,rest){
   const p=rest[0]&&typeof rest[0]==='object'&&!Array.isArray(rest[0])?{...rest[0]}:{},admin=user.role==='ADMIN';
   const own=c=>{const s=String(c??'');if(admin){if(!CLASS_IDS.includes(s))throw new Error('BAD_CLASS');return s;}if(!user.classIds.length)throw new Error('NO_CLASS');return user.classIds.includes(s)?s:user.classIds[0];};
-  if(action==='b2Bundle'){const c=String(rest[0]??'all');return [admin&&c==='all'?'all':own(c)];}
+  if(action==='b2Bundle'){
+    const c=String(rest[0]??'all'),out=[admin&&c==='all'?'all':own(c)],o=rest[1];
+    if(admin&&o&&typeof o==='object'&&o.asOf!==undefined&&o.asOf!==null&&o.asOf!==''){const a=String(o.asOf);if(!AS_OF.test(a))throw new Error('BAD_REQUEST');out.push({asOf:a});}
+    return out;
+  }
   if(action==='b2Docs'||action==='b2Vocs')return [admin&&!p.cls?{}:{cls:own(p.cls)}];
-  if(action==='b2DocCreate'||action==='b2VocCreate')return [{...p,cls:own(p.cls)}];
+  if(action==='b2DocCreate'||action==='b2VocCreate'){
+    if(p.clientId!==undefined&&p.clientId!==null&&!CLIENT_ID.test(String(p.clientId)))throw new Error('BAD_REQUEST');
+    return [{...p,cls:own(p.cls)}];
+  }
+  // 처리 상태 바꾸기의 wasStatus(화면이 본 상태): 글자 40자까지
+  if(action==='b2VocReply'&&p.wasStatus!==undefined&&p.wasStatus!==null)p.wasStatus=text(p.wasStatus,40);
   // 답글·확인: 담임은 늘 자기 반을 붙여 보내고 Apps Script가 그 건의 반과 맞는지 봅니다. 관리자는 반 없이도 됩니다.
   if(action==='b2VocReply'||action==='b2VocSeen')return [admin&&p.cls===undefined?p:{...p,cls:own(p.cls)}];
+  if(WAS_FIELDS[action]){const was=wasObject(p.was,WAS_FIELDS[action]);if(was)p.was=was;else delete p.was;}
+  // 출결대조 메모의 was: 화면이 본 메모 글자(없던 메모는 '')
+  if(action==='b2LedgerMemo'){if(p.was===undefined||p.was===null)delete p.was;else p.was=text(p.was,WAS_MAX);}
+  if(action==='b2DocUpdate')return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
   if(action==='b2Rev'||action==='b2Status')return [];
   // 모듈 시간·대조 메모 목록: 담임은 늘 자기 반(cls를 붙임), 관리자는 고른 반이나 반 없이(또는 'all') 전체. 그날 기준(b2DayTimes)은 반이 꼭 있어야 합니다.
   // 시간표(b2Schedule, 2026-10-20)도 같음: 담임은 자기 반만. 고치기(b2ScheduleSave, 관리자만)는 한 줄·여러 줄(rows) 모두 줄마다 반 번호를 확인합니다.
@@ -119,7 +146,8 @@ export function b2Args(user,action,rest){
   // 중도탈락 등록·고치기·지우기: 반(새 반·고칠 줄의 반 was.cls)을 서버에서 확인해 붙입니다.
   // 담임은 신청(새 줄, 담임 칸만, 관리자 확인(confirm)·판정·서류는 뺌)과 신청 취소(row·was·remove만)뿐입니다. 있는 줄 고치기(row·was가 있는 저장)는 거절합니다.
   if(action==='b2DropoutSave'){
-   const was=p.was&&typeof p.was==='object'?{cls:own(p.was.cls),name:String(p.was.name??'')}:undefined;
+   // was.sig(b2Dropouts 줄 지문, 시트 v23): 그사이 다른 사람이 그 줄을 고쳤으면 시트가 CONFLICT
+   const was=p.was&&typeof p.was==='object'?{cls:own(p.was.cls),name:String(p.was.name??''),...(p.was.sig!==undefined&&p.was.sig!==null&&p.was.sig!==''?{sig:sigText(p.was.sig)}:{})}:undefined;
    if(admin)return [{...p,cls:own(p.cls),...(was?{was}:{})}];
    if(p.remove===true){
     const row=Number(p.row);if(!Number.isInteger(row)||row<2||!was)throw new Error('BAD_REQUEST');
@@ -141,7 +169,8 @@ export function b2Args(user,action,rest){
   // 반 탭 출결판 다시 그리기(관리자만, 시트 v16 b2RebuildBoards {cls?}): 반을 비우거나 'all'이면 전체(20초쯤), 아니면 그 반만.
   if(action==='b2RebuildBoards'){const c=p.cls;return [c===undefined||c===''||c==='all'?{}:{cls:own(c)}];}
   // 여러 명 상태(관리자만): 줄마다 반 번호를 확인합니다.
-  if(action==='b2RosterStatusMany')return [{rows:(Array.isArray(p.rows)?p.rows:[]).map(r=>({cls:own(r?.cls),name:String(r?.name??''),status:String(r?.status??''),changed:String(r?.changed??''),reason:String(r?.reason??'')}))}];
+  // 줄마다 was {status, changed?}(화면이 본 명부 상태, 시트 v23)도 넘깁니다.
+  if(action==='b2RosterStatusMany')return [{rows:(Array.isArray(p.rows)?p.rows:[]).map(r=>{const was=wasObject(r?.was,WAS_FIELDS.b2RosterStatus);return {cls:own(r?.cls),name:String(r?.name??''),status:String(r?.status??''),changed:String(r?.changed??''),reason:String(r?.reason??''),...(was?{was}:{})};})}];
   // 드라이브 폴더 목록 {cls?, date?}·파일 수 {cls, date, kinds?}: 정해진 칸만 보냅니다. 날짜는 YYYY-MM-DD 모양만, 종류는 아는 것만(최대 7개).
   if(action==='b2DriveFolders'||action==='b2DriveCount'){
    const q=action==='b2DriveFolders'&&admin&&(p.cls===undefined||p.cls===''||p.cls==='all')?{}:{cls:own(p.cls)};
@@ -219,7 +248,10 @@ export default async function handler(req,res){
     }
     else{
       const cls=resolveClass(user,body,action,rest);
-      const args=action==='portalSave'?[{...(rest[0]&&typeof rest[0]==='object'?rest[0]:{}),cls,pin:''}]:[cls,'',...rest.slice(2)];
+      // portalSave의 before(화면이 본 행 지문, 시트 v23): 모양이 틀리면 거절, 없으면 빼서 예전처럼 덮어쓰기
+      const p0=rest[0]&&typeof rest[0]==='object'?{...rest[0]}:{};
+      if(action==='portalSave'){if(p0.before===undefined||p0.before===null)delete p0.before;else p0.before=sigText(p0.before);}
+      const args=action==='portalSave'?[{...p0,cls,pin:''}]:[cls,'',...rest.slice(2)];
       out=await callSheet(action,args,{},ctx);
     }
     if(!out?.ok&&out?.error==='unknown action')return res.status(400).json({...meta(),ok:false,code:'SHEET_OUTDATED',error:'마스터시트 데이터 API에 아직 없는 기능입니다. Apps Script를 새 코드로 다시 배포해 주세요.'});
