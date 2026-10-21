@@ -2,7 +2,8 @@
 // 환경변수(2기 Vercel 프로젝트): HINT_SHEET_API_URL (2기 마스터시트 Apps Script 웹앱 /exec 주소), HINT_SHEET_API_KEY (setApiKey로 만든 값). 이름은 cohort.json sheetApi.
 // 반·관리자·Firebase(2기 전용 프로젝트)·담임 열림은 cohort.json(lib/cohort.cjs)에서 읽습니다. Firebase 설정이 비면 로그인 확인 전에 막습니다.
 import cohort from '../lib/cohort.cjs';
-import {callSheetWithRetry,RETRY_POLICY,busyText} from '../lib/sheet-retry.mjs';
+import sheetRetry from '../lib/sheet-retry.cjs';
+const {callSheetWithRetry,RETRY_POLICY,busyText}=sheetRetry;
 const {CLASS_IDS,ADMINS,SHEET_API}=cohort;
 const ADMIN=new Set(ADMINS);
 // 시험은 이 값을 바꿔 씁니다(cohort.json firebase가 비어 있어도 시험할 수 있게).
@@ -148,7 +149,7 @@ export function vocForTeacher(voc,classIds){
  const pick=o=>Object.fromEntries(Object.entries(o||{}).filter(([k])=>classIds.includes(String(k))));
  return {rev:voc.rev,at:voc.at,teacher:pick(voc.teacher),open:pick(voc.open)};
 }
-// Apps Script 호출: 잠깐 몰린 오류(잠금 시간 초과·동시 실행 초과·429·503 등)는 lib/sheet-retry.mjs 규칙대로 다시 시도합니다(2026-10-21 부하 시험).
+// Apps Script 호출: 잠깐 몰린 오류(잠금 시간 초과·동시 실행 초과·429·503 등)는 lib/sheet-retry.cjs 규칙대로 다시 시도합니다(2026-10-21 부하 시험).
 // 읽기는 몰림·네트워크·5xx 모두, 다시 써도 같은 쓰기(portalSave·b2Save 등 반·이름·날짜로 덮어쓰기)는 '아직 쓰지 않았음'이 분명한 오류만,
 // 새 줄을 만드는 쓰기(서류 신청·민원 접수·답글·중도탈락 신청·앰버서더 추가)는 Apps Script가 실행되지 않은 오류(동시 실행 초과·429·503)만.
 // 시간 예산은 요청 하나에 55초(handler 시작부터, 인증 확인·신청 취소 확인 읽기 포함, vercel.json maxDuration 60초 안).

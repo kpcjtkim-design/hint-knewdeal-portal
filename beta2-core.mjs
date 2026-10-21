@@ -26,7 +26,7 @@ export const partialCount=t=>PARTIAL_WEIGHT[String(t||'')]||0;
 export const NEW_TYPES=Object.freeze([NONE_TYPE,DUP_TYPE]);
 export const sheetWait=(msg,type,again='다시 저장해 주세요')=>NEW_TYPES.includes(type)&&/유형을 골라/.test(String(msg||''))?`시트 업데이트 대기 · 마스터시트가 아직 ${type}을 받지 않습니다(Apps Script 배포 뒤 ${again})`:msg;
 // 마스터시트 몰림(2026-10-21 부하 시험, /api/teacher-beta가 잠깐 몰린 오류를 다시 시도한 뒤에도 실패): code SHEET_BUSY(잠금 시간 초과·동시 실행 초과 등)·SHEET_TIMEOUT(응답 늦음).
-// 저장이면 고친 값(초안)을 버리지 않고 이 글을 보입니다. 서버(lib/sheet-retry.mjs busyText)와 같은 글. retries = 서버가 다시 시도한 횟수.
+// 저장이면 고친 값(초안)을 버리지 않고 이 글을 보입니다. 서버(lib/sheet-retry.cjs busyText)와 같은 글. retries = 서버가 다시 시도한 횟수.
 export const SHEET_BUSY_CODES=Object.freeze(['SHEET_BUSY','SHEET_TIMEOUT']);
 export const isSheetBusy=e=>SHEET_BUSY_CODES.includes(String(e?.code||''));
 export const sheetBusyText=retries=>`지금 저장이 몰려 잠시 뒤 다시 저장해 주세요${Number(retries)>0?`(자동 재시도 ${Number(retries)}회)`:''}`;

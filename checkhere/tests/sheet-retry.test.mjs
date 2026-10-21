@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {RETRY_POLICY,actionKind,classifyFailure,mayRetry,backoffMs,busyText,callSheetWithRetry,READ_ACTIONS,IDEMPOTENT_WRITES,CREATE_WRITES} from '../../lib/sheet-retry.mjs';
+import {RETRY_POLICY,actionKind,classifyFailure,mayRetry,backoffMs,busyText,callSheetWithRetry,READ_ACTIONS,IDEMPOTENT_WRITES,CREATE_WRITES} from '../../lib/sheet-retry.cjs';
 import {sheetBusyText,isSheetBusy} from '../../beta2-core.mjs';
 import handler,{RETRY_HOOKS} from '../../api/teacher-beta.js';
 
