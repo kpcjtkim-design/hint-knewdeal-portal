@@ -105,10 +105,10 @@ test('admin 반 현황 and 출결대조 show the drive bar for the class and dat
   assert.equal(await page.evaluate(()=>document.querySelector('.b2-toolbar').nextElementSibling.className),'b2-drive-slot','right under the filter bar');
   assert.equal(await bar.getAttribute('data-date'),TODAY);
   assert.equal(await bar.locator('[data-drive-kind="evidence"]').getAttribute('href'),url('e-1105'));
-  // 학생 증빙 옆 작은 링크(증빙 드롭다운이 있는 행: 인정출석 박민지·결석 고다원), 출석(증빙 없음) 학생에게는 없음
+  // 학생 증빙 옆 작은 링크(증빙 드롭다운이 있는 행: 인정출석 박민지만. 결석 고다원은 증빙 없음), 출석(증빙 없음) 학생에게는 없음
   const ev=page.locator('tr[data-name="박민지"] [data-drive-ev]');await ev.waitFor();
   assert.deepEqual([await ev.innerText(),await ev.getAttribute('href'),await ev.getAttribute('target'),await ev.getAttribute('rel')],['출결인정자료 폴더',url('e-1105'),'_blank','noopener']);
-  assert.equal(await page.locator('tr[data-name="고다원"] [data-drive-ev]').count(),1);
+  assert.equal(await page.locator('tr[data-name="고다원"] [data-drive-ev]').count(),0,'결석은 증빙 드롭다운이 없어 링크도 없음(인정 유형만, 2026-10-21)');
   assert.equal(await page.locator('tr[data-name="김동진"] [data-drive-ev]').count(),0);
   assert.equal(sent(posts,'b2DriveFolders').length,1,'the ledger reuses the class folder list');
   // 날짜를 바꾸면(11/4: 출결인정 그날 폴더 없음 → WEEK 2) 바와 학생 링크가 따라갑니다

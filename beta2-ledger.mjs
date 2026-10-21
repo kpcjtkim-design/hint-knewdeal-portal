@@ -59,8 +59,9 @@ const hm=v=>/^\d{2}:\d{2}/.test(String(v||''))?String(v).slice(0,5):'';
 const brief=v=>{const t=neededTimes(v.type,v),ev=evOf(v);return [v.type||'유형 없음',t.inT&&`입실 ${t.inT}`,t.outT&&`퇴실 ${t.outT}`,t.oa&&`외출 ${t.oa}~${t.ob}`,String(v.reason||'').trim(),ev&&`증빙 ${ev}${evrOf(v)?`(${evrOf(v)})`:''}`].filter(Boolean).join(' · ');};
 // 저장될 증빙 값: 출석이면 비움, 반려 사유는 반려일 때만(저장 payload와 같은 기준)
 const NO_EV=new Set(['출석','해당없음','중복']); // 증빙 없는 유형: 해당없음(현황 없음)·중복(인정 출결이 아님, 2026-10-20)도 증빙 칸을 숨기고 ''로 저장
-const evOf=v=>NO_EV.has(v.type)?'':String(v.ev||''),evrOf=v=>evOf(v)==='반려'?String(v.evr||'').trim():'';
-const evOn=v=>B2_TYPES.includes(v.type)&&!NO_EV.has(v.type); // 증빙 드롭다운을 보이는 유형
+// 증빙(미제출·확인·반려)은 인정 유형(인정출석·인정지각·인정조퇴·인정외출)에만 씁니다(사용자 2026-10-21 "인정XX 제외하고는 서류 관련 드롭다운은 필요 없음"). 그 밖의 유형은 증빙을 비워 저장합니다.
+const evOf=v=>recognizedType(v.type)?String(v.ev||''):'',evrOf=v=>evOf(v)==='반려'?String(v.evr||'').trim():'';
+const evOn=v=>recognizedType(v.type); // 증빙 드롭다운을 보이는 유형
 // 시트가 아직 '해당없음'·'중복'을 받지 않으면(Apps Script 배포 전) b2Save가 '유형을 골라 주세요.'로 거절합니다 → 기다림 안내(beta2-core sheetWait)
 // 유형 드롭다운 색: 해당없음 회색, 중복 진한 주황(시트와 같은 #F9CB9C·#783F04, beta2.css t-dup)
 const TYPE_STYLE={해당없음:' style="background:#e8eaed;color:#5f6368" title="해당없음(현황 없음) · 출석률·결석에 넣지 않습니다"',중복:' style="background:#f9cb9c;color:#783f04" title="중복(지각+조퇴+외출) · 입실(지각)·퇴실(조퇴)·외출 가운데 둘 이상 · 결석이 아니라 출석으로 셉니다"'};
