@@ -6,6 +6,8 @@ import {surveyLink,loadSurveyLinks} from '../../survey-links.mjs';
 
 const catalog=JSON.parse(readFileSync(new URL('../../survey-catalog.json',import.meta.url)));
 const form=id=>`https://docs.google.com/forms/d/${id}/viewform`;
+// 진로취업은 2026-10-21 새 설문으로 바뀜(운영총괄 '만족도조사 관리 시트' 17개 반 모두 같은 링크)
+const CAREER='https://forms.gle/C5xAcDF1KpGa7SrE9';
 const entries=[
  {id:'a',date:'2026-10-02',title:'현직자특강',module:'현직자특강',day:1,kind:'class'},
  {id:'b',date:'2026-10-15',title:'문화체험',module:'문화체험',day:1,kind:'class'},
@@ -16,7 +18,7 @@ const entries=[
 test('module-end forms: 진로취업 · 문화체험 · track-specific 현직자특강 on the last module day',async()=>{
  for(const [cid,course,lecture,source] of [['1','임베디드 AI(HW)','1L1ZwCLaG3fsrMnuTX72ObvnwKUq2aAHLBkgia1dWgWc','response-56'],['14','제조지능화(3)','1g4_gKduzaKGy5a58hnJc2G-xd8o60KCR8EGpecGO2ZY','response-55']]){
   const events=Object.fromEntries(eventsForClass(catalog,cid,entries).map(e=>[e.title,e]));
-  assert.equal(events['진로취업'].date,'2026-10-21');assert.equal(events['진로취업'].url,form('1_8xTlzjO1asVWQYcbgWjBBgrE2aUDf3eAshCuUKXWb4'));
+  assert.equal(events['진로취업'].date,'2026-10-21');assert.equal(events['진로취업'].url,CAREER);
   assert.equal(events['문화체험'].date,'2026-10-15');assert.equal(events['문화체험'].url,form('1a7YNRUKwvNi-xz-xGjBYiRVinbpSojcdJqXundguAls'));
   assert.deepEqual(sourceCandidates(events['진로취업'],catalog.responseSources,course).map(s=>s.id),['response-58']);
   assert.deepEqual(sourceCandidates(events['문화체험'],catalog.responseSources,course).map(s=>s.id),['response-57']);
@@ -27,5 +29,7 @@ test('module-end forms: 진로취업 · 문화체험 · track-specific 현직자
  globalThis.fetch=async()=>({ok:true,json:async()=>catalog});await loadSurveyLinks();
  assert.equal(surveyLink('3',entries[0]),form('1L1ZwCLaG3fsrMnuTX72ObvnwKUq2aAHLBkgia1dWgWc'));
  assert.equal(surveyLink('2',entries[0]),form('1g4_gKduzaKGy5a58hnJc2G-xd8o60KCR8EGpecGO2ZY'));
- assert.equal(surveyLink('2',entries[3]),form('1_8xTlzjO1asVWQYcbgWjBBgrE2aUDf3eAshCuUKXWb4'));
+ assert.equal(surveyLink('2',entries[3]),CAREER);
+ // 진로취업 응답 시트도 새 설문(2026-10-21 운영총괄 만족도조사 관리 시트에서 링크 변경)의 시트
+ assert.match(catalog.responseSources.find(s=>s.id==='response-58').sheetUrl,/1QyT3Ai5UGA2XAQLpf7-Sk8S5BrBQfiE6O4NVD5tJiEs/);
 });
