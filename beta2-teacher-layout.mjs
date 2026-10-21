@@ -203,7 +203,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   if(preview&&/^#t\//.test(location.hash))history.replaceState(history.state,'',location.pathname+location.search);
  };
  const observer=new MutationObserver(()=>{if(!wrap.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});
- import('./drive-links.mjs?v=20261021-tf1').then(m=>{if(alive())works.push(m.mountTaskFolders(taskCards,{client,cls,date:seoulToday()}));}).catch(()=>{});
+ import('./drive-links.mjs?v=20261021-tf1').then(async m=>{if(alive())works.push(m.mountTaskFolders(taskCards,{client,cls,date:preview?await import('./beta2-asof.mjs').then(a=>a.getTestAsOf(user)||seoulToday(),()=>seoulToday()):seoulToday()}));}).catch(()=>{}); // 미리보기는 시험 기준일을 따름
  const [m0,s0]=routeFromHash(location.hash);await go(m0,s0);
  return {canLeave:()=>works.every(w=>!w?.canLeave||w.canLeave()),dispose};
 }
