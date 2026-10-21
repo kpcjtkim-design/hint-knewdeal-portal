@@ -71,6 +71,7 @@
 .b2 .b2-mini{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:var(--b2-sub)}
 .b2 .b2-inline-msg{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px}.b2 .b2-inline-msg:empty{display:none}
 .b2 .b2-saving{font-size:11px;font-weight:800;color:var(--b2-blue)}
+.b2 .b2-badge.q-wait{background:#fef3c7;color:#92400e} /* 쓰기 대기열: 시트 반영 대기(2026-10-21) */
 .b2 .b2-x{width:20px;height:20px;margin:0 4px 0 3px;padding:0;border:1px solid #fecaca;border-radius:6px;background:#fff;color:var(--b2-red);font:inherit;font-size:13px;font-weight:900;line-height:16px;vertical-align:middle;cursor:pointer}
 .b2 .b2-x:disabled{border-color:var(--b2-line);color:#cbd5e1;cursor:not-allowed}
 .b2 .b2-status{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:6px}.b2 .b2-status:empty{display:none}

@@ -259,6 +259,14 @@ service cloud.firestore {
         && request.resource.data.updatedBy == email() && request.resource.data.updatedAt == request.time));
       allow delete: if isAdmin() && settingId != 'reasonCatalog';
     }
+    // 쓰기 대기열(2026-10-21): 출결 저장 대기열 writeQueue와 비우기 임대 writeQueueLease는 Vercel 서버(서비스 계정, 규칙을 거치지 않음)만 읽고 씁니다.
+    // 브라우저는 관리자·담임 모두 읽기·쓰기 없음: 상태는 /api/teacher-beta queueStatus, 대기 값은 portalData·b2Bundle 응답에 서버가 덮어 줍니다.
+    match /writeQueue/{itemId}{
+      allow read, write: if false;
+    }
+    match /writeQueueLease/{leaseId}{
+      allow read, write: if false;
+    }
     // 그 밖의 경로는 모두 막습니다.
     match /{document=**}{
       allow read, write: if false;

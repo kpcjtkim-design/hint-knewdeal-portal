@@ -225,3 +225,15 @@ test('settings/reasonCatalog: teachers read, admins write with rev+1 and the fix
  assert.equal(can('delete','settings/reasonCatalog',{auth:ADMIN,data:doc()}),false);
  assert.equal(can('delete','settings/global',{auth:ADMIN,data:{}}),true);
 });
+
+// 쓰기 대기열(2026-10-21): writeQueue·writeQueueLease는 Vercel 서버(서비스 계정)만. 브라우저는 관리자·담임 누구도 읽기·쓰기 없음(상태는 /api/teacher-beta queueStatus).
+test('writeQueue and writeQueueLease are server-only: no browser reads or writes, not even admins or the item author',()=>{
+ const ITEM={id:'0abc',actor:T3.email,cls:'3',name:'가상학생',date:'2026-11-05',status:'pending',rec:{type:'결석'}};
+ for(const who of [ADMIN,ADMIN2,OPS_ADMIN,T3,T4,STRANGER,null]){
+  for(const op of ['get','list','create','update','delete']){
+   assert.equal(can(op,'writeQueue/0abc',{auth:who,data:ITEM,next:{...ITEM,status:'done'}}),false,`${who?.email||'signed out'} ${op} writeQueue`);
+   assert.equal(can(op,'writeQueueLease/main',{auth:who,data:{holder:'x'},next:{holder:'y'}}),false,`${who?.email||'signed out'} ${op} lease`);
+  }
+ }
+ assert.match(src,/match \/writeQueue\/\{itemId\}\{\s*allow read, write: if false;/);assert.match(src,/match \/writeQueueLease\/\{leaseId\}\{\s*allow read, write: if false;/);
+});

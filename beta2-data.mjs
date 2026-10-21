@@ -87,13 +87,31 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
  function patch(row,res){
   for(const {bundle:b} of bundles.values()){
    const at=b.ledger.findIndex(r=>ledgerKey(r.cls,r.name,r.date)===ledgerKey(row.cls,row.name,row.date));
-   const next={...(at>=0?b.ledger[at]:{}),...row,memo:res.memo??'',evApplied:res.evApplied??'',check:res.check??'',prov:'베타 수정',flag:'',sig:res.sig||''};
+   const prev=at>=0?b.ledger[at]:{};
+   // 대기열로 반영된 저장(res.queued)은 시트가 메모·증빙 적용·확인 칸을 돌려주지 않아 들고 있던 값(증빙은 고른 값)을 둡니다. 다음 묶음 읽기(변경 번호)가 시트 값으로 바꿉니다.
+   const next={...prev,...row,memo:res.memo??(res.queued?prev.memo??'':''),evApplied:res.evApplied??(res.queued?row.ev||prev.evApplied||'':''),check:res.check??(res.queued?prev.check??'':''),prov:'베타 수정',flag:'',sig:res.sig||''};delete next.pending;
    if(at>=0)b.ledger[at]=next;else b.ledger.push(next);
    if(res.rev)b.rev=res.rev;
   }
  }
- async function save(row){
-  const res=await call('b2Save',row);
+ // 쓰기 대기열(2026-10-21): 서버가 {queued:true,id}로 답하면(Firestore 대기열에 들어감) 시트에 반영될 때까지 queueStatus로 기다렸다가
+ // 예전 b2Save 결과 모양({rev,sig} · {unchanged})으로 돌려줍니다. 기다리는 동안 onQueued(id)로 화면이 '반영 대기'를 보입니다.
+ // 실패는 오류로(그사이 바뀜은 code CONFLICT), 55초 넘게 반영되지 않으면 code QUEUE_PENDING(대기열에는 남아 있어 곧 반영될 수 있음).
+ let queueOn=false;
+ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ async function settle(id,{timeout=55000}={}){
+  const t0=Date.now();let wait=500;
+  for(;;){
+   await sleep(wait);wait=Math.min(1500,wait+250);
+   let it=null;try{it=(await call('queueStatus',{ids:[id]}))?.items?.find(x=>x.id===id)||null;}catch{}
+   if(it?.status==='done')return it.action==='none'?{unchanged:true,rev:it.rev,queued:true}:{ok:true,rev:it.rev,sig:it.sig||'',warn:it.warn||'',queued:true};
+   if(it?.status==='failed'){const text=String(it.error||'시트에 반영하지 못했습니다');throw Object.assign(Error(text.replace(/^CONFLICT:\s*/,'')),{code:text.startsWith('CONFLICT')?'CONFLICT':'QUEUE_FAILED'});}
+   if(Date.now()-t0>timeout)throw Object.assign(Error('시트 반영을 기다리는 중입니다 · 잠시 뒤 새로 읽어 결과를 확인해 주세요'),{code:'QUEUE_PENDING'});
+  }
+ }
+ async function save(row,{onQueued}={}){
+  let res=await call('b2Save',row);
+  if(res?.queued){queueOn=true;try{onQueued?.(res.id);}catch{}res=await settle(res.id);}
   if(res.unchanged)return res;
   patch({cls:String(row.cls),name:row.name,date:row.date,type:row.type,inT:row.inT||'',outT:row.outT||'',oa:row.oa||'',ob:row.ob||'',reason:row.reason||'',ev:row.ev||'',evr:row.evr||''},res);
   return res;
@@ -114,7 +132,7 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   return ()=>{stopped=true;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
  }
  return {
-  call,rev,bundle,save,watch,checkhereDisease,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,
+  call,rev,bundle,save,watch,checkhereDisease,queueOn:()=>queueOn,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,
   officerSave:p=>officerWrite('b2OfficerSave',p),
   officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),

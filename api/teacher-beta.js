@@ -4,6 +4,7 @@
 import cohort from '../lib/cohort.cjs';
 import sheetRetry from '../lib/sheet-retry.cjs';
 const {callSheetWithRetry,RETRY_POLICY,busyText}=sheetRetry;
+import writeQueue from '../lib/write-queue.cjs';
 const {CLASS_IDS,ADMINS,SHEET_API}=cohort;
 const ADMIN=new Set(ADMINS);
 // 시험은 이 값을 바꿔 씁니다(cohort.json firebase가 비어 있어도 시험할 수 있게).
@@ -18,7 +19,8 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
  'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany','b2Schedule','b2ScheduleSave',
  'b2Officers','b2OfficerSave','b2OfficerEnd','b2RebuildBoards','b2DayMemos','b2DayMemo']);
-const ALLOWED=new Set(['portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
+// 쓰기 대기열(lib/write-queue.cjs, 2026-10-21): portalSaveBatch(담임 출결판이 모아 보냄)·queueStatus(내 대기열 항목·자기 반 대기·오늘 실패)는 담임·관리자 모두.
+const ALLOWED=new Set(['portalSaveBatch','queueStatus','portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭에서 신청, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
 const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave','b2RebuildBoards','b2DayMemo']);
 // 중도탈락 탭에서 담임이 신청할 때 정하는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
@@ -54,7 +56,8 @@ const FAILURES={
   SHEET_TIMEOUT:[504,'마스터시트 응답이 늦습니다. 잠시 후 다시 시도해 주세요.'],
   SHEET_BAD_RESPONSE:[502,'마스터시트 응답을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.'],
   SHEET_UNAVAILABLE:[502,'마스터시트에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'],
-  SHEET_BUSY:[503,'지금 저장이 몰려 잠시 뒤 다시 저장해 주세요']
+  SHEET_BUSY:[503,'지금 저장이 몰려 잠시 뒤 다시 저장해 주세요'],
+  QUEUE_BAD_ITEM:[400,'저장할 값의 모양이 올바르지 않습니다(이름·날짜·유형·시간). 다시 골라 주세요.']
 };
 
 const scalar=v=>String(v?.stringValue??v?.integerValue??'');
@@ -168,7 +171,9 @@ async function callSheet(action,args,extra={},ctx={}){
   }catch(e){ctx.attempts=(ctx.attempts||0)+(e.attempts||0);throw e;}
 }
 export default async function handler(req,res){
-  res.setHeader('cache-control','no-store');
+  // POST /api/drain(vercel.json rewrite → /api/teacher-beta?drain=1): 쓰기 대기열 비우기. api 파일끼리 import하지 않으려고 같은 함수에서 받습니다.
+  if(String(req.query?.drain??"")==="1"||/[?&]drain=1(&|$)/.test(String(req.url||"")))return drainHandler(req,res);
+  res.setHeader("cache-control","no-store");
   // ctx: 이 요청의 Apps Script 시간 예산(deadline)과 호출 횟수(attempts, 다시 시도 포함). 응답 머리 x-sheet-attempts, 2번 넘게 불렀으면 본문 attempts.
   const now=RETRY_HOOKS.now||Date.now,ctx={deadline:now()+RETRY_POLICY.budgetMs,attempts:0};
   const meta=()=>{if(ctx.attempts)res.setHeader('x-sheet-attempts',String(ctx.attempts));return ctx.attempts>1?{attempts:ctx.attempts}:{};};
@@ -181,7 +186,11 @@ export default async function handler(req,res){
     if(user.role!=='ADMIN'&&(!ACCESS.teacher||ADMIN_ACTIONS.has(body.action)))throw new Error('ADMIN_ONLY');
     const {action}=body,rest=Array.isArray(body.args)?body.args:[];
     if(!ALLOWED.has(action))throw new Error('BAD_ACTION');
-    if(JSON.stringify(rest).length>20000)throw new Error('BAD_REQUEST');
+    if(JSON.stringify(rest).length>(action==='portalSaveBatch'?80000:20000))throw new Error('BAD_REQUEST');
+    // 쓰기 대기열: 출결 저장(portalSave·portalSaveBatch·b2Save)은 Firestore 대기열에 넣고 바로 답합니다(대기열이 꺼졌거나 못 넣으면 아래 예전 길로). 안전망 확인도 여기서.
+    QUEUE.tick(req);
+    const queued=await QUEUE.handle({user,action,rest,body,req});
+    if(queued)return res.status(queued.status).json(queued.body);
     let out;
     if(B2_ACTIONS.has(action)){
       const args=b2Args(user,action,rest),who={actor:user.email,role:user.role};
@@ -202,6 +211,8 @@ export default async function handler(req,res){
     if(!out?.ok&&out?.error==='unknown action')return res.status(400).json({...meta(),ok:false,code:'SHEET_OUTDATED',error:'마스터시트 데이터 API에 아직 없는 기능입니다. Apps Script를 새 코드로 다시 배포해 주세요.'});
     // 민원·이슈 알림 건수: 담임에게는 자기 반 건수만 보냅니다.
     if(out?.ok&&user.role!=='ADMIN'&&out.data?.voc)out.data.voc=vocForTeacher(out.data.voc,user.classIds);
+    // 출결판(portalData)·출결원장 묶음(b2Bundle) 위에 아직 시트에 들어가지 않은 대기열 값을 덮어 보입니다(pending:true).
+    if(out?.ok)out.data=await QUEUE.overlay(user,action,body,rest,out.data);
     return res.status(out?.ok?200:400).json({...(out?.ok?{ok:true,data:out.data}:{ok:false,error:String(out?.error||'요청을 처리하지 못했습니다.')}),...meta()});
   }catch(e){
     const [status,fixed]=FAILURES[e.message]||[500,'요청을 처리하지 못했습니다.'];
@@ -210,5 +221,26 @@ export default async function handler(req,res){
     const busy=e.message==='SHEET_BUSY',error=busy?busyText(e.retries||0,e.kind!=='read'):fixed;
     if(e.attempts>1||busy)console.warn('teacher_beta_sheet_failed',JSON.stringify({code:e.message,attempts:e.attempts,failure:e.failure,detail:e.detail}));
     return res.status(status).json({ok:false,code:FAILURES[e.message]?e.message:'UNEXPECTED',error,...meta(),...(e.retries!==undefined?{retries:e.retries}:{})});
+  }
+}
+// 쓰기 대기열(lib/write-queue.cjs, 2026-10-21): FIREBASE_SERVICE_ACCOUNT(서비스 계정 JSON)가 있으면 켜지고 WRITE_QUEUE=off면 꺼집니다. 시트 호출·반 범위 규칙은 이 파일 것을 그대로 씁니다.
+// 대기열 비우기(drain)는 저장 요청에 답한 뒤 같은 함수 안에서 waitUntil로 돌고(vercel.json maxDuration 60초), POST /api/drain(rewrite → 이 함수 ?drain=1 → drainHandler)으로도 깨울 수 있습니다.
+export const QUEUE=writeQueue.createWriteQueue({callSheet:(...a)=>callSheet(...a),project:()=>FIREBASE.project,classIds:CLASS_IDS,
+ resolveClass:(...a)=>resolveClass(...a),b2Args:(...a)=>b2Args(...a),failText:code=>(FAILURES[code]||[0,'저장하지 못했습니다.'])[1]});
+// POST /api/drain: 헤더 x-drain-secret(Vercel 환경변수 DRAIN_SECRET과 같으면) 또는 로그인한 관리자·담임(담임 화면이 열린 동안). 대기열을 한 번 비우고 요약을 돌려줍니다.
+export async function drainHandler(req,res){
+  res.setHeader('cache-control','no-store');
+  try{
+    if(req.method!=='POST')return res.status(405).json({ok:false,error:'POST만 지원합니다.'});
+    if(!QUEUE.secretOk(req.headers?.['x-drain-secret'])){
+      let body=req.body||{};if(typeof body==='string'){try{body=JSON.parse(body||'{}');}catch{body={};}}
+      const user=await verifyUser(String(req.headers?.authorization||'').match(/^Bearer\s+(.+)$/i)?.[1]||body.idToken);
+      if(user.role!=='ADMIN'&&!ACCESS.teacher)throw new Error('ADMIN_ONLY');
+    }
+    return res.status(200).json({ok:true,data:await QUEUE.drain({budgetMs:45000,startWithinMs:20000})});
+  }catch(e){
+    const [status,error]=FAILURES[e.message]||[500,'요청을 처리하지 못했습니다.'];
+    if(!FAILURES[e.message])console.error('write_queue_drain',e?.message||e);
+    return res.status(status).json({ok:false,code:FAILURES[e.message]?e.message:'UNEXPECTED',error});
   }
 }

@@ -75,6 +75,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // bulk: 모아 저장 중 {done,total}(그동안 행 입력칸 잠금), bulkRun: 그 약속, bulkNote: 끝난 뒤 도구줄 요약('6건 저장 · 1건 확인 필요')
  // pinned: 필터·검색을 바꾼 뒤 손댄 학생(필터에서 빠져도 3초·되돌리기·요청 상태가 보이게 남김, 필터·검색을 다시 바꾸면 풀림)
  const customOpen=new Set(),drafts=new Map(),notes=new Map(),invalid=new Set(),jobs=new Map(),bodies=new Map(),drawn=new Map(),stale=new Set(),shown=new Map(),pinned=new Set();
+ // waiting: 쓰기 대기열에 들어가 시트 반영을 기다리는 학생(2026-10-21, client.save의 onQueued). 행 안내가 '저장 중' 대신 '반영 대기'.
+ const waiting=new Set();
  // memos: '반|이름|날짜' → {memo,by}(b2LedgerMemos, 반·기간마다 한 번 읽고 저장 뒤 다시), memoUi: 열린 메모 줄 하나(open 이름, 직접 입력 칸·글, 저장 중 이름, 오류)
  const memos=new Map(),memoUi={open:'',custom:false,text:'',busy:'',err:''};let memoRange='',memoSeq=0;
  // 공통메모(반·날짜): dayMemos = 지금 반의 날짜 → 시트 줄 {memo,by,at,editedBy,editedAt}, dayMemoState = ''(읽음)·'loading'·'wait'(시트 v17 배포 전)·'err'
@@ -182,7 +184,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const rec=row.rec,note=rec?.flag||'',v=valuesOf(row),evrIn=evOn(v)&&v.ev==='반려'; // 반려 사유 칸이 보이면 '반려: …' 줄은 생략
   if(!row.enrolled&&!rec)return `<fieldset class="b2-inline"><select data-inline="type" disabled aria-label="${esc(row.name)} 출결 유형"><option>해당없음</option></select></fieldset><span class="b2-sub">재학 기간 아님</span>`;
   // 모아 저장 중에는 fieldset으로 행 입력칸을 잠급니다(lock, 다시 그려도 잠긴 채).
-  return `<fieldset class="b2-inline" ${bulk?'disabled':''}>${inlineHtml(row)}</fieldset><div class="b2-inline-msg" data-msg></div><div data-xnote>${pickNote(row)}</div>${evBadge(rec?.evApplied)}${extraBadge(extraEvidence(rec))}${rec?.evr&&!evrIn?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
+  return `<fieldset class="b2-inline" ${bulk?'disabled':''}>${inlineHtml(row)}</fieldset><div class="b2-inline-msg" data-msg></div><div data-xnote>${pickNote(row)}</div>${evBadge(rec?.evApplied)}${extraBadge(extraEvidence(rec))}${rec?.evr&&!evrIn?`<span class="b2-sub">반려: ${esc(rec.evr)}</span>`:''}${rec?.check?`<span class="b2-sub">시트 확인: ${esc(rec.check)}</span>`:''}${rec?.pending?'<span class="b2-badge q-wait" title="담임·운영팀이 저장해 시트 반영을 기다리는 값">반영 대기</span>':rec?`<span class="b2-sub">${esc(rec.prov||'직접 입력')}</span>`:''}${note?`<span class="b2-sub">참고: ${esc(note)}</span>`:''}`;
  }
  // 학생 한 명 = <tbody data-student> 하나: 행, 메모 줄(열 때만), 그 아래 얇은 직접 요청 줄(재학 기간 아닌 행은 없음).
  // 저장 안내([data-msg])·저장 전 표시([data-mark])·상태 칩([data-status])·직접 요청 줄([data-prop])은 비워 두고 따로 채웁니다(초마다 바뀌거나 입력 중이어도 다른 칸을 건드리지 않게).
@@ -198,7 +200,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 행 안내: 저장 중, 안내·오류(입력 필요·저장 실패·그사이 바뀜), 그때만 「취소」(초안 버림). 초안만 있으면 비워 둬 행 높이가 늘지 않습니다.
  function msgHtml(name){
   const note=notes.get(name),busy=jobs.has(name),gone=!note&&outdated(name);
-  return `${busy?`<span class="b2-saving">저장 중…${jobs.get(name).next?' · 이어서 저장 대기':''}</span>`:''}${note?`<span class="b2-err">${esc(note)}</span>`:''}${gone?`<span class="b2-err">그사이 바뀜 · 시트 값 ${esc(brief(saved(rowOf(name))))}</span>`:''}${(note||gone)&&drafts.has(name)?'<button class="b2-btn small" data-inline-cancel title="이 학생의 저장하지 않은 변경을 버리고 시트 값으로 (Esc)">취소</button>':''}`;
+  return `${busy?`<span class="b2-saving">${waiting.has(name)?'<span class="b2-badge q-wait">반영 대기</span> 시트에 반영하는 중…':'저장 중…'}${jobs.get(name).next?' · 이어서 저장 대기':''}</span>`:''}${note?`<span class="b2-err">${esc(note)}</span>`:''}${gone?`<span class="b2-err">그사이 바뀜 · 시트 값 ${esc(brief(saved(rowOf(name))))}</span>`:''}${(note||gone)&&drafts.has(name)?'<button class="b2-btn small" data-inline-cancel title="이 학생의 저장하지 않은 변경을 버리고 시트 값으로 (Esc)">취소</button>':''}`;
  }
  // 남은 초는 칩 모양(html)에 넣지 않고 따로 돌려줍니다. 초만 바뀔 때 버튼을 새로 만들지 않아야 누르는 중·키보드 포커스의 「되돌리기」가 사라지지 않습니다.
  function statusHtml(name){
@@ -592,7 +594,11 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   bulk={done:0,total:todo.length};lock(true);paintBulk();
   const run=(async()=>{
    let ok=0;
-   try{for(const n of todo){if(!life.alive()||!sameDay(day))break;bulk.done++;paintBulk();if(drafts.has(n)&&await saveRow(n)===true)ok++;}} // true = 실제로 저장함(그사이 초안이 없어졌으면 'none')
+   // 쓰기 대기열이 켜져 있으면(client.queueOn, 첫 저장이 '접수'로 답한 뒤) 6행씩 함께 보냅니다: 대기열이 순서대로 한 번에 시트에 넣으므로 잠금 다툼이 없습니다. 아니면 예전처럼 한 행씩.
+   const one=async n=>{if(!life.alive()||!sameDay(day))return false;bulk.done++;paintBulk();if(drafts.has(n)&&await saveRow(n)===true)ok++;return true;};
+   try{let i=0;if(todo.length&&!client.queueOn?.())await one(todo[i++]);
+    const width=client.queueOn?.()?6:1,lane=async()=>{while(i<todo.length){if(!await one(todo[i++]))return;}};
+    await Promise.all(Array.from({length:Math.min(width,Math.max(1,todo.length-i))},lane));} // true = 실제로 저장함(그사이 초안이 없어졌으면 'none')
    catch(e){if(life.alive())say(e.message,'err');}
    finally{
     bulk=null;bulkRun=null;
@@ -616,7 +622,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   let end,first;const j={next:null,done:new Promise(r=>{end=r;})},day=`${cls}|${date}`;jobs.set(name,j);paintMsg(name);
   try{while(kind&&life.alive()&&sameDay(day)){const ok=await saveOnce(name,kind);first??=ok;kind=ok?j.next:null;j.next=null;}}
   catch(e){first??=false;if(life.alive())say(e.message,'err');}
-  finally{if(jobs.get(name)===j)jobs.delete(name);if(life.alive()&&sameDay(day))paint(name);end();}
+  finally{if(jobs.get(name)===j)jobs.delete(name);waiting.delete(name);if(life.alive()&&sameDay(day))paint(name);end();}
   return first??false;
  }
  async function saveOnce(name,kind){
@@ -641,7 +647,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const prevRow=rec?pick(rec):null;
   sync.saveStarted(key);notes.delete(name);invalid.delete(name);paintMsg(name);
   let res;
-  try{res=await client.save(payload);saveGen++;}
+  try{res=await client.save(payload,{onQueued:()=>{waiting.add(name);if(life.alive())paintMsg(name);}});saveGen++;}
   catch(e){
    sync.saveFailed(key,e);if(!life.alive()||!sameDay(day))return false;
    if(e.code==='CONFLICT'){
