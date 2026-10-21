@@ -49,6 +49,14 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  today.innerHTML='<div id="t2Urgent"></div><div data-slot="today" id="t2Beta_today"></div><div id="t2Tasks"></div><div class="b2-head t2-section"><div><h3>오늘 시간표</h3></div></div><div id="t2Timetable"></div><details class="b2-card b2-pad" id="t2Notice" style="margin-top:12px"><summary><b>일일 업무 체크리스트 · 공지</b></summary></details>';
  if(urgent)today.querySelector('#t2Urgent').append(urgent);
  if(taskHead)today.querySelector('#t2Tasks').append(taskHead);if(tasks)today.querySelector('#t2Tasks').append(tasks);
+ // 오늘 할 일 카드(사용자 요청 2026-10-21): 1 출결현황·4 운영모니터링은 위 탭으로 바로 가고, 2·3·5 폴더는 카드마다 날짜를 고릅니다(기본 오늘).
+ const taskCards=tasks?[...tasks.querySelectorAll('.task')]:[];
+ for(const card of taskCards){
+  const n=card.querySelector('.num')?.textContent.trim()||'';card.dataset.task=n;
+  const jump=(desc,btns)=>{const p=card.querySelector(':scope>p');if(p)p.textContent=desc;const box=document.createElement('div');box.className='task-actions';box.innerHTML=btns.map(([to,l],i)=>`<button type="button" class="btn ${i?'btn-soft':'btn-primary'}" data-t2go="${to}">${l}</button>`).join('');(card.querySelector('.task-actions')||card.querySelector('[data-open],a.btn'))?.replaceWith(box);};
+  if(n==='1')jump('위 「출결」 탭의 출결판·출석률로 바로 갑니다.',[['attendance/board','출결판 열기'],['attendance/stats','출석률']]);
+  if(n==='4')jump('반 운영 점검(9개 항목)과 교육생 면담(상담일지)을 씁니다.',[['monitoring/checkup','반 운영 점검'],['monitoring/counsel','교육생 면담']]);
+ }
  if(notice){const d=today.querySelector('#t2Notice');if(noticeHead)noticeHead.remove();d.append(notice);}
  const links=document.createElement('div');for(const e of following)if(![tasks,taskHead,notice,noticeHead].includes(e))links.append(e);
  panel('documents').innerHTML='<div data-slot="documents" id="t2Docs"></div>';
@@ -162,6 +170,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   if(b.dataset.subtab)void go(main,b.dataset.subtab,{push:true});
   if(b.dataset.alertGo)void go('attendance','disease',{push:true});
   if(b.dataset.vocGo)void go('feedback','voc',{push:true});
+  if(b.dataset.t2go){const [tm,ts]=b.dataset.t2go.split('/');void go(tm,ts||'',{push:true});scrollTo?.({top:0});}
   if(b.dataset.retry){b.closest('.t2-fail')?.remove();void go(main,sub);}
  });
  // 탭 줄에서 ←·→ 키로 옆 탭으로 옮깁니다.
@@ -194,6 +203,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   if(preview&&/^#t\//.test(location.hash))history.replaceState(history.state,'',location.pathname+location.search);
  };
  const observer=new MutationObserver(()=>{if(!wrap.isConnected)dispose();});observer.observe(document.body,{childList:true,subtree:true});
+ import('./drive-links.mjs?v=20261021-tf1').then(m=>{if(alive())works.push(m.mountTaskFolders(taskCards,{client,cls,date:seoulToday()}));}).catch(()=>{});
  const [m0,s0]=routeFromHash(location.hash);await go(m0,s0);
  return {canLeave:()=>works.every(w=>!w?.canLeave||w.canLeave()),dispose};
 }

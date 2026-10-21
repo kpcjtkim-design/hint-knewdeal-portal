@@ -101,7 +101,12 @@ const CSS=`.b2-drive{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;
 .b2-drive-ev{display:inline-block;margin-top:3px;font-size:11px;font-weight:800;color:#1d4ed8;text-decoration:none;white-space:nowrap}.b2-drive-ev:hover{text-decoration:underline}
 .b2-drive-units summary{cursor:pointer}.b2-drive-units .b2-drive-units-top{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:10px 0}
 .b2-drive-units ul{list-style:none;margin:0;padding:0;display:grid;gap:0}.b2-drive-units li{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:7px 0;border-top:1px solid #e2e8f0}
-.b2-drive-units li:first-child{border-top:0}.b2-drive-units li b{min-width:150px;font-size:13px}`;
+.b2-drive-units li:first-child{border-top:0}.b2-drive-units li b{min-width:150px;font-size:13px}
+.b2-taskdrive{display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%}.b2-taskdrive>.btn{flex:1 1 140px;text-align:center;text-decoration:none}
+.b2-taskdrive-pick{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#64748b;font-weight:700}
+.b2-taskdrive-pick input{font:inherit;font-size:12px;border:1px solid #cbd5e1;border-radius:8px;padding:3px 6px;background:#fff;color:#0f172a}
+.b2-taskdrive-reset{border:0;background:transparent;color:#1d4ed8;font-size:12px;font-weight:800;cursor:pointer;padding:2px 4px}
+.b2-taskdrive-note{flex-basis:100%;font-size:11px;color:#64748b}`;
 function ensureDriveCss(){if(typeof document==='undefined'||document.querySelector('style[data-drive-css]'))return;const s=document.createElement('style');s.dataset.driveCss='1';s.textContent=CSS;document.head.append(s);}
 
 const linkHtml=(l,count=null)=>l.url
@@ -181,6 +186,34 @@ export function createDriveBar({client,admin=false,picker=false,onChange=null,co
   reload(){if(cls)void load();},
   dispose(){disposed=true;clearTimeout(countTimer);el.remove();}
  };
+}
+
+// 담임 「오늘 할 일」 카드 폴더 버튼(사용자 요청 2026-10-21): 수기출석본·교육사진·출결인정자료 카드마다 기본은 그날 폴더,
+// 날짜 칸으로 카드별로 다른 날 폴더를 열 수 있습니다(그날 폴더가 아직 없으면 그 주 → 반 폴더). 폴더 목록은 한 번 읽어 세 카드가 같이 씁니다.
+export const TASK_KINDS={'2':'manual','3':'photo','5':'evidence'};
+export function mountTaskFolders(cards,{client,cls,date}){
+ ensureDriveCss();
+ let data=null,err=null,disposed=false;const items=[];
+ for(const card of cards){
+  const kind=TASK_KINDS[card.dataset.task];if(!kind)continue;
+  const box=document.createElement('div');box.className='b2-taskdrive';box.dataset.taskDrive=kind;
+  const old=card.querySelector('[data-open]');if(old)old.replaceWith(box);else card.append(box);
+  items.push({box,kind,pick:''});
+ }
+ function paint(it){
+  if(disposed)return;
+  const d=it.pick||date,m=data?driveLinks(data,{cls,date:d}):null,l=m&&!m.empty?m.links.find(x=>x.kind===it.kind):null;
+  const btn=l?.url?`<a class="btn btn-primary" data-task-folder href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.title)}">${esc(md(d))} 폴더 열기</a>`
+   :`<button type="button" class="btn btn-primary" disabled>${err?'폴더 목록을 읽지 못했습니다':!data?'폴더 확인 중…':m.empty?NOT_BUILT:'폴더가 목록에 없습니다'}</button>`;
+  const note=l?.url&&l.short?`<span class="b2-taskdrive-note">${esc(md(d))} 폴더가 아직 없어 ${esc(l.short)}를 엽니다</span>`:'';
+  it.box.innerHTML=`${btn}<label class="b2-taskdrive-pick">날짜<input type="date" data-task-date value="${esc(d)}" aria-label="${esc(KIND_LABEL[it.kind])} 폴더 날짜"></label>${it.pick?'<button type="button" class="b2-taskdrive-reset" data-task-reset>오늘로</button>':''}${note}`;
+  const inp=it.box.querySelector('[data-task-date]');inp.onchange=()=>{if(!isDay(inp.value))return;it.pick=inp.value===date?'':inp.value;paint(it);};
+  const rs=it.box.querySelector('[data-task-reset]');if(rs)rs.onclick=()=>{it.pick='';paint(it);};
+ }
+ const all=()=>items.forEach(paint);
+ all();
+ if(items.length)fetchFolders(client,cls).then(d=>{data=d&&typeof d==='object'?d:{};all();},e=>{err=e;all();});
+ return {items,dispose(){disposed=true;}};
 }
 
 // 내려받기 › 단위기간 폴더 바로가기(관리자): 반을 고르면 단위마다 그 단위 폴더와 1·2·3 폴더. 펼칠 때 처음 읽습니다.
