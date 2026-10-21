@@ -20,16 +20,23 @@ test('sheet rows use headers and Q column class; roster tabs exclude copies',()=
  assert.deepEqual(classTabs(['운영총괄(1기) 대시보드','1. 수도권_임베디드 AI(HW)','1. 수도권_임베디드 AI(HW)_2 단위기간','5. 충청_제조지능화(2)','5. 충청_제조지능화(2)_테스트','시트수정중_1. 수도권_임베디드 AI(HW)의 사본']),{'1':'1. 수도권_임베디드 AI(HW)','5':'5. 충청_제조지능화(2)'});
  assert.throws(()=>classTabs(['3. a','3. b']),/2개/);
 });
-test('before-start days without attendance are absences; days from start count as attendance',()=>{
+test('before-start days without attendance are absences; days from the start date are absences too (2026-10-21)',()=>{
  const a=classAttendance(sheet(DAYS,[['가',row(upTo('8/7'))]])),s=a.students[0];
  const r=evaluateDropout(entry({lastText:'8/7까지 출석',startText:'9/1 출근'}),{dates:a.dates,row:s.row},'2026-09-29');
- assert.equal(r.requiredUntil,'2026-08-31');assert.equal(r.preStartAbsence,15);
- assert.equal(r.periods[0].total,12);assert.equal(r.periods[1].total,3);assert.equal(r.periods[2].total,0);
- assert.equal(r.verdict,'제적');assert.match(r.basis,/1단위기간.*절반/);assert.match(r.basis,/전체 무단결석 15일/);
+ assert.equal(r.requiredUntil,'2026-08-31');assert.equal(r.preStartAbsence,15);assert.equal(r.postStartAbsence,34);
+ assert.deepEqual(r.days.find(d=>d.date==='2026-08-31'),{date:'2026-08-31',raw:'해당없음',status:'결석',basis:'근로개시 전 미출석'});
+ assert.deepEqual(r.days.find(d=>d.date==='2026-09-01'),{date:'2026-09-01',raw:'해당없음',status:'결석',basis:'근로개시 이후 결석'});
+ assert.deepEqual(r.periods.map(p=>p.total),[12,20,17]);
+ assert.equal(r.verdict,'제적');assert.match(r.basis,/1단위기간.*절반/);assert.match(r.basis,/3단위기간 결석 17일/);assert.match(r.basis,/전체 무단결석 49일/);
+});
+test('a start date before the first class day makes every class day an absence',()=>{
+ const a=classAttendance(sheet(DAYS,[['가',row(()=>'')]]));
+ const r=evaluateDropout(entry({lastText:'7/24까지 출석',startText:'7/27 출근'}),{dates:a.dates,row:a.students[0].row},'2026-09-29');
+ assert.equal(r.requiredUntil,'');assert.equal(r.postStartAbsence,59);assert.equal(r.totalAbsence,59);assert.equal(r.verdict,'제적');
 });
 test('unexcused late/early/outing: 3 per unit period = 1 absence; 중복 counts twice; 인정출석 is attendance',()=>{
- const a=classAttendance(sheet(DAYS,[['가',row(upTo('8/31'),{'7/27':'지각','7/28':'조퇴','7/29':'외출','7/30':'지각','7/31':'인정출석','8/27':'중복(지각+외출, 지각+조퇴, 외출+조퇴)','8/28':'결석'})]]));
- const r=evaluateDropout(entry(),{dates:a.dates,row:a.students[0].row},'2026-09-29');
+ const a=classAttendance(sheet(DAYS,[['가',row(upTo('10/22'),{'7/27':'지각','7/28':'조퇴','7/29':'외출','7/30':'지각','7/31':'인정출석','8/27':'중복(지각+외출, 지각+조퇴, 외출+조퇴)','8/28':'결석'})]]));
+ const r=evaluateDropout(entry({startText:'10/23 출근',lastText:'10/22까지 출석'}),{dates:a.dates,row:a.students[0].row},'2026-10-23');
  assert.deepEqual(r.periods.map(p=>[p.absent,p.partial,p.converted,p.total]),[[0,4,1,1],[1,2,0,1],[0,0,0,0]]);
  assert.equal(r.totalAbsence,2);assert.equal(r.verdict,'수료가능');assert.equal(verdictLabel(r),'수료가능');
 });
@@ -53,7 +60,10 @@ test('future last day is 예정 and unfilled days up to it are planned attendanc
  const r=evaluateDropout(entry({startText:'10/6 출근',lastText:'10/1까지 출석예정'}),{dates:a.dates,row:a.students[0].row},'2026-09-29');
  assert.equal(r.scheduled,true);assert.equal(r.requiredUntil,'2026-10-02');assert.equal(r.preStartAbsence,1);
  assert.equal(r.days.find(d=>d.date==='2026-09-30').basis,'포기일 전 출석 예정');
- assert.equal(r.days.find(d=>d.date==='2026-10-02').status,'결석');assert.equal(verdictLabel(r),'예정 · 수료가능');
+ assert.equal(r.days.find(d=>d.date==='2026-10-02').status,'결석');
+ // 10/6 근로개시: 남은 12일(10/6~10/22)은 아직 오지 않았어도 결석 → 3단위기간 13일 결석으로 제적 예정
+ assert.equal(r.postStartAbsence,12);assert.equal(r.days.find(d=>d.date==='2026-10-06').basis,'근로개시 이후 결석');
+ assert.equal(r.periods[2].total,13);assert.equal(verdictLabel(r),'예정 · 제적');
  assert.deepEqual(r.issues,[]);
 });
 test('personal-reason dropouts are 제적; missing dates need checking',()=>{
@@ -102,22 +112,29 @@ test('writer checks header, name and previous value, writes one RAW cell and ver
  await assert.rejects(writeDropoutCell(fakeSheet(row).api,{row:5,name:'가',field:'note',before:'',after:'x'}),/허용되지 않는/);
 });
 
-test('H column text follows the staff format: per unit period, the period before the start date is 근로전',()=>{
- // 시트 8행(이준서)과 같은 경우: 8/17까지 출석, 8/18-21 결석, 8/24-27 인정출석, 8/28·8/31 결석, 9/1 출근.
+test('H column text lists every unit period as N차, including the days from the start date (absences)',()=>{
+ // 시트 8행(이준서)과 같은 경우: 8/17까지 출석, 8/18-21 결석, 8/24-27 인정출석, 8/28·8/31 결석, 9/1 출근 → 9/1부터 결석.
  const att=classAttendance(sheet(DAYS,[['가',row(upTo('8/17'),{'8/24':'인정출석','8/25':'인정출석','8/26':'인정출석','8/27':'인정출석'})]]));
  const r=evaluateAll([entry({lastText:'8/17까지 출석'})],{'1':att},'2026-09-30')[0];
- assert.equal(verdictText(r),'결석4회(1차), 결석2회(근로전) = 수료가능');
+ assert.equal(verdictText(r),'결석4회(1차), 결석19회(2차), 결석17회(3차) = 제적');
+ // 10/12 출근: 3단위기간 남은 9일(10/12~10/22)만으로 수업일 17일의 절반 이상 → 제적
  const later=evaluateAll([entry({startText:'10/12 출근',lastText:'10/8까지 출석예정'})],{'1':classAttendance(sheet(DAYS,[['가',row(upTo('9/30'))]]))},'2026-09-30')[0];
- assert.equal(verdictText(later),'결석0회(1차), 결석0회(2차), 결석0회(근로전) = 수료가능(예정)');
+ assert.equal(verdictText(later),'결석0회(1차), 결석0회(2차), 결석9회(3차) = 제적(예정)');
+ // 10/19 출근: 남은 4일만 결석 → 수료가능
+ const last=evaluateAll([entry({startText:'10/19 출근',lastText:'10/16까지 출석'})],{'1':classAttendance(sheet(DAYS,[['가',row(upTo('10/16'))]]))},'2026-10-21')[0];
+ assert.equal(last.postStartAbsence,4);assert.equal(verdictText(last),'결석0회(1차), 결석0회(2차), 결석4회(3차) = 수료가능');
  assert.equal(verdictText(evaluateAll([entry({reason:'개인사정 포기',startText:'-'})],{},'2026-09-30')[0]),'제적');
  assert.equal(verdictText({verdict:'확인필요',periods:[]}),'','unresolved rows are not written');
  assert.equal(sheetVerdict('결석 2회(1차)\n결석 7회(근로전)\n=수료가능'),'수료가능');assert.equal(sheetVerdict('제적(결석00일)'),'제적');
 });
 test('H column plan fills blank or portal-written cells only and flags staff entries that disagree',()=>{
  const base={verdict:'수료가능',scheduled:false,requiredUntil:'2026-08-31',periods:[{id:'1',from:'2026-07-27',to:'2026-08-26',days:22,total:1},{id:'2',from:'2026-08-27',to:'2026-09-26',days:20,total:0}]};
- const rows=[{...base,row:2,name:'빈칸',sheetNote:''},{...base,row:3,name:'자동',sheetNote:'결석0회(1차) = 수료가능 · 포털자동(9/29)'},{...base,row:4,name:'같음',sheetNote:'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/29)'},{...base,row:5,name:'담당자',sheetNote:'제적'},{...base,row:6,name:'담당자일치',sheetNote:'수료(결석00일)'},{...base,row:7,name:'확인',verdict:'확인필요',sheetNote:''},{...base,row:8,name:'대시',sheetNote:'-'}];
+ const rows=[{...base,row:2,name:'빈칸',sheetNote:''},{...base,row:3,name:'자동',sheetNote:'결석0회(1차) = 수료가능 · 포털자동(9/29)'},{...base,row:4,name:'같음',sheetNote:'결석1회(1차), 결석0회(2차) = 수료가능 · 포털자동(9/29)'},{...base,row:5,name:'담당자',sheetNote:'제적'},{...base,row:6,name:'담당자일치',sheetNote:'수료(결석00일)'},{...base,row:7,name:'확인',verdict:'확인필요',sheetNote:''},{...base,row:8,name:'대시',sheetNote:'-'}];
  const {writes,manual}=verdictPlan(rows,'2026-09-30');
- assert.deepEqual(writes.map(w=>[w.row,w.after]),[[2,'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)'],[3,'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)'],[8,'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)']]);
+ assert.deepEqual(writes.map(w=>[w.row,w.after]),[[2,'결석1회(1차), 결석0회(2차) = 수료가능 · 포털자동(9/30)'],[3,'결석1회(1차), 결석0회(2차) = 수료가능 · 포털자동(9/30)'],[8,'결석1회(1차), 결석0회(2차) = 수료가능 · 포털자동(9/30)']]);
+ // 예전 규칙(근로개시 뒤 출석 간주)으로 포털이 쓴 칸도 새 판정으로 다시 쓴다.
+ const old=verdictPlan([{...base,row:9,name:'예전',verdict:'제적',sheetNote:'결석1회(1차), 결석0회(근로전) = 수료가능 · 포털자동(10/14)'}],'2026-10-21');
+ assert.deepEqual(old.writes.map(w=>w.after),['결석1회(1차), 결석0회(2차) = 제적 · 포털자동(10/21)']);assert.deepEqual(old.manual,[]);
  assert.deepEqual(manual.map(m=>[m.row,m.sheet]),[[5,'제적']],'staff-written cells are never overwritten; only disagreement is reported');
 });
 test('H writer rechecks header, names and previous values, writes in one RAW batch and verifies',async()=>{

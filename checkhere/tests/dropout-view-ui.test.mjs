@@ -4,7 +4,7 @@ test('sync writes verdicts to blank or portal-written H cells and flags staff en
  const DROP='1ZU6IxnP3CqFQGB1UxC3XB9mhrC40ZArG-0cQGdLqljI',OPS='1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34';
  const days=['7/27','7/28','8/3','8/18','8/19','8/20','8/21','8/28','8/31','9/1','9/2','9/29','9/30'],att=[['','출석률','출석일수','지조외',...days],['가','','','',...days.map(d=>['8/19','8/20'].includes(d)?'결석':'출석')],['나','','','',...days.map(()=>'출석')],['다','','','',...days.map(()=>'출석')]];
  const head=['순번','순번','연락처','반배정','포기사유','근로개시일','포기일(마지막수강일)','결석일수\n(수료가능여부)\n※확인중','문의일정','연락방법','수험번호','유선확인','서류1. 포기사유서','서류2. 채용통보 발표문','서류3. 채용인정서류','비고','반 정보'];
- const faq=[head,['1','가','','','기업 합격(가)','9/1 출근','8/31까지 출석',''],['2','나','','','기업 합격(나)','9/1 출근','8/31까지 출석','제적'],['3','다','','','개인사정 포기','-','8/31까지 출석','결석0회(1차) = 수료가능 · 포털자동(9/29)']].map(r=>{const x=[...r];while(x.length<17)x.push('');x[16]='1반';return x;});faq[0][16]='반 정보';
+ const faq=[head,['1','가','','','기업 합격(가)','9/1 출근','8/31까지 출석',''],['2','나','','','기업 합격(나)','9/1 출근','8/31까지 출석','수료가능'],['3','다','','','개인사정 포기','-','8/31까지 출석','결석0회(1차) = 수료가능 · 포털자동(9/29)']].map(r=>{const x=[...r];while(x.length<17)x.push('');x[16]='1반';return x;});faq[0][16]='반 정보';
  const posts=[];
  page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});
  try{
@@ -26,8 +26,13 @@ test('sync writes verdicts to blank or portal-written H cells and flags staff en
   await page.goto('https://fixture.test/');await page.getByRole('button',{name:'동기화 · 판정'}).click();
   await page.getByText(/시트 H열 자동 기록 2건/).waitFor();
   assert.equal(posts.length,1,'one batch write');assert.deepEqual(posts[0].data.map(d=>d.range.split('!')[1]),['H2','H4']);assert.equal(posts[0].valueInputOption,'RAW');
-  assert.equal(faq[1][7],'결석2회(1차), 결석0회(근로전) = 수료가능 · 포털자동(9/30)');assert.equal(faq[3][7],'제적 · 포털자동(9/30)');assert.equal(faq[2][7],'제적','staff entry untouched');
-  await page.getByText(/담당자 입력과 판정이 다른 1명/).first().waitFor();await page.getByText('포털 판정과 다름: 결석0회(1차), 결석0회(근로전) = 수료가능').waitFor();
+  // 9/1 근로개시 → 9/1부터 결석(2026-10-21 규칙): 2단위기간 4일 중 2일, 3단위기간 2일 중 2일 결석이라 제적
+  assert.equal(faq[1][7],'결석2회(1차), 결석2회(2차), 결석2회(3차) = 제적 · 포털자동(9/30)');assert.equal(faq[3][7],'제적 · 포털자동(9/30)');assert.equal(faq[2][7],'수료가능','staff entry untouched');
+  await page.getByText(/담당자 입력과 판정이 다른 1명/).first().waitFor();await page.getByText('포털 판정과 다름: 결석0회(1차), 결석2회(2차), 결석2회(3차) = 제적').waitFor();
+  // 근로후 결석 칸, 일자별 보기에서는 근로개시 이후 결석을 한 칸으로 묶어 보입니다.
+  await page.getByRole('columnheader',{name:'근로후 결석'}).waitFor();
+  await page.locator('tr',{hasText:'기업 합격(가)'}).getByRole('button',{name:'일자별'}).click();
+  await page.getByText('9/1~9/30 근로개시 이후 결석 4일').waitFor();assert.equal(await page.getByText(/^9\/2 결석/).count(),0);
   // A second sync with nothing changed writes nothing.
   await page.getByRole('button',{name:'동기화 · 판정'}).click();await page.getByText(/바뀐 판정 없음/).waitFor();assert.equal(posts.length,1);
   assert.deepEqual(errors,[]);

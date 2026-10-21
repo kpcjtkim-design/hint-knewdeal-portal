@@ -1,7 +1,8 @@
 import {isoLabel} from './attendance-beta-core.mjs';
 import {UNIT_PERIODS} from './attendance-period-core.mjs';
 // 중도포기자(교육생) 시트 + 운영총괄 반별 출결로 조기취업 수료 가능 여부를 판정한다.
-// 규칙: 근로개시일 직전 수업일까지 출석해야 하고(미출석=결석), 그 이후는 출석 간주.
+// 규칙: 근로개시일 직전 수업일까지 출석해야 하고(미출석=결석), 근로개시일부터 남은 수업일은 결석
+// (사용자 확인 2026-10-21 "취업일 이후 결석이 맞대", 그 전까지는 출석 간주였음).
 // 무단 지각·조퇴·외출은 단위기간별 3회=결석 1일. 단위기간 결석은 수업일 절반 미만,
 // 전체 무단결석은 11일 이하여야 수료 가능.
 export const DROPOUT_SHEET_ID='1ZU6IxnP3CqFQGB1UxC3XB9mhrC40ZArG-0cQGdLqljI';
@@ -10,6 +11,7 @@ export const OPERATIONS_SHEET_ID='1rVwWjo6EOdlRoqtrZ4v4d68vXbC2Pw7HQ3zaNpKIE34';
 export const MAX_TOTAL_ABSENCE=11;
 const LAST_DAY=UNIT_PERIODS.at(-1).to,FIRST_DAY=UNIT_PERIODS[0].from;
 const PARTIAL={지각:1,조퇴:1,외출:1};
+export const AFTER_START='근로개시 이후 결석';
 const clean=v=>String(v??'').trim();
 const md=(m,d)=>{const mm=+m,dd=+d;return mm>=1&&mm<=12&&dd>=1&&dd<=31?`2026-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`:'';};
 // '9/1 출근', '8/7까지 출석', '=>8/31 포기일 예정' 등 자유 입력에서 날짜를 고른다.
@@ -48,7 +50,7 @@ export function classAttendance(values){
 const partialCount=s=>s.startsWith('중복')?2:PARTIAL[s]||0;
 const periodOf=d=>UNIT_PERIODS.find(p=>d>=p.from&&d<=p.to);
 export function evaluateDropout(entry,attendance,today){
- const issues=[],out={...entry,issues,verdict:'확인필요',scheduled:false,periods:[],totalAbsence:null,preStartAbsence:0,days:[]};
+ const issues=[],out={...entry,issues,verdict:'확인필요',scheduled:false,periods:[],totalAbsence:null,preStartAbsence:0,postStartAbsence:0,days:[]};
  const last=parseSheetDate(entry.lastText,{prefer:'포기일'}),start=parseSheetDate(entry.startText);
  out.lastDate=last;out.startDate=start;
  if(last)out.scheduled=last>today;
@@ -65,7 +67,7 @@ export function evaluateDropout(entry,attendance,today){
  const blank=[];
  out.days=dates.map(({date,col})=>{
   const raw=clean(row[col]),real=!!raw&&raw!=='해당없음';let status,basis;
-  if(!required||date>required){status='출석';basis='근로개시 이후 출석 간주';}
+  if(!required||date>required){status='결석';basis=AFTER_START;}
   else if(real){status=raw;basis='운영총괄';}
   else if(date<=last){status='출석';basis=date>today?'포기일 전 출석 예정':'출결 미입력';if(date<=today)blank.push(date);}
   else{status='결석';basis=date>today?'근로개시 전 미출석 예정':'근로개시 전 미출석';}
@@ -75,6 +77,7 @@ export function evaluateDropout(entry,attendance,today){
  const unknown=out.days.filter(d=>!['출석','결석','인정출석'].includes(d.status)&&!partialCount(d.status));
  if(unknown.length)issues.push(`알 수 없는 출결 값: ${[...new Set(unknown.map(d=>d.status))].join(', ')}`);
  out.preStartAbsence=out.days.filter(d=>d.date>last&&d.date<=required&&d.status==='결석').length;
+ out.postStartAbsence=out.days.filter(d=>d.basis===AFTER_START).length;
  const reasons=[];
  out.periods=UNIT_PERIODS.map(p=>{
   const ds=out.days.filter(d=>periodOf(d.date)===p),absent=ds.filter(d=>d.status==='결석').length,partial=ds.reduce((n,d)=>n+partialCount(d.status),0),converted=Math.floor(partial/3),total=absent+converted,ok=total*2<ds.length;
@@ -150,16 +153,17 @@ export async function writeDropoutCell(api,{row,name,field,before,after}){
 }
 
 // ---- 수료판정 (H: 결석일수(수료가능여부)) ----
-// 담당자 표기 방식을 따른다: "결석2회(1차), 결석1회(근로전) = 수료가능". 근로개시 직전 수업일이 속한
-// 단위기간은 "근로전", 그 앞 단위기간은 "N차". 포털이 쓴 칸은 끝에 "· 포털자동(M/D)"를 붙여,
+// 단위기간마다 "결석N회(N차)"를 적는다: "결석2회(1차), 결석1회(2차), 결석4회(3차) = 수료가능".
+// 근로개시일부터는 결석이므로(2026-10-21) 근로개시 뒤 단위기간도 모두 적는다(예전 "근로전" 표기는 쓰지 않음).
+// 포털이 쓴 칸은 끝에 "· 포털자동(M/D)"를 붙여,
 // 비어 있거나 이 표시가 있는 칸만 다시 쓴다. 담당자가 직접 적은 칸은 건드리지 않는다.
 export const AUTO_MARK=/\s*·\s*포털자동\(\d{1,2}\/\d{1,2}\)\s*$/;
 const VERDICT_HEAD=/결석일수|수료가능/;
 export function verdictText(r){
  if(r.verdict==='확인필요')return '';
  const tail=r.verdict+(r.scheduled?'(예정)':'');
- if(!r.periods?.length||!r.requiredUntil)return tail;
- const parts=r.periods.filter(p=>p.days&&p.from<=r.requiredUntil).map(p=>`결석${p.total}회(${p.to>=r.requiredUntil?'근로전':p.id+'차'})`);
+ if(!r.periods?.length)return tail;
+ const parts=r.periods.filter(p=>p.days).map(p=>`결석${p.total}회(${p.id}차)`);
  return parts.length?`${parts.join(', ')} = ${tail}`:tail;
 }
 export const sheetVerdict=text=>{const s=clean(text).replace(AUTO_MARK,'');return /제적/.test(s)?'제적':/수료/.test(s)?'수료가능':'';};
