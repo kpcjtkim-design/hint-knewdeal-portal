@@ -35,16 +35,25 @@ test('the 12-day absence limit: 12 days still completes (80% of 60), 13 is 제�
  assert.equal(rows.find(r=>r.name==='한수빈').absent,0,'only days up to the last attendance day count');
 });
 
-test('verdict: 중도탈락 is 제적; 조기취업 counts ledger absences up to the last day plus missed days before the job start',()=>{
+test('verdict: 중도탈락 is 제적; 조기취업 counts ledger absences up to the last day, missed days before the job start, and every class day from the job start (2026-10-21)',()=>{
  const b=decodeBundle(rawBundle());
  assert.deepEqual(suggestVerdict({kind:'중도탈락',cls:'1',name:'한수빈',lastDate:'2026-11-02'},b),{verdict:'제적',basis:'중도탈락(조기취업 아님) · 마지막 출석 11/2',absent:null});
- const ok=suggestVerdict({kind:'조기취업',cls:'1',name:'최유진',startDate:'2026-11-23',lastDate:'2026-11-20'},b);
- assert.equal(ok.verdict,'수료가능');assert.equal(ok.absent,2);assert.match(ok.basis,/근로개시\(11\/23\) 전 결석 2일\(출결원장 2일 \+ 마지막 출석 뒤 미출석 0일\) ≤ 한도 12일/);
+ // 11/23 근로개시: 그날부터 교육 끝날(1/22)까지 42일이 결석 → 제적
+ const early=suggestVerdict({kind:'조기취업',cls:'1',name:'최유진',startDate:'2026-11-23',lastDate:'2026-11-20'},b);
+ assert.equal(early.verdict,'제적');assert.equal(early.absent,44);
+ assert.equal(early.basis,'근로개시 전 결석 2일(출결원장 2일 + 마지막 출석 뒤 미출석 0일) + 근로개시(11/23) 뒤 결석 42일 = 결석 44일 · 한도 12일 초과');
+ // 교육 끝 무렵 1/18 근로개시(오늘 1/22): 남은 5일만 결석 → 수료가능
+ const ok=suggestVerdict({kind:'조기취업',cls:'1',name:'최유진',startDate:'2027-01-18',lastDate:'2027-01-15'},decodeBundle({...rawBundle(),today:'2027-01-22'}));
+ assert.equal(ok.verdict,'수료가능');assert.equal(ok.absent,7);
+ assert.equal(ok.basis,'근로개시 전 결석 2일(출결원장 2일 + 마지막 출석 뒤 미출석 0일) + 근로개시(1/18) 뒤 결석 5일 = 결석 7일 ≤ 한도 12일');
  // 11/2 마지막 출석, 12/1 근로개시: 그 사이 교육일 20일이 미출석 → 제적
  const gap=suggestVerdict({kind:'조기취업',cls:'1',name:'최유진',startDate:'2026-12-01',lastDate:'2026-11-02'},b);
- assert.equal(gap.verdict,'제적');assert.match(gap.basis,/마지막 출석 뒤 미출석 20일\) · 한도 12일 초과/);
- const soon=suggestVerdict({kind:'조기취업',cls:'1',name:'이하늘',startDate:'2026-12-21',lastDate:'2026-12-18'},b);
- assert.equal(soon.verdict,'확인중');assert.match(soon.basis,/마지막 출석일까지 교육일 6일이 남아 있습니다/);
+ assert.equal(gap.verdict,'제적');assert.match(gap.basis,/마지막 출석 뒤 미출석 20일\) \+ 근로개시\(12\/1\) 뒤 결석 36일 = 결석 58일 · 한도 12일 초과/);
+ // 마지막 출석일(1/15)이 아직 오지 않았고(오늘 12/10) 결석이 한도 안이면 확인중
+ const soon=suggestVerdict({kind:'조기취업',cls:'1',name:'이하늘',startDate:'2027-01-18',lastDate:'2027-01-15'},b);
+ assert.equal(soon.verdict,'확인중');assert.match(soon.basis,/근로개시\(1\/18\) 뒤 결석 5일 = 결석 5일 · 마지막 출석일까지 교육일 23일이 남아 있습니다/);
+ // 12/21 근로개시는 남은 22일이 결석이라 마지막 출석일 전이어도 제적
+ assert.deepEqual((r=>[r.verdict,r.absent])(suggestVerdict({kind:'조기취업',cls:'1',name:'이하늘',startDate:'2026-12-21',lastDate:'2026-12-18'},b)),['제적',22]);
  assert.equal(suggestVerdict({kind:'조기취업',cls:'1',name:'없는사람',startDate:'2026-12-01',lastDate:'2026-11-30'},b).basis,'명부에서 학생을 찾지 못했습니다.');
  assert.equal(suggestVerdict({kind:'조기취업',cls:'1',name:'최유진',lastDate:'2026-11-20'},b).verdict,'확인중');
 });
@@ -113,14 +122,15 @@ test('converted absences decide the limit: 11 결석 + 3 지각 = 12 → 한도 
  assert.deepEqual([c('가').outcome,c('가').why,c('가').absent,c('가').total],['미수료','결석 11일 + 지·조·외 6회(→ 2일) = 환산 결석 13일 · 한도 12일 초과(제적 대상)',11,13]);
  assert.deepEqual([c('나').outcome,c('나').why],['수료 예정','재학 · 결석 11일 + 지·조·외 6회(→ 1일) = 환산 결석 12일 / 한도 12일']);
  assert.deepEqual([c('마').outcome,c('마').why],['수료 예정','재학 · 결석 0일 / 한도 12일']);
- // 조기취업 판정: 마지막 출석일까지의 지·조·외도 환산(단위기간마다), 근로개시 전 미출석은 결석
- const job=decodeBundle(rawBundle([['1','바','조기취업','2026-12-04']],[...mark('1','바',U1.slice(0,9),'결석'),...mark('1','바',U1.slice(9,12),'지각'),...mark('1','바',U2.slice(0,2),'지각')]));
- const start=U2[U2.indexOf('2026-12-04')+3],v=suggestVerdict({kind:'조기취업',cls:'1',name:'바',lastDate:'2026-12-04',startDate:start},job);
- assert.equal(v.absent,12,'9 결석 + 1단위 3회→1 + 2단위 2회→0 + 미출석 2일');
+ // 조기취업 판정: 마지막 출석일까지의 지·조·외도 환산(단위기간마다), 근로개시 전 미출석과 근로개시일부터의 교육일은 결석(1/20 마지막 출석, 1/22 근로개시, 오늘 1/22)
+ const jobAt=ledger=>decodeBundle({...rawBundle([['1','바','조기취업','2027-01-20']],ledger),today:'2027-01-22'});
+ const job=jobAt([...mark('1','바',U1.slice(0,9),'결석'),...mark('1','바',U1.slice(9,12),'지각'),...mark('1','바',U2.slice(0,2),'지각')]);
+ const v=suggestVerdict({kind:'조기취업',cls:'1',name:'바',lastDate:'2027-01-20',startDate:'2027-01-22'},job);
+ assert.equal(v.absent,12,'9 결석 + 1단위 3회→1 + 2단위 2회→0 + 미출석 1일(1/21) + 근로개시 뒤 1일(1/22)');
  assert.equal(v.verdict,'수료가능');
- assert.equal(v.basis,`근로개시(${+start.slice(5,7)}/${+start.slice(8)}) 전 결석 11일 + 지·조·외 5회(→ 1일) = 환산 결석 12일(출결원장 9일 + 마지막 출석 뒤 미출석 2일, 단위기간마다 3회 = 1일) ≤ 한도 12일 · 근로개시 뒤는 출석 간주`);
- const late=decodeBundle(rawBundle([['1','바','조기취업','2026-12-04']],[...mark('1','바',U1.slice(0,9),'결석'),...mark('1','바',U1.slice(9,12),'지각'),...mark('1','바',U2.slice(0,3),'지각')]));
- assert.deepEqual((r=>[r.verdict,r.absent])(suggestVerdict({kind:'조기취업',cls:'1',name:'바',lastDate:'2026-12-04',startDate:start},late)),['제적',13]);
+ assert.equal(v.basis,'근로개시 전 결석 10일 + 근로개시(1/22) 뒤 결석 1일 + 지·조·외 5회(→ 1일) = 환산 결석 12일(출결원장 9일 + 마지막 출석 뒤 미출석 1일, 단위기간마다 3회 = 1일) ≤ 한도 12일');
+ const late=jobAt([...mark('1','바',U1.slice(0,9),'결석'),...mark('1','바',U1.slice(9,12),'지각'),...mark('1','바',U2.slice(0,3),'지각')]);
+ assert.deepEqual((r=>[r.verdict,r.absent])(suggestVerdict({kind:'조기취업',cls:'1',name:'바',lastDate:'2027-01-20',startDate:'2027-01-22'},late)),['제적',13]);
 });
 
 // 단위기간 이수(사용자 결정 2026-10-20 "기간별 80% 출석"): 결석 한도·수료 명단에 표시만, 수료 결과(outcome)·결석 수준(level)에는 묶지 않음.
@@ -345,16 +355,17 @@ test('관리자: 중도탈락 탭 목록(테스트반은 합계에서 빠짐), �
   const choi=rowOf(page,'최유진');
   // 담임이 신청한 줄에는 '담임 신청' 표시(등록자가 cohort.json 관리자가 아님)
   assert.equal(await choi.getByText('담임 신청',{exact:true}).count(),1);
-  assert.match(await choi.innerText(),/근로개시 11\/23\(월\)[\s\S]*근로개시 전 2일 \/ 12[\s\S]*판정 전[\s\S]*계산: 수료가능[\s\S]*채용통보 O[\s\S]*연락: 인사팀 확인[\s\S]*확인 대기/);
+  // 11/23 근로개시: 근로개시 뒤 42일도 결석이라 계산 판정은 제적(2026-10-21 규칙)
+  assert.match(await choi.innerText(),/근로개시 11\/23\(월\)[\s\S]*근로개시 뒤 포함 44일 \/ 12[\s\S]*판정 전[\s\S]*계산: 제적 · 근로개시 전 결석 2일[\s\S]*근로개시\(11\/23\) 뒤 결석 42일[\s\S]*채용통보 O[\s\S]*연락: 인사팀 확인[\s\S]*확인 대기/);
   assert.match(await rowOf(page,'한수빈').innerText(),/제적[\s\S]*포기사유서 O[\s\S]*확인\s*hint\.kpc@gmail\.com · 2026-11-04 09:00/);
   // 관리자 확인: 판정이 비어 있으면 계산값을 함께 저장, 다른 칸(서류·연락 확인)은 그대로
   page.dialogAnswer.push(false);await choi.getByRole('button',{name:'확인',exact:true}).click();
-  assert.equal(dialogs.at(-1),'1반 최유진 (조기취업) 줄을 관리자 확인할까요?\n판정: 수료가능 (계산값을 함께 저장)');assert.equal(sheet.saves.length,0);
+  assert.equal(dialogs.at(-1),'1반 최유진 (조기취업) 줄을 관리자 확인할까요?\n판정: 제적 (계산값을 함께 저장)');assert.equal(sheet.saves.length,0);
   await choi.getByRole('button',{name:'확인',exact:true}).click();
   await rowOf(page,'최유진').getByRole('button',{name:'확인 풀기'}).waitFor();
   const c=saves(sheet).at(-1);
-  assert.deepEqual([c.row,c.was,c.verdict,c.confirm,c.docs,c.contact],[3,{cls:'1',name:'최유진'},'수료가능',true,{resign:'',offer:'O',proof:''},'인사팀 확인']);
-  assert.match(c.basis,/근로개시\(11\/23\) 전 결석 2일/);
+  assert.deepEqual([c.row,c.was,c.verdict,c.confirm,c.docs,c.contact],[3,{cls:'1',name:'최유진'},'제적',true,{resign:'',offer:'O',proof:''},'인사팀 확인']);
+  assert.match(c.basis,/근로개시 전 결석 2일.*근로개시\(11\/23\) 뒤 결석 42일 = 결석 44일 · 한도 12일 초과/);
   const sent=await notes(page);assert.deepEqual(sent.map(n=>[n.kind,n.toClass,n.title]),[['중도탈락','1','1반 최유진 조기취업 · 운영팀 확인']],'the class teacher is told');
   // 새로 등록: 반 → 이름(명부) → 날짜, 확인창, 명부 상태도 바뀜
   await page.getByRole('button',{name:'새로 등록'}).click();
@@ -420,7 +431,7 @@ test('관리자: 여러 건 관리자 확인, 결석 한도 12일 판정, 수료
   await page.locator('#d2Batch').getByRole('button',{name:'관리자 확인'}).click();
   assert.equal(dialogs.at(-1),'3건을 관리자 확인할까요?\n판정이 빈 3건은 계산값을 함께 저장합니다.');
   await page.locator('#toast',{hasText:'3건 관리자 확인을 저장했습니다.'}).waitFor();
-  assert.deepEqual(sheet.drops.map(r=>[r.name,r.verdict,r.confirmed]),[['한수빈','제적',true],['최유진','수료가능',true],['테스트을','제적',true],['이경수','제적',true]]);
+  assert.deepEqual(sheet.drops.map(r=>[r.name,r.verdict,r.confirmed]),[['한수빈','제적',true],['최유진','제적',true],['테스트을','제적',true],['이경수','제적',true]]);
   // 결석 한도
   await page.getByRole('tab',{name:'결석 한도'}).click();
   const body=page.locator('#d2Body');await body.getByText('2기는 60교육일의 80%').waitFor();
@@ -440,17 +451,17 @@ test('관리자: 여러 건 관리자 확인, 결석 한도 12일 판정, 수료
   await page.locator('tr[data-key="1|고다원"]').getByRole('button',{name:'중도탈락 등록'}).click();
   assert.deepEqual([await page.locator('[data-editor="new"] [data-f="cls"]').inputValue(),await page.locator('[data-editor="new"] [data-f="name"]').inputValue()],['1','고다원']);
   await page.locator('[data-editor="new"]').getByRole('button',{name:'닫기'}).click();
-  // 수료 명단: 최유진은 확인됐으니 수료(조기취업 수료)
+  // 수료 명단: 최유진은 11/23 근로개시라 판정 제적 → 미수료(조기취업 수료 경로는 completionRows 시험이 봅니다)
   await page.getByRole('tab',{name:'수료 명단'}).click();await page.locator('#d2Body tbody tr').first().waitFor();
   const rowText=async name=>page.locator(`#d2Body tr[data-key="1|${name}"]`).innerText();
-  assert.match(await rowText('최유진'),/수료\s*조기취업 · 판정 수료가능 · 관리자 확인/);
+  assert.match(await rowText('최유진'),/미수료\s*조기취업 · 판정 제적 · 근로개시 전 결석 2일/);
   assert.match(await rowText('고다원'),/미수료\s*1단위 미이수\s*결석 13일 · 한도 12일 초과\(제적 대상\)/);
   assert.match(await rowText('한수빈'),/미수료\s*중도탈락 · 마지막 출석 11\/2 · 개인 사정/);
   assert.match(await rowText('이하늘'),/수료 예정\s*재학 · 결석 0일 \/ 한도 12일/);
   assert.equal(await page.locator('#d2Body tr[data-key="1|이하늘"] [data-unit-fail]').count(),0);
   assert.match(await rowText('김동진'),/수료 예정\s*1단위 미이수\s*재학 · 결석 12일 \/ 한도 12일/,'unit failure is shown but the outcome stays 수료 예정');
   assert.match(await rowText('박서연'),/11\s*결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일\s*수료 예정\s*1단위 미이수\s*재학 · 결석 10일 \+ 지·조·외 3회\(→ 1일\) = 환산 결석 11일 \/ 한도 12일/);
-  assert.match(await page.locator('.b2-stats').innerText(),/1\s*수료[\s\S]*4\s*수료 예정[\s\S]*0\s*확인 대기[\s\S]*3\s*미수료/,'class 17 not counted');
+  assert.match(await page.locator('.b2-stats').innerText(),/0\s*수료[\s\S]*4\s*수료 예정[\s\S]*0\s*확인 대기[\s\S]*4\s*미수료/,'class 17 not counted');
   assert.equal(await page.locator('[data-pickdone="1|고다원"]').count(),0,'over the limit cannot be completed');
   await page.locator('[data-pickdone="1|이하늘"]').check();await page.locator('[data-pickdone="1|정민호"]').check();
   page.dialogAnswer.push(false);await page.getByRole('button',{name:'수료 처리 2'}).click();

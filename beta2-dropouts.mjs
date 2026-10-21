@@ -192,7 +192,7 @@ async function mountAdmin(host,{client,classes=[],selected,context,hideHead=fals
   const {stats}=derived();
   const docs=r=>`<div class="b2d-docs">${DOC_FIELDS.map(([k,l])=>`<span class="b2-badge ${r.docs?.[k]==='O'?'e-ok':r.docs?.[k]==='X'?'e-miss':'e-none'}" title="${esc(l)}">${esc(l)} ${esc(r.docs?.[k]||'-')}</span>`).join('')}</div>`;
   const tr=r=>{
-   const sg=suggest(r),st=stats.get(dropoutKey(r)),abs=r.kind==='조기취업'&&sg.absent!==null?`근로개시 전 <b>${sg.absent}</b>일 / ${max}`:st?`<b>${st.conv.total}</b>일 (마지막 출석까지)${convSub(st.conv)}`:'-';
+   const sg=suggest(r),st=stats.get(dropoutKey(r)),abs=r.kind==='조기취업'&&sg.absent!==null?`근로개시 뒤 포함 <b>${sg.absent}</b>일 / ${max}`:st?`<b>${st.conv.total}</b>일 (마지막 출석까지)${convSub(st.conv)}`:'-';
    const differs=sg.verdict&&r.verdict&&sg.verdict!==r.verdict;
    const acts=`<button class="b2-btn small" data-act="edit" ${busy?'disabled':''}>고치기</button>${r.confirmed?`<button class="b2-btn small ghost" data-act="unconfirm" ${busy?'disabled':''}>확인 풀기</button>`:`<button class="b2-btn small primary" data-act="confirm" ${busy?'disabled':''}>확인</button>`}`;
    return `<tr data-row="${r.row}" class="${editor?.key===String(r.row)?'editing':''} ${differs?'diff':''}"><td><input type="checkbox" data-pick="${r.row}" aria-label="${esc(r.name)} 고르기" ${picked.has(r.row)?'checked':''} ${busy?'disabled':''}></td>

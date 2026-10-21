@@ -200,8 +200,8 @@ test("'해당없음' is a saved type: that day leaves the enrolled days, absence
  assert.deepEqual(dayCounts(dayView(b,'1','2026-11-05')),{총원:1,출석:1,결석:0,지각:0,조퇴:0,외출:0,인정:1,중복:0},'counted like the rows before or after enrolment');
  assert.deepEqual(dayCounts(dayView(decodeBundle(RAW),'1','2026-11-05')),{총원:2,출석:2,결석:0,지각:0,조퇴:0,외출:0,인정:1,중복:0});
  const ab=absenceRows(b,{cls:'1'}).find(x=>x.name==='다');assert.deepEqual([ab.days,ab.absent],[1,0]);
- // 조기취업 판정: 출결원장 결석만 셉니다(해당없음은 결석이 아님)
- const v=suggestVerdict({kind:'조기취업',cls:'1',name:'다',lastDate:'2026-11-05',startDate:'2026-11-06'},b);assert.equal(v.absent,0);
+ // 조기취업 판정: 출결원장 결석만 셉니다(해당없음은 결석이 아님). 근로개시일(11/6)부터는 결석(2026-10-21)이라 1일
+ const v=suggestVerdict({kind:'조기취업',cls:'1',name:'다',lastDate:'2026-11-05',startDate:'2026-11-06'},b);assert.equal(v.absent,1);
  // 체크히어 대조: 해당없음은 결석처럼 보고 기록이 있으면 차이(유지)
  const rec=(entry,exit)=>({rawEntry:entry,entry,exit,outings:[],outingCount:0});
  assert.equal(compareCheckHere('해당없음',null,rec('09:00:00','18:00:00')).state,'diff');assert.match(compareCheckHere('해당없음',null,rec('09:00:00','18:00:00')).text,/기록 있음/);
@@ -226,7 +226,7 @@ test("'중복' is a saved type: attended (not absent), its own bucket, counted o
  assert.equal(studentStats(b,{cls:'1'}).find(x=>x.name==='가').partial,1,'가: one 지각');
  assert.deepEqual(dayCounts(dayView(b,'1','2026-11-05')),{총원:2,출석:2,결석:0,지각:0,조퇴:0,외출:0,인정:1,중복:1});
  const ab=absenceRows(b,{cls:'1'}).find(x=>x.name==='다');assert.deepEqual([ab.absent,ab.partial],[0,2]);
- assert.equal(suggestVerdict({kind:'조기취업',cls:'1',name:'다',lastDate:'2026-11-05',startDate:'2026-11-06'},b).absent,0,'중복 is not an absence');
+ assert.equal(suggestVerdict({kind:'조기취업',cls:'1',name:'다',lastDate:'2026-11-05',startDate:'2026-11-06'},b).absent,1,'중복 is not an absence (only the job start day 11/6 counts)');
  // 시간: 입실(지각)·퇴실(조퇴)·외출(시작+종료) 가운데 둘 이상, 외출은 짝·순서(시트 b2Save와 같은 기준, 관리자는 저장 전에 막음)
  assert.equal(dupParts({inT:'09:40',oa:'13:00'}).count,1,'half an outing is not an outing');
  assert.equal(dupCheck({inT:'09:40',outT:'16:00'}),null);assert.equal(dupCheck({outT:'16:00',oa:'13:00',ob:'14:00'}),null);

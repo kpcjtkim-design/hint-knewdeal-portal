@@ -48,7 +48,8 @@ const nextDay=iso=>{const d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate
 // 판정 계산(시트 G·H에 넣을 값). 1기 규칙(dropout-core)과 같은 뜻:
 // - 중도탈락: 제적.
 // - 조기취업: 근로개시일 직전 교육일까지 출석해야 합니다. 마지막 출석일까지는 출결원장 결석, 그 뒤 근로개시 전 교육일은 미출석(결석)으로 셉니다.
-//   근로개시일부터는 출석으로 봅니다. 마지막 출석일까지의 지각·조퇴·외출·중복은 단위기간마다 3회 = 결석 1일(convertedAbsences, 1기와 같음).
+//   근로개시일부터 남은 교육일(그 반 교육일, 교육 끝날까지)도 결석입니다(사용자 확인 2026-10-21 "취업일 이후 결석이 맞대", 1기·2기 같음. 그 전까지는 출석 간주였음).
+//   마지막 출석일까지의 지각·조퇴·외출·중복은 단위기간마다 3회 = 결석 1일(convertedAbsences, 1기와 같음).
 //   환산 결석이 한도(12일)를 넘으면 제적, 아니면 수료가능. 셀 날이 아직 오지 않았으면 확인중. absent는 환산 결석입니다.
 export function suggestVerdict(row,bundle,{max=MAX_ABSENCE,index=null}={}){
  max=maxOf(max);
@@ -59,20 +60,20 @@ export function suggestVerdict(row,bundle,{max=MAX_ABSENCE,index=null}={}){
  if(!isIsoDate(last))return {verdict:'확인중',basis:'마지막 출석일이 없어 계산하지 못했습니다.',absent:null};
  if(!bundle?.roster?.some(p=>p.cls===cls&&p.name===name))return {verdict:'확인중',basis:'명부에서 학생을 찾지 못했습니다.',absent:null};
  index=index||ledgerIndex(bundle);
- const required=courseDays(bundle,{to:COURSE_END,cls}).filter(d=>d<start);
- let recorded=0,gap=0,future=0;const entries=[];
+ const days=courseDays(bundle,{to:COURSE_END,cls}),required=days.filter(d=>d<start),after=days.filter(d=>d>=start);
+ let recorded=0,gap=0,future=0;const entries=after.map(date=>({date,type:'결석'}));
  for(const d of required){
   if(d<=last){const t=index.get(ledgerKey(cls,name,d))?.type||'출석';if(t===NONE_TYPE)continue;if(t==='결석')recorded++;entries.push({date:d,type:t});}
   else {gap++;entries.push({date:d,type:'결석'});}
   if(today&&d>today&&d<=last)future++;
  }
- const conv=convertedAbsences(entries),absent=conv.total;
- const why=conv.partial?`근로개시(${md(start)}) 전 결석 ${recorded+gap}일 + 지·조·외 ${conv.partial}회(→ ${conv.converted}일) = 환산 결석 ${absent}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일, 단위기간마다 3회 = 1일)`
-  :`근로개시(${md(start)}) 전 결석 ${absent}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일)`;
+ const conv=convertedAbsences(entries),absent=conv.total,post=`근로개시(${md(start)}) 뒤 결석 ${after.length}일`;
+ const why=conv.partial?`근로개시 전 결석 ${recorded+gap}일 + ${post} + 지·조·외 ${conv.partial}회(→ ${conv.converted}일) = 환산 결석 ${absent}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일, 단위기간마다 3회 = 1일)`
+  :`근로개시 전 결석 ${recorded+gap}일(출결원장 ${recorded}일 + 마지막 출석 뒤 미출석 ${gap}일) + ${post} = 결석 ${absent}일`;
  const order=last>=start?' · 마지막 출석일이 근로개시일보다 늦습니다(날짜 확인)':'';
  if(absent>max)return {verdict:'제적',basis:`${why} · 한도 ${max}일 초과${order}`,absent};
  if(future)return {verdict:'확인중',basis:`${why} · 마지막 출석일까지 교육일 ${future}일이 남아 있습니다${order}`,absent};
- return {verdict:'수료가능',basis:`${why} ≤ 한도 ${max}일 · 근로개시 뒤는 출석 간주${order}`,absent};
+ return {verdict:'수료가능',basis:`${why} ≤ 한도 ${max}일${order}`,absent};
 }
 
 // 입력 확인(Apps Script b2DropoutSave_와 같은 기준 + 날짜 모양). admin=false면 관리자 칸은 보지 않습니다.
