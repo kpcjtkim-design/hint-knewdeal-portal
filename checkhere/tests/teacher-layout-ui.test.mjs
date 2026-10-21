@@ -49,7 +49,7 @@ test('a slow screen never brings back the tab you left, and one 출결 screen se
   // 서류 발급 파일을 기다리는 사이 반 정보로 옮기면 반 정보가 그대로 남습니다.
   await pick(page,'info');await page.getByText('교육생 명부 (3명)').waitFor();
   await same(page,'info');
-  await pick(page,'today');await page.getByText('오늘 출결 (10/29(목))').waitFor();
+  await pick(page,'today');await page.locator('.card.today .sec',{hasText:'오늘 출결 10/29(목)'}).waitFor();
   assert.equal(posts.filter(p=>p.action==='portalData').length,1);
  },{files:p=>p==='/teacher-beta.js'?{hold:slow}:null});
  assert.deepEqual(errors,[]);
@@ -90,7 +90,7 @@ test('teachers see plain tab names, a "오늘 · 날짜 · 반" header, a today-
   assert.equal(await head.locator('h2').innerText(),'오늘 할 일');
   assert.equal(await head.locator('.t2-ctx').innerText(),'오늘 · 10/29(목) · 1반 서울(관악구)_모빌리티 AI_서울대');
   assert.equal(await page.locator('.teacher-context-bar h2').innerText(),'1반 서울(관악구)_모빌리티 AI_서울대');
-  await page.getByText('오늘 출결 (10/29(목))').waitFor();
+  await page.locator('.card.today .sec',{hasText:'오늘 출결 10/29(목)'}).waitFor();
   assert.match(await page.getByText('아직 입력하지 않은 학생').innerText(),/아직 입력하지 않은 학생 1명/);
   // 오늘 할 일의 첫 버튼이 출결판으로 갑니다(오늘 칸이 맨 앞, '오늘' 표시).
   await page.getByRole('button',{name:'출결 입력하기'}).click();
@@ -135,7 +135,7 @@ test('loading problems are said in plain words with a retry button',async()=>{
   await page.locator('[data-panel="today"]').getByText('마스터시트 응답이 늦습니다.').waitFor();
   failData=false;
   await page.locator('[data-panel="today"]').getByRole('button',{name:'다시 시도'}).click();
-  await page.getByText('오늘 출결 (10/29(목))').waitFor();
+  await page.locator('.card.today .sec',{hasText:'오늘 출결 10/29(목)'}).waitFor();
   assert.equal(posts.filter(p=>p.action==='portalData').length,2);
   await pick(page,'documents');
   await page.getByText('이 화면을 불러오지 못했습니다').waitFor();

@@ -51,6 +51,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  if(taskHead)today.querySelector('#t2Tasks').append(taskHead);if(tasks)today.querySelector('#t2Tasks').append(tasks);
  // 오늘 할 일 카드(사용자 요청 2026-10-21): 1 출결현황·4 운영모니터링은 위 탭으로 바로 가고, 2·3·5 폴더는 카드마다 날짜를 고릅니다(기본 오늘).
  const taskCards=tasks?[...tasks.querySelectorAll('.task')]:[];
+ {const p=taskHead?.querySelector('p');if(p)p.textContent='매일 이 순서대로 끝내 주세요. 폴더 카드는 날짜를 바꿔 다른 날 폴더도 열 수 있습니다.';}
  for(const card of taskCards){
   const n=card.querySelector('.num')?.textContent.trim()||'';card.dataset.task=n;
   const jump=(desc,btns)=>{const p=card.querySelector(':scope>p');if(p)p.textContent=desc;const box=document.createElement('div');box.className='task-actions';box.innerHTML=btns.map(([to,l],i)=>`<button type="button" class="btn ${i?'btn-soft':'btn-primary'}" data-t2go="${to}">${l}</button>`).join('');(card.querySelector('.task-actions')||card.querySelector('[data-open],a.btn'))?.replaceWith(box);};
@@ -83,7 +84,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261021-rd1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261021-ui1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).

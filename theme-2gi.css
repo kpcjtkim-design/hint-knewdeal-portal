@@ -49,3 +49,19 @@ html .b2 .b2-alerts>.b2-alert:nth-child(4){border-top-color:#13807A}
 html .b2 .b2-alert.hot{border-color:#F2C48D;border-top-color:#9A5B00;background:#FFF8EE}
 html .b2 .b2-class{background:#FAFBFC}
 html .b2 .b2-class:hover{border-color:#1F4E8C}
+
+/* 2기 담임 첫 화면 다듬기(사용자 2026-10-21 '보기 좋게'): 반 이름 뒤 진한 상자 없애기, 할 일 카드 단추 크기·색 맞추기, 칸 사이 간격 줄이기 */
+.page .teacher-header-class.hero{background:transparent;border-left:0}
+.t2 #t2Head{margin-bottom:4px}
+.t2 #t2Tasks .section-head{margin:6px 2px 12px}
+.t2 #t2Tasks .task{min-height:0;border-radius:10px}
+.t2 #t2Tasks .task h3{margin-top:2px}
+.t2 #t2Tasks .task .btn{min-height:38px;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:800;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.t2 #t2Tasks .task .btn-primary{background:var(--portal-primary);color:#fff}
+.t2 #t2Tasks .task .btn-primary:hover{filter:brightness(1.08)}
+.t2 #t2Tasks .task .btn-soft{background:#E8EFF8;color:var(--portal-navy)}
+.t2 #t2Tasks .task .btn[disabled]{background:#F1F5F9;color:#94A3B8;cursor:default;filter:none}
+.t2 #t2Tasks .task-actions{display:flex;flex-direction:column;gap:6px}
+.t2 #t2Tasks .b2-taskdrive{gap:6px}
+.t2 .t2-section{margin-top:22px}
+.t2 .t2-section h3{font-size:19px;margin:0 0 4px}
