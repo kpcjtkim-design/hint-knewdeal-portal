@@ -34,11 +34,27 @@ test('a start date before the first class day makes every class day an absence',
  const r=evaluateDropout(entry({lastText:'7/24까지 출석',startText:'7/27 출근'}),{dates:a.dates,row:a.students[0].row},'2026-09-29');
  assert.equal(r.requiredUntil,'');assert.equal(r.postStartAbsence,59);assert.equal(r.totalAbsence,59);assert.equal(r.verdict,'제적');
 });
-test('unexcused late/early/outing: 3 per unit period = 1 absence; 중복 counts twice; 인정출석 is attendance',()=>{
+// 지각·조퇴·외출 3회 = 결석 1일(HINT FAQ 공식 답변, 운영지침 p.35·37·42): 단위기간 결석은 그 단위기간 횟수만, 전체 결석은 교육 전체 횟수를 합쳐서.
+test('unexcused late/early/outing: 3 = 1 absence, per unit period for the unit check and pooled over the course for the total; 중복 counts as partials; 인정출석 is attendance',()=>{
  const a=classAttendance(sheet(DAYS,[['가',row(upTo('10/22'),{'7/27':'지각','7/28':'조퇴','7/29':'외출','7/30':'지각','7/31':'인정출석','8/27':'중복(지각+외출, 지각+조퇴, 외출+조퇴)','8/28':'결석'})]]));
  const r=evaluateDropout(entry({startText:'10/23 출근',lastText:'10/22까지 출석'}),{dates:a.dates,row:a.students[0].row},'2026-10-23');
  assert.deepEqual(r.periods.map(p=>[p.absent,p.partial,p.converted,p.total]),[[0,4,1,1],[1,2,0,1],[0,0,0,0]]);
- assert.equal(r.totalAbsence,2);assert.equal(r.verdict,'수료가능');assert.equal(verdictLabel(r),'수료가능');
+ // 단위기간마다 나누면 1+1=2일이지만, 전체는 결석 1일 + 지·조·외 6회(→2일) = 3일
+ assert.deepEqual([r.totalAbsent,r.totalPartial,r.totalConverted],[1,6,2]);assert.equal(r.totalAbsence,3);assert.equal(r.verdict,'수료가능');assert.equal(verdictLabel(r),'수료가능');
+});
+test('late/early/outing remainders add up over the course: per-unit 4+3+3 = 10 but pooled 10 + 6 partials (→2) = 12 → 제적 (13반 남현서 case)',()=>{
+ const marks={'7/27':'결석','7/28':'결석','7/29':'결석','7/30':'결석','7/31':'지각','8/3':'조퇴','8/27':'결석','8/28':'결석','8/31':'결석','9/1':'외출','9/2':'지각','9/28':'결석','9/29':'결석','9/30':'결석','10/1':'지각','10/2':'조퇴'};
+ const a=classAttendance(sheet(DAYS,[['가',row(upTo('10/22'),marks)]]));
+ const r=evaluateDropout(entry({startText:'10/23 출근',lastText:'10/22까지 출석'}),{dates:a.dates,row:a.students[0].row},'2026-10-23');
+ // 단위기간 판정은 그 단위기간 횟수만(2회씩이라 환산 0일, 다음 단위기간으로 넘기지 않음)
+ assert.deepEqual(r.periods.map(p=>[p.absent,p.partial,p.converted,p.total,p.ok]),[[4,2,0,4,true],[3,2,0,3,true],[3,2,0,3,true]]);
+ assert.deepEqual([r.totalAbsent,r.totalPartial,r.totalConverted,r.totalAbsence],[10,6,2,12]);
+ assert.equal(r.verdict,'제적');assert.equal(r.basis,'전체 무단결석 12일 > 11일');
+ assert.equal(verdictText(r),'결석4회(1차), 결석3회(2차), 결석3회(3차), 전체 결석12회 = 제적','pooled total is written when it differs from the unit sum');
+ // 결석 1일을 지우면 9 + 2 = 11일 → 한도 안이라 수료가능
+ const b=classAttendance(sheet(DAYS,[['가',row(upTo('10/22'),{...marks,'7/27':'출석'})]]));
+ const ok=evaluateDropout(entry({startText:'10/23 출근',lastText:'10/22까지 출석'}),{dates:b.dates,row:b.students[0].row},'2026-10-23');
+ assert.equal(ok.totalAbsence,11);assert.equal(ok.verdict,'수료가능');assert.equal(verdictText(ok),'결석3회(1차), 결석3회(2차), 결석3회(3차), 전체 결석11회 = 수료가능');
 });
 test('unit period needs absences under half; total unexcused must not exceed 11',()=>{
  const absentFrom=(from,to)=>d=>iso(d)>=iso(from)&&iso(d)<=iso(to)?'결석':'출석';
