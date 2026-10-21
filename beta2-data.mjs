@@ -7,7 +7,12 @@ import {readAttendanceSummary} from './attendance-derived-store.mjs';
 // 읽기 기능(응답 늦음이면 저장 안내가 아니라 서버 글 그대로).
 const READS=new Set(['b2Bundle','b2Rev','b2Docs','b2Status','b2Vocs','b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2Dropouts','b2Completions','b2Schedule','b2Officers','b2DayMemos','portalRoster','portalData']);
 const bundles=new Map(),schedules=new Map(),officerLists=new Map(),dayMemoLists=new Map();
-export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();}
+export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();driveLists.clear();driveCounts.clear();}
+// 구글 드라이브 폴더 바로가기(2026-10-21, drive-links.mjs): 폴더 목록(b2DriveFolders)은 편집기에서 목록을 다시 만들 때만 바뀌어 반마다 이 세션 동안 한 번(builtAt 기준),
+// 목록이 아직 없으면(rows 없음·done:false) 2분 뒤 다시 묻습니다. 파일 수(b2DriveCount)는 60초 동안 같은 값을 씁니다. 같은 것을 동시에 물으면 한 번만 부릅니다.
+for(const a of ['b2DriveFolders','b2DriveCount'])READS.add(a);
+const driveLists=new Map(),driveCounts=new Map();
+export const DRIVE_CACHE={notBuiltMs:120000,countMs:60000};
 // 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
 // 민원·이슈 알림(beta2-admin.mjs·담임 화면)은 다른 화면이 방금 확인한 값을 그대로 써서 Apps Script 호출을 늘리지 않습니다.
 const revListeners=new Set();let lastRev={at:0,value:null};
@@ -79,6 +84,21 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   }
   const data=await call('b2DayMemos',q);dayMemoLists.set(key,{at:Date.now(),data});return data;
  }
+ // 드라이브 폴더 목록 {cls?}: → {builtAt,done,rows:[{cls,kind,unit,date,id,name}]}. 담임은 Vercel이 자기 반으로 고정합니다. fresh면 새로 읽습니다.
+ function driveFolders(p={},{fresh=false}={}){
+  const q=p.cls&&p.cls!=='all'?{cls:String(p.cls)}:{},key=q.cls||'all',hit=driveLists.get(key);
+  if(hit&&!fresh&&(hit.built||Date.now()-hit.at<DRIVE_CACHE.notBuiltMs))return hit.wait;
+  const wait=call('b2DriveFolders',q).then(d=>{const data=d&&typeof d==='object'?d:{};const e=driveLists.get(key);if(e?.wait===wait)e.built=!!(Array.isArray(data.rows)&&data.rows.length&&data.done!==false);return data;},
+   e=>{if(driveLists.get(key)?.wait===wait)driveLists.delete(key);throw e;});
+  driveLists.set(key,{at:Date.now(),wait,built:false});return wait;
+ }
+ // 그날 폴더 파일 수 {cls,date,kinds?}: → {cls,date,counts:{kind:n|null},max}(null = 폴더 없음, max개까지 셈).
+ function driveCount(p,{fresh=false}={}){
+  const q={cls:String(p.cls),date:String(p.date),...(Array.isArray(p.kinds)?{kinds:[...p.kinds]}:{})},key=JSON.stringify([q.cls,q.date,q.kinds||[]]),hit=driveCounts.get(key);
+  if(hit&&!fresh&&Date.now()-hit.at<DRIVE_CACHE.countMs)return hit.wait;
+  const wait=call('b2DriveCount',q).catch(e=>{if(driveCounts.get(key)?.wait===wait)driveCounts.delete(key);throw e;});
+  driveCounts.set(key,{at:Date.now(),wait});return wait;
+ }
  async function dayMemoSave(p){try{return await call('b2DayMemo',p);}finally{dayMemoLists.clear();}}
  // 명단 반영(관리자만, b2RebuildBoards {cls?} → {boards:[{cls,students,rows,grown}],rev}, 시트 v16): 명부에 맞춰 반 탭 출결판을 다시 그립니다. 성공하면 묶음을 버려 새로 읽게 합니다.
  async function rebuildBoards(cls){const r=await call('b2RebuildBoards',cls&&cls!=='all'?{cls:String(cls)}:{});bundles.clear();return r;}
@@ -133,6 +153,7 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
  }
  return {
   call,rev,bundle,save,watch,checkhereDisease,queueOn:()=>queueOn,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,
+  driveFolders,driveCount,
   officerSave:p=>officerWrite('b2OfficerSave',p),
   officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),

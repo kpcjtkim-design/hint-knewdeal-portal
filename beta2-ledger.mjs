@@ -94,6 +94,10 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  <div class="b2-tiny b2-muted" style="padding:0 14px 10px">자동 요청: 오늘 출결원장을 저장하면 3초 뒤 [실시간 베타] [2기 베타] 요청이 만들어집니다(지난 날은 「체크히어 맞추기」를 눌러야 보냅니다). 체크히어에는 관리자가 운영 포털 「반영 요청·승인」에서 승인할 때만 수집 PC가 입력하고 다시 읽어 확인합니다. 직접 요청: 학생마다 아래 줄(추천시간·추천사유)에서 따로 요청하며, 근거 앞에 [2기 베타]가 붙고 관리자가 승인한 뒤 반영됩니다(추천값을 고치기만 해서는 체크히어가 바뀌지 않습니다).</div>
  <div class="b2-table-wrap"><table class="b2-table b2-ledger" id="b2Table"><thead><tr><th style="width:130px">이름</th><th>출결원장 (마스터시트)</th><th>체크히어</th><th style="width:200px">대조</th></tr></thead><tbody data-empty><tr><td colspan="4">${loading('출결원장을 불러오는 중…')}</td></tr></tbody></table></div></section></div>`;
  const $=s=>host.querySelector(s),table=$('#b2Table');
+ // 드라이브 폴더 바로가기(drive-links.mjs, 사용자 요청 2026-10-21): 도구줄 바로 아래 한 줄(그 반·그날 수기출석·출결인정자료·교육사진, 그날이 든 단위기간 1·2·3)과
+ // 학생 증빙 드롭다운 옆 작은 '출결인정자료 폴더'. 따로 불러와 못 불러와도 화면은 그대로입니다. 반·날짜는 dateOptions()가 맞춥니다.
+ let drive=null;const driveSlot=document.createElement('div');driveSlot.className='b2-drive-slot';driveSlot.style.cssText='padding:0 14px 8px';$('.b2-toolbar').after(driveSlot);
+ import('./drive-links.mjs?v=20261021-dl1').then(m=>{if(!life.alive())return;drive=m.createDriveBar({client,admin:true,onChange:()=>{if(life.alive()&&bundle)renderRows();}});driveSlot.append(drive.el);life.on(()=>drive.dispose());if(bundle)drive.set(cls,date);}).catch(()=>{});
  const students=()=>rows.map(r=>({rowIndex:r.rowIndex,name:r.name}));
  const rowOf=name=>rows.find(r=>r.name===name)||null;
  const recordOf=name=>recordsDay===`${cls}|${date}`?matchSnapshot({name},students(),records,identities).record||null:null; // 다른 반·날짜 기록은 보이지 않음
@@ -178,7 +182,8 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const ev=String(v.ev||''),known=EVIDENCE.find(([x])=>x===ev),label=known?known[1]:ev;
   const tip=[`증빙: ${label}`,extraEvidence(row.rec)||isJobFair(v.reason)?`취업박람회 · 추가 증빙 ${EXTRA_DOC}까지 받았으면 「확인」 (그 전에는 미제출·반려로 남아 '추가 증빙' 목록에 보입니다)`:'','바꾸면 「변경 N건 저장」으로 함께 저장합니다'].filter(Boolean).join('\n');
   return `<select class="b2-ev" data-inline="ev" aria-label="${n} 증빙" title="${esc(tip)}">${known?'':`<option value="${esc(ev)}" selected>${esc(ev)}</option>`}${EVIDENCE.map(([x,l])=>`<option value="${x}" ${x===ev?'selected':''}>${l}</option>`).join('')}</select>`
-   +(ev==='반려'?`<input class="b2-evr" data-inline="evr" maxlength="300" value="${esc(v.evr||'')}" aria-label="${n} 반려 사유" placeholder="반려 사유 (필수)" title="${esc(v.evr||'반려 사유 (필수)')}">`:'');
+   +(ev==='반려'?`<input class="b2-evr" data-inline="evr" maxlength="300" value="${esc(v.evr||'')}" aria-label="${n} 반려 사유" placeholder="반려 사유 (필수)" title="${esc(v.evr||'반려 사유 (필수)')}">`:'')
+   +(drive?.evLinkHtml()||''); // 그날 출결인정자료 폴더(드라이브, 새 탭)
  }
  function ledgerCell(row){
   const rec=row.rec,note=rec?.flag||'',v=valuesOf(row),evrIn=evOn(v)&&v.ev==='반려'; // 반려 사유 칸이 보이면 '반려: …' 줄은 생략
@@ -452,6 +457,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   $('#b2Date').innerHTML=days.map(d=>`<option value="${d}" ${d===date?'selected':''}>${md(d)}${d===bundle.today?' · 오늘':''}${offDay(d)?' · 교육일 아님':''}${futureDay(d)?' · 예정':''}</option>`).join('')+`<option value="${ANY_DAY}">다른 날짜…</option>`;
   const any=$('#b2DateAny');if(document.activeElement!==any)any.value=date;if(offDay(date)||futureDay(date))any.hidden=false; // 치는 중이면 값을 덮지 않음
   $('#b2DayNote').textContent=dayNote(date);
+  drive?.set(cls,date); // 드라이브 바도 그 반·그날로
  }
  // 교육일이 아니거나 아직 오지 않은 날의 작은 안내(막지 않음)
  function dayNote(d){

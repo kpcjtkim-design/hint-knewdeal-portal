@@ -2,7 +2,7 @@
 import {createBeta2Client,onBeta2Rev,lastBeta2Rev} from './beta2-data.mjs';
 import {ensureBeta2Css,errorBox,toast} from './beta2-ui.mjs';
 import {loadReasonCatalog} from './reason-catalog-store.mjs';
-const SCREENS={b2home:()=>import('./beta2-home.mjs?v=20261020-du1'),b2class:()=>import('./beta2-class.mjs?v=20261021-ma1'),b2ledger:()=>import('./beta2-ledger.mjs?v=20261020-du1'),b2status:()=>import('./beta2-status.mjs'),b2downloads:()=>import('./beta2-downloads.mjs?v=20261020-tt2'),b2docs:()=>import('./beta2-docs.mjs?v=20261020-co1'),b2vocs:()=>import('./beta2-voc.mjs?v=20261020-co1'),
+const SCREENS={b2home:()=>import('./beta2-home.mjs?v=20261020-du1'),b2class:()=>import('./beta2-class.mjs?v=20261021-dl1'),b2ledger:()=>import('./beta2-ledger.mjs?v=20261021-dl1'),b2status:()=>import('./beta2-status.mjs'),b2downloads:()=>import('./beta2-downloads.mjs?v=20261021-dl1'),b2docs:()=>import('./beta2-docs.mjs?v=20261020-co1'),b2vocs:()=>import('./beta2-voc.mjs?v=20261020-co1'),
  b2times:()=>import('./beta2-times.mjs'),b2roster:()=>import('./beta2-roster.mjs?v=20261020-rb1'),b2notify:()=>import('./notify-inbox.mjs'),b2dropouts:()=>import('./beta2-dropouts.mjs?v=20261020-tt2'),b2reasons:()=>import('./beta2-reasons.mjs'),
  b2officers:()=>import('./beta2-officers.mjs?v=20261021-ma1')}; // 교육시간 조정·교육생 상태(2026-10-19) b2notify: 홈 › 알림(알림함) b2dropouts: 출결 › 중도탈락·수료(2026-10-20) b2reasons: 공지·설정 › 사유 목록(2026-10-20) b2officers: 출결 › 반 임원(2026-10-20) b2class: 출결 › 반 현황(홈 반 카드, 2026-10-20)
 export async function mountBeta2Admin(host,{db,user,classes,tab,selected,context,open}){

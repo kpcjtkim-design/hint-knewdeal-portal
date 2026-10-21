@@ -74,11 +74,20 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261020-du1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261021-dl1','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
   const k=betaTab();if(beta&&k)beta.setTab(k);
+  teacherDrive(k);
+ }
+ // 드라이브 폴더 바로가기(drive-links.mjs, 사용자 요청 2026-10-21): 출결판 위 한 줄(담임 종류만: 수기출석·출결인정자료·교육사진, 「다른 날짜 폴더」 날짜 칸).
+ // 날짜는 출결판에서 고른 칸의 날(고르기 전에는 기준일, teacher-beta.js onDay). 출결판이 아닌 칸에서는 뗍니다. 못 불러와도 출결판은 그대로입니다.
+ let drive=null,driveWait=null,driveDay=seoulToday();
+ function teacherDrive(k){
+  if(k!=='board'){drive?.el.remove();return;}
+  driveWait||=import('./drive-links.mjs?v=20261021-dl1').then(m=>{if(!alive())return;drive=m.createDriveBar({client,picker:true});works.push(drive);drive.set(cls,driveDay);}).catch(()=>{});
+  void driveWait.then(()=>{if(drive&&alive()&&betaTab()==='board')betaHost.before(drive.el);});
  }
  async function showStatus(slot){
   slot.append(statusHost);

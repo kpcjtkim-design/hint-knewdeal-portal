@@ -19,6 +19,10 @@ export const FIREBASE={key:cohort.FIREBASE_KEY,project:cohort.FIREBASE_PROJECT,r
 const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','b2Save','b2DocUpdate','b2Vocs','b2VocCreate','b2VocReply','b2VocSeen',
  'b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2Dropouts','b2DropoutSave','b2Completions','b2RosterStatusMany','b2Schedule','b2ScheduleSave',
  'b2Officers','b2OfficerSave','b2OfficerEnd','b2RebuildBoards','b2DayMemos','b2DayMemo']);
+// 구글 드라이브 폴더 바로가기(2026-10-21, 2기 Apps Script b2DriveFolders·b2DriveCount): 읽기만. 담임은 늘 자기 반(cls를 붙임), 관리자는 고른 반(폴더 목록은 반 없이 전체도).
+// 폴더 목록 만들기(b2DriveIndexBuild, 4.5분)는 웹에서 부르지 않습니다(편집기에서만, 여기 없음 → BAD_ACTION).
+B2_ACTIONS.add('b2DriveFolders').add('b2DriveCount');
+export const DRIVE_KINDS=['photo','evidence','manual','unit','unitSheet','unitRequest','unitEvidence'];
 // 쓰기 대기열(lib/write-queue.cjs, 2026-10-21): portalSaveBatch(담임 출결판이 모아 보냄)·queueStatus(내 대기열 항목·자기 반 대기·오늘 실패)는 담임·관리자 모두.
 const ALLOWED=new Set(['portalSaveBatch','queueStatus','portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭에서 신청, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
@@ -138,6 +142,16 @@ export function b2Args(user,action,rest){
   if(action==='b2RebuildBoards'){const c=p.cls;return [c===undefined||c===''||c==='all'?{}:{cls:own(c)}];}
   // 여러 명 상태(관리자만): 줄마다 반 번호를 확인합니다.
   if(action==='b2RosterStatusMany')return [{rows:(Array.isArray(p.rows)?p.rows:[]).map(r=>({cls:own(r?.cls),name:String(r?.name??''),status:String(r?.status??''),changed:String(r?.changed??''),reason:String(r?.reason??'')}))}];
+  // 드라이브 폴더 목록 {cls?, date?}·파일 수 {cls, date, kinds?}: 정해진 칸만 보냅니다. 날짜는 YYYY-MM-DD 모양만, 종류는 아는 것만(최대 7개).
+  if(action==='b2DriveFolders'||action==='b2DriveCount'){
+   const q=action==='b2DriveFolders'&&admin&&(p.cls===undefined||p.cls===''||p.cls==='all')?{}:{cls:own(p.cls)};
+   if(p.date!==undefined&&p.date!==''){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date)))throw new Error('BAD_REQUEST');q.date=String(p.date);}
+   if(action==='b2DriveCount'){
+    if(!q.date)throw new Error('BAD_REQUEST');
+    if(Array.isArray(p.kinds))q.kinds=[...new Set(p.kinds.map(String))].filter(k=>DRIVE_KINDS.includes(k)).slice(0,DRIVE_KINDS.length);
+   }
+   return [q];
+  }
   return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
 }
 // 담임 신청 취소: 그 반 목록(b2Dropouts rows)에서 그 줄을 찾아 '자기가 신청(등록자 = 로그인 이메일)했고 아직 관리자 확인 전'인지 봅니다. 괜찮으면 ''.

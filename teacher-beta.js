@@ -235,6 +235,7 @@ export function mountTeacherBeta(el, OPT) {
   // 빠른 사유: 지금 목록에 있는 표준 글만(관리자가 숨기면 빠짐). '해당없음'은 사유가 아니라 출결 상태라 여기 없음(사용자 2026-10-20)
   const QUICK=['개인일정','병원','면접','교통사정','예비군'];
   function panel(noFocus){
+    if(OPT.onDay&&S.d)OPT.onDay(S.sel?S.sel.day:S.d.mainDay); // 출결판 날짜(고른 칸의 날, 없으면 기준일)를 바깥 화면에(드라이브 폴더 바로가기, 2026-10-21)
     const p=$('#pn');if(!p)return;
     if(!S.sel){p.innerHTML='<h2>사유 입력</h2><div class="note" style="margin-top:6px">출결판에서 학생 칸을 누르면 여기에서 사유를 고르고 체크히어 메모 추천을 볼 수 있습니다.</div>';return;}
     const f=S.f;

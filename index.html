@@ -214,13 +214,13 @@ async function adminView(user,p,tab='b2home',selected='1',workContext=null){let 
  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>adminView(user,p,b.dataset.tab,selected));
  if(laterTab(tab))return laterView(label);if(tab.startsWith('b2')&&tab!=='b2teacher')await beta2Admin(user,p,tab,selected,workContext);if(tab==='b2teacher')await adminPreview(user,p,selected);if(tab==='classes')await classAdmin(user,p,selected);if(tab==='urgent')await urgentAdmin(user,p,selected);if(tab==='timetable')await timetableAdmin(user,p);if(tab==='surveys')await surveysAdmin(user,p,workContext);if(tab==='materials')await materialsAdmin(user,p);if(tab==='studentPreview')studentPreviewAdmin();if(tab==='checkhere')await checkhereAdminView(user,p,workContext);if(tab==='uploads')await uploadAdmin(user,p);if(tab==='users')await userAdmin(user,p);if(tab==='settings')await settingsAdmin(user,p);
  }catch(e){if(epoch===pageEpoch)fatal(user,'관리자 화면을 불러오지 못했습니다.',e)}}
-async function beta2Admin(user,p,tab,selected,context){return mountAdminModule('/beta2-admin.mjs?v=20261021-ma1','mountBeta2Admin',{db,user,classes:CLASSES,tab,selected,context,open:(next,ctx={})=>adminView(user,p,next,ctx.classId||selected,ctx)},{wide:tab==='b2ledger'});}
+async function beta2Admin(user,p,tab,selected,context){return mountAdminModule('/beta2-admin.mjs?v=20261021-dl1','mountBeta2Admin',{db,user,classes:CLASSES,tab,selected,context,open:(next,ctx={})=>adminView(user,p,next,ctx.classId||selected,ctx)},{wide:tab==='b2ledger'});}
 
 async function surveysAdmin(user,p,workContext=null){return mountAdminModule('/survey-view.mjs?v=20260922-work1','mountSurveys',{db,user,classes:CLASSES,initialClassId:workContext?.classId});}
 async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261020-tp2','mountTimetableAdmin',{db,user,classes:CLASSES.filter(c=>!c.test)},{wide:true});}
 async function attachTeacherTimetable(parent,user,c){
  const hero=parent.querySelector('.hero'),alive=()=>parent.isConnected&&parent.querySelector('.hero')===hero;
- try{const mod=await import('/teacher-workspace.mjs?v=20261021-ma1');if(!alive())return;const work=await mod.mountTeacherWorkspace(parent,{db,user,classInfo:c,preview:parent.id==='adminBody'});if(!alive())disposePageWork(work);else if(parent.id==='adminBody')adminWork=work;else teacherWork=work;}catch(e){if(alive()){const note=document.createElement('p');note.textContent='담임 요약을 불러오지 못했습니다. '+e.message;parent.append(note);}}
+ try{const mod=await import('/teacher-workspace.mjs?v=20261021-dl1');if(!alive())return;const work=await mod.mountTeacherWorkspace(parent,{db,user,classInfo:c,preview:parent.id==='adminBody'});if(!alive())disposePageWork(work);else if(parent.id==='adminBody')adminWork=work;else teacherWork=work;}catch(e){if(alive()){const note=document.createElement('p');note.textContent='담임 요약을 불러오지 못했습니다. '+e.message;parent.append(note);}}
 }
 // 1기 출결 통계·증빙·질병·단위기간 출석부·중도포기·출결대조(구버전) 탭은 2기 메뉴의 출결 현황·내려받기·출결대조로 옮겼습니다(1기는 cohort1 브랜치).
 
