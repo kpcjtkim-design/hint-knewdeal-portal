@@ -23,10 +23,17 @@ const B2_ACTIONS=new Set(['b2Bundle','b2Rev','b2Docs','b2DocCreate','b2Status','
 // 폴더 목록 만들기(b2DriveIndexBuild, 4.5분)는 웹에서 부르지 않습니다(편집기에서만, 여기 없음 → BAD_ACTION).
 B2_ACTIONS.add('b2DriveFolders').add('b2DriveCount');
 export const DRIVE_KINDS=['photo','evidence','manual','unit','unitSheet','unitRequest','unitEvidence'];
+// 운영모니터링(2026-10-21, 김소윤 님 '담임 상담일지' 양식, 2기 Apps Script): 반 운영 점검(반·날짜 1건)과 교육생 면담(학생마다 1차·2차…).
+// 읽기(b2Monitors·b2Counsels)·저장(b2MonitorSave·b2CounselSave)은 담임(늘 자기 반)과 관리자, 운영팀 확인(b2MonitorConfirm·b2CounselConfirm)은 관리자만.
+// 담임의 면담 고치기(round 있음)는 먼저 그 학생 기록을 읽어 자기가 쓴 차수인지 봅니다(counselEditError). 정해진 칸만 넘깁니다.
+B2_ACTIONS.add('b2Monitors').add('b2MonitorSave').add('b2MonitorConfirm').add('b2Counsels').add('b2CounselSave').add('b2CounselConfirm');
+export const MONITOR_KEYS=['schedule','content','material','delivery','communication','participation','progress','facility','equipment'];
+export const COUNSEL_KEYS=['q1','q2','q3','q4'];
+export const MONITOR_NOTE_MAX=300,COUNSEL_ANSWER_MAX=2000,COUNSEL_NAME_MAX=60;
 // 쓰기 대기열(lib/write-queue.cjs, 2026-10-21): portalSaveBatch(담임 출결판이 모아 보냄)·queueStatus(내 대기열 항목·자기 반 대기·오늘 실패)는 담임·관리자 모두.
 const ALLOWED=new Set(['portalSaveBatch','queueStatus','portalData','portalSave','portalClose','portalAddRow','portalUpdateVoc','portalSaveOfficer','portalSetStatus','portalRoster',...B2_ACTIONS]);
 // 생년월일·성별이 담긴 명부, 출결 저장·동기화·서류 처리, 교육시간 조정·교육생 상태(한 명·여러 명, 예전 담임 화면의 portalSetStatus 포함: 담임은 출결 › 중도탈락 탭에서 신청, 2026-10-20)·출결대조 메모 쓰기는 담임에게 열어도 관리자만 씁니다(Apps Script도 TEACHER를 거절).
-const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave','b2RebuildBoards','b2DayMemo']);
+const ADMIN_ACTIONS=new Set(['portalSetStatus','portalRoster','b2Status','b2Save','b2DocUpdate','b2ModuleTimeSave','b2RosterStatus','b2LedgerMemo','b2RosterStatusMany','b2ScheduleSave','b2RebuildBoards','b2DayMemo','b2MonitorConfirm','b2CounselConfirm']);
 // 중도탈락 탭에서 담임이 신청할 때 정하는 칸(beta2-dropout-core TEACHER_FIELDS와 같음). 판정·판정 근거·서류(I~K)·연락 확인·관리자 확인은 관리자만.
 export const TEACHER_DROPOUT_FIELDS=['name','kind','reason','startDate','lastDate','note'];
 // 명단 반영(b2RebuildBoards, 2026-10-20, 시트 v16): 마스터시트 명부에 맞춰 반 탭 출결판을 다시 그립니다. 관리자만(ADMIN_ACTIONS). 전체 17반은 20초쯤이라 vercel.json maxDuration 60초 안.
@@ -54,6 +61,8 @@ const FAILURES={
   DROPOUT_REQUEST_ONLY:[403,'신청한 뒤에는 고칠 수 없습니다. 고칠 내용은 운영팀에 알려 주세요.'],
   DROPOUT_CANCEL_DENIED:[403,'직접 신청하고 운영팀이 아직 확인하지 않은 신청만 취소할 수 있습니다.'],
   DROPOUT_GONE:[409,'그 신청을 찾지 못했습니다. 새로고침한 뒤 다시 확인해 주세요.'],
+  COUNSEL_EDIT_DENIED:[403,'면담 기록은 쓴 담임과 운영팀만 고칠 수 있습니다.'],
+  COUNSEL_GONE:[409,'그 면담 기록을 찾지 못했습니다. 새로고침한 뒤 다시 확인해 주세요.'],
   DATABASE_QUOTA_EXCEEDED:[503,'계정 확인이 잠시 지연되고 있습니다. 잠시 후 다시 시도해 주세요.'],
   NOT_CONFIGURED:[503,'데이터 API 연결 전입니다. 운영자가 연결을 마치면 바로 사용할 수 있습니다.'],
   SHEET_UNAUTHORIZED:[502,'데이터 API 인증에 실패했습니다. 운영자에게 알려 주세요.'],
@@ -181,7 +190,52 @@ export function b2Args(user,action,rest){
    }
    return [q];
   }
+  // 운영모니터링: 목록은 담임이면 늘 자기 반(관리자는 고른 반이나 전체), 저장·확인은 반을 서버에서 확인해 붙이고 정해진 칸만.
+  if(action==='b2Monitors'||action==='b2Counsels'){
+   const q=admin&&(p.cls===undefined||p.cls===''||p.cls==='all')?{}:{cls:own(p.cls)};
+   if(action==='b2Monitors')for(const k of ['from','to'])if(p[k]!==undefined&&p[k]!==null&&p[k]!=='')q[k]=isoDate(p[k]);
+   if(action==='b2Counsels'&&p.name!==undefined&&p.name!==null&&p.name!=='')q.name=nameText(p.name);
+   return [q];
+  }
+  // 반 운영 점검 저장: 점수 9개 모두 정수 1~5(빠지면 거절), 특이사항은 항목마다 300자까지, was는 화면이 본 기록의 sig.
+  if(action==='b2MonitorSave'){
+   const s=plain(p.scores),n=p.notes===undefined||p.notes===null?{}:plain(p.notes);
+   if(!s||!n)throw new Error('BAD_REQUEST');
+   const scores={},notes={};
+   for(const k of MONITOR_KEYS){const v=Number(s[k]);if(!Number.isInteger(v)||v<1||v>5)throw new Error('BAD_REQUEST');scores[k]=v;notes[k]=text(n[k],MONITOR_NOTE_MAX);}
+   const q={cls:own(p.cls),date:isoDate(p.date),scores,notes};
+   if(p.was!==undefined&&p.was!==null)q.was=sigText(p.was);
+   return [q];
+  }
+  // 운영팀 확인 켜기·끄기(관리자만): on은 참·거짓만.
+  if(action==='b2MonitorConfirm'||action==='b2CounselConfirm'){
+   if(typeof p.on!=='boolean')throw new Error('BAD_REQUEST');
+   const q=action==='b2MonitorConfirm'?{cls:own(p.cls),date:isoDate(p.date),on:p.on}:{cls:own(p.cls),name:nameText(p.name),round:roundOf(p.round),on:p.on};
+   if(p.was!==undefined&&p.was!==null)q.was=sigText(p.was);
+   return [q];
+  }
+  // 면담 저장: 답 4칸(각 2000자, 하나 이상). round가 있으면 그 차수 고치기(was), 없으면 다음 차수 새 면담(clientId).
+  if(action==='b2CounselSave'){
+   const a=plain(p.answers);if(!a)throw new Error('BAD_REQUEST');
+   const answers={};for(const k of COUNSEL_KEYS)answers[k]=text(a[k],COUNSEL_ANSWER_MAX);
+   if(!COUNSEL_KEYS.some(k=>answers[k].trim()))throw new Error('BAD_REQUEST');
+   const q={cls:own(p.cls),name:nameText(p.name),date:isoDate(p.date),answers};
+   if(p.round!==undefined&&p.round!==null&&p.round!==''){q.round=roundOf(p.round);if(p.was!==undefined&&p.was!==null)q.was=sigText(p.was);}
+   else if(p.clientId!==undefined&&p.clientId!==null){if(!CLIENT_ID.test(String(p.clientId)))throw new Error('BAD_REQUEST');q.clientId=String(p.clientId);}
+   return [q];
+  }
   return [{...p,...(p.cls!==undefined?{cls:own(p.cls)}:{})}];
+}
+const plain=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:null;
+const isoDate=v=>{const s=String(v??'');if(!AS_OF.test(s))throw new Error('BAD_REQUEST');return s;};
+const nameText=v=>{const s=text(v,COUNSEL_NAME_MAX).trim();if(!s)throw new Error('BAD_REQUEST');return s;};
+const roundOf=v=>{const n=Number(v);if(!Number.isInteger(n)||n<1||n>99)throw new Error('BAD_REQUEST');return n;};
+// 담임 면담 고치기: 그 학생 기록(b2Counsels rows)에서 그 차수를 찾아 자기가 쓴 것(작성자 = 로그인 이메일)인지 봅니다. 괜찮으면 ''.
+export function counselEditError(p,rows,email){
+  const cur=(rows||[]).find(r=>String(r.cls)===String(p?.cls)&&String(r.name)===String(p?.name)&&Number(r.round)===Number(p?.round));
+  if(!cur)return 'COUNSEL_GONE';
+  if(String(cur.author||'').trim().toLowerCase()!==String(email||'').toLowerCase())return 'COUNSEL_EDIT_DENIED';
+  return '';
 }
 // 담임 신청 취소: 그 반 목록(b2Dropouts rows)에서 그 줄을 찾아 '자기가 신청(등록자 = 로그인 이메일)했고 아직 관리자 확인 전'인지 봅니다. 괜찮으면 ''.
 // 시트(b2DropoutSave_)도 담임의 관리자 확인된 줄·다른 반 줄은 거절하지만, 같은 반의 다른 사람(관리자·다른 담임)이 넣은 줄까지는 막지 않아 여기서 막습니다.
@@ -238,10 +292,12 @@ export default async function handler(req,res){
     if(B2_ACTIONS.has(action)){
       const args=b2Args(user,action,rest),who={actor:user.email,role:user.role};
       // 담임 신청 취소: 먼저 그 반 목록을 읽어 자기 신청·확인 전인지 봅니다(읽기가 실패하면 그 오류를 그대로 돌려줌).
-      const check=action==='b2DropoutSave'&&user.role!=='ADMIN'&&args[0].remove?await callSheet('b2Dropouts',[{cls:args[0].was.cls}],who,ctx):null;
+      // 담임 면담 고치기(round 있음)도 먼저 그 학생 기록을 읽어 자기가 쓴 차수인지 봅니다.
+      const check=action==='b2DropoutSave'&&user.role!=='ADMIN'&&args[0].remove?await callSheet('b2Dropouts',[{cls:args[0].was.cls}],who,ctx)
+        :action==='b2CounselSave'&&user.role!=='ADMIN'&&args[0].round?await callSheet('b2Counsels',[{cls:args[0].cls,name:args[0].name}],who,ctx):null;
       if(check&&!check.ok)out=check;
       else{
-        const denied=check?teacherCancelError(args[0],check.data?.rows,user.email):'';
+        const denied=!check?'':action==='b2CounselSave'?counselEditError(args[0],check.data?.rows,user.email):teacherCancelError(args[0],check.data?.rows,user.email);
         if(denied)throw new Error(denied);
         out=await callSheet(action,args,who,ctx);
       }

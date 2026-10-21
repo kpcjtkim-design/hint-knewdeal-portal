@@ -19,9 +19,9 @@ const LINK_RE=/^#([A-Za-z0-9_-]{1,40})(?:\?([A-Za-z0-9=&_.:%-]{0,150}))?$/;
 export function linkFor(tab,params={}){const q=new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined&&v!==null&&v!=='').map(([k,v])=>[k,String(v)])).toString();const l=`#${tab}${q?'?'+q:''}`;return LINK_RE.test(l)?l:`#${tab}`;}
 export const cleanLink=v=>LINK_RE.test(String(v??''))?String(v):'';
 export function parseLink(link){const m=LINK_RE.exec(String(link??''));return m?{tab:m[1],params:Object.fromEntries(new URLSearchParams(m[2]||''))}:null;}
-// 담임 화면에서 갈 곳(beta2-teacher-layout.mjs 탭): 서류발급 → 서류발급, 민원·이슈 → 민원·만족도 › 민원·이슈, 출결대조(추가 증빙 알림) → 출결 › 증빙서류, 중도탈락 → 출결 › 중도탈락(하위 탭이 없으면 출결판), 그 밖은 오늘.
+// 담임 화면에서 갈 곳(beta2-teacher-layout.mjs 탭): 서류발급 → 서류발급, 민원·이슈 → 민원·만족도 › 민원·이슈, 출결대조(추가 증빙 알림) → 출결 › 증빙서류, 중도탈락 → 출결 › 중도탈락(하위 탭이 없으면 출결판), 운영모니터링 → 운영모니터링 › 반 운영 점검, 그 밖은 오늘.
 // 공통메모 알림(#b2ledger?…&memo=day, 2026-10-20)은 관리자에게는 그날 출결대조, 담임에게는 출결 › 출결판(그날 공통메모가 판 위에 보임)입니다.
-export const teacherTarget=(tab,params={})=>tab==='b2ledger'&&params?.memo==='day'?['attendance','board']:({b2docs:['documents'],b2vocs:['feedback','voc'],b2ledger:['attendance','evidence'],b2dropouts:['attendance','dropout']})[tab]||['today'];
+export const teacherTarget=(tab,params={})=>tab==='b2ledger'&&params?.memo==='day'?['attendance','board']:({b2docs:['documents'],b2vocs:['feedback','voc'],b2ledger:['attendance','evidence'],b2dropouts:['attendance','dropout'],b2monitor:['monitoring','checkup']})[tab]||['today'];
 // 관리자 받는 사람: 설정(settings/global notifyAdmins, 이메일 목록)이 있으면 그것, 없으면 cohort.json admins(hint.kpc · kpc.jtkim).
 export function adminList(settings){const l=uniq((Array.isArray(settings?.notifyAdmins)?settings.notifyAdmins:[]).map(normEmail).filter(Boolean)).slice(0,MAX_TO);return l.length?l:[...ADMINS];}
 // 알림 문서(createdAt은 notify.mjs가 serverTimestamp로). audience: 'admins'(toRole admin + 관리자 목록) · 'class'(그 반 담임, toClass). 보낸 사람은 to에서 빼고 readBy에 넣어 '안 읽음'으로 세지 않습니다.

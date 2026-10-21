@@ -238,7 +238,7 @@ test('the teacher preview merges 1기 and 2기 teacher tabs into six tabs with a
   await page.getByRole('heading',{name:'2기 홈'}).waitFor();
   await page.getByRole('button',{name:'미리보기',exact:true}).click();
   await page.locator('[data-main]').first().waitFor();
-  assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘 할 일','출결','서류 발급','민원·설문','시간표·자료','우리 반']);
+  assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘 할 일','출결','서류 발급','민원·설문','운영모니터링','시간표·자료','우리 반']);
   await page.locator('.b2-alertbar:not([hidden])').waitFor();
   assert.match(await page.locator('.b2-alertbar').innerText(),/고다원 4\/6회/);
   await page.locator('[data-main="attendance"]').click();

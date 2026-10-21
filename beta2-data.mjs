@@ -8,7 +8,7 @@ import {getTestAsOf,onTestAsOf} from './beta2-asof.mjs';
 // 읽기 기능(응답 늦음이면 저장 안내가 아니라 서버 글 그대로).
 const READS=new Set(['b2Bundle','b2Rev','b2Docs','b2Status','b2Vocs','b2ModuleTimes','b2DayTimes','b2LedgerMemos','b2Dropouts','b2Completions','b2Schedule','b2Officers','b2DayMemos','portalRoster','portalData']);
 const bundles=new Map(),schedules=new Map(),officerLists=new Map(),dayMemoLists=new Map();
-export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();driveLists.clear();driveCounts.clear();}
+export function forgetBeta2Cache(){bundles.clear();schedules.clear();officerLists.clear();dayMemoLists.clear();driveLists.clear();driveCounts.clear();monitorLists.clear();counselLists.clear();}
 // 시험 기준일을 켜고 끄면 들고 있던 묶음(today가 다름)을 버립니다.
 onTestAsOf(()=>bundles.clear());
 // 새로 만들기(서류발급·민원 접수)에 붙이는 한 번만 표시(시트 v23 clientId: 10분 안에 같은 값이 다시 오면 처음 결과를 repeated:true로 돌려줌 → 다시 보내도 한 건만).
@@ -23,6 +23,9 @@ export const isConflict=e=>e?.code==='CONFLICT';
 for(const a of ['b2DriveFolders','b2DriveCount'])READS.add(a);
 const driveLists=new Map(),driveCounts=new Map();
 export const DRIVE_CACHE={notBuiltMs:120000,countMs:60000};
+// 운영모니터링(2026-10-21): 반 운영 점검 목록(b2Monitors)·교육생 면담 목록(b2Counsels)은 변경 번호(rev)가 같으면 다시 읽지 않습니다. 쓰고 나면(실패해도) 버립니다.
+for(const a of ['b2Monitors','b2Counsels'])READS.add(a);
+const monitorLists=new Map(),counselLists=new Map();
 // 마지막 변경 번호 응답(b2Rev: rev·sync·voc). 화면마다 클라이언트를 새로 만들어도 함께 씁니다.
 // 민원·이슈 알림(beta2-admin.mjs·담임 화면)은 다른 화면이 방금 확인한 값을 그대로 써서 Apps Script 호출을 늘리지 않습니다.
 const revListeners=new Set();let lastRev={at:0,value:null};
@@ -115,6 +118,19 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
   driveCounts.set(key,{at:Date.now(),wait});return wait;
  }
  async function dayMemoSave(p){try{return await call('b2DayMemo',p);}finally{dayMemoLists.clear();}}
+ // 운영모니터링 목록: 반 운영 점검 {cls?,from?,to?} · 교육생 면담 {cls?,name?}. 담임은 Vercel이 자기 반으로 고정합니다.
+ async function cachedList(store,action,q,{fresh=false,maxAge=20000}={}){
+  const key=JSON.stringify(q),hit=store.get(key);
+  if(hit&&!fresh){
+   if(Date.now()-hit.at<maxAge)return hit.data;
+   const r=await rev();if(r.rev===hit.data?.rev){hit.at=Date.now();return hit.data;}
+  }
+  const data=await call(action,q);store.set(key,{at:Date.now(),data});return data;
+ }
+ const monitors=(p={},o)=>{const q={};if(p.cls&&p.cls!=='all')q.cls=String(p.cls);if(p.from)q.from=p.from;if(p.to)q.to=p.to;return cachedList(monitorLists,'b2Monitors',q,o);};
+ const counsels=(p={},o)=>{const q={};if(p.cls&&p.cls!=='all')q.cls=String(p.cls);if(p.name)q.name=String(p.name);return cachedList(counselLists,'b2Counsels',q,o);};
+ const monitorWrite=async(action,p)=>{try{return await call(action,p);}finally{monitorLists.clear();}};
+ const counselWrite=async(action,p)=>{try{return await call(action,p);}finally{counselLists.clear();}};
  // 명단 반영(관리자만, b2RebuildBoards {cls?} → {boards:[{cls,students,rows,grown}],rev}, 시트 v16): 명부에 맞춰 반 탭 출결판을 다시 그립니다. 성공하면 묶음을 버려 새로 읽게 합니다.
  async function rebuildBoards(cls){const r=await call('b2RebuildBoards',cls&&cls!=='all'?{cls:String(cls)}:{});bundles.clear();return r;}
  const officerWrite=async(action,p)=>{try{return await call(action,p);}finally{officerLists.clear();}};
@@ -169,6 +185,13 @@ export function createBeta2Client(user,{endpoint='/api/teacher-beta',fetchImpl=(
  return {
   call,rev,bundle,save,watch,checkhereDisease,queueOn:()=>queueOn,schedule,scheduleSave,officers,rebuildBoards,dayMemos,dayMemoSave,admin,asOf,
   driveFolders,driveCount,
+  // 운영모니터링: 점검 저장 {cls,date,scores,notes,was?} · 운영팀 확인 {cls,date,on,was?}(관리자만)
+  // 면담 저장 {cls,name,date,answers,round?,was?}: 새 면담(round 없음)이면 clientId를 붙입니다(한 번 누름 = 한 건) · 면담 확인 {cls,name,round,on,was?}(관리자만)
+  monitors,counsels,
+  monitorSave:p=>monitorWrite('b2MonitorSave',p),
+  monitorConfirm:p=>monitorWrite('b2MonitorConfirm',p),
+  counselSave:p=>counselWrite('b2CounselSave',p.round?p:{clientId:newClientId(),...p}),
+  counselConfirm:p=>counselWrite('b2CounselConfirm',p),
   officerSave:p=>officerWrite('b2OfficerSave',p),
   officerEnd:p=>officerWrite('b2OfficerEnd',p),
   status:()=>call('b2Status'),

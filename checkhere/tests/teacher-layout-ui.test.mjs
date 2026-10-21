@@ -5,7 +5,7 @@ import {openPortal} from './teacher-fixture.mjs';
 // 2기 담임 화면(beta2-teacher-layout.mjs): 큰 탭 ↔ 하위 탭 전환, 주소(뒤로가기·새로고침·바로 열기), 머리말, 휴대폰 폭, 불러오기 실패 안내.
 // 2026-10-19 사용자 보고: 출결 탭을 눌렀다가 다른 탭을 누르면 출결 하위 탭이 그대로 보이던 버그(.b2-tabs의 display:flex가 hidden을 이김).
 const KEYS=['today','attendance','documents','feedback','schedule','info'];
-const TABS=['오늘 할 일','출결','서류 발급','민원·설문','시간표·자료','우리 반'];
+const TABS=['오늘 할 일','출결','서류 발급','민원·설문','운영모니터링','시간표·자료','우리 반'];
 const SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
 // 지금 화면에 보이는 것: 고른 큰 탭, 보이는 하위 탭 글자·고른 하위 탭, 보이는 큰 탭 화면·하위 칸, 주소
 const state=page=>page.evaluate(()=>{const v=e=>e.checkVisibility();return {
