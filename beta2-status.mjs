@@ -5,6 +5,7 @@ import {EXTRA_DOC,EXTRA_LABEL,EXTRA_NOTICE} from './attendance-reason-catalog.mj
 import {EVIDENCE_PERIODS} from './attendance-evidence-core.mjs';
 import {esc,md,badge,extraBadge,classOptions,loading,errorBox,lifecycle,copyText,downloadCsv} from './beta2-ui.mjs';
 import {DISEASE,COMPLETION_RATE as PASS,isTestClass} from './cohort.mjs';
+import {allowanceUnits,allowanceText,ruleText} from './allowance-core.mjs';
 
 export const STATUS_TABS=[['stats','출결 통계'],['evidence','증빙서류'],['disease','질병 인정']];
 const pct=v=>v===null?'-':`${v.toFixed(1)}%`;
@@ -41,8 +42,11 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
    const sorted=[...list].sort((a,b)=>(a.rate??101)-(b.rate??101)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
    const active=list.filter(s=>s.status==='재학'&&s.rate!==null),avg=active.length?active.reduce((n,s)=>n+s.rate,0)/active.length:null,low=active.filter(s=>s.rate<PASS).length;
    const rec=s=>Object.entries(s.counts).filter(([k])=>recognizedType(k)).reduce((n,[,v])=>n+v,0);
-   body.innerHTML=statBoxes([['학생',list.length],['평균 출석률',pct(avg)],[`${PASS}% 미만`,low,low?'bad':''],['중도탈락 등',list.filter(s=>s.status!=='재학').length]])+table(['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','중복','인정'],sorted.map(s=>`<tr class="${s.rate!==null&&s.rate<PASS&&s.status==='재학'?'diff':''}"><td>${esc(classLabel(s.cls))}</td><td class="b2-name">${esc(s.name)}</td><td>${s.status==='재학'?'재학':`${esc(s.status)}${s.changed?' · '+md(s.changed):''}`}</td><td>${s.days}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.counts['지각']||0}</td><td>${s.counts['조퇴']||0}</td><td>${s.counts['외출']||0}</td><td>${s.counts['중복']||0}</td><td>${rec(s)}</td></tr>`));
-   current={csv:[['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','중복','인정'],...sorted.map(s=>[s.cls,s.name,s.status,s.days,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0,s.counts['지각']||0,s.counts['조퇴']||0,s.counts['외출']||0,s.counts['중복']||0,rec(s)])],copy:[`출결 통계 · ${title}`,...sorted.filter(s=>s.rate!==null&&s.rate<PASS).map(s=>`${classLabel(s.cls)} · ${s.name} · ${pct(s.rate)} · 결석 ${s.counts['결석']||0}`)].join('\n')};
+   // 교육비(사용자 2026-10-22, 관리자만): 단위기간마다 결석 한도 N일(공지·설정 › 교육비 기준). 기간 고름과 관계없이 꽉 찬 단위기간 기준.
+   const fee=!teacherClass,al=s=>allowanceUnits(s.units),feeFail=fee?list.filter(s=>s.status==='재학'&&al(s).some(a=>a.failed)).length:0;
+   const feeCell=s=>`<td>${al(s).filter(a=>a.state!=='해당없음').map(a=>`<span class="b2-badge ${a.failed?'t-absent':a.state==='수령'?'t-rec':'t-na'}" title="${esc(allowanceText(a))}">${a.no}단위 ${esc(a.state)}${a.state!=='시작 전'?` ${a.count}/${a.limit}`:''}</span>`).join(' ')}</td>`;
+   body.innerHTML=statBoxes([['학생',list.length],['평균 출석률',pct(avg)],[`${PASS}% 미만`,low,low?'bad':''],['중도탈락 등',list.filter(s=>s.status!=='재학').length],...(fee?[['교육비 미수령',feeFail,feeFail?'bad':'']]:[])])+(fee?`<div class="b2-tiny b2-muted" style="margin:6px 14px 0">교육비 기준: ${esc(ruleText())} · 공지·설정 › 교육비 기준에서 바꿉니다</div>`:'')+table(['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','중복','인정',...(fee?['교육비(단위기간 결석/한도)']:[])],sorted.map(s=>`<tr class="${s.rate!==null&&s.rate<PASS&&s.status==='재학'?'diff':''}"><td>${esc(classLabel(s.cls))}</td><td class="b2-name">${esc(s.name)}</td><td>${s.status==='재학'?'재학':`${esc(s.status)}${s.changed?' · '+md(s.changed):''}`}</td><td>${s.days}</td><td><b>${pct(s.rate)}</b></td><td>${s.counts['결석']||0}</td><td>${s.counts['지각']||0}</td><td>${s.counts['조퇴']||0}</td><td>${s.counts['외출']||0}</td><td>${s.counts['중복']||0}</td><td>${rec(s)}</td>${fee?feeCell(s):''}</tr>`));
+   current={csv:[['반','이름','상태','교육일','출석률','결석','지각','조퇴','외출','중복','인정',...(fee?['교육비']:[])],...sorted.map(s=>[s.cls,s.name,s.status,s.days,s.rate===null?'':s.rate.toFixed(1),s.counts['결석']||0,s.counts['지각']||0,s.counts['조퇴']||0,s.counts['외출']||0,s.counts['중복']||0,rec(s),...(fee?[al(s).filter(a=>a.state!=='해당없음').map(allowanceText).join(' · ')]:[])])],copy:[`출결 통계 · ${title}`,...sorted.filter(s=>s.rate!==null&&s.rate<PASS).map(s=>`${classLabel(s.cls)} · ${s.name} · ${pct(s.rate)} · 결석 ${s.counts['결석']||0}`)].join('\n')};
   }
   if(view==='evidence'){
    // 취업박람회 추가 증빙(사용자 요청 2026-10-20 ③): 증빙 목록에 '추가 증빙 필요' 배지, 아래에 이행 여부(미제출·반려·확인) 목록 — 못 한 것만/전체
