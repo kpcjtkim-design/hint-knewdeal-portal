@@ -13,7 +13,7 @@ const CSS=`.ml{font-size:13px;color:#0f172a}.ml .bar{display:flex;flex-wrap:wrap
 .ml table{border-collapse:separate;border-spacing:0;min-width:100%}.ml th,.ml td{border-bottom:1px solid #eef2f7;border-right:1px solid #eef2f7;padding:0;text-align:center;white-space:nowrap}
 .ml thead th{position:sticky;top:0;background:#f8fafc;z-index:2;font-weight:700;padding:5px 4px;font-size:11px}.ml thead th button{border:0;background:transparent;padding:2px 4px;font-size:11px;line-height:1.3}
 .ml tbody th{position:sticky;left:0;background:#fff;z-index:1;text-align:left;padding:4px 8px;font-weight:700;font-size:12px}.ml tbody th small{display:block;font-weight:500;color:#64748b}
-.ml td button.c{border:0;border-radius:0;width:34px;height:30px;padding:0;font-weight:900;background:#fff;color:#94a3b8}.ml td button.c.O{background:#e7f6ec;color:#188038}.ml td button.c.X{background:#fdecea;color:#b42318}
+.ml td button.c{border:0;border-radius:0;width:34px;height:30px;padding:0;font-weight:900;background:#fff;color:#94a3b8}.ml td button.c.O{background:#c8ecd4;color:#146c2e}.ml td button.c.X{background:#f8cfca;color:#9f1d14}
 .ml td button.c.dirty{outline:2px solid #e37400;outline-offset:-2px}.ml td.sum{padding:4px 8px;font-size:12px;color:#334155;background:#fafbfc}.ml .note{color:#64748b;font-size:12px;margin:8px 0 0}.ml .msg{margin:0 0 8px;padding:8px 10px;border-radius:8px;background:#eff6ff}.ml .msg.err{background:#fdecea;color:#8c1d18}
 .ml .hol{color:#b42318}`;
 export function mountMeals(host,{db,user,classes}){
