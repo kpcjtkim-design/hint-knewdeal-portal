@@ -2,7 +2,7 @@
 // 알림 문서: {kind, title, body, cls, link, to:[이메일], toRole:'admin'?, toClass:'N'?, from, createdAt, readBy:[이메일]}. 생년월일·전화번호는 본문에 남기지 않습니다(cleanText).
 import {ADMINS,CLASS_ID_RE} from './cohort.mjs';
 
-export const KINDS=['서류발급','민원','출결대조 메모','추가 증빙','중도탈락']; // 출결대조 메모: 학생 메모(관리자에게)와 반·날짜 공통메모(그 반 담임 + 관리자, 2026-10-20). 추가 증빙: 취업박람회 인정 출결의 기업면접 확인서(2026-10-20, 반 담임 + 관리자)
+export const KINDS=['서류발급','민원','출결대조 메모','추가 증빙','중도탈락','운영모니터링']; // 출결대조 메모: 학생 메모(관리자에게)와 반·날짜 공통메모(그 반 담임 + 관리자, 2026-10-20). 추가 증빙: 취업박람회 인정 출결의 기업면접 확인서(2026-10-20, 반 담임 + 관리자)
 // 중도탈락: 담임이 중도탈락·조기취업을 등록·고치·취소하면 관리자에게, 관리자가 확인하면 그 반 담임에게(beta2-dropouts.mjs, 2026-10-20). firestore.rules validNotification 종류 목록에도 있어야 저장됩니다.
 export const LIMIT=100,MAX_TO=10,TITLE_MAX=80,BODY_MAX=160;
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;

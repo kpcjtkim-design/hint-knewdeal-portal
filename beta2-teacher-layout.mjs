@@ -15,9 +15,9 @@ const LATER={'timetable-today':'timetable',timetable:'timetable',materials:'mate
 const LATER_TEXT='11월 중에 열립니다. 준비되면 운영팀이 안내합니다.';
 
 export const TEACHER_TABS=[['today','오늘 할 일'],['attendance','출결'],['documents','서류 발급'],['feedback','민원·설문'],['monitoring','운영모니터링'],['schedule','시간표·자료'],['info','우리 반']];
-export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],monitoring:[['checkup','반 운영 점검'],['counsel','교육생 면담']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
+export const TEACHER_SUBS={attendance:[['board','출결판'],['reason','출결 사유'],['stats','출석률'],['fee','식비·교육비'],['evidence','증빙서류'],['disease','질병 인정'],['dropout','중도탈락']],feedback:[['voc','민원·이슈'],['surveys','만족도 설문']],monitoring:[['checkup','반 운영 점검'],['counsel','교육생 면담']],schedule:[['timetable','시간표'],['materials','강의자료'],['links','바로가기']]};
 // 머리말 아래 한 줄 안내: 이 화면에서 무엇을 하는지(서류 발급·민원은 모듈 머리말 대신 이 줄이 설명합니다)
-const HINTS={dropout:'중도탈락·조기취업을 신청하고 처리 상태와 수료 여부를 확인합니다. 판정·서류·수료 처리는 운영팀이 합니다.',notify:'운영팀이 보낸 알림(서류 발급·민원 답글 등)을 봅니다. 누르면 그 화면으로 갑니다.',today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
+const HINTS={fee:'우리 반 교육비 수령 여부(단위기간별 결석 한도)와 교육일별 식비 유무를 봅니다. 기준과 식비는 운영팀이 정합니다.',dropout:'중도탈락·조기취업을 신청하고 처리 상태와 수료 여부를 확인합니다. 판정·서류·수료 처리는 운영팀이 합니다.',notify:'운영팀이 보낸 알림(서류 발급·민원 답글 등)을 봅니다. 누르면 그 화면으로 갑니다.',today:'오늘 출결 숫자를 확인하고, 아래 할 일을 차례로 끝내 주세요.',board:'오늘 출결을 입력합니다. 맨 앞 칸이 오늘입니다.',reason:'지각·결석 등의 사유와 시간이 빠진 곳을 찾아 채웁니다.',stats:'학생별 출석률과 결석·지각 횟수를 봅니다.',evidence:'인정 결석·지각에 필요한 증빙서류가 빠진 학생을 봅니다.',disease:`질병으로 인정받은 횟수를 봅니다(${DISEASE.max}회까지 인정).`,
  documents:'교육생에게 필요한 출석부·확인서를 신청합니다. 신청하면 운영팀에 바로 알림이 가고, 처리 상황은 아래 목록에서 봅니다.',voc:'수업·시설·출결 등 운영팀에 알릴 일을 접수하고 답글을 주고받습니다. 운영팀이 답하면 위에 알림이 뜹니다.',surveys:'교육생 만족도 설문 결과를 봅니다.',checkup:'오늘 하루 반 운영 상태를 9개 항목(1~5점)으로 점검합니다. 2점 이하가 있으면 운영팀 화면에 확인 필요로 표시됩니다.',counsel:'교육생 면담(상담일지)을 씁니다. 학생마다 1차·2차…로 쌓이고, 모든 학생이 한 번씩 면담받도록 미상담 학생부터 보입니다.',timetable:'우리 반 전체 시간표를 봅니다.',materials:'강의자료를 열어 봅니다.',links:'자주 쓰는 폴더·양식 바로가기입니다.',info:'반장·부반장·총무·앰버서더(교체는 보궐로 기록)와 교육생 명부(중도탈락·조기취업)를 관리합니다.'};
 // 알림함(머리글 종): 탭 줄에는 없는 칸
 const NOTIFY_TAB=['notify','알림'];
@@ -118,6 +118,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   // 운영모니터링(2026-10-21, 김소윤 님 '담임 상담일지' 양식): 반 운영 점검·교육생 면담, 자기 반만. 맨 아래 '내 반 저장 기록'.
   checkup:['./beta2-monitoring.mjs?v=20261021-mo1',(m,slot)=>m.mount(slot,{client,teacherClass:cls,view:'checkup',me:user?.email||''})],
   counsel:['./beta2-monitoring.mjs?v=20261021-mo1',(m,slot)=>m.mount(slot,{client,teacherClass:cls,view:'counsel',me:user?.email||''})],
+  fee:['./beta2-fee.mjs?v=20261022-fe1',(m,slot)=>m.mount(slot,{db,client,teacherClass:cls})], // 출결 › 식비·교육비(보기만, 2026-10-22)
   officers:['./beta2-officers.mjs?v=20261021-ma1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
   // 공통메모 알림은 출결판으로 가서 그 날짜 공통메모를 판 위에 보입니다(teacher-beta.js showDay).
   notify:['./notify-inbox.mjs',(m,slot)=>m.mount(slot,{onGo:l=>{const [tm,ts]=m.teacherTarget(l.tab,l.params);void go(tm,ts||'',{push:true}).then(()=>{if(ts==='board'&&l.params?.date)beta?.showDay?.(l.params.date);});}})]

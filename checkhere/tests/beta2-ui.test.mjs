@@ -242,7 +242,7 @@ test('the teacher preview merges 1기 and 2기 teacher tabs into six tabs with a
   await page.locator('.b2-alertbar:not([hidden])').waitFor();
   assert.match(await page.locator('.b2-alertbar').innerText(),/고다원 4\/6회/);
   await page.locator('[data-main="attendance"]').click();
-  assert.deepEqual(await page.locator('[data-subtab]').allInnerTexts(),['출결판','출결 사유','출석률','증빙서류','질병 인정','중도탈락']);
+  assert.deepEqual(await page.locator('[data-subtab]').allInnerTexts(),['출결판','출결 사유','출석률','식비·교육비','증빙서류','질병 인정','중도탈락']);
   await page.locator('[data-subtab="stats"]').click();
   await page.locator('[data-panel="attendance"] .b2-table').first().waitFor();
   await page.locator('[data-main="documents"]').click();

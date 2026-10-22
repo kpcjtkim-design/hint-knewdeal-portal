@@ -27,7 +27,7 @@ test('a notification for the office goes to the admin role and the named admins 
  assert.throws(()=>notificationDoc({kind:'민원',title:'x'},{from:A1}),/받을 사람/);
  assert.throws(()=>notificationDoc({kind:'',audience:'admins'},{from:A1,admins:[A2]}),/종류/);
  assert.throws(()=>notificationDoc({kind:'민원',audience:'admins'},{from:'',admins:[A2]}),/보내는 사람/);
- assert.deepEqual(KINDS,['서류발급','민원','출결대조 메모','추가 증빙','중도탈락']);
+ assert.deepEqual(KINDS,['서류발급','민원','출결대조 메모','추가 증빙','중도탈락','운영모니터링']);
 });
 
 test('the office list comes from settings when set, otherwise from the cohort admins',()=>{

@@ -129,7 +129,7 @@ service cloud.firestore {
     function notifyRecipient(d){return email() in d.get('to',[]) || (d.get('toRole','')=='admin' && isAdmin()) || ('toClass' in d && ownsClass(d.toClass));}
     function validNotification(d){
       return d.keys().hasOnly(['kind','title','body','cls','link','to','toRole','toClass','from','createdAt','readBy'])
-        && d.kind in ['서류발급','민원','출결대조 메모','추가 증빙','중도탈락']
+        && d.kind in ['서류발급','민원','출결대조 메모','추가 증빙','중도탈락','운영모니터링']
         && d.title is string && d.title.size() > 0 && d.title.size() <= 80
         && d.body is string && d.body.size() <= 160
         && d.cls is string && (d.cls == '' || validClass(d.cls))
@@ -249,7 +249,8 @@ service cloud.firestore {
     // 반별 문서(attendanceBeta_{반}_{날짜} 등)·체크히어 중계·기능 스위치는 관리자만 읽습니다.
     match /settings/{settingId}{
       // reasonCatalog: 관리자 사유 목록 설정(2026-10-20). 담임은 읽기만, 쓰기는 revision을 1씩 올리는 관리자만.
-      allow read: if isAdmin() || (isTeacher() && settingId in ['global','timetableBetaCatalog','surveyBetaConfig','surveyAutoSync','reasonCatalog']);
+      // allowanceRule(교육비 기준)·mealPlan(식비 표): 관리자가 쓰고 담임은 출결 › 식비·교육비에서 읽기만(10/22 사용자 요청, 규칙 v5).
+      allow read: if isAdmin() || (isTeacher() && settingId in ['global','timetableBetaCatalog','surveyBetaConfig','surveyAutoSync','reasonCatalog','allowanceRule','mealPlan']);
       allow create, update: if isAdmin() && (settingId != 'reasonCatalog' || (
         request.resource.data.keys().hasOnly(['catalog','rev','updatedBy','updatedAt'])
         && request.resource.data.catalog is map && request.resource.data.catalog.cats is list
