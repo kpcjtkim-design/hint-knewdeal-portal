@@ -27,10 +27,10 @@ import {createCheckHereSync,STATUS_ACTIONS,timeDeletePlan} from './beta2-checkhe
 import {RULES,seconds} from './checkhere/rules.mjs';
 // 사유 드롭다운(사용자 요청 2026-10-20): 분류 → 세부(인적성·자격증은 종류)로 표준 글, 직접 입력도 됨. 취업박람회 인정 출결은 추가 증빙(기업면접 확인서) 배지·거르기·알림.
 import {tidyReason,isJobFair,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_DOC} from './attendance-reason-catalog.mjs';
-import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText,OFFDAY_RECOGNIZED_NOTE} from './reason-pick.mjs'; // 사유 칸·경고는 담임 출결판과 같은 공용 도우미(2026-10-20)
+import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText,OFFDAY_RECOGNIZED_NOTE,diseaseUsed,diseaseFullText,isDiseaseReason} from './reason-pick.mjs'; // 사유 칸·경고는 담임 출결판과 같은 공용 도우미(2026-10-20)
 import {notify} from './notify.mjs';
 import {linkFor} from './notify-core.mjs';
-import {isIsoDate,BASE_RULE} from './cohort.mjs';
+import {isIsoDate,BASE_RULE,DISEASE} from './cohort.mjs';
 
 const FILTERS=[['all','전체'],['exceptions','출석 외'],['diff','체크히어 불일치'],['extra','추가 증빙']]; // 추가 증빙: 취업박람회 인정 출결 중 증빙 「확인」 전
 const extraOpen=r=>{const x=extraEvidence(r?.rec);return !!x&&!x.done;};
@@ -167,11 +167,14 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  // 분류·세부(인적성·자격증 종류) 드롭다운. 세부가 없는 분류(기타)는 하나만.
  // 사유 칸(사용자 추가 지시 2026-10-20): 칸 자체가 드롭다운(지금까지 쓴 사유). 인적성·자격증은 바로 옆에 종류 드롭다운(자격증 X 종류는 인정 출결에서 막음)(기타면 종류 직접 입력), 목록에 없으면 '기타' → 직접 입력 칸.
  // 출석 기본 행(기록 없음)은 사유를 저장하지 않아 드롭다운을 잠급니다. customOpen: '기타'를 고른 학생(빈 글이어도 직접 입력 칸을 둠).
- function pickHtml(row,v,n,noReason){return reasonPickHtml({reason:v.reason,type:v.type,cls,name:row.name,custom:customOpen.has(row.name),locked:noReason});}
+ // 질병 인정 한도(사용자 2026-10-23 '6회 초과 질병인정은 아예 선택이 안되도록'): 그 학생의 다른 날 질병 인정(출결원장)이 DISEASE.max면 고를 수 없고 저장도 막음
+ const diseaseCount=name=>diseaseUsed((bundle?.ledger||[]).filter(r=>String(r.cls)===String(cls)&&r.name===name).map(r=>({date:r.date,type:r.type,reason:r.reason})),date);
+ const diseaseBlock=(name,v)=>recognizedType(v.type)&&isDiseaseReason(v.reason)&&diseaseCount(name)>=DISEASE.max;
+ function pickHtml(row,v,n,noReason){return reasonPickHtml({reason:v.reason,type:v.type,cls,name:row.name,custom:customOpen.has(row.name),locked:noReason,diseaseFull:diseaseCount(row.name)>=DISEASE.max});}
  // 사유 안내: 취업박람회(저장 전 글 기준) 추가 증빙(저장된 기록에 이미 추가 증빙 배지가 있으면 생략), 인정 출결인데 인정 분류가 아님,
  // 교육일이 아닌 날의 인정 출결(막지 않음, 17반 테스트반은 모든 날을 교육일로 보므로 없음)
  // 중복은 입실·퇴실·외출 가운데 둘 이상인지 입력하는 동안 안내(저장은 missing()이 dupCheck로 막음, beta2-core DUP_RULE)
- function pickNote(row){const v=valuesOf(row),w=dupWarning(v.type,v);return (w?`<span class="b2-xnote" style="display:block" data-dup-note>${esc(w)}</span>`:'')+reasonNotesHtml({type:v.type,reason:v.reason,cls,offDay:offDay(date),rec:row.rec});}
+ function pickNote(row){const v=valuesOf(row),w=dupWarning(v.type,v);return (diseaseBlock(row.name,v)?`<span class="b2-xnote" style="display:block;color:#b42318" data-disease-full>${esc(diseaseFullText(diseaseCount(row.name),DISEASE.max))}</span>`:'')+(w?`<span class="b2-xnote" style="display:block" data-dup-note>${esc(w)}</span>`:'')+reasonNotesHtml({type:v.type,reason:v.reason,cls,offDay:offDay(date),rec:row.rec});}
  function inlineHtml(row){
   const v=valuesOf(row),valid=B2_TYPES.includes(v.type),need=valid?neededTimes(v.type,ALL):{},n=esc(row.name);
   const time=(k,label)=>`<label class="b2-mini">${label}<input type="time" data-inline="${k}" value="${esc(v[k]||'')}" aria-label="${n} ${label} 시간"></label>`,dup=v.type===DUP_TYPE; // 중복: 입실(지각)·퇴실(조퇴)·외출을 함께
@@ -523,8 +526,9 @@ export async function mount(host,{db,user,classes,client,selected,context}){
  }
 
  // 입력 확인(beta2.gs b2Validate_와 같은 기준). 못 지나가면 '입력 필요: …'와 그 칸
- function missing(v){
+ function missing(v,name=''){
   if(!B2_TYPES.includes(v.type))return {field:'type',text:'입력 필요: 유형'};
+  if(name&&diseaseBlock(name,v))return {field:'reason',text:`질병 인정 한도(${DISEASE.max}회)를 넘습니다`};
   // 중복: 시트 b2Save와 같은 기준으로 저장 전에 막음(외출 짝·순서, 입실·퇴실·외출 가운데 둘 이상, beta2-core dupCheck)
   if(v.type===DUP_TYPE){const d=dupCheck(v);if(d)return d;}
   const need=requiredTimes(v.type);
@@ -545,7 +549,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const cur=drafts.get(name),next={...valuesOf(row),...change,base:cur?cur.base:(row.rec?.sig||'')};
   if(sameAs(next,saved(row))){drafts.delete(name);notes.delete(name);invalid.delete(name);return;}
   drafts.set(name,next);
-  if(invalid.has(name)){const miss=missing(next);if(miss)notes.set(name,miss.text);else{notes.delete(name);invalid.delete(name);}}
+  if(invalid.has(name)){const miss=missing(next,name);if(miss)notes.set(name,miss.text);else{notes.delete(name);invalid.delete(name);}}
  }
  // 사유 드롭다운: 분류를 고르면 첫 세부(인적성은 '인적성' → 종류 칸으로), 세부·종류를 고르면 '분류(세부)', 기타는 괄호 안에 직접 씁니다('인적성()' → 저장 때 빈 괄호는 지움).
  // 사유 드롭다운에서 고르기(초안만, 저장은 모아서): 표준 글은 그대로, 인적성은 옆 종류 칸으로, '기타'는 직접 입력 칸으로(표준 글이던 칸은 비움, 직접 쓴 글은 그대로).
@@ -599,7 +603,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
    if(!drafts.has(row.name))continue;
    const v=valuesOf(row);
    if(sameAs(v,saved(row))){drafts.delete(row.name);notes.delete(row.name);invalid.delete(row.name);paintMsg(row.name);continue;}
-   const miss=missing(v);
+   const miss=missing(v,row.name);
    if(miss){notes.set(row.name,miss.text);invalid.add(row.name);bad.push([row.name,miss.field]);}else{notes.delete(row.name);invalid.delete(row.name);todo.push(row.name);}
    paintMsg(row.name);
   }
@@ -656,7 +660,7 @@ export async function mount(host,{db,user,classes,client,selected,context}){
   const rec=row.rec,d0=drafts.get(name);
   if(!d0)return 'none';
   const v=valuesOf(row);if(sameAs(v,saved(row))){drafts.delete(name);return 'none';}
-  const miss=missing(v);if(miss){notes.set(name,miss.text);invalid.add(name);paintMsg(name);return false;}
+  const miss=missing(v,name);if(miss){notes.set(name,miss.text);invalid.add(name);paintMsg(name);return false;}
   // before: 처음 고칠 때의 지문(그사이 바뀐 행은 서버가 CONFLICT로 거절). 증빙·반려 사유도 초안 값(고치지 않았으면 저장된 값, 출석이면 비움)
   const payload={cls,name,date,type:v.type,...neededTimes(v.type,v),reason:tidyReason(v.reason),ev:evOf(v),evr:evrOf(v),before:d0.base??(rec?.sig||'')};
   const prevRow=rec?pick(rec):null;

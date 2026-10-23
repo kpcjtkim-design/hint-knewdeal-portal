@@ -11,9 +11,9 @@
 // 체크히어 메모 추천(복사)만. 입실·퇴실·외출 시간은 저장된 값을 보기만 하고, 저장할 때는 저장된 시간을 그대로 다시 보냅니다(portalSave는 빈 칸을 ''로 덮으므로).
 // 아무 날짜 기록(사용자 결정 2026-10-20 '수정 자체는 언제든 유연하게'): 시트가 주는 날짜(portalData.days)는 오늘까지의 교육일이라, 교육일이 아닌 날·아직 오지 않은 날의
 // 원장 기록(portalData.recs)은 출결판에 칸을 더해 보이고, 「다른 날짜」 칸으로 아무 날이나 열어 기록합니다(시트 출결판 탭에는 교육일만 나옴).
-import {isIsoDate,isTrainingDay} from './cohort.mjs';
+import {isIsoDate,isTrainingDay,DISEASE} from './cohort.mjs';
 import {tidyReason,STANDARD,extraEvidence,extraEvidenceStarted,extraNotice,EXTRA_LABEL} from './attendance-reason-catalog.mjs';
-import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText} from './reason-pick.mjs';
+import {reasonPickHtml,reasonNotesHtml,pickReasonText,kindInputText,diseaseUsed,diseaseFullText,isDiseaseReason} from './reason-pick.mjs';
 import {DUP_TYPE,DUP_RULE,dupParts,sheetWait,isSheetBusy,sheetBusyText} from './beta2-core.mjs'; // '중복' 규칙(지각·조퇴·외출 가운데 둘 이상)·시트 업데이트 대기 안내는 관리자 출결대조와 같은 곳
 export function mountTeacherBeta(el, OPT) {
   OPT = OPT || {};
@@ -272,9 +272,13 @@ export function mountTeacherBeta(el, OPT) {
     const r=tidyReason(f.r)||'사유';if(f.type==='인정출석')return'(인정출석)'+r+'_담임:'+t;if(f.type==='인정지각')return'(인정지각)'+r+'_담임:'+t+'('+tm(f.inT)+')';if(f.type==='인정조퇴')return'(인정조퇴)'+r+'_담임:'+t+'('+tm(f.outT)+')';return'(인정외출)'+r+'_담임:'+t+'('+tm(f.oa)+'~'+tm(f.ob)+')';}
   // 사유 칸(관리자 출결대조와 같은 reason-pick.mjs): 드롭다운 하나 + 옆 종류 드롭다운 + 기타 직접 입력
   const recOf=()=>S.sel&&S.d.recs[S.sel.n+'|'+S.sel.day];
-  function pickHtml(){return reasonPickHtml({reason:S.f.r,type:S.f.type,cls:S.cls,name:S.sel.n,custom:S.custom});}
+  // 질병 인정 한도(사용자 2026-10-23): 그 학생의 다른 날 질병 인정 횟수(출결판 기록 recs)가 DISEASE.max면 병원·질병을 고를 수 없고 저장도 막습니다.
+  const usedDisease=()=>{if(!S.sel)return 0;const p=S.sel.n+'|';return diseaseUsed(Object.keys(S.d.recs).filter(k=>k.indexOf(p)===0).map(k=>({date:k.slice(p.length),type:S.d.recs[k].type,reason:S.d.recs[k].r})),S.sel.day);};
+  const diseaseFull=()=>usedDisease()>=DISEASE.max;
+  const diseaseBlocked=f=>String(f.type||'').indexOf('인정')===0&&isDiseaseReason(f.r)&&diseaseFull();
+  function pickHtml(){return reasonPickHtml({reason:S.f.r,type:S.f.type,cls:S.cls,name:S.sel.n,custom:S.custom,diseaseFull:diseaseFull()});}
   // 경고(고르는 즉시, 저장은 막지 않음): 관리자 출결대조와 같은 글 + 인정 출결 사유 없음
-  function pickNote(){const f=S.f,r=recOf();return reasonNotesHtml({type:f.type,reason:f.r,cls:S.cls,offDay:offDay(S.sel.day),rec:r&&{type:r.type,reason:r.r,ev:r.ev},required:true});}
+  function pickNote(){const f=S.f,r=recOf();return (diseaseBlocked(f)?'<span class="b2-err" style="display:block" data-disease-full>'+esc(diseaseFullText(usedDisease(),DISEASE.max))+'</span>':'')+reasonNotesHtml({type:f.type,reason:f.r,cls:S.cls,offDay:offDay(S.sel.day),rec:r&&{type:r.type,reason:r.r,ev:r.ev},required:true});}
   // 증빙(보기만): 담임은 증빙 상태를 정하지 않습니다(portalSave에 증빙 칸 없음, 운영팀이 출결대조에서 확인). 인정 출결이면 비어 있어도 '증빙 미제출'.
   function evHtml(){
     const f=S.f,st=String(f.ev||'').trim()||(String(f.type).indexOf('인정')===0?'미제출':''),r=recOf(),x=r&&extraEvidence({type:r.type,reason:r.r,ev:r.ev});
@@ -307,7 +311,7 @@ export function mountTeacherBeta(el, OPT) {
     if(f.type===NONE)h+='<div class="note" style="margin-top:10px" data-none-note>해당없음(현황 없음) · 사유·증빙 없이 저장되고 출석률·결석에 들지 않습니다.</div>';
     if(f.type===DUP)h+='<div class="note" style="margin-top:10px" data-dup-note>'+DUP_RULE.label+' · 한 날에 지각·조퇴·외출 가운데 둘 이상입니다. 결석이 아니라 출석으로 세고, 사유는 고르지 않아도 됩니다.</div>';
     if(f.type&&f.type!=='출석'&&f.type!==NONE){
-      h+='<div class="lab">'+(f.type.indexOf('인정')===0?'사유 (필수)':'사유')+' · 고르면 바로 저장 · 직접 입력은 Enter</div><div class="rp" id="rp">'+pickHtml()+'</div><div class="evb" id="evb">'+evHtml()+'</div><div class="rn" id="rn">'+pickNote()+'</div><div class="qr">'+QUICK.filter(q=>STANDARD.has(q)).map(q=>'<button data-q="'+q+'">'+q+'</button>').join('')+'</div>';
+      h+='<div class="lab">'+(f.type.indexOf('인정')===0?'사유 (필수)':'사유')+' · 고르면 바로 저장 · 직접 입력은 Enter</div><div class="rp" id="rp">'+pickHtml()+'</div><div class="evb" id="evb">'+evHtml()+'</div><div class="rn" id="rn">'+pickNote()+'</div><div class="qr">'+QUICK.filter(q=>STANDARD.has(q)).map(q=>{const off=f.type.indexOf('인정')===0&&isDiseaseReason(q)&&diseaseFull();return '<button data-q="'+q+'"'+(off?' disabled title="질병 인정 한도('+DISEASE.max+'회)를 다 썼습니다"':'')+'>'+q+'</button>';}).join('')+'</div>';
       h+=timesView(f);
       const m=memo();if(m)h+='<div class="memo"><span id="mm">'+esc(m)+'</span><button id="cp">복사</button></div>';
     }
@@ -333,6 +337,7 @@ export function mountTeacherBeta(el, OPT) {
   async function save(){
     clearTimeout(S.timer);S.timer=null;if(!S.sel)return;
     const sel=S.sel,f=Object.assign({},S.f,{r:tidyReason(S.f.r)}),before=S.d.recs[sel.n+'|'+sel.day];
+    if(diseaseBlocked(f)){st(diseaseFullText(usedDisease(),DISEASE.max),'err');return;} // 질병 인정 한도 넘는 저장은 보내지 않음
     if(Q.on)return qSave(sel,f,before); // 대기열: 바로 칸에 보이고 모아 보냄
     st('저장 중…');
     // 시간은 담임이 고치지 않으므로 저장된 값(없으면 빈 값)을 그대로 보냅니다. portalSave는 보내지 않은 시간을 ''로 덮어 지우기 때문입니다.

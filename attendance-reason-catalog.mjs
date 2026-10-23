@@ -331,14 +331,15 @@ export function reasonPick(text,{custom=false}={}){
 }
 // 사유 드롭다운 <option>: 분류마다 하나(옆 목록 분류는 값 = 분류 키, 이름 = 분류 이름 · 세부가 하나뿐이면 값 = 그 저장 글), 인정 안 되는 분류·세부는 '(인정 안 됨) ', 끝에 '기타 (직접 입력)'.
 // 인정 출결이면 막힌 세부(일반건강검진 등)는 옆 칸에서 고를 수 없습니다(세부가 하나뿐인 분류면 여기서 막음, 이미 저장된 값이면 그대로 보임). catalog를 주면 그 목록으로 그립니다(관리자 미리보기).
-export function reasonOptions(main='',{type='',blank='사유 고르기',catalog=null}={}){
- if(catalog)return withReasonCatalog(catalog,()=>reasonOptions(main,{type,blank}));
+// diseaseFull: 그 학생이 다른 날 질병 인정을 이미 한도(cohort DISEASE.max, 6회)만큼 받았으면 인정 출결에서 질병 분류를 고를 수 없게(사용자 2026-10-23 '6회 초과 질병인정은 아예 선택이 안되도록')
+export function reasonOptions(main='',{type='',blank='사유 고르기',catalog=null,diseaseFull=false}={}){
+ if(catalog)return withReasonCatalog(catalog,()=>reasonOptions(main,{type,blank,diseaseFull}));
  const lock=anyRecognized(type);
  return `<option value="" ${main?'':'selected'}>${esc(blank)}</option>`+C.visible.map(c=>{
-  if(c.side)return `<option value="${esc(c.key)}" ${c.key===main?'selected':''}>${esc(shown(c))}</option>`;
+  if(c.side){const full=lock&&diseaseFull&&c.disease&&c.key!==main;return `<option value="${esc(c.key)}" ${c.key===main?'selected':''}${full?' disabled':''}>${esc(shown(c))}${full?' (질병 인정 한도 다 씀)':''}</option>`;}
   const s=c.subs.find(x=>!x.hidden);if(!s)return '';
-  const ok=subRecognized(c,s),off=lock&&!!c.recognized&&s.recognized===false&&s.text!==main;
-  return `<option value="${esc(s.text)}" ${s.text===main?'selected':''}${off?' disabled':''}>${ok?'':`${NOT_RECOGNIZED} `}${esc(c.label)}</option>`;
+  const ok=subRecognized(c,s),full=lock&&diseaseFull&&(c.disease||s.disease)&&s.text!==main,off=full||lock&&!!c.recognized&&s.recognized===false&&s.text!==main;
+  return `<option value="${esc(s.text)}" ${s.text===main?'selected':''}${off?' disabled':''}>${ok?'':`${NOT_RECOGNIZED} `}${esc(c.label)}${full?' (질병 인정 한도 다 씀)':''}</option>`;
  }).join('')+`<option value="${OTHER}" ${main===OTHER?'selected':''}>기타 (직접 입력)</option>`;
 }
 // 인정 출결인데 인정 분류가 아니면(교통·개인사정·취업활동) 짧은 안내

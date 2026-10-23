@@ -3,7 +3,7 @@
 // 목록·판정은 attendance-reason-catalog.mjs(settings/reasonCatalog가 있으면 그 목록)를 그대로 쓰고, 여기서는 칸의 HTML·고른 값 → 저장 글·경고 글만 만듭니다.
 // 칸 모양: 사유 드롭다운 하나(data-inline="rmain") + 옆 목록이 있는 분류(인적성·자격증 종류, 세부가 둘 이상인 병원·경조사·공가·예비군·교통·취업활동·개인사정)는
 // 바로 옆 종류 드롭다운(rsub) + 옆 칸 기타면 직접 입력(rapt, data-kind, '분류(글)') + '기타'면 사유 직접 입력(reason).
-import {reasonPick,reasonOptions,subOptions,composeReason,tidyReason,typeWarning,reasonChecks,splitReason,STANDARD,OTHER,isJobFair,extraEvidence,EXTRA_DOC} from './attendance-reason-catalog.mjs';
+import {reasonPick,reasonOptions,subOptions,composeReason,tidyReason,typeWarning,reasonChecks,splitReason,STANDARD,OTHER,isJobFair,extraEvidence,EXTRA_DOC,isDiseaseText} from './attendance-reason-catalog.mjs';
 import {isTestClass} from './cohort.mjs';
 
 export const OFFDAY_RECOGNIZED_NOTE='교육일이 아닌 날의 인정 출결은 통계·증빙에 들지 않습니다'; // 사용자 2026-10-20 '애초에 교육일 날만 인정출결이 되는거 아닌지?': 막지 않고 경고
@@ -12,9 +12,14 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const recognized=t=>String(t||'').startsWith('인정');
 
 // 사유 칸 HTML. name: 학생 이름(aria-label 앞말), custom: '기타'를 고른 상태 지키기, locked: 출석 기본 행처럼 사유를 저장하지 않는 칸.
-export function reasonPickHtml({reason='',type='',cls='',name='',custom=false,locked=false}={}){
+// 질병 인정 한도(cohort DISEASE.max, 사용자 2026-10-23 '6회 초과 질병인정은 아예 선택이 안되도록'): 다른 날 질병 인정이 한도면 고를 수 없고 저장도 막습니다.
+export const diseaseFullText=(n,max)=>`질병 인정은 ${max}회까지입니다(이 학생은 이미 ${n}회) · 병원·질병 사유로 인정 출결을 더 넣을 수 없습니다`;
+// records: [{date,type,reason}] 그 학생 기록, except: 지금 고치는 날 → 다른 날 질병 인정 횟수
+export const diseaseUsed=(records,except='')=>(records||[]).filter(r=>r&&r.date!==except&&recognized(r.type)&&isDiseaseText(r.reason)).length;
+export const isDiseaseReason=isDiseaseText;
+export function reasonPickHtml({reason='',type='',cls='',name='',custom=false,locked=false,diseaseFull=false}={}){
  const s=reasonPick(reason,{custom}),n=name?`${esc(name)} `:'',need=recognized(type)?'사유 (필수)':'사유',off=type==='해당없음'?'해당없음(현황 없음)은 사유가 없습니다':'출석은 사유를 저장하지 않습니다(유형을 바꾸면 저장)';
- return `<select class="b2-rmain" data-inline="rmain" aria-label="${n}사유" ${locked?`disabled title="${off}"`:`title="${esc(reason||need)}"`}>${reasonOptions(s.main,{type,blank:locked?'사유 없음':need})}</select>`
+ return `<select class="b2-rmain" data-inline="rmain" aria-label="${n}사유" ${locked?`disabled title="${off}"`:`title="${esc(reason||need)}"`}>${reasonOptions(s.main,{type,blank:locked?'사유 없음':need,diseaseFull})}</select>`
   +(s.kind?`<select class="b2-rsub" data-inline="rsub" aria-label="${n}${esc(s.kind)} 종류" title="${esc(s.kind)} 종류">${subOptions(s.kind,s.apt,{type,cls})}</select>`:'')
   +(s.kind&&s.input?`<input class="b2-reason" data-inline="rapt" data-kind="${esc(s.kind)}" maxlength="40" value="${esc(s.custom)}" aria-label="${n}${esc(s.kind)} 종류 직접 입력" placeholder="종류 직접 입력">`:'')
   +(s.main===OTHER?`<input class="b2-reason" data-inline="reason" maxlength="300" value="${esc(reason)}" aria-label="${n}사유 직접 입력" placeholder="${need} 직접 입력" title="${esc(reason)}">`:'');
