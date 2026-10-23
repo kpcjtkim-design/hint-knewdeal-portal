@@ -92,12 +92,13 @@ test('teachers see plain tab names, a "오늘 · 날짜 · 반" header, a today-
   assert.equal(await page.locator('.teacher-context-bar h2').innerText(),'1반 서울(관악구)_모빌리티 AI_서울대');
   await page.locator('.card.today .sec',{hasText:'오늘 출결 10/29(목)'}).waitFor();
   assert.match(await page.getByText('아직 입력하지 않은 학생').innerText(),/아직 입력하지 않은 학생 1명/);
-  // 오늘 할 일의 첫 버튼이 출결판으로 갑니다(오늘 칸이 맨 앞, '오늘' 표시).
+  // 오늘 할 일의 첫 버튼이 출결판으로 갑니다(날짜는 왼쪽에서 오른쪽으로 늦어지고 오늘 칸에 '오늘' 표시 · 사용자 2026-10-23).
   await page.getByRole('button',{name:'출결 입력하기'}).click();
   await same(page,'attendance','board');
   assert.equal(await head.locator('h2').innerText(),'출결판');
   assert.equal(await head.locator('.t2-ctx').innerText(),'오늘 · 10/29(목) · 1반 서울(관악구)_모빌리티 AI_서울대');
-  assert.equal(await page.locator('table.g thead th').nth(1).innerText(),'10/29(목)\n오늘');
+  assert.equal(await page.locator('table.g thead th.today').innerText(),'10/29(목)\n오늘');
+  assert.equal(await page.locator('table.g thead th').last().innerText(),'10/29(목)\n오늘','오늘이 가장 늦은 날이면 맨 오른쪽');
   for(const [m,s] of [['attendance','reason'],['documents'],['feedback','voc'],['schedule','links'],['info']]){
    await pick(page,m,s);
    assert.equal(await head.locator('.t2-ctx').innerText(),'오늘 · 10/29(목) · 1반 서울(관악구)_모빌리티 AI_서울대',m);

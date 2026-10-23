@@ -288,7 +288,7 @@ test('담임 출결판 아무 날짜(사용자 결정 2026-10-20): 교육일이 
  const portal={...PORTAL,recs:{...PORTAL.recs,'고다원|2026-11-01':R('결석'),'김동진|2026-11-09':R('출석')}};
  await page('/teacher.html',async(p,posts)=>{
   const root=p.locator('#root');await root.locator('table.g').waitFor();
-  assert.deepEqual(await root.locator('table.g thead th[data-day]').evaluateAll(t=>t.map(x=>x.dataset.day)),['2026-11-09','2026-11-05','2026-11-04','2026-11-01'],'최근 먼저, 원장 기록이 있는 일요일·미래 교육일 칸을 더함');
+  assert.deepEqual(await root.locator('table.g thead th[data-day]').evaluateAll(t=>t.map(x=>x.dataset.day)),['2026-11-01','2026-11-04','2026-11-05','2026-11-09'],'이른 날부터 오른쪽으로(사용자 2026-10-23), 원장 기록이 있는 일요일·미래 교육일 칸을 더함');
   assert.match(await root.locator('th[data-day="2026-11-01"]').innerText(),/교육일 아님/);assert.match(await root.locator('th[data-day="2026-11-09"]').innerText(),/예정/);
   assert.match(await root.locator('th[data-day="2026-11-05"]').innerText(),/기준일|오늘/,'기준일 표시는 그대로 기준일 칸에');
   assert.equal(await root.locator('select[data-n="고다원"][data-d="2026-11-01"]').inputValue(),'결석');
