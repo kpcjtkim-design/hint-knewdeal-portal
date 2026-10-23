@@ -6,7 +6,7 @@ import * as N from '../../lib/cohort.cjs';
 
 // 2기 기수 설정(cohort.json 원본, cohort.mjs 사본·함수, lib/cohort.cjs api용)이 사용자 결정(2026-10-19)과 같은지 봅니다.
 const json=JSON.parse(readFileSync(new URL('../../cohort.json',import.meta.url),'utf8'));
-const NAMES=['서울(관악구)_모빌리티 AI_서울대','서울(성동구)_제조지능화_한양대','대전(유성구)_모빌리티 AI_후인원A','대전(유성구)_제조지능화_후인원B','청주(청원구)_제조지능화_청주','대구(동구)_모빌리티 AI_KPC대구지부','대구(중구)_모빌리티 AI_마이크로웨이브A','대구(중구)_제조지능화_마이크로웨이브B','부산(금정구)_모빌리티 AI_부산대','부산(해운대구)_모빌리티 AI_아르피나A','부산(해운대구)_제조지능화_아르피나B','부산(해운대구)_제조지능화_아르피나C','울산(북구)_제조지능화_울산','광주(북구)_모빌리티 AI_전남대','광주(서구)_제조지능화_기아오토랜드A','광주(서구)_제조지능화_기아오토랜드B'];
+const NAMES=['서울(관악구)_모빌리티 AI_서울대','서울(성동구)_제조지능화_한양대','대전(유성구)_모빌리티 AI_후인원A','대전(유성구)_제조지능화_후인원B','청주(청원구)_제조지능화_청주','대구(중구)_모빌리티 AI_마이크로웨이브A','대구(중구)_제조지능화_마이크로웨이브B','대구(동구)_제조지능화_대구상공회의소','부산(해운대구)_모빌리티 AI_아르피나A','부산(해운대구)_제조지능화_아르피나B','부산(해운대구)_제조지능화_아르피나C','부산(금정구)_제조지능화_부산대','울산(북구)_제조지능화_울산','광주(북구)_모빌리티 AI_전남대','광주(서구)_제조지능화_기아오토랜드A','광주(서구)_제조지능화_기아오토랜드B'];
 
 test('cohort.mjs carries an exact copy of cohort.json, and the api reader agrees',()=>{
  assert.deepEqual(JSON.parse(JSON.stringify(C.COHORT)),json,'node tools/build-cohort.mjs 로 사본을 맞춰 주세요');
@@ -14,15 +14,15 @@ test('cohort.mjs carries an exact copy of cohort.json, and the api reader agrees
  assert.equal(N.TEACHER_ACCESS,C.TEACHER_ACCESS);assert.deepEqual(N.ADMINS,[...C.ADMINS]);
 });
 
-test('16 classes in the user region order with official names and capacity 30 (class 4: 31)',()=>{
+test('16 classes in the user region order with official names and capacity from the final list (2026-10-22, 511)',()=>{
  assert.equal(C.REAL_CLASS_COUNT,16);assert.deepEqual([...C.REAL_CLASS_IDS],Array.from({length:16},(_,i)=>String(i+1)));
  assert.deepEqual(C.REAL_CLASSES.map(c=>c.name),NAMES);
  assert.deepEqual(C.REAL_CLASSES.map(c=>c.official),NAMES.map(n=>'[현대자동차그룹 HINT] '+n));
  assert.deepEqual(C.REAL_CLASSES.map(c=>c.region),['서울','서울','충청','충청','충청','대경','대경','대경','동남','동남','동남','동남','동남','호남','호남','호남']);
  assert.deepEqual([...new Set(C.REAL_CLASSES.map(c=>c.course))],['모빌리티 AI','제조지능화']);
- assert.deepEqual(C.REAL_CLASSES.filter(c=>c.course==='모빌리티 AI').map(c=>c.id),['1','3','6','7','9','10','14']);
- assert.deepEqual(C.REAL_CLASSES.map(c=>c.capacity),C.REAL_CLASS_IDS.map(id=>id==='4'?31:30));
- assert.equal(C.classLabel('12'),'12반 · 제조지능화 · 아르피나C');assert.equal(C.classLabel('17'),'17반 · 테스트반 (시험용)');assert.equal(C.classLabel('18'),'18반');
+ assert.deepEqual(C.REAL_CLASSES.filter(c=>c.course==='모빌리티 AI').map(c=>c.id),['1','3','6','9','14']);
+ assert.deepEqual(C.REAL_CLASSES.map(c=>c.capacity),[30,30,21,40,35,30,40,40,20,35,35,35,40,15,33,32]);assert.equal(C.REAL_CLASSES.reduce((n,c)=>n+c.capacity,0),511);
+ assert.equal(C.classLabel('12'),'12반 · 제조지능화 · 부산대');assert.equal(C.classLabel('17'),'17반 · 테스트반 (시험용)');assert.equal(C.classLabel('18'),'18반');
  // 반 구분어는 서로 겹치지 않아야 명단 '반배정' 문구에서 한 반만 고릅니다.
  for(const a of C.REAL_CLASSES)assert.equal(C.REAL_CLASSES.filter(b=>b.official.includes(a.rosterKey)).length,1,a.rosterKey);
 });

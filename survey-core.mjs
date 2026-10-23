@@ -25,7 +25,7 @@ export function eventLessons(event,entries){
 }
 export function eventsForClass(catalog,classId,entries){return catalog.events.filter(e=>e.classId===String(classId)&&!HOLIDAY_TITLE.test(e.title)).map(e=>{const matches=eventLessons(e,entries),dates=[...new Set(matches.map(x=>x.date))].sort();return {...e,originalDate:e.date,date:dates.at(-1)||e.date,lessonIds:matches.map(x=>x.id),scheduleMatched:!!matches.length};});}
 // Common modules surveyed once per class at the module's last day. 현직자특강 has one form per track.
-// 2기 과정: 모빌리티 AI(1·3·6·7·9·10·14반)·제조지능화. 반 과정이 비면 cohort 반 정보로 고릅니다.
+// 2기 과정: 모빌리티 AI(1·3·6·9·14반)·제조지능화. 반 과정이 비면 cohort 반 정보로 고릅니다.
 const mobilityClasses=new Set(CLASSES.filter(c=>/모빌리티/.test(c.course)).map(c=>c.id));
 const HOLIDAY_TITLE=new RegExp(['대체휴무',...HOLIDAY_NAMES].map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'));
 const moduleSurveys=new Set(['현직자특강','진로취업','문화체험']);

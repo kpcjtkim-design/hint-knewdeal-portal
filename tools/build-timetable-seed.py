@@ -7,7 +7,12 @@
       --sheet 1007 <261007 파일> "261007_K-뉴딜_아카데미_2기 일정표.xlsx" --version 20261014 --conflicts tt2-conflicts.csv
 
 - 반·기간·휴일은 cohort.json(2기 16반, 2026-10-28~2027-01-22)에서 읽습니다. 엑셀 반 열은 2행 장소·4행 과정(트랙 번호)으로 찾고,
-  맞는 반이 없거나 둘 이상이면 멈춥니다. 대구상공회의소 열은 사용자 결정으로 2기에서 뺐습니다.
+  맞는 반이 없거나 둘 이상이면 멈춥니다(DROPPED에 적은 폐반 열은 뺍니다). 한 판에만 있는 반(8반 대구상공회의소: 261007판에만 열)은 그 판 값만 씁니다.
+- 반 짝(사용자 확정 명단 2026-10-22 '2기 반별 교육장 담임.xlsx', 사용자 '너가 보고 매치'): 같은 과정 → 같은 교육장 → 같은 이름 → 같은 권역 남은 열.
+  6반(마이크로웨이브A 과정명, 강의실 KPC) ← 대구무역회관(KPC) 모빌리티 열, 7반 ← 마이크로웨이브 제조지능화 열, 8반 ← 대구상공회의소 열(1007판),
+  9반(아르피나A) ← 아르피나 모빌리티 열, 10반(아르피나B 제조지능화, 최신 명단 '본과정' 탭) ← 아르피나 제조지능화 1 열, 11반(아르피나C) ← 아르피나 제조지능화 2 열.
+  12반(부산대 제조지능화)은 맞는 열이 없어(일정표의 부산대 열은 모빌리티) 일정 없이 둡니다(NO_SOURCE, 운영팀 새 일정 받으면 채움).
+  마이크로웨이브 모빌리티 열·부산대 모빌리티 열은 확정 명단에 없는 반이라 뺍니다.
 - 머리글: A열 '날짜' 행 아래 '과정명·시간·강사명' 행, 그 다음 행부터 날짜별 한 줄(주말·휴일 줄 포함). 반 묶음은 '시간'·'강사명'이 이어지는 3칸.
 - 여러 판 합치기(사용자 결정 2026-10-19 '두 개 절충'): 반·날짜 칸마다 과목·시간·강사를 따로 봅니다. 한쪽만 있으면 그 값,
   둘 다 같으면 그 값(출처 both), 둘 다 있고 다르면 첫 --sheet(최신) 값 + 충돌 표시(entry.review, --conflicts CSV). 출처는 entry.origin.
@@ -26,11 +31,17 @@ COHORT = json.loads((ROOT / 'cohort.json').read_text(encoding='utf-8'))
 CLASSES = {c['id']: c for c in COHORT['classes'] if not c.get('test')}  # 17반 시험용 테스트반은 일정표에 없음
 HOLIDAYS = {h['date']: h['name'] for h in COHORT['holidays']}
 # 반 → (2행 장소 정규식, 4행 트랙 번호). 과정(모빌리티 AI·제조지능화)은 cohort.json 반 과정과 4행이 같아야 합니다. 같은 장소·과정이 둘이면 트랙 번호로 가릅니다.
+# 반 → 일정을 가져올 엑셀 열(2행 장소 정규식, 4행 트랙 번호). 반 교육장과 다를 수 있습니다(10·12반, 위 '반 짝').
 CLASS_PLACES = {'1': (r'서울대', None), '2': (r'한양대', None), '3': (r'후인원', None), '4': (r'후인원', None), '5': (r'청주', None),
-                '6': (r'생산성본부|대구무역회관', None), '7': (r'마이크로웨이브', None), '8': (r'마이크로웨이브', None), '9': (r'부산대', None),
-                '10': (r'아르피나', None), '11': (r'아르피나', '1'), '12': (r'아르피나', '2'), '13': (r'울산', None), '14': (r'전남대', None),
+                '6': (r'생산성본부|대구무역회관', None), '7': (r'마이크로웨이브', None), '8': (r'대구상공회의소', None), '9': (r'아르피나', None),
+                '10': (r'아르피나', '1'), '11': (r'아르피나', '2'), '13': (r'울산', None), '14': (r'전남대', None),
                 '15': (r'광주공장|기아오토랜드', '1'), '16': (r'광주공장|기아오토랜드', '2')}
-EXCLUDED = r'대구상공회의소'  # 사용자 결정: 2기 16반에서 뺀 반
+# 확정 명단에 없는 열(장소 정규식, 과정): 맞는 반이 없으면 빼고 기록합니다.
+DROPPED = [(r'마이크로웨이브', '모빌리티 AI'), (r'부산대', '모빌리티 AI')]
+# 일정표에 맞는 열이 없는 반: 일정 없이 휴일 칸만 둡니다(지어내지 않음).
+NO_SOURCE = {'12'}
+# 다른 교육장 열에서 일정을 가져온 반의 실제 교육장 주소(엑셀 2행 주소 대신, 같은 이름 반의 예전 주소)
+ADDRESS = {'10': '부산 해운대구 해운대해변로 35, 아르피나(부산도시공사) 8층 자스민', '12': '부산 금정구 부산대학로63번길 2, NC백화점 부산대점 720호'}  # 반정보 확정 주소  # 반정보 확정 주소(1기 확인 주소 기준, 2026-10-22)
 # 확인된 엑셀 오류 바로잡기(사용자 확인 '맞춰' 2026-10-19). 261007판 15반(기아오토랜드A) 과정명 칸만 2026-12-02부터 한 줄씩 아래로 밀림:
 # 금요일 과목이 토요일 줄, 월요일 칸 빔, 12/25·12/31 휴일 줄에 과목, 수료식이 날짜 없는 줄. 시간·강사명 칸은 제자리라 과정명만 한 줄 위로 당깁니다.
 ALIGN = [{'sheet': '1007', 'classId': '15', 'field': 'subject', 'from': '2026-12-02', 'up': 1,
@@ -98,18 +109,17 @@ def read_sheet(tag, path):
         if ws.cell(label, c + 1).value != '시간' or ws.cell(label, c + 2).value != '강사명':
             continue
         place, track = str(ws.cell(2, c).value or '').strip(), str(ws.cell(4, c).value or '').strip()
-        if re.search(EXCLUDED, place):
-            excluded.append(f'{get_column_letter(c)}({place})')
-            continue
         course, no = course_of(track), (re.findall(r'(\d+)\s*$', track) or [None])[0]
         hits = [cid for cid, (rx, n) in CLASS_PLACES.items() if re.search(rx, place) and CLASSES[cid]['course'] == course and (n is None or n == no)]
+        if not hits and any(re.search(rx, place) and course == k for rx, k in DROPPED):
+            excluded.append(f'{get_column_letter(c)}({place} · {track})')
+            continue
         if len(hits) != 1:
             sys.exit(f'[{tag}] {get_column_letter(c)}열({place} · {track})에 맞는 2기 반이 {len(hits)}개입니다: {hits}. CLASS_PLACES를 확인해 주세요.')
         if hits[0] in groups:
             sys.exit(f'[{tag}] {hits[0]}반 열이 둘입니다({groups[hits[0]]}, {get_column_letter(c)}).')
         groups[hits[0]] = c
-    if set(groups) != set(CLASSES):
-        sys.exit(f'[{tag}] 반 열이 모자랍니다: {sorted(set(CLASSES) - set(groups), key=int)}')
+    missing = sorted(set(CLASSES) - set(groups) - NO_SOURCE, key=int)  # 이 판에 없는 반(다른 판에서 채움, main에서 모든 반이 어느 판엔 있는지 확인)
     cells = {cid: [] for cid in groups}
     for r in range(label + 1, ws.max_row + 1):
         v = ws.cell(r, 1).value
@@ -126,7 +136,7 @@ def read_sheet(tag, path):
         if name and name not in ('구분', '교육장소', '합계'):
             totals[name] = {cid: ws.cell(r, c).value for cid, c in groups.items() if isinstance(ws.cell(r, c).value, (int, float))}
     places = {cid: str(ws.cell(2, c).value or '').strip() for cid, c in groups.items()}
-    return {'tag': tag, 'groups': {cid: get_column_letter(c) for cid, c in groups.items()}, 'cells': cells, 'excluded': excluded, 'totals': totals, 'places': places}
+    return {'tag': tag, 'groups': {cid: get_column_letter(c) for cid, c in groups.items()}, 'cells': cells, 'excluded': excluded, 'totals': totals, 'places': places, 'missing': missing}
 
 
 def align(sheet, report):
@@ -205,12 +215,15 @@ def main():
     same_cohort = old.get('cohort') == COHORT['id']
     sheets, aligned = [read_sheet(tag, path) for tag, path, _ in specs], []
     for s in sheets:
-        print(f"[{s['tag']}] 반 열: " + ' · '.join(f"{cid} {s['groups'][cid]}" for cid in CLASSES) + (f" · 뺀 열 {', '.join(s['excluded'])}" if s['excluded'] else ''))
+        print(f"[{s['tag']}] 반 열: " + ' · '.join(f"{cid} {s['groups'].get(cid, '없음')}" for cid in CLASSES) + (f" · 뺀 열 {', '.join(s['excluded'])}" if s['excluded'] else ''))
         if not opts.get('no-align'):
             align(s, aligned)
     for a in aligned:
         print(f"[{a['sheet']}] {a['classId']}반 {FIELDS[a['field']]} 칸 {a['from']}부터 {a['up']}줄 당김 · 바뀐 칸 {a['changed']}개 ({a['why']})")
         print('  ' + '\n  '.join(a['moves']))
+    nowhere = [cid for cid in CLASSES if cid not in NO_SOURCE and all(cid in s['missing'] for s in sheets)]
+    if nowhere:
+        sys.exit(f'어느 판에도 열이 없는 반: {nowhere}. CLASS_PLACES를 확인해 주세요.')
     problems = [p for s in sheets for p in offday_problems(s)]
     if problems:
         sys.exit('주말·휴일·기간 밖·날짜 없는 줄에 수업이 있습니다. ALIGN 규칙이나 엑셀을 먼저 확인해 주세요:\n  ' + '\n  '.join(problems))
@@ -223,8 +236,8 @@ def main():
     for cid, meta in CLASSES.items():
         course, entries, counter = meta['course'], [], collections.Counter()
         stat = collections.Counter()
-        cells = {s['tag']: {x['date']: x for x in s['cells'][cid] if x['date']} for s in sheets}
-        for date in sorted({d for t in tags for d, x in cells[t].items() if x['subject'] or x['hours']} | set(days)):
+        cells = {s['tag']: {x['date']: x for x in s['cells'].get(cid, []) if x['date']} for s in sheets}
+        for date in sorted({d for t in tags for d, x in cells[t].items() if x['subject'] or x['hours']} | (set() if cid in NO_SOURCE else set(days))):
             if date in HOLIDAYS:
                 continue
             got = {t: cells[t].get(date, {}) for t in tags}
@@ -295,16 +308,16 @@ def main():
         rows = [e for e in classes[cid]['entries'] if e['event'] in ('공장견학', '공장견학(이론)', '분해조립')]
         visit = [e for e in rows if e['event'] == '공장견학'] or [e for e in rows if e['event'] == '공장견학(이론)']
         dis = [e for e in rows if e['event'] == '분해조립']
-        places = {s['tag']: s['places'][cid] for s in sheets}
+        places = {s['tag']: s['places'][cid] for s in sheets if cid in s['places']}
         facilities.append({'classId': cid, 'factory': visit[0]['venue'] if visit and visit[0]['venue'] else '공장견학 이론만(견학 일정 없음)' if visit else '',
                            'factoryDates': [e['date'] for e in visit], 'disassembly': dis[0]['venue'] if dis else '', 'disassemblyDates': [e['date'] for e in dis],
-                           'venue': f"{CLASSES[cid]['area']} {CLASSES[cid]['venue']}", 'address': max(places.values(), key=len), 'places': places})
+                           'venue': f"{CLASSES[cid]['area']} {CLASSES[cid]['venue']}", 'address': ADDRESS.get(cid) or max(places.values(), key=len), 'places': places})
         for s in sheets:
             for label, counts in s['totals'].items():
                 if not re.search(r'공장|분해조립|견학', label) or cid not in counts:
                     continue
                 k = compact(canon(label))
-                got = sum(1 for x in s['cells'][cid] if x['date'] and compact(x['subject']) == k)
+                got = sum(1 for x in s['cells'].get(cid, []) if x['date'] and compact(x['subject']) == k)
                 if abs(got - counts[cid]) > 0.01 and not (got == 1 and counts[cid] == 0.5):
                     checks.append(f"[{s['tag']}] {cid}반 합계표 '{label}' {counts[cid]}일 · 일정 칸 {got}일")
     if checks:

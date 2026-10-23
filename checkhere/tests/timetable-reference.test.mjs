@@ -5,9 +5,11 @@ const catalog={courses:seed.courses,modules:seed.modules,lectures:seed.lectures,
 // 2기 기준: 장소·날짜는 일정표 칸에서(1007판 합계표 11~20행과 대조), 교육장소는 각 판 2행. 1기 교정(patches)은 없음.
 test('2기 facilities come from the schedule: factory visit and disassembly place/date per class, venue addresses',()=>{
  assert.equal(reference.facilities.length,16);assert.deepEqual(reference.patches,[]);assert.deepEqual(reference.additions,[]);
- const want={1:['화성공장','천안GLC'],2:['화성공장','천안GLC'],3:['아산공장','선문대'],4:['아산공장','선문대'],5:['아산공장','선문대'],6:['울산공장','울산'],7:['울산공장','울산'],8:['울산공장','울산'],9:['울산공장','울산'],10:['울산공장','울산'],11:['공장견학 이론만(견학 일정 없음)','울산'],12:['공장견학 이론만(견학 일정 없음)','울산'],13:['울산공장','울산'],14:['광주공장','폴리텍대'],15:['광주공장','폴리텍대'],16:['광주공장','폴리텍대']};
+ const want={1:['화성공장','천안GLC'],2:['화성공장','천안GLC'],3:['아산공장','선문대'],4:['아산공장','선문대'],5:['아산공장','선문대'],6:['울산공장','울산'],7:['울산공장','울산'],8:['울산공장','울산'],9:['울산공장','울산'],10:['공장견학 이론만(견학 일정 없음)','울산'],11:['공장견학 이론만(견학 일정 없음)','울산'],12:['',''],13:['울산공장','울산'],14:['광주공장','폴리텍대'],15:['광주공장','폴리텍대'],16:['광주공장','폴리텍대']};
  for(const f of reference.facilities){
-  assert.deepEqual([f.factory,f.disassembly],want[f.classId],f.classId+'반');assert(f.address&&f.places['1014']&&f.places['1007'],f.classId+'반 교육장소');
+  assert.deepEqual([f.factory,f.disassembly],want[f.classId],f.classId+'반');
+  if(f.classId==='12'){assert.match(f.address,/부산대/);assert.deepEqual(f.places,{});continue;} // 12반(부산대 제조지능화): 일정표에 맞는 열 없음(운영팀 새 일정 대기)
+  assert(f.address&&(f.places['1014']||f.classId==='8')&&f.places['1007'],f.classId+'반 교육장소'); // 8반(대구상공회의소)은 261007판에만 열
   const entries=seed.classes[f.classId].entries,visit=entries.find(e=>/^공장견학/.test(e.event)),dis=entries.find(e=>e.event==='분해조립');
   assert.deepEqual([visit.date],f.factoryDates);assert.deepEqual([dis.date],f.disassemblyDates);assert.equal(dis.venue,f.disassembly);if(visit.event==='공장견학')assert.equal(visit.venue,f.factory);
  }

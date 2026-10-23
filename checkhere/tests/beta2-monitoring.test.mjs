@@ -244,8 +244,9 @@ test('담임: 운영모니터링 › 반 운영 점검 — 원문 양식, 1~5점
  const errors=await openPortal(async(page,posts)=>{
   assert.deepEqual(await page.locator('[data-main]').allInnerTexts(),['오늘 할 일','출결','서류 발급','민원·설문','운영모니터링','시간표·자료','우리 반']);
   // 오늘 할 일의 4번(예전 1기 설문 링크) → 운영모니터링 탭
-  const task=page.locator('.task-grid a[href="#t/monitoring/checkup"]');await task.waitFor();
-  assert.equal(await task.innerText(),'운영모니터링 쓰기');
+  // 카드 단추가 위 탭으로 바로 갑니다(2026-10-21 '오늘 할 일' 개편: 반 운영 점검 · 교육생 면담)
+  const task=page.locator('.task-grid [data-t2go="monitoring/checkup"]');await task.waitFor();
+  assert.equal(await task.innerText(),'반 운영 점검');
   await task.click();
   await page.locator('[data-view="checkup"]').waitFor();
   assert.deepEqual(await page.locator('#t2Sub [data-subtab]').allInnerTexts(),['반 운영 점검','교육생 면담']);

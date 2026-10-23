@@ -23,10 +23,11 @@ const OLD=[['C','서울대학교 현대 · 기아 차세대자동차 연구관',
 const D='2026-10-28',SAT='2026-10-31';
 function build(dir,{weekend=false}={}){
  const groups=(list,cells)=>list.map(([col,place,track])=>({col,place,track,cells:cells[col]||{}}));
- // 새 판: C(1반) 입교식·강사, F(2반) 과목 빈칸, I(3반) 과목·강사 다름, L(4반) 둘 다 빈칸, 나머지 디지털스킬. 옛 판은 반 순서가 다르고 X열(대구상공회의소)이 있음.
+ // 새 판: C(1반) 입교식·강사, F(2반) 과목 빈칸, I(3반) 과목·강사 다름, L(4반) 둘 다 빈칸, 나머지 디지털스킬. 옛 판은 반 순서가 다르고 X열(대구상공회의소 = 8반)이 있음.
  const nc={C:{[D]:['입교식',4,'김담임']},F:{[D]:[null,8]},I:{[D]:['MCU 프로그래밍',8,'이강사']},L:{[D]:[null,8]}};
  for(const [col] of NEW)nc[col]??={[D]:['디지털스킬',8]};if(weekend)nc.O[SAT]=['디지털스킬',8];
- const oc={C:{[D]:['입교식-프로그램',4]},F:{[D]:['C프로그래밍',8,'박강사']},I:{[D]:['자동차 통신시스템',8,'최강사']},L:{[D]:[null,8]},X:{[D]:['뺀 반 과목',8]}};
+ const oc={C:{[D]:['입교식-프로그램',4]},F:{[D]:['C프로그래밍',8,'박강사']},I:{[D]:['자동차 통신시스템',8,'최강사']},L:{[D]:[null,8]},R:{[D]:['뺀 반 과목',8]},X:{[D]:['디지털스킬',8,'상의강사']}};
+ nc.R={[D]:['뺀 반 과목',8]}; // 마이크로웨이브 모빌리티 열(R)은 확정 명단(2026-10-22)에 없는 반이라 두 판 모두 뺌
  const spec=[{path:join(dir,'new.xlsx'),head:6,dates:[D,'2026-10-30',SAT],groups:groups(NEW,nc)},{path:join(dir,'old.xlsx'),head:30,dates:[D],groups:groups(OLD,oc)}];
  writeFileSync(join(dir,'spec.json'),JSON.stringify(spec));writeFileSync(join(dir,'maker.py'),MAKER);
  const made=py([join(dir,'maker.py'),join(dir,'spec.json')]);assert.equal(made.status,0,made.stderr);
@@ -34,14 +35,15 @@ function build(dir,{weekend=false}={}){
 }
 test('builder maps class columns by place and track, merges two workbooks cell by cell and writes conflicts with a BOM',()=>{
  const dir=mkdtempSync(join(tmpdir(),'tt2-')),r=build(dir);assert.equal(r.status,0,r.stderr+r.stdout);
- assert.match(r.stdout,/\[new\] 반 열: 1 C · 2 F · 3 I · 4 L · 5 O · 6 U · 7 R · 8 X · 9 AD · 10 AA · 11 AG · 12 AJ · 13 AM · 14 AP · 15 AS · 16 AV/);
- assert.match(r.stdout,/\[old\] 반 열: 1 C · 2 F · 3 I · 4 L · 5 O · 6 U · 7 R · 8 AA · 9 AG · 10 AD · 11 AJ · 12 AM · 13 AP · 14 AS · 15 AV · 16 AY · 뺀 열 X\(/);
+ assert.match(r.stdout,/\[new\] 반 열: 1 C · 2 F · 3 I · 4 L · 5 O · 6 U · 7 X · 8 없음 · 9 AA · 10 AG · 11 AJ · 12 없음 · 13 AM · 14 AP · 15 AS · 16 AV · 뺀 열 R\(마이크로웨이브 1 · 모비리티 AI\), AD\(부산대/);
+ assert.match(r.stdout,/\[old\] 반 열: 1 C · 2 F · 3 I · 4 L · 5 O · 6 U · 7 AA · 8 X · 9 AD · 10 AJ · 11 AM · 12 없음 · 13 AP · 14 AS · 15 AV · 16 AY · 뺀 열 R\(/);
  const seed=JSON.parse(readFileSync(join(dir,'out/timetable-seed.json'),'utf8')),day=cid=>seed.classes[cid].entries.find(e=>e.date===D);
  assert.deepEqual([day('1').title,day('1').event,day('1').instructorName,day('1').origin],['입교식','입교식','김담임',{subject:'both',hours:'both',instructor:'new'}]);
  assert.deepEqual([day('2').title,day('2').instructorName,day('2').origin.subject],['C 프로그래밍','박강사','old'],'빈 과목 칸은 다른 판 값');
  assert.deepEqual([day('3').title,day('3').instructorName,day('3').review],['MCU 프로그래밍','이강사',['subject','instructor']],'다르면 첫 판 값 + review');
  assert.deepEqual([day('4').title,day('4').origin.subject],['직무특화 (세부 과목 미정)',''],'둘 다 비면 지어내지 않음');
- assert(!JSON.stringify(seed).includes('뺀 반 과목'),'대구상공회의소 열은 읽지 않음');
+ assert(!JSON.stringify(seed).includes('뺀 반 과목'),'마이크로웨이브 모빌리티 열은 읽지 않음');
+ assert.deepEqual([day('8').title,day('8').instructorName,day('8').origin],['디지털스킬','상의강사',{subject:'old',hours:'old',instructor:'old'}],'8반(대구상공회의소)은 옛 판에만 있어 그 값');
  const csv=readFileSync(join(dir,'c.csv'));assert.deepEqual([...csv.subarray(0,3)],[0xef,0xbb,0xbf]);
  assert.deepEqual(csv.toString('utf8').slice(1).trim().split(/\r?\n/),['날짜,반,항목,new판 값,old판 값,선택(기본: 첫 판)','2026-10-28,3,강사,이강사,최강사,이강사','2026-10-28,3,과목,MCU 프로그래밍,자동차 통신 시스템,MCU 프로그래밍']);
  assert.equal(JSON.parse(readFileSync(join(dir,'out/timetable-reference.json'),'utf8')).facilities.length,16);
@@ -51,7 +53,7 @@ test('builder refuses lessons on weekends instead of guessing',()=>{
 });
 // 실제 일정표(내려받은 엑셀, 저장소 밖)가 있으면 지금 시드가 그대로 다시 만들어지는지 봅니다. TT2_SHEET_1014·TT2_SHEET_1007에 경로를 넣어 실행.
 test('committed seed and reference rebuild byte-for-byte from the 261014 + 261007 workbooks',{skip:!(process.env.TT2_SHEET_1014&&existsSync(process.env.TT2_SHEET_1014)&&process.env.TT2_SHEET_1007)&&'TT2_SHEET_1014·TT2_SHEET_1007 없음'},()=>{
- const dir=mkdtempSync(join(tmpdir(),'tt2-real-')),r=py([builder,'--sheet','1014',process.env.TT2_SHEET_1014,'261014_K-뉴딜_아카데미_2기 일정표_직무기초.xlsx','--sheet','1007',process.env.TT2_SHEET_1007,'261007_K-뉴딜_아카데미_2기 일정표.xlsx','--version','20261014','--conflicts',join(dir,'c.csv'),'--out',dir]);
+ const dir=mkdtempSync(join(tmpdir(),'tt2-real-')),r=py([builder,'--sheet','1014',process.env.TT2_SHEET_1014,'261014_K-뉴딜_아카데미_2기 일정표_직무기초.xlsx','--sheet','1007',process.env.TT2_SHEET_1007,'261007_K-뉴딜_아카데미_2기 일정표.xlsx','--version','20261022','--conflicts',join(dir,'c.csv'),'--out',dir]);
  assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/15반 과목 칸 2026-12-02부터 1줄 당김 · 바뀐 칸 29개/);assert.match(r.stdout,/16반 · 60\/60일 · 464시간/);
  for(const f of ['timetable-seed.json','timetable-reference.json'])assert.equal(readFileSync(join(dir,f),'utf8'),readFileSync(join(root,f),'utf8'),f);
  assert.equal(readFileSync(join(dir,'c.csv'),'utf8').trim().split(/\r?\n/).length,1,'두 판 충돌 0건(머리글만)');

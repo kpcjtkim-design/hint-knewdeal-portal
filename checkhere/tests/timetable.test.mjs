@@ -4,21 +4,24 @@ import {REAL_CLASS_IDS as CLASS_IDS,TRAINING_DAYS,HOLIDAYS,classInfo} from '../.
 const seed=JSON.parse(readFileSync(new URL('../../timetable-seed.json',import.meta.url)));
 // 2기 기준: 261014(최신)+261007 절충, 1007판 15반 과정명 한 줄 밀림 바로잡음(사용자 확인 2026-10-19).
 test('2기 seed: 16 classes, one lesson on each of the 60 training days, cohort holidays, no invented times or contacts',()=>{
- assert.equal(seed.cohort,'2');assert.equal(seed.version,'20261014');assert.deepEqual(Object.keys(seed.classes),[...CLASS_IDS]);assert.equal(TRAINING_DAYS.length,60);
+ assert.equal(seed.cohort,'2');assert.equal(seed.version,'20261022');assert.deepEqual(Object.keys(seed.classes),[...CLASS_IDS]);assert.equal(TRAINING_DAYS.length,60);
  for(const [cid,c]of Object.entries(seed.classes)){
+  // 12반(부산대 제조지능화, 최신 명단 2026-10-22): 일정표에 맞는 열이 없어 휴일 칸만(운영팀 새 일정 대기, 지어내지 않음)
+  if(cid==='12'){assert.deepEqual(c.entries.map(e=>e.kind),HOLIDAYS.map(()=>'holiday'));assert.deepEqual(seed.merge.classes['12'].days,0);continue;}
   const lessons=c.entries.filter(e=>e.kind!=='holiday');assert.deepEqual(lessons.map(e=>e.date),[...TRAINING_DAYS],cid+'반 교육일');
   assert.deepEqual(c.entries.filter(e=>e.kind==='holiday').map(e=>e.date),[...HOLIDAYS],cid+'반 휴일 칸');assert(!lessons.some(e=>isOffDay(e.date)));
   assert.equal(new Set(c.entries.map(e=>e.id)).size,c.entries.length);
   for(const e of c.entries){validateEntry(e);assert.equal(e.course,classInfo(cid).course);assert.equal(e.instructorId,'');assert.equal(e.start,'');assert.equal(e.end,'');assert(!e.review,'판끼리 다른 칸 없음(2026-10-19 기준 충돌 0건)');}
-  for(const e of lessons)assert(['1014','1007','both',''].includes(e.origin.subject)&&e.origin.hours==='both');
+  for(const e of lessons)assert(['1014','1007','both',''].includes(e.origin.subject)&&e.origin.hours===(cid==='8'?'1007':'both')); // 8반은 1007판에만 열
   assert.deepEqual(lessons.filter(e=>e.event==='입교식').map(e=>e.date),['2026-10-28','2026-10-29','2026-10-30']);assert.deepEqual(lessons.filter(e=>e.event==='수료식').map(e=>e.date),['2027-01-22']);
   assert.equal(lessons.filter(e=>e.event==='분해조립').length,1);assert.equal(lessons.filter(e=>/^공장견학/.test(e.event)).length,1);
-  assert.equal(lessons.reduce((n,e)=>n+e.hours,0),cid==='11'?460:464,cid+'반 시간 합계(11반은 공장견학 이론 4시간)');
+  assert.equal(lessons.reduce((n,e)=>n+e.hours,0),cid==='10'?460:464,cid+'반 시간 합계(10반은 아르피나 제조지능화 1 열: 공장견학 이론 4시간)');
  }
- // 반 열 대응(2행 장소·4행 과정): 1014판은 대구상공회의소 없이 16묶음, 1007판은 X열(대구상공회의소)을 뺌.
- assert.deepEqual(seed.merge.columns['1014'],{1:'C',2:'F',3:'I',4:'L',5:'O',7:'R',6:'U',8:'X',10:'AA',9:'AD',11:'AG',12:'AJ',13:'AM',14:'AP',15:'AS',16:'AV'});
- assert.deepEqual(seed.merge.columns['1007'],{1:'C',2:'F',3:'I',4:'L',5:'O',7:'R',6:'U',8:'AA',10:'AD',9:'AG',11:'AJ',12:'AM',13:'AP',14:'AS',15:'AV',16:'AY'});
- assert.match(seed.merge.excluded['1007'][0],/^X\(.*대구상공회의소/);assert.deepEqual(seed.merge.aligned.map(a=>[a.sheet,a.classId,a.from,a.changed]),[['1007','15','2026-12-02',29]]);
+ // 반 열 대응(확정 명단 2026-10-22): 8반(대구상공회의소)은 1007판 X열에만, 마이크로웨이브 모빌리티 열(R)은 두 판 모두 뺌.
+ assert.deepEqual(seed.merge.columns['1014'],{1:'C',2:'F',3:'I',4:'L',5:'O',6:'U',7:'X',9:'AA',10:'AG',11:'AJ',13:'AM',14:'AP',15:'AS',16:'AV'});
+ assert.deepEqual(seed.merge.columns['1007'],{1:'C',2:'F',3:'I',4:'L',5:'O',6:'U',8:'X',7:'AA',9:'AD',10:'AJ',11:'AM',13:'AP',14:'AS',15:'AV',16:'AY'});
+ assert.match(seed.merge.excluded['1014'][1],/^AD\(부산대/);assert.match(seed.merge.excluded['1007'][1],/^AG\(.*부산대/);
+ assert.match(seed.merge.excluded['1007'][0],/^R\(.*마이크로웨이브/);assert.match(seed.merge.excluded['1014'][0],/^R\(마이크로웨이브/);assert.deepEqual(seed.merge.aligned.map(a=>[a.sheet,a.classId,a.from,a.changed]),[['1007','15','2026-12-02',29]]);
  const c15=Object.fromEntries(seed.classes['15'].entries.map(e=>[e.date,e.title]));
  assert.deepEqual([c15['2026-12-02'],c15['2026-12-04'],c15['2026-12-14'],c15['2026-12-18'],c15['2027-01-21'],c15['2027-01-22']],['AI기반 제조데이터 분석 입문','광주공장 · 견학·이론','폴리텍대 · 분해조립','직무특화 컨퍼런스 2','프로그램','수료식']);
  assert.equal(c15['2026-11-27'],'직무특화 (세부 과목 미정)','두 판 모두 과목 칸이 빈 날은 지어내지 않음');
