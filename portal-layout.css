@@ -92,3 +92,4 @@
 .daily-checklist[open]>summary{border-bottom:1px solid var(--portal-line)}
 .page .daily-checklist>.notice{margin:0;border:0;border-radius:0;padding:14px 18px 18px;box-shadow:none}
 .daily-checklist .notice-bar{justify-content:flex-end;margin-bottom:10px}
+.teacher-context-bar.t2-switch-only{padding:6px 12px;margin-bottom:10px;justify-content:flex-end}

@@ -51,6 +51,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   topbar.classList.add('has-primary-nav');topbar.insertBefore(topNav,topbar.querySelector('.top-actions'));
   topRole=document.createElement('span');topRole.className='portal-role';topRole.textContent=`${cls}반 담임`;topbar.querySelector('.portal-title-row')?.append(topRole);
   $('.t2-main')?.remove();
+  // 반 이름 큰 카드는 접고 머리글의 「N반 담임」으로 합칩니다(사용자 2026-10-23). 반 전체 이름은 화면마다 「오늘 · 날짜 · 반」 줄과 이 표시의 풍선 도움말에. 담당 반이 여럿이면 반 고르기만 작게 남깁니다.
+  topRole.title=className;hero.style.display='none';if(!switcher)bar.style.display='none';else bar.classList.add('t2-switch-only');
   topNav.addEventListener('click',e=>{const b=e.target.closest('[data-main]');if(b)void go(b.dataset.main,'',{push:true});});
  }
  // 담임 홈 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다. 시간표는 아직 닫혀 있어 할 일 아래로 둡니다.
