@@ -220,10 +220,10 @@ async function adminView(user,p,tab='b2home',selected='1',workContext=null){let 
 async function beta2Admin(user,p,tab,selected,context){return mountAdminModule('/beta2-admin.mjs?v=20261022-fe1','mountBeta2Admin',{db,user,classes:CLASSES,tab,selected,context,open:(next,ctx={})=>adminView(user,p,next,ctx.classId||selected,ctx)},{wide:tab==='b2ledger'});}
 
 async function surveysAdmin(user,p,workContext=null){return mountAdminModule('/survey-view.mjs?v=20260922-work1','mountSurveys',{db,user,classes:CLASSES,initialClassId:workContext?.classId});}
-async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261022-fe2','mountTimetableAdmin',{db,user,classes:CLASSES.filter(c=>!c.test)},{wide:true});}
+async function timetableAdmin(user,p){return mountAdminModule('/timetable.mjs?v=20261023-tbd','mountTimetableAdmin',{db,user,classes:CLASSES.filter(c=>!c.test)},{wide:true});}
 async function attachTeacherTimetable(parent,user,c){
  const hero=parent.querySelector('.hero'),alive=()=>parent.isConnected&&parent.querySelector('.hero')===hero;
- try{const mod=await import('/teacher-workspace.mjs?v=20261022-fe1');if(!alive())return;const work=await mod.mountTeacherWorkspace(parent,{db,user,classInfo:c,preview:parent.id==='adminBody'});if(!alive())disposePageWork(work);else if(parent.id==='adminBody')adminWork=work;else teacherWork=work;}catch(e){if(alive()){const note=document.createElement('p');note.textContent='담임 요약을 불러오지 못했습니다. '+e.message;parent.append(note);}}
+ try{const mod=await import('/teacher-workspace.mjs?v=20261023-tbd');if(!alive())return;const work=await mod.mountTeacherWorkspace(parent,{db,user,classInfo:c,preview:parent.id==='adminBody'});if(!alive())disposePageWork(work);else if(parent.id==='adminBody')adminWork=work;else teacherWork=work;}catch(e){if(alive()){const note=document.createElement('p');note.textContent='담임 요약을 불러오지 못했습니다. '+e.message;parent.append(note);}}
 }
 // 1기 출결 통계·증빙·질병·단위기간 출석부·중도포기·출결대조(구버전) 탭은 2기 메뉴의 출결 현황·내려받기·출결대조로 옮겼습니다(1기는 cohort1 브랜치).
 

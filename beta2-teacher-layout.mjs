@@ -108,8 +108,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   if(status&&STATUS_VIEWS.has(sub))status.setView(sub);
  }
  const MOUNTS={
-  'timetable-today':['./timetable.mjs?v=20261020-tp2',(m,slot)=>m.mountTeacherTimetable(slot,{db,user,classInfo,client,compact:true,includeSurveys:false})],
-  timetable:['./timetable.mjs?v=20261020-tp2',(m,slot)=>m.mountTeacherTimetable(slot,{db,user,classInfo,client,includeSurveys:false})],
+  'timetable-today':['./timetable.mjs?v=20261023-tbd',(m,slot)=>m.mountTeacherTimetable(slot,{db,user,classInfo,client,compact:true,includeSurveys:false})],
+  timetable:['./timetable.mjs?v=20261023-tbd',(m,slot)=>m.mountTeacherTimetable(slot,{db,user,classInfo,client,includeSurveys:false})],
   materials:['./lecture-materials.mjs',(m,slot)=>m.mountLectureMaterials(slot,{db,user,classes:[classInfo],teacherClass:classInfo,readOnly:true})],
   surveys:['./survey-view.mjs',(m,slot)=>m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo})],
   documents:['./beta2-docs.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
