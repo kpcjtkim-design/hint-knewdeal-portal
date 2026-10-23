@@ -147,6 +147,11 @@ test('서류발급: 처리 저장 sends was; CONFLICT reads again, shows the new
   await p.locator('[data-update]').click();
   await until(p,()=>of(posts,'b2DocUpdate').length===2,'second update');
   assert.deepEqual(of(posts,'b2DocUpdate')[1].args[0].was,{status:'처리중',memo:'다른 운영자 메모',link:'',fixReason:''},'re-save uses the new value as was');
+  // 상태가 바뀐 저장은 그 반 담임 알림함(toClass)에 한 건(사용자 2026-10-23), 실패한 첫 저장은 알리지 않음
+  await until(p,()=>p.evaluate(()=>window.sdkWrites.some(w=>w[1].startsWith('notifications/'))),'teacher notification');
+  const sent=await p.evaluate(()=>window.sdkWrites.filter(w=>w[1].startsWith('notifications/')).map(w=>w[2]));
+  assert.equal(sent.length,1);assert.equal(sent[0].kind,'서류발급');assert.equal(sent[0].toClass,'1');assert.equal(sent[0].toRole,undefined);
+  assert.match(sent[0].title,/서류발급 처리완료 · 1반 가상가/);assert.match(sent[0].body,/비고 발급 완료/);
   // 새 신청: 몰림으로 실패 → 같은 clientId로 다시 → repeated
   await p.locator('#d2New').click();
   await p.locator('[data-g="name"]').selectOption('가상나');await p.locator('[data-doctype="교육참여확인서"]').click();await p.locator('[data-g="submitTo"]').fill('가상 제출처');

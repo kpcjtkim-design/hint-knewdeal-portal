@@ -38,15 +38,16 @@ const cohortFor=teacher=>readFileSync(join(base,'cohort.mjs'),'utf8').replace('"
 export const ANSWERS={portalData:()=>PORTAL,b2Bundle:()=>BUNDLE,b2Rev:()=>({rev:BUNDLE.rev,sync:BUNDLE.sync,voc:VOCS.state}),b2Docs:()=>DOCS,b2Vocs:()=>VOCS,b2Dropouts:()=>({rev:BUNDLE.rev,maxAbsence:12,rows:[]})};
 
 // as: 'teacher'(담임 로그인, 화면이 바로 담임 화면) · 'admin'(관리자 → 미리보기 → 담임 화면). api(body)가 값을 돌려주면 그 응답을 씁니다({hold:Promise}면 그때까지 기다림).
+// classDoc:false면 Firestore classes/1 문서가 없는 상태(2기 새 Firebase처럼).
 // path: 처음 여는 주소(예: '/#t/attendance/reason'). viewport: {width,height}. files(경로)가 {hold:Promise}면 그 파일을 늦게, {status:404}면 못 찾게 줍니다.
-export async function openPortal(run,{as='teacher',api=()=>null,files=()=>null,path='/',viewport={width:1360,height:900}}={}){
+export async function openPortal(run,{as='teacher',api=()=>null,files=()=>null,path='/',viewport={width:1360,height:900},classDoc=true}={}){
  const {chromium}=loadPlaywright(),browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport}),errors=[],posts=[];
  page.on('pageerror',e=>errors.push(e.message));
  try{
   await page.clock.setFixedTime(CLOCK);
   await page.route('**/*',async route=>{
    const url=new URL(route.request().url());
-   if(url.href.startsWith(SDK+'firebase-firestore.js'))return route.fulfill({contentType:'text/javascript',body:SDK_STUB});
+   if(url.href.startsWith(SDK+'firebase-firestore.js'))return route.fulfill({contentType:'text/javascript',body:classDoc?SDK_STUB:SDK_STUB.replace(/,'classes\/1':\{[^}]*\}\}/,'')});
    if(url.href===SDK+'firebase-app.js')return route.fulfill({contentType:'text/javascript',body:'export const initializeApp=()=>({});'});
    if(url.href===SDK+'firebase-auth.js')return route.fulfill({contentType:'text/javascript',body:AUTH_STUB(as==='teacher'?'teacher@test.kr':'hint.kpc@gmail.com')});
    if(url.hostname!=='fixture.test')return route.abort();
