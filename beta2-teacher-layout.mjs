@@ -112,7 +112,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   timetable:['./timetable.mjs?v=20261023-tbd',(m,slot)=>m.mountTeacherTimetable(slot,{db,user,classInfo,client,includeSurveys:false})],
   materials:['./lecture-materials.mjs',(m,slot)=>m.mountLectureMaterials(slot,{db,user,classes:[classInfo],teacherClass:classInfo,readOnly:true})],
   surveys:['./survey-view.mjs',(m,slot)=>m.mountSurveys(slot,{db,user,classes:[classInfo],teacherClass:classInfo})],
-  documents:['./beta2-docs.mjs?v=20261023-dn',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
+  documents:['./beta2-docs.mjs?v=20261023-dn5',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})],
   dropout:['./beta2-dropouts.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
   voc:['./beta2-voc.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
   // 운영모니터링(2026-10-21, 김소윤 님 '담임 상담일지' 양식): 반 운영 점검·교육생 면담, 자기 반만. 맨 아래 '내 반 저장 기록'.

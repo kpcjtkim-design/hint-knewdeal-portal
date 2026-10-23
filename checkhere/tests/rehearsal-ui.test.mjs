@@ -134,7 +134,7 @@ test('teacher board (direct save, no queue): portalSave sends before; {conflict:
 });
 
 test('서류발급: 처리 저장 sends was; CONFLICT reads again, shows the new value and keeps my edit; 새 신청 carries one clientId per form (kept on retry) and repeated:true counts as done',async()=>{
- let doc={id:'D1',cls:'1',name:'가상가',docType:'교육참여확인서',status:'접수',memo:'',link:'',fixReason:'',requested:'2026-11-05'},updates=0,creates=0;
+ let doc={id:'D1',cls:'1반(가상담임)',name:'가상가',docType:'교육참여확인서',status:'접수',memo:'',link:'',fixReason:'',requested:'2026-11-05'},updates=0,creates=0;
  await page('/docs.html',async(p,posts)=>{
   await p.locator('[data-doc="D1"]').click();
   await p.locator('[data-status="처리완료"]').click();await p.locator('[data-u="memo"]').fill('발급 완료');

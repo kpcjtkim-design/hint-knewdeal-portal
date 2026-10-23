@@ -100,7 +100,8 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
     await client.docUpdate({id:d.id,status:mine._status,memo:mine._memo,link:mine._link,fixReason:mine._fix,was:docWas(d)});
     // 상태가 바뀌면(처리중·보완 필요·처리완료·취소) 그 반 담임 알림함에 한 건(사용자 2026-10-23 "접수되는 대로 처리되고 알람오는 과정"). 못 남겨도 저장은 그대로.
     const moved=mine._status!==(d.status||'접수');
-    if(moved)void notify('서류발급',{audience:'class',cls:d.cls,title:`서류발급 ${mine._status} · ${d.cls}반 ${d.name}`,body:[d.docType,mine._status==='보완 필요'&&mine._fix?`보완 사유 ${mine._fix}`:'',mine._memo?`비고 ${mine._memo}`:''].filter(Boolean).join(' · '),link:linkFor('b2docs',{cls:d.cls,id:d.id})});
+    const clsId=String(d.cls??'').replace(/반.*$/,'').trim(); // 시트 반 칸은 '17반(담임)' 꼴
+    if(moved)void notify('서류발급',{audience:'class',cls:clsId,title:`서류발급 ${mine._status} · ${clsId}반 ${d.name}`,body:[d.docType,mine._status==='보완 필요'&&mine._fix?`보완 사유 ${mine._fix}`:'',mine._memo?`비고 ${mine._memo}`:''].filter(Boolean).join(' · '),link:linkFor('b2docs',{cls:clsId,id:d.id})});
     toast(`${d.id} 처리 상황을 저장했습니다.${moved?' · 담임 알림함에 알렸습니다':''}`);busy=false;await load();
    }
    catch(err2){
