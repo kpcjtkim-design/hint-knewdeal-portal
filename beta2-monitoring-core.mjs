@@ -10,13 +10,13 @@
 //   b2CounselConfirm {cls,name,round,on,was?}(관리자만)
 import {KINDS as NOTIFY_KINDS} from './notify-core.mjs';
 
-// ── A. 반 운영 만족도 조사 (원문 그대로) ──
-export const SURVEY_TITLE='반 운영 만족도 조사';
-export const SURVEY_NOTICE='오늘 하루의 반 전체 운영 상태를 기준으로 평가해 주세요. 학생 개인 만족도가 아닌 담임의 운영 점검 기록입니다.';
+// ── A. 반 운영 점검 (원문 제목은 「반 운영 만족도 조사」 — 교육생 만족도조사와 헷갈려 담임 화면에서는 「반 운영 점검」으로 씀, 사용자 2026-10-23) ──
+export const SURVEY_TITLE='반 운영 점검';
+export const SURVEY_NOTICE='오늘 하루 반 전체 운영 상태를 기준으로 점검해 주세요. 교육생 설문이 아니라 담임이 남기는 반 운영 점검 기록입니다.';
 export const SCORE_LEGEND=[[5,'매우 우수','문제 없음'],[4,'양호','경미한 보완'],[3,'보통','개선 필요'],[2,'미흡','원인 확인 필요'],[1,'매우 미흡','즉시 확인 필요']];
 export const SCORE_LEGEND_TEXT='점수 기준: '+SCORE_LEGEND.map(([n,a,b])=>`${n}점 ${a}(${b})`).join(' · ');
 export const LOW_NOTICE='2점 이하 항목이 있으면 관리자 화면에 확인 필요로 표시됩니다.';
-export const SURVEY_SAVE='만족도 조사 저장';
+export const SURVEY_SAVE='운영 점검 저장';
 export const LOW=2; // 이 점수 이하면 확인 필요(시트 low)
 export const NOTE_MAX=300,ANSWER_MAX=2000;
 export const ITEMS=Object.freeze([

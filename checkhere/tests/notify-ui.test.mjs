@@ -217,11 +217,12 @@ test('민원 replies from the office notify that class\'s teachers and the autho
   // 서류발급 신청 → 운영 관리자 알림
   await page.locator('[data-main="documents"]').click();
   await page.locator('[data-g="name"]').selectOption('김동진');
+  await page.locator('[data-doctype="체크히어 출석부"]').click(); // 서류 종류는 고르기(2026-10-20)
   await page.locator('[data-g="submitTo"]').fill('가상 운영기관');
   await page.locator('[data-g="due"]').fill('2026-11-02');
   await page.getByRole('button',{name:'신청하기'}).click();
   await page.waitForFunction(()=>window.sdkWrites.some(w=>w[1].startsWith('notifications/')));
   assert.equal(sent(posts,'b2DocCreate').length,1);
-  assert.deepEqual(await notes(page),[{kind:'서류발급',title:'서류발급 신청 · 1반 김동진',body:'출석부 1부 · 제출처 가상 운영기관 · 마감 11/2(월)',cls:'1',link:'#b2docs?cls=1&id=D261028-002',to:[A1,A2],from:T,readBy:[T],toRole:'admin',createdAt:'ts'}]);
+  assert.deepEqual(await notes(page),[{kind:'서류발급',title:'서류발급 신청 · 1반 김동진',body:'체크히어 출석부 1부 · 제출처 가상 운영기관 · 마감 11/2(월)',cls:'1',link:'#b2docs?cls=1&id=D261028-002',to:[A1,A2],from:T,readBy:[T],toRole:'admin',createdAt:'ts'}]);
  },{email:T});
 });

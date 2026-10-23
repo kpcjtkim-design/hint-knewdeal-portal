@@ -43,6 +43,16 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  const wrap=document.createElement('div');wrap.className='b2 t2';bar.after(wrap);
  wrap.innerHTML=`<div class="b2-alertbar" id="t2Alert" hidden></div><div class="b2-vocbar" id="t2Voc" hidden></div><nav class="b2-tabs t2-main" role="tablist" aria-label="담임 업무 메뉴">${TEACHER_TABS.map(([k,l])=>`<button type="button" class="b2-tab" role="tab" data-main="${k}" aria-selected="false">${l}</button>`).join('')}</nav><nav class="b2-tabs t2-sub" id="t2Sub" role="tablist" aria-label="세부 메뉴" hidden></nav><header class="t2-head" id="t2Head"><h2></h2><p class="t2-ctx"></p><p class="t2-hint"></p></header>${TEACHER_TABS.map(([k])=>`<section data-panel="${k}" role="tabpanel" hidden></section>`).join('')}<section data-panel="notify" role="tabpanel" hidden></section>`; // notify: 머리글 종으로 여는 알림함(탭 줄에는 없음)
  const $=s=>wrap.querySelector(s),panel=k=>wrap.querySelector(`[data-panel="${k}"]`),head=$('#t2Head');
+ // 실제 담임 화면은 관리자처럼 맨 위 머리글에서 큰 탭을 고릅니다(사용자 2026-10-23 "담임도 우리처럼 맨 상단에 각 탭 선택"). 관리자 미리보기는 관리자 머리글이 따로 있어 화면 안 탭 줄 그대로.
+ const topbar=preview?null:document.querySelector('header.topbar');let topNav=null,topRole=null;
+ if(topbar){
+  topNav=document.createElement('nav');topNav.className='admin-major t2-top';topNav.setAttribute('aria-label','담임 업무 메뉴');
+  topNav.setAttribute('role','tablist');topNav.innerHTML=TEACHER_TABS.map(([k,l])=>`<button type="button" role="tab" data-main="${k}" aria-selected="false" aria-current="false">${esc(l)}</button>`).join('');
+  topbar.classList.add('has-primary-nav');topbar.insertBefore(topNav,topbar.querySelector('.top-actions'));
+  topRole=document.createElement('span');topRole.className='portal-role';topRole.textContent=`${cls}반 담임`;topbar.querySelector('.portal-title-row')?.append(topRole);
+  $('.t2-main')?.remove();
+  topNav.addEventListener('click',e=>{const b=e.target.closest('[data-main]');if(b)void go(b.dataset.main,'',{push:true});});
+ }
  // 담임 홈 화면 조각(오늘 할 일·공지·바로가기)은 핸들러를 유지한 채 옮깁니다. 시간표는 아직 닫혀 있어 할 일 아래로 둡니다.
  const tasks=following.find(e=>e.classList.contains('task-grid')),taskHead=tasks?.previousElementSibling,notice=following.find(e=>e.classList.contains('notice')),noticeHead=notice?.previousElementSibling,urgent=parent.querySelector('.urgent-stack');
  const today=panel('today');
@@ -116,8 +126,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
   dropout:['./beta2-dropouts.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,me:user?.email||'',hideHead:true})], // 중도탈락·조기취업 신청(시트 중도탈락 탭, 처리는 운영팀)·수료 확인(보기만), 사용자 2026-10-20
   voc:['./beta2-voc.mjs?v=20261021-rd1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls,onState:paintVoc})],
   // 운영모니터링(2026-10-21, 김소윤 님 '담임 상담일지' 양식): 반 운영 점검·교육생 면담, 자기 반만. 맨 아래 '내 반 저장 기록'.
-  checkup:['./beta2-monitoring.mjs?v=20261021-mo1',(m,slot)=>m.mount(slot,{client,teacherClass:cls,view:'checkup',me:user?.email||''})],
-  counsel:['./beta2-monitoring.mjs?v=20261021-mo1',(m,slot)=>m.mount(slot,{client,teacherClass:cls,view:'counsel',me:user?.email||''})],
+  checkup:['./beta2-monitoring.mjs?v=20261023-op',(m,slot)=>m.mount(slot,{client,teacherClass:cls,view:'checkup',me:user?.email||''})],
+  counsel:['./beta2-monitoring.mjs?v=20261023-op',(m,slot)=>m.mount(slot,{client,teacherClass:cls,view:'counsel',me:user?.email||''})],
   fee:['./beta2-fee.mjs?v=20261022-fe1',(m,slot)=>m.mount(slot,{db,client,teacherClass:cls})], // 출결 › 식비·교육비(보기만, 2026-10-22)
   officers:['./beta2-officers.mjs?v=20261021-ma1',(m,slot)=>m.mount(slot,{client,classes:[classInfo],teacherClass:cls})], // 반 임원 지정·교체(보궐)·끝내기, 자기 반만
   // 공통메모 알림은 출결판으로 가서 그 날짜 공통메모를 판 위에 보입니다(teacher-beta.js showDay).
@@ -133,6 +143,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  // 탭 줄·화면·머리말을 지금 상태에 맞춥니다(기다리는 일 없이 바로).
  function paint(){
   wrap.querySelectorAll('[data-main]').forEach(b=>{const on=b.dataset.main===main;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
+  topNav?.querySelectorAll('[data-main]').forEach(b=>{const on=b.dataset.main===main;b.classList.toggle('active',on);b.setAttribute('aria-current',String(on));b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
   wrap.querySelectorAll('[data-panel]').forEach(p=>{p.hidden=p.dataset.panel!==main;});
   // 하위 탭 줄은 지금 큰 탭 것만 그립니다. 하위 탭이 없는 큰 탭이면 비우고 숨깁니다(beta2.css의 [hidden] 규칙과 함께).
   const subs=TEACHER_SUBS[main]||[],nav=$('#t2Sub');
@@ -200,7 +211,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  // 알림함: 머리글 종(index.html)이 'hint:notify-open'을 보내면 알림 칸을 엽니다(사용자 요청 2026-10-19). 주소는 #t/notify.
  const openNotify=()=>void go('notify','',{push:true});document.addEventListener('hint:notify-open',openNotify);
  const dispose=()=>{
-  if(disposed)return;disposed=true;observer.disconnect();offVoc();clearInterval(vocTimer);removeEventListener('popstate',onAddress);removeEventListener('hashchange',onAddress);document.removeEventListener('hint:notify-open',openNotify);works.forEach(w=>w?.dispose?.());
+  if(disposed)return;disposed=true;topNav?.remove();topRole?.remove();topbar?.classList.remove('has-primary-nav');observer.disconnect();offVoc();clearInterval(vocTimer);removeEventListener('popstate',onAddress);removeEventListener('hashchange',onAddress);document.removeEventListener('hint:notify-open',openNotify);works.forEach(w=>w?.dispose?.());
   // 미리보기를 떠나면 담임 탭 주소(#t/…)를 지웁니다(관리자 화면 주소에 남지 않게).
   if(preview&&/^#t\//.test(location.hash))history.replaceState(history.state,'',location.pathname+location.search);
  };

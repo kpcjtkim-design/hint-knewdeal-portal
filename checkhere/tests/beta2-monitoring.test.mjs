@@ -81,14 +81,14 @@ test('form text is the Streamlit 담임 상담일지 wording: 9 items in 3 group
  assert.deepEqual(MONITOR_KEYS,M.ITEM_KEYS,'server and screen use the same keys (sheet contract: material)');
  assert.equal(M.ITEMS[0].desc,'강의 시작·종료 시간, 휴식·점심시간 등 계획된 일정이 실제로 지켜졌는지 확인합니다.');
  assert.equal(M.ITEMS.at(-1).desc,'PC, 네트워크, 빔프로젝터 및 실습 장비가 정상 작동했는지 확인합니다.');
- assert.equal(M.SURVEY_NOTICE,'오늘 하루의 반 전체 운영 상태를 기준으로 평가해 주세요. 학생 개인 만족도가 아닌 담임의 운영 점검 기록입니다.');
+ assert.equal(M.SURVEY_NOTICE,'오늘 하루 반 전체 운영 상태를 기준으로 점검해 주세요. 교육생 설문이 아니라 담임이 남기는 반 운영 점검 기록입니다.');
  assert.equal(M.SCORE_LEGEND_TEXT,'점수 기준: 5점 매우 우수(문제 없음) · 4점 양호(경미한 보완) · 3점 보통(개선 필요) · 2점 미흡(원인 확인 필요) · 1점 매우 미흡(즉시 확인 필요)');
  assert.equal(M.LOW_NOTICE,'2점 이하 항목이 있으면 관리자 화면에 확인 필요로 표시됩니다.');
  assert.equal(M.SPECIAL_NOTICE,'누적 출석률 80% 미만 학생은 특별상담 대상으로 자동 분류됩니다.');
  assert.equal(M.SAVE_NOTICE,'상담일지를 저장하면 면담 완료로 자동 처리됩니다.');
  assert.equal(M.step2Title('가상학생가'),'2단계 · 가상학생가 면담 설문 작성');
  assert.deepEqual(M.QUESTIONS.map(q=>q.label),['Q1. 지금까지 진행한 교육에 대해 전반적으로 만족하나요? (어떤 교육이 가장 도움이 되었나요?)','Q2. 교육과정을 학습하는데 어떤 어려운 점이 있나요? (교육내용, 강사역량, 교육환경 등 개선 필요 사항)','Q3. 앞으로 교육과정을 이수하는데 예상되는 어려움이나 특별한 개인 사정이 있나요?','Q4. 기타 특이사항']);
- assert.deepEqual([M.SURVEY_SAVE,M.COUNSEL_SAVE,M.STEP1,M.INTERVIEW_TITLE,M.RECORDS_TITLE],['만족도 조사 저장','상담일지 저장','1단계 · 상담할 학생 선택','1. 일반 인터뷰','내 반 저장 기록']);
+ assert.deepEqual([M.SURVEY_SAVE,M.COUNSEL_SAVE,M.STEP1,M.INTERVIEW_TITLE,M.RECORDS_TITLE],['운영 점검 저장','상담일지 저장','1단계 · 상담할 학생 선택','1. 일반 인터뷰','내 반 저장 기록']);
 });
 
 test('scores: needsCheck (any ≤2), check/payload, sheet rows normalised (flag from the sheet wins)',()=>{
@@ -258,19 +258,19 @@ test('담임: 운영모니터링 › 반 운영 점검 — 원문 양식, 1~5점
   assert.equal(await page.locator('#moDate').inputValue(),TODAY);
   // 다 고르지 않고 저장 → 안내
   await pickScores(page,{schedule:5,content:4});
-  await card.getByRole('button',{name:'만족도 조사 저장'}).click();
+  await card.getByRole('button',{name:'운영 점검 저장'}).click();
   assert.match(await card.locator('[data-err]').innerText(),/점수를 모두 골라 주세요: 교재 및 교구, 강의 전달력/);
   assert.equal(posts.filter(p=>p.action==='b2MonitorSave').length,0);
   await pickScores(page,{material:4,delivery:3,communication:4,participation:4,progress:4,facility:2,equipment:5});
   assert.equal(await card.locator('[data-flag]').innerText(),'확인 필요','a 2 shows 확인 필요 before saving');
   await item(page,'facility').locator('[data-note]').fill('에어컨 고장');
-  await card.getByRole('button',{name:'만족도 조사 저장'}).click();
+  await card.getByRole('button',{name:'운영 점검 저장'}).click();
   await page.waitForFunction(()=>/저장됨/.test(document.querySelector('#moState')?.textContent||''));
   const first=posts.filter(p=>p.action==='b2MonitorSave').at(-1).args[0];
   assert.deepEqual(first,{cls:'1',date:TODAY,scores:{schedule:5,content:4,material:4,delivery:3,communication:4,participation:4,progress:4,facility:2,equipment:5},notes:{...Object.fromEntries(M.ITEM_KEYS.map(k=>[k,''])),facility:'에어컨 고장'}});
   assert.equal(sheet.mons[0].flag,true);
   // 내 반 저장 기록
-  assert.match(await page.locator('#moRec').innerText(),/만족도 제출 이력 1건[\s\S]*확인 필요[\s\S]*교육장 시설/);
+  assert.match(await page.locator('#moRec').innerText(),/운영 점검 이력 1건[\s\S]*확인 필요[\s\S]*교육장 시설/);
   // 다른 날짜로 갔다 돌아오면 채워짐, 고치면 was(지금 sig)
   await page.locator('#moDate').fill(YESTERDAY);await page.locator('#moDate').dispatchEvent('change');
   assert.match(await page.locator('#moState').innerText(),/아직 저장 전/);
@@ -282,10 +282,10 @@ test('담임: 운영모니터링 › 반 운영 점검 — 원문 양식, 1~5점
   assert.equal(await card.locator('[data-flag]').count(),0);
   // 그사이 다른 사람이 고침 → CONFLICT → 새로 읽고 값은 그대로, 다시 저장
   sheet.handle({action:'b2MonitorSave',args:[{cls:'1',date:TODAY,scores:full(1),notes:{},was:sheet.mons[0].sig}],actor:'other@test.kr'});
-  await page.locator('[data-view="checkup"]').getByRole('button',{name:'만족도 조사 저장'}).click();
+  await page.locator('[data-view="checkup"]').getByRole('button',{name:'운영 점검 저장'}).click();
   await page.waitForFunction(()=>/그사이 다른 사람이/.test(document.querySelector('[data-view="checkup"] [data-err]')?.textContent||''));
   assert.equal(await item(page,'facility').locator('input:checked').getAttribute('value'),'3','typed values are kept');
-  await page.locator('[data-view="checkup"]').getByRole('button',{name:'만족도 조사 저장'}).click();
+  await page.locator('[data-view="checkup"]').getByRole('button',{name:'운영 점검 저장'}).click();
   await page.waitForFunction(()=>!/그사이/.test(document.querySelector('[data-view="checkup"] [data-err]')?.textContent||'x'));
   const saves=posts.filter(p=>p.action==='b2MonitorSave').map(p=>p.args[0]);
   assert.equal(saves.length,3);assert.equal(saves[1].was,'sig1');assert.equal(saves[2].was,'sig2','the second try carries the fresh sig');
@@ -432,7 +432,7 @@ test('관리자: 교육 운영 › 운영모니터링 — 반 × 날짜 표(확�
   // 자세히 → 운영팀 확인
   await page.locator('.mo-grid tr[data-cls="1"] [data-cell="1|2026-10-29"]').click();
   const detail=page.locator('#moDetail');await detail.waitFor();
-  assert.match(await detail.innerText(),/1반 · 10\/29\(목\) 반 운영 만족도 조사[\s\S]*확인 필요[\s\S]*작성 teacher@test.kr/);
+  assert.match(await detail.innerText(),/1반 · 10\/29\(목\) 반 운영 점검[\s\S]*확인 필요[\s\S]*작성 teacher@test.kr/);
   assert.match(await detail.locator('tr.hot').innerText(),/교육생 현황·교육 환경\s*교육장 시설\s*1\s*에어컨 고장/);
   assert.equal(await detail.locator('tbody tr').count(),9);
   await detail.getByRole('button',{name:'운영팀 확인'}).click();
@@ -448,7 +448,7 @@ test('관리자: 교육 운영 › 운영모니터링 — 반 × 날짜 표(확�
   assert.deepEqual(await page.locator('#moList tbody tr').evaluateAll(t=>t.map(r=>r.dataset.key)),['3|2026-10-30']);
   assert.equal(await page.locator('.mo-grid tbody tr').count(),1);
   // CSV(만족도): 거른 그대로
-  const [dl]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'만족도 CSV'}).click()]);
+  const [dl]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'운영 점검 CSV'}).click()]);
   assert.equal(dl.suggestedFilename(),'2기_운영모니터링_반운영점검_3반_2026-10-17_2026-10-30.csv');
   const csv=readFileSync(await dl.path(),'utf8').replace(/^﻿/,'').split('\r\n');
   assert.equal(csv.length,2);assert.match(csv[0],/^반,날짜,작성자,과정 시간표 점수,과정 시간표 특이사항,/);assert.match(csv[1],/^3,2026-10-30,t3@test.kr,2,,2,/);
@@ -487,6 +487,6 @@ test('알림 링크: 관리자 #b2monitor?cls&date는 그 기록을 바로 열�
   // 관리자 화면 이동(open)이 받는 문맥과 같은 값으로 다시 엽니다.
   const html=await page.evaluate(async()=>{const m=await import('/beta2-monitoring.mjs');const {createBeta2Client}=await import('/beta2-data.mjs');const host=document.createElement('div');document.body.append(host);
    await m.mount(host,{client:createBeta2Client({getIdToken:async()=>'tok-1'},{admin:true}),classes:Array.from({length:17},(_,i)=>({id:String(i+1),course:''})),context:{classId:'5',date:'2026-10-29'}});return host.querySelector('#moDetail')?.innerText||'';});
-  assert.match(html,/5반 · 10\/29\(목\) 반 운영 만족도 조사[\s\S]*교육 장비\s*2/);
+  assert.match(html,/5반 · 10\/29\(목\) 반 운영 점검[\s\S]*교육 장비\s*2/);
  },sheet);
 });

@@ -1,5 +1,5 @@
 // 2기 운영모니터링(사용자 요청 2026-10-21): 1기 '운영모니터링' 설문 링크를 김소윤 님 Streamlit '담임 상담일지' 양식(허락 받음, 문항 그대로)으로 바꾼 화면.
-// 담임(teacherClass): 운영모니터링 탭 › 반 운영 만족도 조사(view 'checkup', 반·날짜 1건) · 교육생 면담(view 'counsel', 학생마다 1차·2차…, 로테이션). 맨 아래 '내 반 저장 기록'.
+// 담임(teacherClass): 운영모니터링 탭 › 반 운영 점검(view 'checkup', 반·날짜 1건) · 교육생 면담(view 'counsel', 학생마다 1차·2차…, 로테이션). 맨 아래 '내 반 저장 기록'.
 // 관리자: 교육 운영 › 운영모니터링(b2monitor) — 반 × 날짜 제출 표(2점 이하 확인 필요 강조, 운영팀 확인), 거르기(반·기간·확인 필요만), 기록 자세히,
 //  면담 로테이션(반마다 1회 이상 면담 비율·차수·특별상담 대상 미상담 강조)과 상담일지(Q1~Q4, 운영팀 확인), CSV 내려받기 2가지.
 // 특별상담 대상은 누적 출석률 80% 미만(beta2-core studentStats, 교육일 기준). 저장 때 구분은 시트가 정하고, 목록은 화면이 지금 출석률로 보여 줍니다.
@@ -127,7 +127,7 @@ async function mountTeacher(host,{client,teacherClass,view='checkup',me='',notif
   const ms=mons.filter(r=>r.cls===cls).sort((a,b)=>b.date.localeCompare(a.date)),cs=logs.slice().sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')||b.round-a.round);
   const body=recTab==='checkup'?(ms.length?`<table class="b2-table"><thead><tr><th>날짜</th><th>평균</th><th>확인 필요</th><th>운영팀 확인</th><th>작성자</th><th>저장</th></tr></thead><tbody>${ms.map(r=>`<tr data-rec="${esc(r.date)}"><td><button class="b2-btn small ghost" data-open-date="${esc(r.date)}">${esc(md(r.date))}</button></td><td>${esc(M.average(r.scores)??'—')}</td><td>${r.flag?`${flagBadge(true)} <span class="b2-small">${esc(M.lowItems(r.scores).map(i=>i.label).join(', '))}</span>`:''}</td><td>${confirmBadge(r)}</td><td class="b2-small">${esc(r.author)}</td><td class="b2-small b2-muted">${esc(r.savedAt)}</td></tr>`).join('')}</tbody></table>`:'<div class="b2-pad b2-muted">아직 제출한 만족도 조사가 없습니다.</div>')
    :(cs.length?`<table class="b2-table"><thead><tr><th>날짜</th><th>이름</th><th>차수</th><th>구분</th><th>운영팀 확인</th><th>작성자</th></tr></thead><tbody>${cs.map(c=>`<tr><td>${esc(md(c.date))}</td><td>${esc(c.name)}</td><td>${c.round}차</td><td>${kindBadge(c.kind)}</td><td>${confirmBadge(c)}</td><td class="b2-small">${esc(c.author)}</td></tr>`).join('')}</tbody></table>`:'<div class="b2-pad b2-muted">아직 저장한 상담일지가 없습니다.</div>');
-  return `<section class="b2-card mo-card" id="moRec"><header><b>${esc(M.RECORDS_TITLE)}</b><span class="b2-grow"></span><div class="b2-chips">${[['checkup',`만족도 제출 이력 ${ms.length}건`],['counsel',`학생 상담 이력 ${cs.length}건`]].map(([k,l])=>`<button class="b2-chip" data-rec-tab="${k}" aria-pressed="${recTab===k}">${esc(l)}</button>`).join('')}</div></header><div class="b2-table-wrap">${body}</div></section>`;
+  return `<section class="b2-card mo-card" id="moRec"><header><b>${esc(M.RECORDS_TITLE)}</b><span class="b2-grow"></span><div class="b2-chips">${[['checkup',`운영 점검 이력 ${ms.length}건`],['counsel',`학생 상담 이력 ${cs.length}건`]].map(([k,l])=>`<button class="b2-chip" data-rec-tab="${k}" aria-pressed="${recTab===k}">${esc(l)}</button>`).join('')}</div></header><div class="b2-table-wrap">${body}</div></section>`;
  }
  function render(){
   if(!life.alive())return;
@@ -152,7 +152,7 @@ async function mountTeacher(host,{client,teacherClass,view='checkup',me='',notif
   const p=M.monitorPayload({...f,cls});f.saving=true;render();
   try{
    const res=await client.monitorSave(p);
-   toast(`${md(p.date)} 반 운영 만족도 조사를 저장했습니다${(res?.flag??M.needsCheck(p.scores))?' · 확인 필요로 운영팀에 표시됩니다':''}.`);
+   toast(`${md(p.date)} 반 운영 점검를 저장했습니다${(res?.flag??M.needsCheck(p.scores))?' · 확인 필요로 운영팀에 표시됩니다':''}.`);
    tellFlag(notify,p,res,ready);
    form.dirty=false;form.saving=false;await load({fresh:true});
   }catch(e){
@@ -227,13 +227,13 @@ async function mountAdmin(host,{client,classes=[],context}={}){
  let view='checkup',cls=context?.classId&&ids.includes(String(context.classId))?String(context.classId):'all',to=today,from=addDays(today,-13),flagOnly=false,detail='',openLog='';
  if(context?.date&&M.isIso(context.date)){detail=`${cls}|${context.date}`;if(context.date<from)from=context.date;if(context.date>to)to=context.date;}
  let mons=[],logs=[],bundle=null,err='',seq=0,busy='';
- host.innerHTML=`<div class="b2 mo"><style>${STYLE}</style><div class="b2-head"><div><h2>운영모니터링</h2><p>담임이 매일 쓰는 반 운영 만족도 조사(9개 항목, 2점 이하는 확인 필요)와 교육생 면담(상담일지, 학생마다 1차·2차…)을 반별로 확인합니다. 모든 학생이 한 번씩은 면담받도록 로테이션 진행률을 봅니다.</p></div></div>
+ host.innerHTML=`<div class="b2 mo"><style>${STYLE}</style><div class="b2-head"><div><h2>운영모니터링</h2><p>담임이 매일 쓰는 반 운영 점검(9개 항목, 2점 이하는 확인 필요)와 교육생 면담(상담일지, 학생마다 1차·2차…)을 반별로 확인합니다. 모든 학생이 한 번씩은 면담받도록 로테이션 진행률을 봅니다.</p></div></div>
  <section class="b2-card" style="margin-bottom:12px"><div class="b2-toolbar">
   <div class="b2-chips" role="tablist">${[['checkup','반 운영 점검'],['counsel','교육생 면담']].map(([k,l])=>`<button class="b2-chip" data-view="${k}" aria-pressed="${view===k}">${l}</button>`).join('')}</div>
   <label class="b2-field">반<select id="moClass">${classOptions(classes,cls,{all:true})}</select></label>
   <label class="b2-field">시작<input type="date" id="moFrom" value="${from}"></label><label class="b2-field">끝<input type="date" id="moTo" value="${to}"></label>
   <label class="b2-field" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="moFlagOnly"> 확인 필요만</label>
-  <span class="b2-grow"></span><button class="b2-btn" data-act="reload">새로고침</button><button class="b2-btn" data-act="csv-checkup">만족도 CSV</button><button class="b2-btn" data-act="csv-counsel">상담일지 CSV</button></div></section>
+  <span class="b2-grow"></span><button class="b2-btn" data-act="reload">새로고침</button><button class="b2-btn" data-act="csv-checkup">운영 점검 CSV</button><button class="b2-btn" data-act="csv-counsel">상담일지 CSV</button></div></section>
  <div id="moBody">${loading('운영모니터링을 불러오는 중…')}</div></div>`;
  const $=s=>host.querySelector(s);
  const shown=()=>cls==='all'?ids:[cls];
@@ -255,7 +255,7 @@ async function mountAdmin(host,{client,classes=[],context}={}){
   const totals={sub:grid.reduce((n,g)=>n+g.submitted,0),flags:grid.reduce((n,g)=>n+g.flags,0),open:grid.reduce((n,g)=>n+g.unconfirmedFlags,0)};
   return `<div class="b2-stats" style="margin-bottom:12px">${[['제출',totals.sub],['확인 필요',totals.flags,totals.flags?'bad':''],['확인 필요 · 운영팀 확인 전',totals.open,totals.open?'alert':''],['날짜',ds.length]].map(([l,n,k])=>`<div class="b2-stat ${k||''}"><b>${n}</b><span>${esc(l)}</span></div>`).join('')}</div>
   <section class="b2-card mo-card"><header><b>반 × 날짜 제출 현황</b><span class="b2-small b2-muted">✓ = 운영팀 확인 · 칸을 누르면 아래에 자세히</span></header>${ds.length?`<div class="b2-table-wrap"><table class="b2-table mo-grid"><thead><tr><th>반</th>${ds.map(d=>`<th>${esc(md(d))}</th>`).join('')}<th>제출</th><th>확인 필요</th></tr></thead><tbody>${grid.map(g=>`<tr data-cls="${esc(g.cls)}" class="${g.unconfirmedFlags?'hot':''}"><td><b>${esc(classLabel(g.cls))}</b></td>${g.cells.map(cell).join('')}<td>${g.submitted}/${ds.length}</td><td>${g.flags||''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="b2-pad b2-muted">이 기간에 교육일이 없습니다.</div>'}</section>
-  ${rec?`<section class="b2-card mo-card" id="moDetail"><header><b>${esc(classLabel(rec.cls))} · ${esc(md(rec.date))} 반 운영 만족도 조사</b>${flagBadge(rec.flag)}${confirmBadge(rec)}<span class="b2-small b2-muted">작성 ${esc(rec.author)} · 저장 ${esc(rec.savedAt)}${rec.editedBy?` · 고침 ${esc(rec.editedBy)}`:''}</span><span class="b2-grow"></span><button class="b2-btn small ${rec.confirmed?'ghost':'primary'}" data-confirm-mon="${esc(detail)}" ${busy?'disabled':''}>${rec.confirmed?'운영팀 확인 취소':'운영팀 확인'}</button><button class="b2-btn small ghost" data-act="close-detail">닫기</button></header>${recordDetail(rec)}</section>`:''}
+  ${rec?`<section class="b2-card mo-card" id="moDetail"><header><b>${esc(classLabel(rec.cls))} · ${esc(md(rec.date))} 반 운영 점검</b>${flagBadge(rec.flag)}${confirmBadge(rec)}<span class="b2-small b2-muted">작성 ${esc(rec.author)} · 저장 ${esc(rec.savedAt)}${rec.editedBy?` · 고침 ${esc(rec.editedBy)}`:''}</span><span class="b2-grow"></span><button class="b2-btn small ${rec.confirmed?'ghost':'primary'}" data-confirm-mon="${esc(detail)}" ${busy?'disabled':''}>${rec.confirmed?'운영팀 확인 취소':'운영팀 확인'}</button><button class="b2-btn small ghost" data-act="close-detail">닫기</button></header>${recordDetail(rec)}</section>`:''}
   <section class="b2-card mo-card"><header><b>기록 ${list.length}건</b><span class="b2-small b2-muted">${flagOnly?'확인 필요만 · ':''}${esc(md(from))} ~ ${esc(md(to))}</span></header>${list.length?`<div class="b2-table-wrap"><table class="b2-table" id="moList"><thead><tr><th>날짜</th><th>반</th><th>작성자</th><th>평균</th><th>2점 이하 항목</th><th>확인</th><th></th></tr></thead><tbody>${list.map(r=>`<tr class="${r.flag&&!r.confirmed?'hot':''}" data-key="${esc(r.cls)}|${esc(r.date)}"><td>${esc(md(r.date))}</td><td>${esc(classLabel(r.cls))}</td><td class="b2-small">${esc(r.author)}</td><td>${esc(M.average(r.scores)??'—')}</td><td>${r.flag?`${flagBadge(true)} ${esc(M.lowItems(r.scores).map(i=>`${i.label} ${r.scores[i.key]}점`).join(', '))}`:''}</td><td>${confirmBadge(r)}</td><td><button class="b2-btn small" data-cell="${esc(r.cls)}|${esc(r.date)}">자세히</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="b2-pad b2-muted">해당하는 기록이 없습니다.</div>'}</section>`;
  }
  function counselHtml(){
