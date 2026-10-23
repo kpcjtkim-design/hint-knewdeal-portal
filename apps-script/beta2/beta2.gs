@@ -45,7 +45,7 @@ var B2 = {
   DOC_TYPES: ['출석부', '교육참여확인서', '훈련생 확인서', '기타'],
   DOC_DELIVERY: ['이메일(PDF)', '담임 전달', '우편'],
   MAIL: ['hint.kpc@gmail.com', 'kpc.jtkim@gmail.com'],
-  BETA_URL: 'https://hint-knewdealportal.vercel.app/beta2',
+  BETA_URL: 'https://hint-knewdeal-1gi.vercel.app/beta2', // 2026-10-23 기본 주소가 2기로 옮겨가 1기 전용 주소로
   // 자동 동기화: 도는 시간(요일 1=월~7=일, Script Properties B2_SYNC_WINDOW로 바꿀 수 있음), 한 번에 색을 확인할 반 수,
   // 하루 트리거 사용 상한(넘으면 30분에 한 번), 한 번에 그릴 출결판 수, 출결판 실패 허용 횟수,
   // 일시 오류 때 쉬었다 다시 시도하는 간격, 기존 행 맞추기에서 뺄 '사람이 고친 행'을 변경이력에서 찾기 시작하는 날(beta2 설치일)

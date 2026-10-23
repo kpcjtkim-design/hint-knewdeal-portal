@@ -1,6 +1,6 @@
 // Private Apps Script project, owned and authorized by hint.kpc.
 // No web-app deployment, raw-response storage, persistent tokens, or Sheet writes.
-const SURVEY_ENDPOINT = 'https://hint-knewdealportal.vercel.app/api/survey-sync';
+const SURVEY_ENDPOINT = 'https://hint-knewdeal-1gi.vercel.app/api/survey-sync'; // 2026-10-23 기본 주소가 2기로 옮겨가 1기 전용 주소로
 function surveyDueSlot_(now) {
   const date = Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd');
   const hour = Number(Utilities.formatDate(now, 'Asia/Seoul', 'HH'));
