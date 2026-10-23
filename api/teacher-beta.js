@@ -81,6 +81,12 @@ export function teacherClassIds(f){
   const explicit=list(f.tempClassIds),temps=(explicit!==null?explicit:list(f.classIds)||[]).filter(x=>CLASS_IDS.includes(x)&&x!==primary);
   return [...new Set([primary,...temps].filter(Boolean))];
 }
+// 계정 문서(users/{email}) 읽기를 줄입니다(2026-10-23 Firebase 무료 한도 하루 5만 읽기 초과 사고): 로그인 토큰은 매번 확인하고,
+// 계정 문서는 이 함수 인스턴스 안에서 10분 기억합니다. Firebase가 한도(429)로 막으면 24시간 안에 확인했던 값을 그대로 씁니다.
+const PROFILE_FRESH_MS=10*60*1000,PROFILE_STALE_MS=24*60*60*1000,profileCache=new Map();
+export function cachedProfile(email,now=Date.now(),{stale=false}={}){const c=profileCache.get(email);return c&&now-c.at<(stale?PROFILE_STALE_MS:PROFILE_FRESH_MS)?c.user:null;}
+export const forgetProfiles=()=>profileCache.clear(); // 시험용
+export function rememberProfile(user,now=Date.now()){profileCache.set(user.email,{user,at:now});if(profileCache.size>500)profileCache.delete(profileCache.keys().next().value);return user;}
 async function verifyUser(idToken){
   if(!FIREBASE.ready||!FIREBASE.key||!FIREBASE.project)throw new Error('FIREBASE_NOT_CONFIGURED');
   if(!idToken)throw new Error('LOGIN_REQUIRED');
@@ -89,14 +95,15 @@ async function verifyUser(idToken){
   const email=String((await r.json()).users?.[0]?.email||'').toLowerCase();
   if(!email)throw new Error('LOGIN_REQUIRED');
   if(ADMIN.has(email))return{email,role:'ADMIN',classIds:CLASS_IDS};
+  const hit=cachedProfile(email);if(hit)return hit;
   const p=await fetch(`https://firestore.googleapis.com/v1/projects/${FIREBASE.project}/databases/(default)/documents/users/${encodeURIComponent(email)}`,{headers:{authorization:`Bearer ${idToken}`}});
-  if(p.status===429)throw new Error('DATABASE_QUOTA_EXCEEDED');
+  if(p.status===429){const old=cachedProfile(email,Date.now(),{stale:true});if(old)return old;throw new Error('DATABASE_QUOTA_EXCEEDED');}
   if(!p.ok)throw new Error(p.status===401?'LOGIN_REQUIRED':'PROFILE_NOT_FOUND');
   const f=(await p.json()).fields||{},role=scalar(f.role);
   if(f.active!==undefined&&f.active?.booleanValue!==true)throw new Error('ACCESS_DENIED');
-  if(role==='ADMIN')return{email,role,classIds:CLASS_IDS};
+  if(role==='ADMIN')return rememberProfile({email,role,classIds:CLASS_IDS});
   if(role!=='TEACHER')throw new Error('ACCESS_DENIED');
-  return{email,role,classIds:teacherClassIds(f)};
+  return rememberProfile({email,role,classIds:teacherClassIds(f)});
 }
 // 관리자는 미리보기에서 고른 반을 씁니다. 담임은 담당반 밖의 반 번호를 보내면 기본담당반으로 덮어씁니다.
 export function resolveClass(user,body,action,args){

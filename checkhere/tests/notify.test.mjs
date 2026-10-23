@@ -52,12 +52,12 @@ test('recipients: my e-mail for everyone, the admin role for admins, one query p
  assert.deepEqual(recipientQueries({email:''}),[]);
 });
 
-test('merging keeps one copy, newest first, at most 100; filters and unread follow readBy',()=>{
+test('merging keeps one copy, newest first, at most 40 (2026-10-23 읽기 줄이기); filters and unread follow readBy',()=>{
  const n=(id,s,o={})=>({id,createdAt:{seconds:s},kind:'민원',readBy:[],...o});
  const list=mergeNotifications([n('a',1),n('b',3)],[n('b',3,{readBy:[A1]}),n('c',2,{kind:'서류발급'})]);
  assert.deepEqual(list.map(x=>x.id),['b','c','a']);
  assert.deepEqual(list[0].readBy,[A1],'the later copy wins');
- assert.equal(mergeNotifications(Array.from({length:130},(_,i)=>n('x'+i,i))).length,100);
+ assert.equal(mergeNotifications(Array.from({length:130},(_,i)=>n('x'+i,i))).length,40);
  assert.equal(isUnread(list[0],'HINT.KPC@gmail.com'),false);assert.equal(isUnread(list[1],A1),true);
  const unread=x=>isUnread(x,A1);
  assert.deepEqual(pickNotifications(list,{filter:'unread'},unread).map(x=>x.id),['c','a']);
@@ -121,7 +121,7 @@ test('the inbox merges my recipient queries live, counts unread and marks one or
  assert.equal(inbox(),s);
  s.subscribe(x=>seen.push(x.list.length));
  await new Promise(r=>setTimeout(r,0));
- assert.deepEqual(fs.subs.map(x=>[x.q.path,x.q.filters.map(f=>[f.field,f.op,f.value]),x.q.limit]),[['notifications',[['to','array-contains',A1]],100],['notifications',[['toRole','==','admin']],100]]);
+ assert.deepEqual(fs.subs.map(x=>[x.q.path,x.q.filters.map(f=>[f.field,f.op,f.value]),x.q.limit]),[['notifications',[['to','array-contains',A1]],40],['notifications',[['toRole','==','admin']],40]]);
  fs.push([
   {id:'n2',kind:'민원',title:'민원·이슈 접수 · 3반',toRole:'admin',to:[A2],readBy:[T1],createdAt:{seconds:20}},
   {id:'n1',kind:'출결대조 메모',title:'출결대조 메모 · 1반',toRole:'admin',to:[A1],readBy:[],createdAt:{seconds:30}},

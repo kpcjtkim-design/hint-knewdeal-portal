@@ -130,7 +130,7 @@ export function mountTeacherBeta(el, OPT) {
         // before: 보내는 때의 지문(앞 저장이 반영되며 받은 새 sig 포함). 지문을 모르면 빼서 예전처럼.
         const items=batch.map(([k,v])=>{const b=cls===S.cls?sigOf(k,v.force):undefined;return b===undefined?v.item:Object.assign({},v.item,{before:b});});
         const res=await runFor(cls,'portalSaveBatch',{cls,items});
-        if(res&&res.queued&&Array.isArray(res.ids)){batch.forEach(([k,v],i)=>{const id=res.ids[i];Q.wait.set(id,Object.assign({id,key:k},v));Q.latest.set(k,id);});qPoll(1500);}
+        if(res&&res.queued&&Array.isArray(res.ids)){batch.forEach(([k,v],i)=>{const id=res.ids[i];Q.wait.set(id,Object.assign({id,key:k},v));Q.latest.set(k,id);});Q.pollMs=0;qPoll(1500);}
         else batch.forEach(([k,v],i)=>{if(Q.buf.has(k))return;const r=(res&&res.results||[])[i]||{ok:false,msg:'응답 오류'};if(r.ok){qDone(k,v,r.warn);if(cls===S.cls){sigSet(k,undefined);sigLater();}}else if(r.conflict||/^CONFLICT/.test(String(r.msg||'')))qConflict(k,v,r.msg);else qFail(k,v,sheetWait(r.msg,v.item.type,'다시 저장해 주세요'));});
       }catch(e){batch.forEach(([k,v])=>{if(!Q.buf.has(k))qFail(k,v,e.message);});}
       finally{Q.sending=null;qPaint();if([...Q.buf.keys()].some(k=>!inFlight(k)))qLater(0);}
@@ -150,7 +150,8 @@ export function mountTeacherBeta(el, OPT) {
         else if(!Q.buf.has(w.key))qFail(w.key,w,it.error||'시트에 반영하지 못했습니다');
       }
     }catch(e){}
-    qPaint();qPoll(2500);if(Q.buf.size&&!Q.timer&&!Q.sending)qLater(0); // 앞 저장을 기다리던 같은 칸
+    // 확인 간격은 2.5초에서 시작해 1.5배씩 10초까지(읽기 = 기다리는 칸 수라 Firebase 읽기를 줄임, 2026-10-23). 새 저장을 보내면 다시 짧게.
+    Q.pollMs=Math.min(10000,Math.round((Q.pollMs||1700)*1.5));qPaint();qPoll(Q.pollMs);if(Q.buf.size&&!Q.timer&&!Q.sending)qLater(0); // 앞 저장을 기다리던 같은 칸
   }
   // 반영된 내 저장의 새 지문: 쓰기는 받은 sig, 바뀐 것 없음은 그대로, 지우기·sig 없음은 잠깐 뒤 묶음에서 다시 읽음(운영팀 메모가 있으면 '출석' 줄로 남기 때문).
   function qSig(key,w,it){

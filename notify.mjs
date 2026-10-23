@@ -25,7 +25,7 @@ export async function notify(kind,payload={}){
  }catch(e){console.warn('알림을 남기지 못했습니다',e);try{ctx.warn(`알림을 남기지 못했습니다(${kind}) · 저장은 됐습니다`);}catch{}return {ok:false,error:e};}
 }
 
-// 실시간 알림 저장소(로그인 한 번에 하나). 받는 사람 조건마다 onSnapshot(최근 100건)을 따로 걸고 합칩니다.
+// 실시간 알림 저장소(로그인 한 번에 하나). 받는 사람 조건마다 onSnapshot(최근 40건, 2026-10-23 읽기 줄이기)을 따로 걸고 합칩니다.
 export const inbox=()=>current;
 export function stopInbox(){current?.stop();}
 export function startInbox({db,user,admin=false,classIds=[],fs=null}){
