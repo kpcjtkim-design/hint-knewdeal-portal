@@ -84,7 +84,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261023-dz','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261023-rs','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -102,7 +102,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showStatus(slot){
   slot.append(statusHost);
   if(!status){
-   statusWait||=import(fresh('./beta2-status.mjs','status')).then(async m=>{if(alive())status=keep(await m.mount(statusHost,{client,classes:[classInfo],teacherClass:cls,tab:STATUS_VIEWS.has(sub)?sub:'stats',hideTabs:true}));}).catch(e=>{statusWait=null;tries.status=(tries.status||0)+1;throw e;});
+   statusWait||=import(fresh('./beta2-status.mjs?v=20261023-rs','status')).then(async m=>{if(alive())status=keep(await m.mount(statusHost,{client,classes:[classInfo],teacherClass:cls,tab:STATUS_VIEWS.has(sub)?sub:'stats',hideTabs:true}));}).catch(e=>{statusWait=null;tries.status=(tries.status||0)+1;throw e;});
    await statusWait;
   }
   if(status&&STATUS_VIEWS.has(sub))status.setView(sub);
@@ -192,7 +192,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  // 질병 인정 경고: 4회 이상이면 모든 탭 위에 띄웁니다(출결원장 기준, 체크히어 메모와 다르면 함께 표시).
  (async()=>{try{
   const [b,ch]=await Promise.all([client.bundle(cls),client.checkhereDisease([cls]),reasons]);if(!alive())return; // 질병 판정도 사유 목록을 따름
-  const report=diseaseReport(studentStats(b,{cls}),ch),el=$('#t2Alert');
+  const report=diseaseReport(studentStats(b,{cls,to:'9999-12-31'}),ch),el=$('#t2Alert'); // 미리 넣은 인정 기록까지(증빙·질병 탭과 같게)
   if(!report.rows.length&&!report.review.length)return;
   el.hidden=false;el.classList.toggle('hard',report.rows.some(r=>r.count>=6));
   el.innerHTML=`<span>⚠ 질병 인정 ${report.rows.length?report.rows.map(r=>`${esc(r.name)} ${r.count}/6회${r.count>6?' 초과':r.count===6?' 도달':''}`).join(' · '):'4회 이상 없음'}${report.review.length?` · 체크히어 메모와 다른 날 ${report.review.length}명 확인 필요`:''}</span><button type="button" data-alert-go="1">자세히</button>`;

@@ -29,7 +29,8 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  let current={rows:[],csv:[],copy:''};
  const range=()=>{const p=PERIODS.find(x=>x.id===period)||PERIODS[0];return {from:p.from,to:p.to<bundle.today?p.to:bundle.today,until:p.to};};
  // withTest: 증빙서류·질병 인정 '전체 반' 목록에는 테스트반 줄도 넣습니다(위 숫자 상자에서는 뺌). 출결 통계는 공식 합계라 넣지 않습니다.
- const stats=({withTest=false}={})=>{const {from,to}=range();return studentStats(bundle,{cls:cls==='all'?null:cls,from,to,withTest:withTest&&cls==='all'}).filter(s=>!search||s.name.includes(search));};
+ // ahead: 증빙서류·질병 인정은 오늘 뒤 날짜 기록도 넣습니다(미리 넣은 인정 출결, 개강 전 가상 데이터 — 사용자 2026-10-23 '증빙서류·질병인정 탭에 뜨지 않음'). 출결 통계(출석률)는 오늘까지.
+ const stats=({withTest=false,ahead=false}={})=>{const {from,to,until}=range();return studentStats(bundle,{cls:cls==='all'?null:cls,from,to:ahead?until:to,withTest:withTest&&cls==='all'}).filter(s=>!search||s.name.includes(search));};
  const official=rows=>cls==='all'?rows.filter(r=>!isTestClass(r.cls)):rows;
  const testNote=(n,what)=>n?`<div class="b2-note" style="margin:8px 14px 0">테스트반 ${esc(what)} ${n}건은 목록에만 보이고 위 숫자에는 넣지 않았습니다.</div>`:'';
  function table(head,rows){return `<div class="b2-table-wrap"><table class="b2-table"><thead><tr>${head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td colspan="${head.length}"><div class="b2-muted b2-pad">해당하는 학생이 없습니다.</div></td></tr>`}</tbody></table></div>`;}
@@ -37,7 +38,7 @@ export async function mount(host,{client,classes,selected,context,teacherClass=n
  async function render(){
   if(!life.alive()||!bundle)return;
   if(!hideTabs){$('#s2Tabs').innerHTML=STATUS_TABS.map(([k,l])=>`<button class="b2-tab" role="tab" data-view="${k}" aria-selected="${view===k}">${l}</button>`).join('');}
-  const list=stats({withTest:view==='evidence'||view==='disease'}),{from,to,until}=range(),title=`${cls==='all'?'전체 반':classLabel(cls)} · ${from?md(from):'전체 기간'} ~ ${md(to)}`;
+  const ahead=view==='evidence'||view==='disease',list=stats({withTest:ahead,ahead}),{from,to:today,until}=range(),to=ahead?until:today,title=`${cls==='all'?'전체 반':classLabel(cls)} · ${from?md(from):'전체 기간'} ~ ${md(to)}`;
   if(view==='stats'){
    const sorted=[...list].sort((a,b)=>(a.rate??101)-(b.rate??101)||Number(a.cls)-Number(b.cls)||a.name.localeCompare(b.name,'ko'));
    const active=list.filter(s=>s.status==='재학'&&s.rate!==null),avg=active.length?active.reduce((n,s)=>n+s.rate,0)/active.length:null,low=active.filter(s=>s.rate<PASS).length;
