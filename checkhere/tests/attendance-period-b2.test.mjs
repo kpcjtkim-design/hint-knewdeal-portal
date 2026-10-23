@@ -100,6 +100,7 @@ test('one 1기 class template is filled with 2기 class headers; every 2기 shee
  assert.equal(at(prof,1,1)[2],'출석부 (서울(관악구)_모빌리티 AI_서울대)');assert.equal(at(prof,4,3)[2],'서울 관악구 관악로 1');assert.equal(at(prof,6,3)[2],'[현대자동차그룹 HINT] 모빌리티 AI_서울대');assert.equal(at(prof,9,3)[2],'30명');
  assert.equal(at(prof,3,3)[2],at(base,3,3)[2],'훈련기관명 stays as in the 1기 file');assert.equal(at(prof,15,9)[2],'출석률');
  prof.cells.forEach((c,i)=>assert.equal(c[3],base.cells[i][3],'styles unchanged'));assert.deepEqual(prof.missing,[]);
+ assert.equal(at(b2PeriodProfile(TEMPLATES,'4',{capacity:38}),9,3)[2],'38명','정원: 반정보 F열(시트 capacity)이 먼저');assert.equal(at(b2PeriodProfile(TEMPLATES,'4',{capacity:null}),9,3)[2],`${CLASSES.find(c=>c.id==='4').capacity}명`,'시트 정원이 비면 cohort.json');
  const two=b2PeriodProfile(TEMPLATES,'2',RAW.classes[1]);assert.deepEqual(two.missing,['소재지']);assert.equal(at(two,6,3)[2],CLASSES.find(c=>c.id==='2').official,'no 반정보 HRD name → cohort official name');
  for(const c of CLASSES){const n=b2PeriodProfile(TEMPLATES,c.id,{}).name.replace(/_\d+\s*단위기간$/,'_사용자지정 단위기간');assert.ok(n.replace('사용자지정','3').length<=31,n);assert.ok(!/[:\\/?*[\]]/.test(n),n);}
  assert.equal(b2PeriodFileName('1','1','2026-10-28','2026-11-27'),'2기_01반_1단위출석부_1028-1127.xlsx');

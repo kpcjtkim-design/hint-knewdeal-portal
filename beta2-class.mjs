@@ -97,7 +97,7 @@ export async function mount(host,{db,user,classes=[],client,selected,context,ope
    return `<dt>${esc(role)}</dt><dd data-officer="${esc(role)}">${list.length?list.map(o=>`<span class="b2c-officer">${esc(o.name)} <span class="b2-badge ${tone[o.kind]||'e-ok'}">${esc(o.kind||'최초')}</span>${needs.some(n=>n.role===role&&n.name===o.name)?' <span class="b2-badge t-absent">보궐 필요</span>':''}</span>`).join(', '):'<span class="b2-muted">없음</span>'}</dd>`;}).join(''):officers.map(([l,v])=>`<dt>${esc(l)}</dt><dd>${esc(v)}</dd>`).join('');
   card('info',`${esc(cls)}반 정보${isTestClass(cls)?' <span class="b2-badge t-na">테스트반</span>':''}`,
    `<dl class="b2c-kv"><dt>지역</dt><dd>${esc(c.region||'-')}${c.area&&c.area!==c.region?` · ${esc(c.area)}`:''}</dd><dt>과정</dt><dd>${esc(c.course||'-')}${c.hrdName?`<span class="b2-sub">${esc(c.hrdName)}</span>`:''}</dd><dt>교육장</dt><dd>${esc(c.venue||'-')}${c.address?`<span class="b2-sub">${esc(c.address)}</span>`:''}</dd><dt>담임</dt><dd data-teacher>${esc(c.teacher||'미등록')}${c.phone?` · ${esc(c.phone)}`:''}</dd>${officerRows}</dl>
-   ${nums([['총원',roster.length],['재학',count('재학')],['중도탈락',count('중도탈락'),count('중도탈락')?'bad':''],['조기취업',count('조기취업')],['수료',count('수료')]])}`,
+   ${nums([['정원',c.capacity??'-'],['총원',roster.length],['재학',count('재학')],['중도탈락',count('중도탈락'),count('중도탈락')?'bad':''],['조기취업',count('조기취업')],['수료',count('수료')]])}`,
    go('교육생 상태','b2roster')+go('반 임원','b2officers'));
  }
  function dayRows(){const b=bundle();return dayView(b,cls,date,ledgerIndex(b));}

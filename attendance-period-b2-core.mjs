@@ -96,7 +96,8 @@ export function b2PeriodProfile(templates,classId,sheetClass={}){
  const title=c.test?c.name:`${c.area}_${c.course}_${c.venue}`;
  const sheetBase=[`${c.id}. ${title}`,`${c.id}. ${c.course}_${c.venue}`,`${c.id}. ${c.venue}`].map(s=>s.replace(SHEET_BAD,' ')).find(s=>(s+'_9 단위기간').length<=31)||`${c.id}반`;
  const address=String(sheetClass.address||'').trim(),course=String(sheetClass.hrdName||'').trim()||(c.official||title);
- const set={'1,1':`출석부 (${title})`,'4,3':address,'6,3':course,'9,3':`${c.capacity||0}명`};
+ const cap=Number.isFinite(sheetClass.capacity)?sheetClass.capacity:c.capacity; // 정원: 마스터시트 반정보 F열(b2Bundle classes.capacity, 시트 ① v27~), 비면 cohort.json
+ const set={'1,1':`출석부 (${title})`,'4,3':address,'6,3':course,'9,3':`${cap||0}명`};
  const cells=base.cells.map(x=>{const k=`${x[0]},${x[1]}`;return k in set?[x[0],x[1],set[k],x[3]]:[...x];});
  return {...JSON.parse(JSON.stringify(base)),name:`${sheetBase}_1 단위기간`,cells,missing:address?[]:['소재지']};
 }
