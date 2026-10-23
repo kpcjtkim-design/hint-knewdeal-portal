@@ -102,7 +102,7 @@ export function mountTeacherBeta(el, OPT) {
   function qConflict(key,v,msg){
     const nb=Q.buf.get(key);if(nb&&nb.cls===v.cls){Q.buf.delete(key);v=nb;} // 그사이 또 고른 값이 있으면 그것이 내 값
     Q.fail.set(key,{item:v.item,before:v.before,cls:v.cls,error:String(msg||'').replace(/^CONFLICT:\s*/,'')||'운영팀이 그사이 고쳤습니다',conflict:true});
-    toast('운영팀이 그사이 고쳤습니다: '+v.item.name+' '+md(v.item.date)+' · 새 값을 불러옵니다');
+    toast('운영팀이 그사이 고쳤습니다: '+v.item.name+' '+md(v.item.date)+' · 새 값을 불러옵니다');if(OPT.onSaveIssue)try{OPT.onSaveIssue(v.item.name+' '+md(v.item.date)+' · 운영팀이 그사이 고쳐 내 값은 저장되지 않았습니다');}catch{}
     if(S.sel&&v.cls===S.cls&&qKey(S.sel.n,S.sel.day)===key)st('운영팀이 그사이 고쳤습니다 · 새 값을 불러오는 중…','err');
     clearTimeout(conflictT);conflictT=setTimeout(()=>{if(v.cls===S.cls)void reload(true);},200);
   }
@@ -165,7 +165,7 @@ export function mountTeacherBeta(el, OPT) {
   }
   function qFail(key,v,msg){
     Q.fail.set(key,{item:v.item,before:v.before,cls:v.cls,error:msg});
-    toast('저장되지 않았습니다: '+v.item.name+' '+md(v.item.date)+' · '+msg);
+    toast('저장되지 않았습니다: '+v.item.name+' '+md(v.item.date)+' · '+msg);if(OPT.onSaveIssue)try{OPT.onSaveIssue(v.item.name+' '+md(v.item.date)+' 저장되지 않았습니다 · '+msg);}catch{}
     if(S.sel&&v.cls===S.cls&&qKey(S.sel.n,S.sel.day)===key)st('저장되지 않았습니다 · '+msg,'err');
   }
   // 다시 열 때(새로고침 포함): 오늘 실패한 내 항목을 '저장 안 됨'으로 되살립니다(대기 중인 값은 서버가 출결판에 덮어 줌).
@@ -354,7 +354,8 @@ export function mountTeacherBeta(el, OPT) {
     const miss=f.type===DUP?dupParts(f).count<DUP_RULE.minParts:need&&!(need==='oa'?f.oa&&f.ob:f[need]); // 중복: 지각·조퇴·외출 시간이 둘 이상 없으면
     return '<div class="note tv" id="tv" style="margin-top:8px">시간(보기만): '+(shown.length?shown.join(' · '):'없음')+(miss?' · 시간은 운영팀이 체크히어 기록으로 맞춥니다':'')+'</div>';
   }
-  function st(t,k){const s=$('#st');if(s){s.textContent=t;s.className='status'+(k?' '+k:'');}}
+  // 저장 실패 안내는 출결판 밖(다른 탭)에 있어도 보이게 OPT.onSaveIssue로도 알립니다(사용자 2026-10-23 탭 이동 중 저장).
+  function st(t,k){const s=$('#st');if(s){s.textContent=t;s.className='status'+(k?' '+k:'');}if(k==='err'&&OPT.onSaveIssue)try{OPT.onSaveIssue(t);}catch{}}
   function later(){st('입력 중…');clearTimeout(S.timer);S.timer=setTimeout(save,700);}
   function flush(){if(S.timer){clearTimeout(S.timer);S.timer=null;save();}}
   async function save(){
@@ -426,7 +427,7 @@ export function mountTeacherBeta(el, OPT) {
     const gd=$('#goDropout');if(gd)gd.onclick=()=>OPT.onTab('dropout');
   }
   login();
-  return { unsaved, canLeave: () => { if (!unsaved()) return true; flush(); if (Q.buf.size) void qSend(); return window.confirm('아직 시트에 저장되지 않은 출결 입력이 있습니다(' + unsaved() + '건).\n지금 나가면 입력이 사라질 수 있습니다. 그래도 나갈까요?\n\n「취소」를 누르면 남아서 저장이 끝나는 것을 기다립니다.'); },
+  return { unsaved, flush: () => { flush(); if (Q.buf.size) void qSend(); }, canLeave: () => { if (!unsaved()) return true; flush(); if (Q.buf.size) void qSend(); return window.confirm('아직 시트에 저장되지 않은 출결 입력이 있습니다(' + unsaved() + '건).\n지금 나가면 입력이 사라질 수 있습니다. 그래도 나갈까요?\n\n「취소」를 누르면 남아서 저장이 끝나는 것을 기다립니다.'); },
     reload: () => reload(true), setClass: c => { OPT.cls = c; S.tab = OPT.tab || 'today'; S.sel = null; login(); },
     setTab: k => { if (S.tab === k || !TABS.some(t => t[0] === k)) return; if (S.d) { flush(); S.tab = k; render(); } else S.tab = k; },
     // 공통메모 알림에서 온 날: 출결판 위 공통메모 줄을 그날로(판에 없는 날이면 칸을 더함). 아직 불러오는 중이면 불러온 뒤 그날로 보입니다.

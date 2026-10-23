@@ -121,7 +121,7 @@ test('the queue turns on only with a valid 2기 service account; WRITE_QUEUE=off
  // 문서 id: 이름순 = 시간순, 같은 밀리초 안에서도 순서대로
  const ids=[wq.queueId(1000),wq.queueId(1000),wq.queueId(1001),wq.queueId(99999999999)];
  assert.deepEqual([...ids].sort(),ids);assert.equal(new Set(ids).size,4);assert.match(ids[0],/^[0-9a-z]{19}$/);
- assert.equal(wq.QUEUE_BATCH,300);assert.equal(wq.kstDay(Date.parse('2026-10-28T15:30:00Z')),'2026-10-29');
+ assert.equal(wq.QUEUE_BATCH,60);assert.equal(wq.kstDay(Date.parse('2026-10-28T15:30:00Z')),'2026-10-29');
 });
 
 test('teacher batch save: one Firestore commit, one document per student and date, class forced to the own class, answered at once as queued',async t=>{
@@ -185,7 +185,7 @@ test('without a service account nothing changes: saves go straight to the sheet 
  assert.equal(fs.stats.commit+fs.stats.query+fs.stats.token,0);
 });
 
-test('drain: one lease, oldest first, 300 per sheet call (kind attendance, server admin actor), results become done/failed, lease released',async t=>{
+test('drain: one lease, oldest first, 60 per sheet call (kind attendance, server admin actor), results become done/failed, lease released',async t=>{
  let n=0;
  const {fs,calls,settle}=setup(t,{sheet:({action,args})=>{
   if(action!=='b2ApplyQueue')return Response.json({ok:true,data:{}});
@@ -197,17 +197,17 @@ test('drain: one lease, oldest first, 300 per sheet call (kind attendance, serve
  assert.equal(fs.queue().length,360);
  const sum=await QUEUE.drain();
  const applies=sheetCalls(calls,'b2ApplyQueue');
- assert.deepEqual(applies.map(c=>c.args[0].items.length),[300,60],'300 then the rest');
+ assert.deepEqual(applies.map(c=>c.args[0].items.length),[60,60,60,60,60,60],'60 at a time');
  assert.deepEqual([applies[0].actor,applies[0].role],[wq.SERVER_ACTOR,'ADMIN']);
  const first=applies[0].args[0].items;
- assert.deepEqual(first.map(i=>i.rec.name),Array.from({length:300},(_,i)=>`학생${String(i).padStart(3,'0')}`),'oldest first');
+ assert.deepEqual(first.map(i=>i.rec.name),Array.from({length:60},(_,i)=>`학생${String(i).padStart(3,'0')}`),'oldest first');
  assert.deepEqual(Object.keys(first[0]).sort(),['actor','id','kind','rec','role','via']);assert.equal(first[0].kind,'attendance');
  assert.deepEqual(first[0].rec,{cls:'3',name:'학생000',date:'2026-10-29',type:'지각',inT:'',outT:'',oa:'',ob:'',reason:'',ev:'',evr:''});
- assert.deepEqual({rounds:sum.rounds,done:sum.done,failed:sum.failed,busy:sum.busy},{rounds:2,done:358,failed:2,busy:false});
+ assert.deepEqual({rounds:sum.rounds,done:sum.done,failed:sum.failed,busy:sum.busy},{rounds:6,done:354,failed:6,busy:false});
  const q=fs.queue();
  assert.deepEqual([q[0].status,q[0].warn,q[0].sig,q[0].rev,q[0].bucket,typeof q[0].appliedAt],['done','사유은 나중에 채워도 됩니다','s-학생000',101,'3|done','string']);
  assert.deepEqual([q[1].status,q[1].error,q[1].bucket],['failed','명부에 없는 학생입니다.','3|failed|2026-10-29']);
- assert.equal(q[300].rev,102);assert.equal(q.filter(d=>d.status==='applying'||d.status==='pending').length,0);
+ assert.equal(q[300].rev,106);assert.equal(q.filter(d=>d.status==='applying'||d.status==='pending').length,0);
  assert.equal(fs.data('writeQueueLease/main').holder,'','lease released');
  await settle();
 });

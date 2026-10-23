@@ -96,7 +96,7 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  async function showBeta(slot){
   slot.append(betaHost);
   if(!beta){
-   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261023-rs4','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
+   betaWait||=reasons.then(()=>import(fresh('./teacher-beta.js?v=20261023-rs5','beta'))).then(m=>{if(alive())beta=m.mountTeacherBeta(betaHost,{cls:Number(cls),getToken:()=>user.getIdToken(),endpoint:'/api/teacher-beta',hideNav:true,onSaveIssue:msg=>{if(alive()&&betaTab()!=='board')toast(`출결 저장 확인 필요 · ${msg} · 출결 › 출결판에서 확인해 주세요`);},tab:betaTab()||'today',onDay:d=>{driveDay=d;drive?.set(cls,d);},onTab:t=>{if(t==='board'||t==='dropout')void go('attendance',t,{push:true});}});}).catch(e=>{betaWait=null;tries.beta=(tries.beta||0)+1;throw e;});
    await betaWait;
   }
   // 파일을 기다리는 사이 다른 탭으로 옮겼으면 지금 탭을 보여 줍니다(한 화면을 두 번 띄우지 않음).
@@ -167,6 +167,8 @@ export async function mountBeta2TeacherLayout(parent,{db,user,classInfo,preview=
  }
  async function go(m,s,{push=false}={}){
   if(!alive())return;
+  // 출결판에서 다른 탭으로 가도 출결판은 뒤에서 살아 있어 저장은 계속됩니다. 입력 대기(0.7초)는 바로 보내고 떠납니다(사용자 2026-10-23).
+  if(beta&&betaTab()==='board')try{beta.flush?.();}catch{}
   [main,sub]=teacherRoute(m,s);paint();remember(push);
   const slot=slotOf(main,sub);slot.querySelector(':scope>.t2-fail')?.remove();
   if(main==='info')void load('officers',panel('info').querySelector('[data-slot="officers"]'));

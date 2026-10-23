@@ -33,3 +33,24 @@ test('logout while a board save is still on its way asks first; 취소 keeps the
  },{path:'/#t/attendance/board',api:b=>b.action==='portalSave'?{hold,reply:{ok:true}}:null});
  assert.deepEqual(errors,[]);
 });
+
+// 출결판에서 고르자마자 다른 탭으로 가도 그 저장은 그대로 나가고, 다른 탭에 있는 동안 저장이 안 되면 그 탭에서도 알림이 보입니다(사용자 2026-10-23).
+test('switching to another tab right after picking still saves; a failed save while away shows a toast there',async()=>{
+ let fail=false;
+ const errors=await openPortal(async(page,posts)=>{
+  const cell=page.locator(`table.g select[data-n="가상학생다"][data-d="${TODAY}"]`);await cell.waitFor({timeout:30000});
+  await cell.selectOption('결석');
+  await page.locator('.t2-top [data-main="documents"]').click(); // 0.7초 기다리기 전에 떠남
+  for(let k=0;k<50&&!posts.some(b=>b.action==='portalSave');k++)await page.waitForTimeout(100);
+  const save=posts.find(b=>b.action==='portalSave');
+  const a=save?.args?.[0]||save;assert.ok(save,'portalSave sent');assert.equal(a.name,'가상학생다');assert.equal(a.type,'결석');
+  // 다시 출결판으로 와서 다른 칸을 고르고 곧바로 떠남 → 이번에는 시트가 늦게(1.5초) 거절
+  fail=true;
+  await page.locator('.t2-top [data-main="attendance"]').click();
+  const cell2=page.locator(`table.g select[data-n="가상학생가"][data-d="${TODAY}"]`);await cell2.waitFor({timeout:30000});
+  await cell2.selectOption('결석');
+  await page.locator('.t2-top [data-main="documents"]').click();
+  await page.getByText(/출결 저장 확인 필요/).first().waitFor({timeout:10000});
+ },{path:'/#t/attendance/board',api:b=>b.action==='portalSave'?(fail?{hold:new Promise(r=>setTimeout(r,1500)),reply:{ok:false,msg:'가상 거절'}}:{ok:true}):null});
+ assert.deepEqual(errors,[]);
+});
